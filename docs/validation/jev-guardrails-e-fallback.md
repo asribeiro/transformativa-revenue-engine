@@ -1,17 +1,33 @@
 # Validação dos guardrails e do fallback do JEV
 
-**Card:** TRE-W0-E04-T04 (depende de TRE-W0-E04-T03) · **Data:** 29/09/2026
+**Card:** TRE-W0-E04-T04 (depende de TRE-W0-E04-T03) · **Data da validação:** 29/09/2026
+**Correção dos achados:** cards TRE-W0-E04-T02-D03, TRE-W0-E04-T02-D04 e TRE-W0-E04-T02-D05 (29/09/2026) — ver seção 0
+(estado pós-correção); a memória do que estava errado fica nas seções 5 e nos anexos "histórico pré-correção".
 **Alvo validado:** `hermes/jev/routing/router.py` (jev-router-v1.0) + `hermes/jev/policy_v1.yaml` (jev-policy-v1.0)
 **Suíte:** `scripts/validar_jev_guardrails.py` — validação adversarial e **independente** da suíte do card irmão
-(`scripts/verificar_jev_router.py`, T02). Nenhum arquivo auditado foi alterado: as mutações acontecem em cópia temporária.
+(`scripts/verificar_jev_router.py`, T02). Nenhum arquivo auditado é alterado pelas suítes: as mutações acontecem em cópia
+temporária. `hermes/jev/policy_v1.yaml` (política congelada) e `hermes/policies/human-approval.yaml` **não foram alterados**
+na correção.
+
+**Resultado pós-correção (zero achados):**
+
+| Suíte | Comando | Resultado |
+|---|---|---|
+| Validação adversarial (T04) | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste` | `PASS (64 itens, 0 falhas)`, **0 achados**, `autoteste 13/13` (exit 0) |
+| Roteador (T02) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (46 itens, 0 falhas)`, `autoteste 14/14` (exit 0) |
+| Política (T01) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste` | `PASS (42 itens, 0 falhas)`, `autoteste 12/12` (exit 0) |
+| Papéis | `bash scripts/verificar_papeis.sh` | `PASS (0 falhas)` |
+| Segredo versionado | `bash scripts/secret_scan.sh` | `PASS (nenhum segredo versionado)` |
+
+**Pré-correção (histórico):** `PASS (60 itens, 0 falhas)` com **7 achados** — 3 de casamento em prosa (D04), 2 de
+fail-closed de tipo inválido (D05), 1 da camada Human Approval (D03) e 1 da mesma camada declarada no próprio
+repositório. Os 7 achados eram a lista de defeitos abertos pelos cards D03/D04/D05; todos estão fechados.
+
 **Comando de tudo o que está neste relatório:**
 
 ```
 /opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste
 ```
-
-**Resultado:** `RESULTADO: PASS (60 itens, 0 falhas) + autoteste OK` (exit 0), com **7 achados** (defeitos encontrados e
-**não corrigidos**, por regra do card) listados na seção 5.
 
 ## Como ler os vereditos
 
@@ -19,20 +35,142 @@
 |---|---|
 | `OK` | item de critério atendido, com saída bruta no relatório da suíte |
 | `FALHOU` | item de critério NÃO atendido (suíte vermelha; nenhum item ficou nesta classe) |
-| `ACHADO` | o roteador executa/estoura onde a política manda parar. **Defeito encontrado**, não corrigido |
+| `ACHADO` | o roteador executa/estoura onde a política manda parar. **Defeito encontrado** (pós-correção nenhum item fica nesta classe) |
 | `VALIDADO` | o guardrail/ação tem prova dos dois lados (ou do caminho exigido) **e** mutação que o remove é detectada |
 | `NAO VALIDADO` | não existe prova, ou a prova mostrou que o caminho proibido passa |
 
 `--estrito` soma os ACHADOs como falha (exit 1) para uso como gate de defeito. O default (usado acima) mantém o
 critério homologado no comando e expõe os defeitos separadamente, sem esconder nenhum: toda linha ACHADO aparece
-no stdout e aqui.
+no stdout e aqui. Com zero achados, `--estrito` e o default dão o mesmo veredito (`exit 0`).
+
+## 0. Correção dos defeitos D03, D04 e D05 — estado pós-correção
+
+Esta seção é posterior à validação original (seções 1 a 6 e anexos "histórico pré-correção"). Os três defeitos
+altos/médios que a validação havia encontrado foram **corrigidos no roteador** — nenhuma regra da política foi tocada.
+
+| Defeito | Severidade | O que era o defeito | Correção (arquivo: o quê) |
+|---|---|---|---|
+| **D03** (`TRE-W0-E04-T02-D03`) | alta | a camada Human Approval **nunca lia** `hermes/policies/human-approval.yaml` (o arquivo não tem `role:`, o índice de papéis só indexa quem tem, e o filtro por nome de arquivo era código morto). `promocao de release para producao` saía `executar/PASS`, `exit=0` | `hermes/jev/routing/router.py`: `_e_arquivo_de_human_approval` + `_acoes_de_human_approval` leem a fonte **por nome de arquivo**, independente de `role:`; `carregar_politica` lê as duas seções (`exige_aprovacao` e `nunca_automatico`) e guarda em `_acoes_de_human_approval`; `acoes_de_decisao_humana` usa essa chave. Fonte ausente/ilegível/sem ação declarada = **recusa na leitura** (fail-closed), nunca camada decorativa |
+| **D04** (`TRE-W0-E04-T02-D04`) | alta | o casamento por texto das 8 ações de `nunca_decidido_por_maquina` não pegava o texto da própria política: `promocao de release para producao`, `promover release para producao`, `publicar release em producao` e `exclusao de registro de auditoria` executavam com `PASS` | `hermes/jev/routing/router.py`: `CONCEITOS_DE_ACAO` (tabela de variantes, declarada e comentada) + `REGRAS_DE_ACAO_HUMANA` + `acao_canonica_de_decisao_humana`, aplicados **antes** do casamento de frases em `acao_de_decisao_humana`. A tabela só muda vocabulário: limiar, lane, perfil e lista de proibição continuam vindo do YAML |
+| **D05** (`TRE-W0-E04-T02-D05`) | média | entrada de tipo inválido **estourava exceção** em vez de bloquear: payload não-mapa → `ValueError`, `sinais` em lista → `AttributeError` | `hermes/jev/routing/router.py`: os guardrails de código rodam sobre a entrada crua e `_tarefa_segura` normaliza a borda (payload não-mapa/sinais não-mapa → mapa identificado). Resultado: `BLOCK` com recibo de 13 campos e `payload_valido` registrado, nunca exceção; `_guardrails_de_politica` também lê `sinais` defensivamente |
+
+Nota de arquitetura (correção de raiz do D04): casar prosa é **finito** — a tabela de variantes cobre o vocabulário
+medido, não qualquer texto equivalente. A correção de raiz é o **dispatch passar o CÓDIGO CANÔNICO da ação** (a mesma
+nomenclatura de `nunca_decidido_por_maquina`), nunca texto livre — **card TRE-W0-E04-T05**. Enquanto a entrada for prosa,
+esta tabela tem de crescer com o vocabulário real medido; a suite prova o alinhamento entre tabela e política.
+
+### 0.1 As 4 frases que escapavam, pelo CLI real (agora `BLOCK`, `exit=3`)
+
+```
+### as 4 frases que escapavam (pre-correcao: PASS/exit 0)
+  'promocao de release para producao': exit=3 outcome=BLOCK decidido=bloquear exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+  'promover release para producao': exit=3 outcome=BLOCK decidido=bloquear exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+  'publicar release em producao': exit=3 outcome=BLOCK decidido=bloquear exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+  'exclusao de registro de auditoria': exit=3 outcome=BLOCK decidido=bloquear exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (exclusao_de_dado_de_cliente): nunca decidida por maquina
+```
+
+O JSON completo de uma delas (o que o roteador imprime agora, `exit=3`):
+
+```
+$ /opt/hermes/.venv/bin/python hermes/jev/routing/router.py --json '{"card_id":"t_def","acao":"promover release para producao","lane_proposta":"small","confianca":0.9}'
+{
+  "recibo": {
+    "decision_id": "dec-2254428d6c2cc028", "card_id": "t_def",
+    "task_hash": "261f9fdfd07e3696fab0864741528bcca91e4e38b396a7acaadcc7b9c4cd689b",
+    "lane": "high", "model_profile": null, "selected_model": null, "effort": null,
+    "confidence": null, "policy_version": "jev-policy-v1.0", "router_version": "jev-router-v1.0",
+    "timestamp": "2026-09-29T21:44:55+00:00", "override": null, "outcome": "BLOCK"
+  },
+  "decisao": {
+    "decidido": "bloquear", "outcome": "BLOCK", "lane": "high",
+    "lane_conservadora_da_politica": "high", "degraded_mode": false, "pode_executar": false,
+    "exige_revisao": false, "exige_escalacao": true, "exige_aprovacao_humana": true,
+    "papel_executor": "dev-harness", "policy_version": "jev-policy-v1.0",
+    "politica_lida_de": ".../hermes/jev/policy_v1.yaml",
+    "guardrails_acionados": [],
+    "motivos": ["acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina",
+                "encaminhar para Human Approval do Anderson"],
+    "evidencias": []
+  }
+}
+exit=3
+```
+
+Observação honesta: nas duas frases que só a canonicalização pega (não estão declaradas verbatim em nenhum arquivo —
+ver 0.3), o bloqueio sai pela camada Human Approval com `exige_aprovacao_humana=true` e lane conservadora; nas frases
+que casam a fonte `human-approval.yaml`, o mesmo. `deploy em producao` continua bloqueado, agora perdendo o guardrail
+de papel (`guardrails=[]`) porque a camada 2 vem antes — a precedência é `Security → Human Approval`, e nenhuma das duas
+executa.
+
+### 0.2 Entrada de tipo inválido: `BLOCK` com recibo, sem traceback
+
+```
+### entrada de tipo invalido (pre-correcao: ValueError / AttributeError)
+  payload nao-mapa (texto): exit=3 outcome=BLOCK pode_executar=False guardrails_acionados=['payload_valido'] campos_do_recibo=13 stderr=''
+  payload nao-mapa (lista): exit=3 outcome=BLOCK pode_executar=False guardrails_acionados=['payload_valido'] campos_do_recibo=13 stderr=''
+  sinais nao-mapa: exit=3 outcome=BLOCK pode_executar=False guardrails_acionados=['payload_valido'] campos_do_recibo=13 stderr=''
+  recibo (13 campos) do caso 'sinais nao-mapa': {"decision_id": "dec-e0bacda86a90d8b0", "card_id": "t_d05", "task_hash": "753eaef2bb9e131749457e42db5c59b6daf36503cc1c9a665c7239f2c17f2b2a", "lane": "high", "model_profile": null, "selected_model": null, "effort": null, "confidence": null, "policy_version": "jev-policy-v1.0", "router_version": "jev-router-v1.0", "timestamp": "2026-09-29T21:44:55+00:00", "override": null, "outcome": "BLOCK"}
+```
+
+`stderr=''` nos três casos: não há traceback. `card_id` é `null` no payload não-mapa (não há card a extrair) — o recibo
+continua com os 13 campos e `task_hash` determinístico da entrada de bloqueio.
+
+### 0.3 A camada Human Approval lendo a fonte sem `role:` (D03)
+
+```
+### camada Human Approval: fonte lida por NOME de arquivo (arquivo sem `role:`)
+  grep -c '^role:' hermes/policies/human-approval.yaml -> 0
+  'promocao de release para producao': exit=3 outcome=BLOCK ... exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+  'expor segredo em log, receipt ou mensagem': exit=3 outcome=BLOCK ... exige_aprovacao_humana=True guardrails=[] motivo=acao de decisao humana (expor segredo em log, receipt ou mensagem): nunca decidida por maquina
+  'contatar empresa com do_not_contact / opt_out marcado': exit=3 outcome=BLOCK ... guardrails=['papel_sem_credencial_de_deploy'] motivo=guardrail papel_sem_credencial_de_deploy: Sales AI nao tem credencial de deploy nem altera codigo (papel dev-harness nao pode: contatar lead, cliente ou decisor)
+```
+
+A segunda linha é a prova de que a leitura da **fonte** acontece (essa declaração só existe em `nunca_automatico` do
+arquivo e não tem regra canônica própria); a terceira é bloqueada pela camada Security (guardrail de papel), o que
+mostra a precedência funcionando.
+
+### 0.4 Prova de que os itens de regressão REPROVAM se o defeito voltar
+
+Cada defeito foi **revertido em cópia temporária** do roteador (reversão pontual, sem tocar o repo) e as duas
+suítes rodaram contra o mutante. Saída real:
+
+```
+T04 | D03 revertido (fonte human-approval.yaml volta a ser ignorada)
+       FALHOU: 1 -> ['cobertura D03 — a fonte human-approval.yaml entra na camada Human Approval sem depender de role: e nao executa']
+       ACHADO: 1 -> ['acao declarada em human-approval.yaml — BLOQUEIO (9 declaracoes)']
+T02 | D03 revertido (fonte human-approval.yaml volta a ser ignorada)
+       FALHOU: 4 -> ['CLI: entrada sintetica imprime o recibo (13 campos) e sai 0', 'CLI: bloqueio sai com codigo 3 e recibo em BLOCK', 'CLI: le o card do board e imprime o recibo', 'D03: a fonte human-approval.yaml entra na camada Human Approval sem depender de role: (9 declaracoes nao executam)']
+T04 | D04 revertido (canonicalizacao da acao desligada)
+       FALHOU: 0 -> []
+       ACHADO: 2 -> ["acao proibida aprovacao_de_producao — PROSA 'publicar versao em producao' bloqueia ou escala", "acao proibida exclusao_de_dado_de_cliente — PROSA 'remover cadastro de titular' bloqueia ou escala"]
+T02 | D04 revertido (canonicalizacao da acao desligada)
+       FALHOU: 3 -> ['CLI: entrada sintetica imprime o recibo (13 campos) e sai 0', 'CLI: bloqueio sai com codigo 3 e recibo em BLOCK', 'CLI: le o card do board e imprime o recibo']
+T04 | D05 revertido (borda sem validacao de tipo: dict(tarefa or {}))
+       FALHOU: 1 -> ['cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo de 13 campos, sem excecao']
+       ACHADO: 1 -> ['fail-closed ponta a ponta — payload nao-mapa nao pode estourar']
+T02 | D05 revertido (borda sem validacao de tipo: dict(tarefa or {}))
+       FALHOU: 4 -> ['CLI: entrada sintetica imprime o recibo (13 campos) e sai 0', 'CLI: bloqueio sai com codigo 3 e recibo em BLOCK', 'CLI: le o card do board e imprime o recibo', 'D05: entrada de tipo invalido termina em BLOCK com recibo, nunca em excecao']
+```
+
+Leitura honesta dessa prova, incluindo o que **não** está provado:
+
+1. **D03 e D05 têm item próprio** que reprova ao reverter (`cobertura D03 —` e `cobertura D05 —` na T04; `D03:` e
+   `D05:` na T02). São os itens certos: reprovam pelo comportamento, não por inspeção de código.
+2. **As 4 frases do D04 têm cobertura dupla** (a fonte `human-approval.yaml` agora lida + a canonicalização): reverter
+   **só** a canonicalização **não** reabre as 4, porque a fonte lida já as pega. Por isso a suite ganhou duas variações
+   que **não existem em prosa em nenhum arquivo do repo** (`publicar versao em producao`, `remover cadastro de titular`):
+   são elas que reprovam quando a canonicalização é desligada (2 `ACHADO` na T04 acima). Sem esses dois casos, a T02
+   de 3 itens de CLI reprovados seria o único sinal — e esse sinal é artefato do modo degradado do mutante, não do D04.
+3. As 3 falhas de CLI que aparecem em **toda** reversão são pré-existentes e não têm relação com os defeitos: os itens
+   de CLI rodam o roteador mutante a partir de um diretório temporário, onde o caminho padrão da política não existe, e
+   acontece o modo degradado (a suíte completa registra isso também nas mutações do autoteste).
 
 ## 1. Contagem do que o YAML declara e do que ficou validado
 
 | Bloco do YAML | Declarados | VALIDADOS | NAO VALIDADOS |
 |---|---|---|---|
-| `guardrails` (regras) | 5 | **5** (cada um com teste de REPROVA + APROVA + mutação que o remove detectada) | 0 como regra; **2 casos de borda do fail-closed** não validados ponta a ponta (achado D3) |
-| `nunca_decidido_por_maquina` (ações) | 8 | **8** por nome exato (bloqueio) | **2** com cobertura em prosa incompleta: `aprovacao_de_producao` e `exclusao_de_dado_de_cliente` (achados D1/D2) |
+| `guardrails` (regras) | 5 | **5** (cada um com teste de REPROVA + APROVA + mutação que o remove detectada) | 0 como regra; **2 casos de borda do fail-closed** não validados ponta a ponta (achado D3 — **corrigido**, ver 0.2) |
+| `nunca_decidido_por_maquina` (ações) | 8 | **8** por nome exato (bloqueio) | **2** com cobertura em prosa incompleta: `aprovacao_de_producao` e `exclusao_de_dado_de_cliente` (achados D1/D2 — **corrigidos**, ver 0.1) |
 | `fallback` (gatilhos exercitados) | 4 gatilhos citados | **4 de 4** exercitados de ponta a ponta pela CLI (política ausente, ilegível/corrompida, versão desconhecida, seção faltando) + o caso do caminho padrão | **0**; porém "timeout" e "saída fora do contrato" não têm implementação no roteador (ver seção 6) |
 | Mutações (autoteste) | 13 | **13 de 13 detectadas** | 0 |
 
@@ -97,10 +235,11 @@ e lê a matriz de `hermes/policies/*.yaml`).
 | REPROVA | `guardrail fail-closed na leitura — REPROVA: politica sem guardrail declarado e recusada` (OK) | os 5 guardrails exigidos: política que para de declarar qualquer um dos 5 é recusada na leitura |
 | Mutação | `fail-closed removido no sinal desconhecido` / `fail-closed removido na entrada de tipo invalido` / `roteador deixa de exigir o guardrail declarado na politica` / `nenhum guardrail bloqueia (a barreira e decorativa)` | **as 4 detectadas** (1, 1, 1 e 7 itens reprovados) |
 
-**NAO VALIDADO ponta a ponta (achado D3):** para payload não-mapa e `sinais` não-mapa, `decidir()` **estoura exceção**
-em vez de devolver `BLOCK` — o guardrail aciona, mas a avaliação da política roda antes do teste de bloqueio e quebra
-primeiro. Itens da suíte: `fail-closed ponta a ponta — payload nao-mapa nao pode estourar` e
-`fail-closed ponta a ponta — sinais nao-mapa nao pode estourar`, ambos `ACHADO`.
+**NAO VALIDADO ponta a ponta (achado D3) — CORRIGIDO (D05, ver seção 0):** para payload não-mapa e `sinais` não-mapa,
+`decidir()` **estourava exceção** em vez de devolver `BLOCK` — o guardrail acionava, mas a avaliação da política rodava
+antes do teste de bloqueio e quebrava primeiro. Itens da suíte: `fail-closed ponta a ponta — payload nao-mapa nao pode
+estourar` e `fail-closed ponta a ponta — sinais nao-mapa nao pode estourar`, ambos `ACHADO` (hoje `OK`, e a suíte ganhou
+o item `cobertura D05 —` que reprova se a exceção voltar).
 
 ## 3. Ações de `nunca_decidido_por_maquina` — 8 por nome exato
 
@@ -118,16 +257,20 @@ OK     acao proibida publicacao_em_nome_da_transformativa — BLOQUEIO por nome 
 OK     cobertura — cada acao proibida do YAML tem teste de bloqueio e de prosa  [8 acoes de nunca_decidido_por_maquina com teste de bloqueio e com variacao em prosa]
 ```
 
-### 3.1 Cobertura em prosa (22 variações)
+### 3.1 Cobertura em prosa (24 variações: as 22 da validação original + 2 que só a canonicalização pega)
 
-| Ação | Variações testadas | Bloqueiam/escalam | Executam (ACHADO) | Veredito da cobertura em prosa |
+As duas linhas marcadas como `NAO VALIDADO` foram **fechadas** pela correção do D04 (ver 0.1); a foto abaixo é a
+pré-correção. A coluna "Variações" inclui as 2 adicionadas na correção para provar a canonicalização
+(`publicar versao em producao`, `remover cadastro de titular` — não existem em prosa em nenhum arquivo do repo).
+
+| Ação | Variações testadas | Bloqueiam/escalam | Executam (ACHADO, pré-correção) | Veredito da cobertura em prosa |
 |---|---|---|---|---|
-| `aprovacao_de_producao` | 5 | 2 (`aprovar promocao de release para producao`, `deploy em producao`) | **3** — `promocao de release para producao`, `promover release para producao`, `publicar release em producao` | **NAO VALIDADO** |
+| `aprovacao_de_producao` | 6 (5 + 1 pós-correção) | 2 (`aprovar promocao de release para producao`, `deploy em producao`) | **3** — `promocao de release para producao`, `promover release para producao`, `publicar release em producao` | **NAO VALIDADO** pré-correção → **corrigido** (D04) |
 | `primeiro_contato_outbound` | 3 | 3 | 0 | VALIDADO |
 | `envio_de_proposta_comercial` | 2 | 2 | 0 | VALIDADO |
 | `mudanca_estrutural_de_arquitetura` | 2 | 2 | 0 | VALIDADO |
 | `rollback_em_producao` | 2 | 2 | 0 | VALIDADO |
-| `exclusao_de_dado_de_cliente` | 3 | 2 | **1** — `exclusao de registro de auditoria` | **NAO VALIDADO** |
+| `exclusao_de_dado_de_cliente` | 4 (3 + 1 pós-correção) | 2 | **1** — `exclusao de registro de auditoria` | **NAO VALIDADO** pré-correção → **corrigido** (D04) |
 | `rotacao_ou_revogacao_de_credencial` | 2 | 2 | 0 | VALIDADO |
 | `publicacao_em_nome_da_transformativa` | 3 | 3 | 0 | VALIDADO |
 
@@ -184,7 +327,15 @@ Foi por isso que a suíte também remove as **8** seções obrigatórias uma a u
 recusadas. Ainda assim, "seção faltando" só está provado para seções exigidas por `carregar_politica` — uma seção nova
 e desconhecida do roteador passaria.
 
-## 5. Achados (defeitos encontrados, NÃO corrigidos)
+## 5. Achados originais (pré-correção) — 7 achados, todos fechados
+
+> **Histórico.** Esta seção é o registro de quando a validação do T04 encontrou os defeitos, com a evidência de como
+> cada um passava. Os 7 achados estão **fechados** pela correção descrita na seção 0 (o `ACHADO` de
+> `human-approval.yaml` era o D03; as 4 linhas de prosa eram o D04; as 2 de tipo inválido eram o D05; o item de
+> fail-closed ponta a ponta era o D05). O texto abaixo fala no presente de propósito: é a foto do que estava errado.
+
+**Status de cada um:** D1 → **corrigido** (card D03) · D2 → **corrigido** (card D04) · D3 → **corrigido** (card D05).
+Reverter cada correção volta a produzir o achado — prova na seção 0.4.
 
 Severidade conforme `docs/kanban/processo-de-defeitos.md`. Local exato informado para abrir o card de defeito.
 
@@ -198,6 +349,12 @@ Observação de precisão (os dois achados são distintos): `promocao de release
 D1 corrigido? Não necessariamente, mas `promover release para producao` e `publicar release em producao` **continuam**
 executando independentemente de D1, porque a política do roteador só declara `aprovacao_de_producao` e o casamento por
 token não liga "release"/"producao" a `aprovacao_de_producao` com os limiares atuais. Corrigir um não fecha o outro.
+
+**Pós-correção:** os dois foram corrigidos por caminhos diferentes — D1 pela leitura da fonte `human-approval.yaml`
+(D03) e D2 pela canonicalização das ações no roteador (D04). A previsão acima se confirmou e virou teste: reverter
+**só** a canonicalização não reabre as 4 frases (a fonte lida as pega), por isso a suíte ganhou 2 variações que só a
+canonicalização pega (seção 0.4, item 2). A primeira frase do D2 (`promocao de release para producao`) também está
+declarada verbatim na fonte D1, então ela é coberta pelos dois caminhos.
 
 ## 6. Limitações honestas — o que NÃO ficou provado
 
@@ -221,7 +378,133 @@ token não liga "release"/"producao" a `aprovacao_de_producao` com os limiares a
 8. Nenhum segredo real foi usado; os valores são sintéticos e óbvios de teste. Não há prova de que segredos fora dos 7
    formatos reconhecidos (`PADROES_DE_SEGREDO`) sejam detectados.
 
-## Anexo A — saída bruta da suíte (60 itens)
+Limitações **introduzidas/remanescentes com a correção** dos defeitos (seção 0) — declaradas com a mesma honestidade:
+
+9. **O casamento em prosa continua finito.** `CONCEITOS_DE_ACAO`/`REGRAS_DE_ACAO_HUMANA` cobrem o vocabulário medido
+   (24 variações na T04 + 4 frases na T02), não qualquer texto equivalente. Uma variação nova pode escapar. É por isso
+   que a correção de raiz é o dispatch passar **código canônico** de ação (card TRE-W0-E04-T05) — enquanto a entrada
+   for prosa, a lista de variantes tem de crescer com o vocabulário real.
+10. **O casamento de frases declaradas mantém a folga antiga** (`casados >= 2`): uma ação que mencione duas palavras de
+   uma frase da fonte pode exigir Human Approval sem ser aquela ação. Exemplo medido: `executar deploy, promocao de
+   release ou rollback` (sem `producao`) casa `promocao de release para producao` e o motivo registra essa frase. O erro
+   é para o lado conservador (bloqueia/escala, nunca executa), mas o motivo pode apontar a frase errada.
+11. **A camada Human Approval agora depende da fonte:** sem `hermes/policies/human-approval.yaml` no diretório de
+   políticas, `carregar_politica` **recusa** (fail-closed) — um diretório de políticas sem esse arquivo deixa de ser
+   utilizável pelo roteador. É intencional (camada sem fonte era o defeito D03), mas é mudança de contrato e quem
+   monta um diretório de políticas precisa saber.
+12. **Sem prova de falso positivo da canonicalização** fora do par REPROVA/APROVA das suítes: não medi tarefas reais
+   (o corpus anotado do T03 não foi reprocessado) para ver se alguma ação legítima passou a exigir aprovação.
+13. `selected_model` continua `null` em toda decisão (limitação 2, não mexida por esta correção).
+
+## Anexo A — saída bruta da suíte, pós-correção (64 itens, 0 achados)
+
+```
+==============================================================================
+VALIDACAO DOS GUARDRAILS E DO FALLBACK DO JEV (card TRE-W0-E04-T04)
+  roteador: hermes/jev/routing/router.py
+  politica: hermes/jev/policy_v1.yaml
+  papeis:   hermes/policies
+==============================================================================
+OK     guardrail segredo — REPROVA: 6 formas de segredo bloqueiam  [6 formas bloqueadas com BLOCK]
+OK     guardrail segredo — APROVA: payload limpo executa  [decidido=executar outcome=PASS lane=small guardrails=[]]
+OK     guardrail segredo — APROVA: segredo bloqueado nao aparece em decisao/recibo  [nem o valor nem o formato aparecem na decisao/recibo]
+OK     guardrail do_not_contact — REPROVA: empresa marcada + acao outbound bloqueia  [decidido=bloquear outcome=BLOCK lane=high guardrails=['do_not_contact']]
+OK     guardrail do_not_contact — APROVA: sem marcacao ou sem outbound executa  [outbound sem marcacao executa; empresa marcada em acao interna executa]
+OK     guardrail DDL — REPROVA: DDL em producao ou sem ambiente bloqueia  [DDL em producao e DDL sem ambiente declarado bloqueiam]
+OK     guardrail DDL — APROVA: DDL em ambiente de desenvolvimento executa  [DDL em desenvolvimento/dev executa]
+OK     guardrail Sales AI x credencial de deploy — REPROVA: bloqueia  [deploy, credencial proibida e papel desconhecido bloqueiam]
+OK     guardrail Sales AI x credencial de deploy — APROVA: acao/credencial permitida executa  [acao comercial do sales-ai e credencial permitida executam]
+OK     guardrail fail-closed — REPROVA: sinal desconhecido e entrada invalida nao liberam  [sinal desconhecido e sinais None bloqueiam; payload_valido aciona para tipo invalido]
+OK     guardrail fail-closed — APROVA: entrada valida e sem sinal desconhecido executa  [decidido=executar outcome=PASS lane=small guardrails=[]]
+OK     guardrail fail-closed na leitura — REPROVA: politica sem guardrail declarado e recusada  [os 5 guardrails exigidos: politica que para de declara-los e recusada]
+OK     acao proibida aprovacao_de_producao — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida primeiro_contato_outbound — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida envio_de_proposta_comercial — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida mudanca_estrutural_de_arquitetura — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rollback_em_producao — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida exclusao_de_dado_de_cliente — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rotacao_ou_revogacao_de_credencial — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida publicacao_em_nome_da_transformativa — BLOQUEIO por nome exato  [BLOCK por nome exato — decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida aprovacao_de_producao — PROSA 'aprovar promocao de release para producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida aprovacao_de_producao — PROSA 'promocao de release para producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida aprovacao_de_producao — PROSA 'promover release para producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida aprovacao_de_producao — PROSA 'publicar release em producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida aprovacao_de_producao — PROSA 'deploy em producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida aprovacao_de_producao — PROSA 'publicar versao em producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida primeiro_contato_outbound — PROSA 'primeiro contato outbound por e-mail para empresa nova' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida primeiro_contato_outbound — PROSA 'primeiro contato com empresa nova via LinkedIn' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida primeiro_contato_outbound — PROSA 'enviar mensagem no WhatsApp para lead novo' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida envio_de_proposta_comercial — PROSA 'enviar proposta comercial ao cliente' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida envio_de_proposta_comercial — PROSA 'envio de proposta comercial' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida mudanca_estrutural_de_arquitetura — PROSA 'mudanca estrutural de arquitetura exige ADR' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida mudanca_estrutural_de_arquitetura — PROSA 'alteracao estrutural de arquitetura' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rollback_em_producao — PROSA 'rollback em producao apos incidente' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rollback_em_producao — PROSA 'rollback em producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida exclusao_de_dado_de_cliente — PROSA 'excluir dado de cliente' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida exclusao_de_dado_de_cliente — PROSA 'exclusao de registro de auditoria' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida exclusao_de_dado_de_cliente — PROSA 'apagar dado de cliente do banco' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida exclusao_de_dado_de_cliente — PROSA 'remover cadastro de titular' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rotacao_ou_revogacao_de_credencial — PROSA 'rotacao de credencial de producao' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida rotacao_ou_revogacao_de_credencial — PROSA 'revogar credencial de deploy' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=[]]
+OK     acao proibida publicacao_em_nome_da_transformativa — PROSA 'publicar conteudo em nome da Transformativa' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida publicacao_em_nome_da_transformativa — PROSA 'publicacao em nome da Transformativa sem aprovacao expressa' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     acao proibida publicacao_em_nome_da_transformativa — PROSA 'postar em nome da Transformativa' bloqueia ou escala  [decidido=bloquear outcome=BLOCK lane=high guardrails=['papel_sem_credencial_de_deploy']]
+OK     fallback — REPROVA: politica corrompida/versao desconhecida/secao faltando sao recusadas na leitura  [corrompida, versao desconhecida e secao faltando sao recusadas na leitura]
+OK     fallback — REPROVA: qualquer secao obrigatoria faltando e recusada  [as 8 secoes obrigatorias: removida uma a uma, todas recusadas]
+OK     fallback — APROVA: politica indisponivel entra em degradado conservador sem execucao  [lane=high degradado=True outcome=ESCALATE confidence=None]
+OK     fallback — APROVA: no degradado os guardrails continuam rodando primeiro  [decidido=bloquear outcome=BLOCK lane=high guardrails=['segredo_sem_payload']]
+OK     fallback ponta a ponta (CLI) — REPROVA: politica ausente -> lane conservadora + degradado, sem execucao  [exit=2 lane=high degradado=True outcome=ESCALATE confidence=None recibo=13 campos]
+OK     fallback ponta a ponta (CLI) — REPROVA: politica ilegivel/corrompida -> lane conservadora + degradado, sem execucao  [exit=2 lane=high degradado=True outcome=ESCALATE confidence=None recibo=13 campos]
+OK     fallback ponta a ponta (CLI) — REPROVA: versao de politica desconhecida -> lane conservadora + degradado, sem execucao  [exit=2 lane=high degradado=True outcome=ESCALATE confidence=None recibo=13 campos]
+OK     fallback ponta a ponta (CLI) — REPROVA: secao guardrails faltando -> lane conservadora + degradado, sem execucao  [exit=2 lane=high degradado=True outcome=ESCALATE confidence=None recibo=13 campos]
+OK     fallback ponta a ponta (CLI) — REPROVA: politica ausente no caminho padrao -> degradado, nunca execucao silenciosa  [exit=2 lane=high degradado=True policy_version=None]
+OK     fallback ponta a ponta (CLI) — APROVA: guardrails rodam primeiro nos 4 cenarios quebrados  [nos 4 cenarios quebrados o guardrail de segredo bloqueou (BLOCK) antes do fallback]
+OK     fallback — APROVA: abstencao (confianca baixa/ausente, lane desconhecida) escala na lane conservadora  [abstencao usa a lane conservadora e escala nos 3 casos]
+OK     fail-closed ponta a ponta — payload nao-mapa bloqueia  [decidido=bloquear outcome=BLOCK lane=high guardrails=['payload_valido']]
+OK     fail-closed ponta a ponta — sinais nao-mapa bloqueia  [decidido=bloquear outcome=BLOCK lane=high guardrails=['payload_valido']]
+OK     acao declarada em human-approval.yaml — BLOQUEIO (9 declaracoes)  [todas bloqueiam ou escalam]
+OK     cobertura D03 — a fonte human-approval.yaml entra na camada Human Approval sem depender de role: e nao executa  [9 declaracoes da fonte entram na camada e bloqueiam com BLOCK]
+OK     cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo de 13 campos, sem excecao  [3 entradas de tipo invalido: BLOCK, recibo de 13 campos, payload_valido registrado]
+OK     cobertura — cada guardrail do YAML tem teste de REPROVA e de APROVA  [5 guardrails declarados no YAML, 5 regras, todos com teste de REPROVA e de APROVA]
+OK     cobertura — cada acao proibida do YAML tem teste de bloqueio e de prosa  [8 acoes de nunca_decidido_por_maquina com teste de bloqueio e com variacao em prosa]
+OK     sanity — o roteador carrega a politica e os papeis do repo  [versao=jev-policy-v1.0 lanes=['small', 'medium', 'high', 'critical'] papeis=['dev-harness', 'sales-ai']]
+OK     sanity — o roteador nao foi alterado por esta suite (arquivos do repo intactos)  [hermes/jev/routing/router.py hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md]
+
+=== AUTOTESTE: mutacoes que a suite precisa reprovar ===
+OK    detectada: guardrail segredo removido (payload com segredo passa)  (3 item(ns) reprovado(s): guardrail segredo — REPROVA: 6 formas de segredo bloqueiam, fallback — APROVA: no degradado os guardrails continuam rodando primeiro...)
+OK    detectada: guardrail do_not_contact removido (empresa marcada e contatada)  (1 item(ns) reprovado(s): guardrail do_not_contact — REPROVA: empresa marcada + acao outbound bloqueia)
+OK    detectada: guardrail DDL removido (DDL nasce em producao)  (1 item(ns) reprovado(s): guardrail DDL — REPROVA: DDL em producao ou sem ambiente bloqueia)
+OK    detectada: guardrail de papel/credencial removido (Sales AI com deploy)  (1 item(ns) reprovado(s): guardrail Sales AI x credencial de deploy — REPROVA: bloqueia)
+OK    detectada: fail-closed removido no sinal desconhecido  (1 item(ns) reprovado(s): guardrail fail-closed — REPROVA: sinal desconhecido e entrada invalida nao liberam)
+OK    detectada: fail-closed removido na entrada de tipo invalido  (2 item(ns) reprovado(s): guardrail fail-closed — REPROVA: sinal desconhecido e entrada invalida nao liberam, cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo de 13 campos, sem excecao)
+OK    detectada: guardrails deterministas deixam de rodar  (5 item(ns) reprovado(s): guardrail segredo — REPROVA: 6 formas de segredo bloqueiam, guardrail fail-closed — REPROVA: sinal desconhecido e entrada invalida nao liberam...)
+OK    detectada: nenhum guardrail bloqueia (a barreira e decorativa)  (8 item(ns) reprovado(s): guardrail segredo — REPROVA: 6 formas de segredo bloqueiam, guardrail do_not_contact — REPROVA: empresa marcada + acao outbound bloqueia...)
+OK    detectada: fallback executa em modo degradado  (6 item(ns) reprovado(s): fallback — APROVA: politica indisponivel entra em degradado conservador sem execucao, fallback ponta a ponta (CLI) — REPROVA: politica ausente -> lane conservadora + degradado, sem execucao...)
+OK    detectada: fallback usa lane barata em vez da conservadora  (7 item(ns) reprovado(s): fallback — APROVA: politica indisponivel entra em degradado conservador sem execucao, fallback ponta a ponta (CLI) — REPROVA: politica ausente -> lane conservadora + degradado, sem execucao...)
+OK    detectada: roteador deixa de exigir o guardrail declarado na politica  (1 item(ns) reprovado(s): guardrail fail-closed na leitura — REPROVA: politica sem guardrail declarado e recusada)
+OK    detectada: versao de politica desconhecida aceita  (2 item(ns) reprovado(s): fallback — REPROVA: politica corrompida/versao desconhecida/secao faltando sao recusadas na leitura, fallback ponta a ponta (CLI) — REPROVA: versao de politica desconhecida -> lane conservadora + degradado, sem execucao)
+OK    detectada: precedencia humana ignorada (Human Approval contornado)  (6 item(ns) reprovado(s): acao proibida primeiro_contato_outbound — BLOQUEIO por nome exato, acao proibida envio_de_proposta_comercial — BLOQUEIO por nome exato...)
+
+autoteste: 13/13 mutacoes detectadas
+
+itens: 64 (61 de criterio, 3 adversariais) | falhas: 0 | achados: 0
+RESULTADO: PASS (64 itens, 0 falhas) + autoteste OK
+```
+
+E a suíte do roteador (T02), pós-correção — os itens novos são os 4 últimos antes de "arquivos do roteador":
+
+```
+OK    D03: a fonte human-approval.yaml entra na camada Human Approval sem depender de role: (9 declaracoes nao executam)  [9 declaracoes da fonte bloqueiam com BLOCK, sem chave role:]
+OK    D04: as 4 frases em prosa que escapavam do bloqueio terminam em BLOCK  [as 4 frases em prosa que escapavam do bloqueio terminam em BLOCK]
+OK    D04: o vocabulario canonico do roteador nao inventa nem omite acao da politica  [8 regras canonicas alinhadas com 8 acoes de nunca_decidido_por_maquina]
+OK    D05: entrada de tipo invalido termina em BLOCK com recibo, nunca em excecao  [3 entradas de tipo invalido: BLOCK com recibo de 13 campos, sem excecao]
+...
+autoteste: 14/14 mutacoes detectadas
+
+RESULTADO: PASS (46 itens, 0 falhas) + autoteste OK
+```
+
+## Anexo A.1 — histórico pré-correção (60 itens, 7 achados)
 
 ```
 ==============================================================================
@@ -295,10 +578,18 @@ itens: 60 (57 de criterio, 3 adversariais) | falhas: 0 | achados: 7
 RESULTADO: PASS (60 itens, 0 falhas)
 ```
 
-## Anexo B — autoteste por mutação (13/13 detectadas)
+## Anexo B — autoteste por mutação (histórico pré-correção: 13/13 detectadas)
 
 Cada mutação é aplicada a uma **cópia temporária** do roteador; a suíte roda contra a cópia e tem de reprovar. Mutação
-não detectada = guardrail decorativo.
+não detectada = guardrail decorativo. Pós-correção o autoteste continua `13/13` (saída completa no Anexo A); duas
+mutações passaram a reprovar mais itens porque os itens de regressão do D03/D05 entraram na conta:
+
+- `fail-closed removido na entrada de tipo invalido`: 2 itens reprovados (era 1) — `cobertura D05 —` entrou na conta;
+- `guardrails deterministas deixam de rodar`: 5 itens (eram 4); `nenhum guardrail bloqueia`: 8 (eram 7).
+
+O autoteste **não** cobre a reversão do D03/D04 por mutação própria (não há mutação que desligue a leitura da fonte nem
+a canonicalização). Essa prova é feita por reversão pontual e está na seção 0.4 — recomendo transformá-la em duas
+mutações do autoteste quando o card do roteador for reaberto.
 
 ```
 === AUTOTESTE: mutacoes que a suite precisa reprovar ===
@@ -326,11 +617,25 @@ RESULTADO: PASS (60 itens, 0 falhas) + autoteste OK
 
 ```bash
 cd /opt/data/repos/transformativa-revenue-engine
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 60 itens, 0 falhas, exit 0
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 64 itens, 0 falhas, 0 achados, exit 0
 /opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste # + 13/13 mutacoes, exit 0
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --estrito   # achados contam como falha (exit 1)
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --estrito   # achados contam como falha (exit 1; hoje exit 0)
+/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste   # 46 itens, 0 falhas, 14/14 mutacoes, exit 0
+/opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste   # politica x documento: 42 itens, 12/12
+bash scripts/verificar_papeis.sh                                           # PASS
+bash scripts/secret_scan.sh                                                # PASS
 ```
 
-Nada foi commitado nem enviado. `hermes/jev/policy_v1.yaml`, `hermes/jev/routing/router.py`,
-`scripts/verificar_jev_router.py` e `docs/architecture/jev-decision-policy-v1.md` **não foram alterados** (a suíte
-roda contra cópias temporárias; `git status` limpo além dos arquivos novos deste card).
+Reversão dos defeitos (prova da seção 0.4), em cópia temporária do roteador — cada substituição desliga um defeito
+corrigido e a suíte tem de reprovar:
+
+| Defeito | Substituição que reverte |
+|---|---|
+| D03 | `    entradas += [str(x) for x in (politica or {}).get("_acoes_de_human_approval") or []]` → `    entradas += []` |
+| D04 | `    presentes = _conceitos_presentes(acao)` → `    presentes = set()` |
+| D05 | `    tarefa = _tarefa_segura(tarefa)` → `    tarefa = dict(tarefa or {})` |
+
+Nada foi commitado nem enviado. Os arquivos alterados por esta correção são `hermes/jev/routing/router.py`,
+`scripts/validar_jev_guardrails.py`, `scripts/verificar_jev_router.py` e este documento; `hermes/jev/policy_v1.yaml`
+(política congelada) e `hermes/policies/*.yaml` **não foram alterados**. As suítes continuam rodando contra cópias
+temporárias e não mutam o repo.

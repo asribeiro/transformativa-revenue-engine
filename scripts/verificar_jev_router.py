@@ -751,6 +751,98 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     itens.checar("CLI (T02): politica renomeada em copia temporaria -> modo degradado, exit 2",
                  _cli_degradado)
 
+    # ------------------- regressao dos defeitos D03, D04 e D05 (validacao T04)
+    # Itens que REPROVAM se o defeito voltar. Estao na suite do roteador porque o
+    # defeito era dele: a validacao independente (scripts/validar_jev_guardrails.py)
+    # continua sendo a prova adversarial, com itens proprios.
+
+    def _d03_fonte_human_approval():
+        arquivo = pathlib.Path(diretorio_papeis) / "human-approval.yaml"
+        if not arquivo.is_file():
+            return _texto(False, f"ausente: {arquivo}")
+        bruto = arquivo.read_text(encoding="utf-8")
+        dado = yaml.safe_load(bruto) or {}
+        declaradas = [str(x) for secao in ("exige_aprovacao", "nunca_automatico")
+                      for x in dado.get(secao) or []]
+        problemas = []
+        if not declaradas:
+            return _texto(False, "a fonte nao declara acao em exige_aprovacao/nunca_automatico")
+        if "role:" in bruto:
+            problemas.append("human-approval.yaml passou a declarar role:")
+        entradas = roteador.acoes_de_decisao_humana(politica, papeis)
+        faltando = [a for a in declaradas if a not in entradas]
+        if faltando:
+            problemas.append(f"a fonte nao entra na camada Human Approval: {faltando}")
+        for acao in declaradas:
+            resultado = roteador.decidir(
+                {"card_id": "t_d03", "acao": acao, "lane_proposta": "small",
+                 "confianca": alta, "status": "ready"}, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_BLOQUEAR:
+                problemas.append(f"'{acao}': decidido={d['decidido']} outcome={recibo['outcome']}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(declaradas)} declaracoes da fonte bloqueiam com BLOCK, sem chave role:")
+    itens.checar("D03: a fonte human-approval.yaml entra na camada Human Approval sem depender "
+                 "de role: (9 declaracoes nao executam)", _d03_fonte_human_approval)
+
+    def _d04_frases_em_prosa():
+        frases = ("promocao de release para producao",
+                  "promover release para producao",
+                  "publicar release em producao",
+                  "exclusao de registro de auditoria")
+        problemas = []
+        for frase in frases:
+            resultado = roteador.decidir(
+                {"card_id": "t_d04", "acao": frase, "lane_proposta": "small",
+                 "confianca": alta, "status": "ready"}, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_BLOQUEAR:
+                problemas.append(f"'{frase}': decidido={d['decidido']} outcome={recibo['outcome']}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "as 4 frases em prosa que escapavam do bloqueio terminam em BLOCK")
+    itens.checar("D04: as 4 frases em prosa que escapavam do bloqueio terminam em BLOCK",
+                 _d04_frases_em_prosa)
+
+    def _d04_alinhamento_do_vocabulario():
+        declaradas = set(roteador.acoes_nunca_decididas_por_maquina(politica))
+        codigos = [codigo for codigo, _grupos in roteador.REGRAS_DE_ACAO_HUMANA]
+        fora = [c for c in codigos if c not in declaradas]
+        sem_regra = [a for a in sorted(declaradas) if a not in codigos]
+        problemas = []
+        if fora:
+            problemas.append(f"codigo do roteador fora da politica: {fora}")
+        if sem_regra:
+            problemas.append(f"acao da politica sem regra canonica no roteador: {sem_regra}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(codigos)} regras canonicas alinhadas com "
+                      f"{len(declaradas)} acoes de nunca_decidido_por_maquina")
+    itens.checar("D04: o vocabulario canonico do roteador nao inventa nem omite acao da politica",
+                 _d04_alinhamento_do_vocabulario)
+
+    def _d05_borda_de_entrada():
+        problemas = []
+        casos = (("texto solto, nao mapa", "payload nao-mapa (texto)"),
+                 (["lista"], "payload nao-mapa (lista)"),
+                 ({"card_id": "t_d05", "acao": "ajuste de texto", "sinais": ["lista"]},
+                  "sinais nao-mapa"))
+        for entrada, rotulo in casos:
+            try:
+                resultado = roteador.decidir(entrada, politica=politica)
+            except Exception as erro:  # noqa: BLE001 - a excecao e o defeito
+                problemas.append(f"{rotulo}: excecao {type(erro).__name__}: {erro}")
+                continue
+            recibo, d = resultado["recibo"], resultado["decisao"]
+            if recibo["outcome"] != roteador.OUTCOME_BLOQUEAR or d["pode_executar"] is not False:
+                problemas.append(f"{rotulo}: decidido={d['decidido']} outcome={recibo['outcome']}")
+            elif "payload_valido" not in d["guardrails_acionados"]:
+                problemas.append(f"{rotulo}: guardrail payload_valido nao registrado")
+            elif list(recibo.keys()) != list(campos):
+                problemas.append(f"{rotulo}: recibo fora do contrato")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "3 entradas de tipo invalido: BLOCK com recibo de 13 campos, sem excecao")
+    itens.checar("D05: entrada de tipo invalido termina em BLOCK com recibo, nunca em excecao",
+                 _d05_borda_de_entrada)
+
     # --------------------------------------------------------- arquivos-chave
     itens.add("arquivos do roteador existem (router.py e __init__.py)",
               ROTEADOR.is_file() and PACOTE.is_file(),

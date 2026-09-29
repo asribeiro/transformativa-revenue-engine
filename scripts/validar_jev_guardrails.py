@@ -95,6 +95,10 @@ PROSA = {
         "promover release para producao",
         "publicar release em producao",
         "deploy em producao",
+        # Valor que NAO esta declarado em prosa em nenhum arquivo do repo: so a
+        # canonicalizacao do roteador (tabela de variantes) o pega. E o que separa
+        # "leu o arquivo" de "canonicalizou a acao" (defeito D04).
+        "publicar versao em producao",
     ],
     "primeiro_contato_outbound": [
         "primeiro contato outbound por e-mail para empresa nova",
@@ -117,6 +121,8 @@ PROSA = {
         "excluir dado de cliente",
         "exclusao de registro de auditoria",
         "apagar dado de cliente do banco",
+        # Só a canonicalizacao pega (nenhuma declaracao em prosa usa estes termos).
+        "remover cadastro de titular",
     ],
     "rotacao_ou_revogacao_de_credencial": [
         "rotacao de credencial de producao",
@@ -749,6 +755,59 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
                             "todas bloqueiam ou escalam", "prosa"))
 
     _achado_human_approval_declarado()
+
+    # --- regressao explicita dos defeitos corrigidos (D03 e D05). Estes itens
+    # reprovam se o defeito voltar — nao dependem da sorte do casamento de prosa.
+    def _cobertura_fonte_human_approval():
+        """D03: a fonte `human-approval.yaml` entra na camada Human Approval por NOME
+        de arquivo (o arquivo nao declara `role:`), e toda declaracao dela bloqueia."""
+        arquivo = diretorio_papeis / "human-approval.yaml"
+        if not arquivo.is_file():
+            return ("FALHOU", f"ausente: {arquivo}")
+        bruto = arquivo.read_text(encoding="utf-8")
+        dado = yaml.safe_load(bruto) or {}
+        declaradas = [str(x) for secao in ("exige_aprovacao", "nunca_automatico")
+                      for x in dado.get(secao) or []]
+        problemas = []
+        if not declaradas:
+            return ("FALHOU", "a fonte nao declara acao em exige_aprovacao/nunca_automatico")
+        if "role:" in bruto:
+            problemas.append("a fonte passou a declarar role: (o contrato e ler por NOME de arquivo)")
+        entradas = roteador.acoes_de_decisao_humana(politica, papeis)
+        faltando = [a for a in declaradas if a not in entradas]
+        if faltando:
+            problemas.append(f"a fonte nao entra na camada Human Approval: {faltando}")
+        for acao in declaradas:
+            resultado = decisao(acao)
+            if resultado["recibo"]["outcome"] != roteador.OUTCOME_BLOQUEAR \
+                    or resultado["decisao"]["pode_executar"] is not False:
+                problemas.append(f"'{acao}' -> {resumo(resultado)}")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                f"{len(declaradas)} declaracoes da fonte entram na camada e bloqueiam com BLOCK")
+    itens.checar("cobertura D03 — a fonte human-approval.yaml entra na camada Human Approval "
+                 "sem depender de role: e nao executa", _cobertura_fonte_human_approval)
+
+    def _borda_fail_closed():
+        """D05: entrada de tipo invalido termina em BLOCK com recibo de 13 campos e o
+        guardrail `payload_valido` registrado — nunca em excecao."""
+        problemas = []
+        casos = (("texto solto, nao mapa", "payload nao-mapa (texto)"),
+                 (["lista"], "payload nao-mapa (lista)"),
+                 ({"card_id": "t_d05", "acao": "ajuste de texto", "sinais": ["lista"]},
+                  "sinais nao-mapa"))
+        for entrada, rotulo in casos:
+            resultado = roteador.decidir(entrada, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            if recibo["outcome"] != roteador.OUTCOME_BLOQUEAR or d["pode_executar"] is not False:
+                problemas.append(f"{rotulo}: {resumo(resultado)}")
+            elif "payload_valido" not in d["guardrails_acionados"]:
+                problemas.append(f"{rotulo}: guardrail payload_valido nao registrado")
+            elif list(recibo.keys()) != list(campos):
+                problemas.append(f"{rotulo}: recibo fora do contrato ({list(recibo.keys())})")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                "3 entradas de tipo invalido: BLOCK, recibo de 13 campos, payload_valido registrado")
+    itens.checar("cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo "
+                 "de 13 campos, sem excecao", _borda_fail_closed)
 
     # ============================================================ 5. cobertura
     def _cobertura_guardrails():

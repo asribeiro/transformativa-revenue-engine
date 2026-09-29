@@ -150,6 +150,90 @@ GUARDRAILS_EXIGIDOS = {
     "fail_closed": ("fail-closed",),
 }
 
+# ---------------------------------------------------------------------------
+# Fonte da camada Human Approval (correcao do defeito D03, card TRE-W0-E04-T02-D03)
+#
+# `hermes/policies/human-approval.yaml` declara as acoes da camada 2 da precedencia
+# (docs/architecture/jev-decision-policy-v1.md, secao 2). O arquivo NAO tem chave
+# `role:` — ele nao e politica de papel, e a FONTE da camada. O indice de papeis so
+# indexa arquivo que declara `role`, entao o arquivo nunca era lido: a camada
+# existia e nunca era acionada (pior que ausente, porque dava sensacao de guarda).
+# A leitura abaixo e por NOME DE ARQUIVO, independente de `role:`.
+# ---------------------------------------------------------------------------
+NOME_DO_ARQUIVO_DE_HUMAN_APPROVAL = "human-approval.yaml"
+
+# Secoes do arquivo que declaram acao. As duas entram na camada: `exige_aprovacao`
+# e `nunca_automatico` (a diferenca e de redacao do dono, nao de efeito — nenhuma
+# das duas e delegada a classificador).
+SECOES_DE_ACAO_HUMANA = ("exige_aprovacao", "nunca_automatico")
+
+# ---------------------------------------------------------------------------
+# Canonicalizacao da acao (correcao do defeito D04, card TRE-W0-E04-T02-D04)
+#
+# A camada Human Approval casa a acao por TEXTO. Texto livre nao tem contrato: a
+# mesma proibicao escrita com outro verbo, no plural ou com sinonimo escapava —
+# medido na validacao adversarial do T04: "promover release para producao",
+# "publicar release em producao" e "exclusao de registro de auditoria" decidiam
+# executar (PASS). As duas tabelas abaixo DECLARAM, no proprio codigo, o vocabulario
+# que a camada reconhece: conceitos (variantes de um termo) e as regras que
+# reconstroem as 8 acoes de `nunca_decidido_por_maquina`.
+#
+# ATENCAO ao que estas tabelas NAO sao:
+#   * nao sao limiar, lane, perfil nem lista de acao proibida: nada disso esta
+#     aqui. `hermes/jev/policy_v1.yaml` (jev-policy-v1.0, congelada) continua sendo
+#     a unica fonte dessas coisas. Mexer no vocabulario abaixo nao muda a politica:
+#     muda a leitura do texto que entra.
+#   * nao sao a correcao de raiz. Casamento de prosa e FINITO: uma variacao nova
+#     pode nao estar na tabela. A correcao de raiz e quem despacha a tarefa passar
+#     o CODIGO CANONICO da acao (a mesma nomenclatura de `nunca_decidido_por_maquina`),
+#     nunca prosa — card TRE-W0-E04-T05. Enquanto a entrada for texto livre, esta
+#     tabela tem de crescer com o vocabulario real medido.
+# ---------------------------------------------------------------------------
+CONCEITOS_DE_ACAO = {
+    # conceito: variantes. O casamento e por token, com tolerancia de prefixo de 4
+    # caracteres: "prod" ja casa "producao" e "promover" casa "promocao".
+    "producao": ("producao",),
+    "release": ("release", "lancamento", "versao", "deploy", "implantacao",
+                "promocao", "promover", "publicar", "publicacao", "entrega"),
+    "aprovacao": ("aprovacao", "aprovar", "autorizacao", "autorizar",
+                  "liberacao", "liberar"),
+    "rollback": ("rollback", "reverter", "reversao", "desfazer"),
+    "exclusao": ("exclusao", "excluir", "apagar", "deletar", "delete",
+                 "remocao", "remover", "eliminar"),
+    "dado_sensivel": ("cliente", "auditoria", "titular", "cadastro", "registro"),
+    "credencial": ("credencial", "senha", "token", "segredo", "chave", "secret"),
+    "rotacao": ("rotacao", "rotacionar", "revogacao", "revogar", "invalidar", "expirar"),
+    "estrutural": ("estrutural",),
+    "arquitetura": ("arquitetura",),
+    "mudanca": ("mudanca", "alteracao", "alterar", "troca", "reforma",
+                "redesenho", "refatoracao", "refatorar"),
+    "novidade": ("primeiro", "primeira", "novo", "nova"),
+    "alvo_outbound": ("contato", "contact", "empresa", "lead", "prospect", "perspectiva"),
+    "proposta": ("proposta", "orcamento", "oferta"),
+    "envio": ("envio", "enviar", "mandar", "remeter", "apresentar"),
+    "comercial": ("comercial", "contrato", "negociacao", "venda"),
+    "transformativa": ("transformativa",),
+    "em_nome": ("nome", "assinatura", "representando", "representar"),
+    "publicacao_publica": ("publicar", "publicacao", "postar", "divulgar",
+                           "anunciar", "comunicado", "conteudo"),
+}
+
+# Regra: (codigo canonico da politica, grupos de conceitos). A regra aciona quando
+# TODOS os grupos tem pelo menos um conceito presente na acao. O codigo devolvido e
+# exatamente o nome declarado em `nunca_decidido_por_maquina` (a suite prova o
+# alinhamento entre esta tabela e a politica).
+REGRAS_DE_ACAO_HUMANA = (
+    ("aprovacao_de_producao", (("producao",), ("release", "aprovacao"))),
+    ("primeiro_contato_outbound", (("novidade",), ("alvo_outbound",))),
+    ("envio_de_proposta_comercial", (("proposta",), ("comercial", "envio"))),
+    ("mudanca_estrutural_de_arquitetura", (("estrutural",), ("arquitetura", "mudanca"))),
+    ("rollback_em_producao", (("rollback",), ("producao",))),
+    ("exclusao_de_dado_de_cliente", (("exclusao",), ("dado_sensivel",))),
+    ("rotacao_ou_revogacao_de_credencial", (("credencial",), ("rotacao",))),
+    ("publicacao_em_nome_da_transformativa", (("transformativa",),
+                                              ("publicacao_publica",), ("em_nome",))),
+)
+
 # Detectores de credencial. Nao ha valor de segredo aqui: sao formatos.
 PADROES_DE_SEGREDO = (
     ("chave de API (prefixo sk-)", re.compile(r"sk-[A-Za-z0-9]{8,}")),
@@ -308,6 +392,49 @@ def _papeis_do_diretorio(diretorio=None) -> dict:
     return papeis
 
 
+def _e_arquivo_de_human_approval(caminho) -> bool:
+    """Fonte da camada Human Approval: identificada por NOME de arquivo, nunca por `role:`."""
+    return pathlib.Path(caminho).name.endswith(NOME_DO_ARQUIVO_DE_HUMAN_APPROVAL)
+
+
+def _acoes_de_human_approval(diretorio=None):
+    """(acoes declaradas, problemas) da fonte da camada Human Approval.
+
+    Le `hermes/policies/human-approval.yaml` independente de chave `role:` (o arquivo
+    so declara as acoes). Ausente, ilegivel, raiz nao-mapa ou sem nenhuma acao
+    declarada = a camada 2 ficaria sem fonte e decorativa: a politica e recusada
+    (fail-closed), nunca seguimos sem a camada.
+    """
+    diretorio = pathlib.Path(diretorio or DIRETORIO_POLITICAS_DE_PAPEL)
+    problemas, acoes = [], []
+    if not diretorio.is_dir():
+        problemas.append(f"diretorio das politicas de papel ausente: {diretorio}")
+        return acoes, problemas
+    arquivos = [a for a in sorted(diretorio.glob("*.yaml")) if _e_arquivo_de_human_approval(a)]
+    if not arquivos:
+        problemas.append(f"fonte da camada Human Approval ausente "
+                         f"({NOME_DO_ARQUIVO_DE_HUMAN_APPROVAL} em {diretorio}): "
+                         "sem a fonte, a camada nao pode ser provada")
+        return acoes, problemas
+    for arquivo in arquivos:
+        try:
+            dado = yaml.safe_load(arquivo.read_text(encoding="utf-8"))
+        except Exception as erro:
+            problemas.append(f"fonte da camada Human Approval ilegivel ({arquivo.name}): {erro}")
+            continue
+        if not isinstance(dado, dict):
+            problemas.append(f"fonte da camada Human Approval invalida ({arquivo.name}): "
+                             "raiz nao e um mapa YAML")
+            continue
+        for secao in SECOES_DE_ACAO_HUMANA:
+            for entrada in dado.get(secao) or []:
+                acoes.append(str(entrada))
+    if not acoes:
+        problemas.append("fonte da camada Human Approval sem acao declarada "
+                         f"(secoes {list(SECOES_DE_ACAO_HUMANA)})")
+    return acoes, problemas
+
+
 def _familia_da_credencial(entrada) -> str:
     """Familia de credencial: 'TRE_PG_* (dev/homolog)' -> 'TRE_PG'. Prosa -> ''."""
     texto = re.sub(r"\(.*?\)", " ", str(entrada)).strip()
@@ -440,6 +567,12 @@ def carregar_politica(caminho=None, diretorio_de_papeis=None) -> dict:
     problemas_papeis = _inconsistencias_dos_papeis(papeis)
     motivos.extend(problemas_papeis)
 
+    # A fonte da camada Human Approval tambem faz parte da politica: sem ela, a
+    # camada 2 nao tem como ser provada (defeito D03). Ausente/ilegivel/sem acao =
+    # recusa na leitura, nunca execucao com camada de aprovacao humana decorativa.
+    acoes_humanas, problemas_humanos = _acoes_de_human_approval(diretorio_de_papeis)
+    motivos.extend(problemas_humanos)
+
     if motivos:
         raise PoliticaInvalida(motivos)
 
@@ -449,6 +582,7 @@ def carregar_politica(caminho=None, diretorio_de_papeis=None) -> dict:
     dado["_lane_conservadora"] = lane_conservadora
     dado["_papeis"] = papeis
     dado["_avisos_papeis"] = problemas_papeis
+    dado["_acoes_de_human_approval"] = acoes_humanas
     return dado
 
 
@@ -592,7 +726,10 @@ def _e_acao_ddl(acao: str, politica: dict, papeis: dict) -> bool:
 def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
     """Guardrails ligados a regra declarada na politica (leem o YAML)."""
     guardrails = []
-    sinais = tarefa.get("sinais") or {}
+    sinais_brutos = tarefa.get("sinais")
+    # Entrada de tipo invalido ja foi bloqueada na borda (`payload_valido`); esta
+    # leitura defensiva garante que a camada de guardrail nunca estoure (fail-closed).
+    sinais = sinais_brutos if isinstance(sinais_brutos, dict) else {}
     acao = str(tarefa.get("acao") or tarefa.get("titulo") or "")
     ambiente = _normalizar(tarefa.get("ambiente_alvo") or tarefa.get("ambiente") or "")
 
@@ -712,18 +849,53 @@ def _papel_para_acao(tarefa: dict, politica: dict, papeis: dict):
 # ---------------------------------------------------------------------------
 # Camada 2 — Human Approval
 # ---------------------------------------------------------------------------
-def acoes_de_decisao_humana(politica: dict, papeis: dict) -> list:
-    """Acoes que nunca passam por classificador: as do YAML + as de human-approval.yaml."""
+def acoes_de_decisao_humana(politica, papeis=None, diretorio=None) -> list:
+    """Acoes que nunca passam por classificador: as da politica + a fonte da camada.
+
+    Fontes: (1) `nunca_decidido_por_maquina` de `hermes/jev/policy_v1.yaml`;
+    (2) `hermes/policies/human-approval.yaml`, lido na carga da politica (chave
+    derivada `_acoes_de_human_approval`) — independente de chave `role:`, que esse
+    arquivo nao tem (defeito D03). `diretorio` atende quem carrega a politica fora
+    do fluxo normal.
+    """
     entradas = list(acoes_nunca_decididas_por_maquina(politica))
-    for dado in papeis.values():
-        if dado.get("_arquivo", "").endswith("human-approval.yaml"):
-            entradas += [str(x) for x in dado.get("exige_aprovacao") or []]
-            entradas += [str(x) for x in dado.get("nunca_automatico") or []]
+    entradas += [str(x) for x in (politica or {}).get("_acoes_de_human_approval") or []]
+    if diretorio:
+        avulsas, _problemas = _acoes_de_human_approval(diretorio)
+        entradas += avulsas
     return entradas
 
 
-def acao_de_decisao_humana(acao: str, politica: dict, papeis: dict) -> list:
-    return _entradas_que_casam(str(acao or ""), acoes_de_decisao_humana(politica, papeis))
+def _conceitos_presentes(acao: str) -> set:
+    """Conceitos (CONCEITOS_DE_ACAO) presentes no texto da acao."""
+    tokens = _tokens(str(acao or ""))
+    return {conceito for conceito, variantes in CONCEITOS_DE_ACAO.items()
+            if any(_token_casa(t, v) for t in tokens for v in variantes)}
+
+
+def acao_canonica_de_decisao_humana(acao: str) -> str:
+    """Codigo canonico da acao quando o texto casa uma REGRAS_DE_ACAO_HUMANA.
+
+    Devolve '' quando nenhuma regra aciona (a acao ainda pode casar o texto
+    declarado na politica/fonte, o que e feito pelo casamento de frases em
+    `acao_de_decisao_humana`). O codigo devolvido e o nome declarado na politica.
+    """
+    presentes = _conceitos_presentes(acao)
+    if not presentes:
+        return ""
+    for codigo, grupos in REGRAS_DE_ACAO_HUMANA:
+        if all(any(conceito in presentes for conceito in grupo) for grupo in grupos):
+            return codigo
+    return ""
+
+
+def acao_de_decisao_humana(acao: str, politica, papeis=None, diretorio=None) -> list:
+    """Frases (ou o codigo canonico) que levam a acao para a camada Human Approval."""
+    texto = str(acao or "")
+    canonica = acao_canonica_de_decisao_humana(texto)
+    if canonica:
+        return [canonica]
+    return _entradas_que_casam(texto, acoes_de_decisao_humana(politica, papeis, diretorio))
 
 
 # ---------------------------------------------------------------------------
@@ -910,17 +1082,40 @@ def escrever_recibo(recibo: dict, caminho) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 # Decisao
 # ---------------------------------------------------------------------------
-def decidir(tarefa: dict, politica=None, motivo_politica=None, politicas_papel=None,
+def _tarefa_segura(entrada) -> dict:
+    """Mapa seguro para as camadas depois da borda (correcao do defeito D05).
+
+    Contrato de entrada: a avaliacao so roda sobre mapa. Entrada de tipo invalido
+    NAO estoura: ela ja foi bloqueada pelo guardrail `payload_valido` (fail-closed)
+    e aqui vira um mapa identificado, para que a decisao termine em BLOCK com
+    recibo. Duvida na avaliacao nunca e excecao: excecao nao e decisao registrada
+    (sem recibo, sem lane, sem rastro).
+    """
+    if not isinstance(entrada, dict):
+        return {"_entrada_invalida": f"payload nao-mapa ({type(entrada).__name__})"}
+    seguro = dict(entrada)
+    if not isinstance(seguro.get("sinais", {}), dict):
+        tipo = type(seguro.get("sinais")).__name__
+        seguro["sinais"] = {}
+        seguro["_entrada_invalida"] = f"sinais nao-mapa ({tipo})"
+    return seguro
+
+
+def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
             catalogo=None, agora=None) -> dict:
     """Decide e devolve {'recibo': {...13 campos...}, 'decisao': {...}}.
 
     `politica=None` significa politica indisponivel: modo degradado, jamais
     execucao silenciosa. Usa apenas o que foi passado (nada e lido de novo aqui).
+
+    Borda de entrada (correcao do defeito D05): payload que nao e mapa, ou `sinais`
+    que nao e mapa, termina em BLOCK com recibo de 13 campos e o guardrail
+    `payload_valido` registrado — nunca em excecao.
     """
-    tarefa = dict(tarefa or {})
+    guardrails = list(_guardrails_de_codigo(tarefa))
+    tarefa = _tarefa_segura(tarefa)
     papeis = politicas_papel if politicas_papel is not None else (
         politica.get("_papeis") if politica else {}) or {}
-    guardrails = list(_guardrails_de_codigo(tarefa))
 
     plano = {
         "lane": None, "confidence": None, "outcome": OUTCOME_ESCALAR,
