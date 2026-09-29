@@ -54,8 +54,10 @@ escrever_conf() {
     echo "access_key_id = $AK"
     echo "secret_access_key = $SK"
     echo "endpoint = $ENDPOINT"
+    # A Contabo usa path style (o bucket no caminho, nao no subdominio) — documentado por eles.
+    echo "force_path_style = true"
     echo "acl = private"
-    [ "$com_regiao" = "1" ] && echo "region = eu2"
+    [ "$com_regiao" = "1" ] && echo "region = default"
   } >"$tmp"
   sudo mv "$tmp" "$RCLONECONF"
   sudo chown "$DONO:$DONO" "$RCLONECONF"

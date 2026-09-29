@@ -135,6 +135,13 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
   **só é ligado no backup depois que essa prova passa** — se as chaves estiverem erradas, o
   `backup.env` fica intocado. As chaves são digitadas no prompt da VPS: nunca pelo chat nem no
   histórico do shell. Enquanto não estiver ligado, o `manifest.txt` registra `externo: pendente`.
+  - **O bucket não precisa existir antes**: o próprio script cria (`rclone mkdir`). Criar pelo
+    painel também serve; se já existir, nada muda.
+  - Configuração do rclone conforme a Contabo: `provider = Other`, `force_path_style = true`
+    (eles usam path style) e `region = default` como segunda tentativa se a assinatura falhar.
+  - **Limites do provedor que importam para o backup**: banda padrão de **10 MB/s** (um dump de
+    1 GB leva ~2 min; o volume diário é modesto, mas isso entra na conta quando a base crescer),
+    **100 buckets**, arquivo de até 5 TB e 3 milhões de objetos por cliente.
 - **Sem PITR**: só dump lógico (não há arquivamento de WAL). Ponto no tempo exato não é
   possível hoje — PITR entra com o PostgreSQL de produção (W1/W2).
 - **Watchdog externo** (checar a idade do último backup de fora da máquina, onde o Hermes vive)
