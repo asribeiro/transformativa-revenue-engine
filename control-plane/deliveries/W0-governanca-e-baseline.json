@@ -1,0 +1,66 @@
+{
+  "delivery_id": "TRE-W0-GOV",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W0 — Governança e Baseline",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-09-29",
+  "human_approval": {
+    "required": true,
+    "status": "APPROVED",
+    "decision": "APPROVED",
+    "approved_by": "Anderson Ribeiro",
+    "approved_at": "2026-09-29",
+    "scope": [
+      "matriz de permissões Dev Harness × Sales AI",
+      "matriz de segregação de credenciais e gatilhos de rotação (política de secrets V1)"
+    ],
+    "production_promotion_authorized": false
+  },
+  "work_items": [
+    {
+      "id": "TRE-W0-E01-T01-T02",
+      "title": "Estrutura do repositório e gestão de secrets",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_ac8a2130",
+          "stage": "DONE",
+          "evidence": "repo com 23 diretórios, .env.example sem segredo, 6 ADRs — commit f109e87"
+        },
+        {
+          "hermes_task_id": "t_4be20bcc",
+          "stage": "DONE",
+          "evidence": "docs/operations/gestao-de-secrets.md homologada em 29/09/2026 — commit 340b9ae"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E02-T01",
+      "title": "Separação Hermes Dev Harness × Sales AI",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_8c332df7",
+          "stage": "DONE",
+          "evidence": "docs/architecture/hermes-dev-x-sales.md homologada em 29/09/2026 · verificador 13 itens PASS"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E01-T03",
+      "title": "Backup e rollback baseline",
+      "stage": "IN_DEVELOPMENT",
+      "children": [
+        {
+          "hermes_task_id": "t_c8e69f74",
+          "stage": "IN_DEVELOPMENT",
+          "status": "BLOCKED",
+          "note": "aguardando provisionamento da VPS Contabo"
+        }
+      ]
+    }
+  ]
+}
