@@ -1,0 +1,62 @@
+/* Hermes Gantt — pagina web (plugin de dashboard) [ASR]
+   Cores da Transformativa: preto #111111, branco #FFFFFF, vermelho #E63946.
+   Cinzas em alfa para funcionar tanto no tema claro quanto no escuro. */
+
+.hg-pagina { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 32px; color: inherit; }
+
+.hg-topo { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; }
+.hg-titulo-pagina { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.hg-sub { font-size: 12px; opacity: 0.65; margin-top: 2px; }
+.hg-controles { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hg-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.8; cursor: pointer; }
+
+.hg-legenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; opacity: 0.85; }
+.hg-legenda-item { display: inline-flex; align-items: center; gap: 6px; }
+.hg-ponto { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.hg-marco-mini { width: 9px; height: 9px; border-radius: 50%; border: 2px solid #9AA0A6; display: inline-block; }
+
+.hg-detalhe {
+  border: 1px solid rgba(128,128,128,.28); border-left: 3px solid #E63946;
+  border-radius: 8px; padding: 10px 12px; font-size: 12.5px; display: flex; flex-direction: column; gap: 3px;
+  background: rgba(128,128,128,.06);
+}
+
+.hg-quadro { border: 1px solid rgba(128,128,128,.25); border-radius: 10px; overflow-x: auto; overflow-y: hidden; }
+
+/* escala de tempo no topo, alinhada a coluna das barras */
+.hg-escala { display: flex; position: sticky; top: 0; z-index: 3; background: rgba(128,128,128,.09);
+  backdrop-filter: blur(6px); border-bottom: 1px solid rgba(128,128,128,.25); font-size: 11px; }
+.hg-escala-rotulo { flex: 0 0 340px; padding: 6px 12px; opacity: .7; border-right: 1px solid rgba(128,128,128,.18); }
+.hg-escala-trilha { flex: 1 1 auto; position: relative; min-height: 26px; min-width: 560px; }
+.hg-marco-tempo { position: absolute; top: 0; bottom: 0; border-left: 1px dashed rgba(128,128,128,.35); }
+.hg-marco-tempo span { position: absolute; top: 6px; left: 4px; white-space: nowrap; opacity: .75; }
+
+.hg-grupo { border-top: 1px solid rgba(128,128,128,.18); }
+.hg-grupo-titulo { padding: 6px 12px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  opacity: .75; background: rgba(128,128,128,.05); }
+
+.hg-linha { display: flex; align-items: stretch; height: 28px; }
+.hg-linha:hover { background: rgba(128,128,128,.07); }
+.hg-linha--sel { background: rgba(230,57,70,.08); }
+
+.hg-rotulo { flex: 0 0 340px; display: flex; align-items: center; gap: 7px; padding: 0 12px;
+  border-right: 1px solid rgba(128,128,128,.18); min-width: 0; }
+.hg-titulo { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-atrib { font-size: 11px; opacity: .6; white-space: nowrap; }
+
+.hg-trilha { flex: 1 1 auto; position: relative; min-width: 560px;
+  background-image: repeating-linear-gradient(to right, rgba(128,128,128,.10) 0 1px, transparent 1px 100%);
+  background-size: 100% 100%; }
+
+.hg-bar { position: absolute; top: 6px; height: 16px; border-radius: 4px; cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+.hg-bar:hover { filter: brightness(1.12); }
+/* trecho em aberto: fim listrado, porque o card ainda nao terminou */
+.hg-bar--aberta { background-image: repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 5px, transparent 5px 10px); }
+
+.hg-marco { position: absolute; top: 8px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%;
+  border: 2px solid #9AA0A6; background: transparent; cursor: pointer; }
+.hg-marco:hover { background: rgba(128,128,128,.25); }
+
+.hg-vazio, .hg-erro { padding: 18px 12px; font-size: 13px; opacity: .8; }
+.hg-erro { color: #E63946; opacity: 1; }
