@@ -1,431 +1,455 @@
-# Corpus de anotacao do benchmark de routing do JEV (card TRE-W0-E04-T03).
-#
-# COMO USAR: para cada caso, preencha `lane_esperada` com UMA das lanes da politica
-# (small, medium, high, critical) ou `humano` quando a acao nao deve ser decidida por maquina.
-# `nota` e livre e opcional. Nao precisa fazer tudo de uma vez: o arquivo e feito para ir por partes.
-#
-# As colunas de `sinais` sao uma LEITURA MINHA do caso (nao sao rotulo) — servem para voce conferir se a
-# minha leitura dos sinais bate com a sua antes de decidir a lane. O rotulo e seu, e so seu.
-#
-# Origem dos casos: cards reais do board (2 por onda, amostra) + casos sinteticos de borda.
-
-versao: corpus-anotacao-v1.0
-criado_em: "2026-09-29"
-origem: "cards reais do board TRE + bordas sinteticas; SEM rotulo (rotulo e do Anderson)"
-
+versao: corpus-anotacao-v1.1
+criado_em: '2026-09-29'
+origem: cards reais do board TRE + bordas sinteticas; SEM rotulo (rotulo e do Anderson)
 casos:
-  - id: real-t_ac8a2130
-    origem: "card real t_ac8a2130 (TRE-W0-E01-T01)"
-    titulo: "Criar estrutura do repositório"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: true
-      mexe_em_segredo: true
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_4be20bcc
-    origem: "card real t_4be20bcc (TRE-W0-E01-T02)"
-    titulo: "Definir gestão de secrets"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: true
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_969affa7
-    origem: "card real t_969affa7 (TRE-W1-E01-T01)"
-    titulo: "Criar database/schema Sales Intelligence"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: true
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_d9cb5755
-    origem: "card real t_d9cb5755 (TRE-W1-E02-T01)"
-    titulo: "Criar tabelas core"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: true
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_d6dc5a4c
-    origem: "card real t_d6dc5a4c (TRE-W2-E01-T01)"
-    titulo: "Instalar Odoo Community"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_1acf11f2
-    origem: "card real t_1acf11f2 (TRE-W2-E01-T02)"
-    titulo: "Configurar TLS/reverse proxy/security"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_e0489efc
-    origem: "card real t_e0489efc (TRE-W3-E01-T01)"
-    titulo: "Criar API controlada Odoo"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_cdc21b43
-    origem: "card real t_cdc21b43 (TRE-W3-E01-T02)"
-    titulo: "Implementar company upsert"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_fd3e41f0
-    origem: "card real t_fd3e41f0 (TRE-W4-E01-T01)"
-    titulo: "Implementar Scout Agent"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_d9be7d3c
-    origem: "card real t_d9be7d3c (TRE-W4-E02-T01)"
-    titulo: "Implementar Research Agent"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_e4a90eba
-    origem: "card real t_e4a90eba (TRE-W5-E01-T01)"
-    titulo: "ICP Score V1"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_11815e63
-    origem: "card real t_11815e63 (TRE-W5-E02-T01)"
-    titulo: "Automation Fit Score V1"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_6267d886
-    origem: "card real t_6267d886 (TRE-W6-E01-T01)"
-    titulo: "Configurar Titan SMTP"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_9d38e360
-    origem: "card real t_9d38e360 (TRE-W6-E01-T02)"
-    titulo: "Configurar Titan IMAP"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_eb323dd7
-    origem: "card real t_eb323dd7 (TRE-W7-E01-T01)"
-    titulo: "Website lead capture"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: true
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_33bc1765
-    origem: "card real t_33bc1765 (TRE-W7-E02-T01)"
-    titulo: "Meta lead ingestion"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: true
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_6cc75a1d
-    origem: "card real t_6cc75a1d (TRE-W8-E01-T01)"
-    titulo: "Funnel dashboard"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_0248a568
-    origem: "card real t_0248a568 (TRE-W8-E02-T01)"
-    titulo: "Conversion by segment"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_f599bd02
-    origem: "card real t_f599bd02 (TRE-W9-E01-T01)"
-    titulo: "Score calibration"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: real-t_2821c15b
-    origem: "card real t_2821c15b (TRE-W9-E02-T01)"
-    titulo: "Predictive scoring"
-    acao: execucao_de_card
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-01
-    origem: "caso sintetico de borda"
-    titulo: "Corrigir erro de digitação no README"
-    acao: ajuste_de_texto
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-02
-    origem: "caso sintetico de borda"
-    titulo: "Aplicar migration que altera tabela de produção"
-    acao: migration
-    sinais:
-      ddl_ou_migration: true
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-03
-    origem: "caso sintetico de borda"
-    titulo: "Enviar proposta comercial para lead novo (primeiro contato)"
-    acao: primeiro_contato_outbound
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: true
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-04
-    origem: "caso sintetico de borda"
-    titulo: "Rotacionar a chave de API do provedor de LLM"
-    acao: troca_de_credencial
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: true
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-05
-    origem: "caso sintetico de borda"
-    titulo: "Publicar post em nome da Transformativa no LinkedIn"
-    acao: publicacao_institucional
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: true
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-06
-    origem: "caso sintetico de borda"
-    titulo: "Dar credencial de deploy ao papel de Sales AI"
-    acao: concessao_de_credencial
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: true
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-07
-    origem: "caso sintetico de borda"
-    titulo: "Ajustar rótulo de coluna no dashboard interno"
-    acao: ajuste_de_interface
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-08
-    origem: "caso sintetico de borda"
-    titulo: "Apagar registros duplicados de um cliente em produção"
-    acao: exclusao_de_dado
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-09
-    origem: "caso sintetico de borda"
-    titulo: "Dar rollback da versão em produção"
-    acao: rollback_producao
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: true
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-10
-    origem: "caso sintetico de borda"
-    titulo: "Explicar ao cliente por que o relatório atrasou"
-    acao: resposta_a_cliente
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: true
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-11
-    origem: "caso sintetico de borda"
-    titulo: "Revisar texto de runbook sem efeito operacional"
-    acao: ajuste_de_texto
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
-
-  - id: borda-12
-    origem: "caso sintetico de borda"
-    titulo: "Definir arquitetura do novo módulo de comissão"
-    acao: decisao_de_arquitetura
-    sinais:
-      ddl_ou_migration: false
-      mexe_em_segredo: false
-      outbound_para_terceiro: false
-      producao: false
-      aprova_humana_exigida: false
-    lane_esperada: ""     # <- Anderson: small | medium | high | critical | humano
-    nota: ""
+- id: real-t_ac8a2130
+  origem: card real t_ac8a2130 (TRE-W0-E01-T01)
+  titulo: Criar estrutura do repositório
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: true
+    mexe_em_segredo: true
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: false
+  lane_proposta_hermes: medium
+  justificativa: engenharia comum e isolada; nada encosta em ambiente vivo
+  lane_esperada: ''
+  nota: ''
+- id: real-t_4be20bcc
+  origem: card real t_4be20bcc (TRE-W0-E01-T02)
+  titulo: Definir gestão de secrets
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: true
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: high
+  justificativa: desenho de seguranca; nao opera credencial (operar credencial seria critical)
+  lane_esperada: ''
+  nota: ''
+- id: real-t_969affa7
+  origem: card real t_969affa7 (TRE-W1-E01-T01)
+  titulo: Criar database/schema Sales Intelligence
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: true
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: high
+  justificativa: DDL novo, porem em ambiente novo e sem dado real
+  lane_esperada: ''
+  nota: ''
+- id: real-t_d9cb5755
+  origem: card real t_d9cb5755 (TRE-W1-E02-T01)
+  titulo: Criar tabelas core
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: true
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: high
+  justificativa: DDL novo, ambiente novo, sem dado real
+  lane_esperada: ''
+  nota: ''
+- id: real-t_d6dc5a4c
+  origem: card real t_d6dc5a4c (TRE-W2-E01-T01)
+  titulo: Instalar Odoo Community
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: multi-sistema + integracao com servico externo
+  lane_esperada: ''
+  nota: ''
+- id: real-t_1acf11f2
+  origem: card real t_1acf11f2 (TRE-W2-E01-T02)
+  titulo: Configurar TLS/reverse proxy/security
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: high
+  justificativa: multi-sistema e superficie exposta (TLS/proxy)
+  lane_esperada: ''
+  nota: ''
+- id: real-t_e0489efc
+  origem: card real t_e0489efc (TRE-W3-E01-T01)
+  titulo: Criar API controlada Odoo
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: integracao entre servicos (Odoo x Hermes)
+  lane_esperada: ''
+  nota: ''
+- id: real-t_cdc21b43
+  origem: card real t_cdc21b43 (TRE-W3-E01-T02)
+  titulo: Implementar company upsert
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: funcao nova com teste, um modulo por vez
+  lane_esperada: ''
+  nota: ''
+- id: real-t_fd3e41f0
+  origem: card real t_fd3e41f0 (TRE-W4-E01-T01)
+  titulo: Implementar Scout Agent
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: funcao nova com teste, escopo isolado
+  lane_esperada: ''
+  nota: ''
+- id: real-t_d9be7d3c
+  origem: card real t_d9be7d3c (TRE-W4-E02-T01)
+  titulo: Implementar Research Agent
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: funcao nova com teste, escopo isolado
+  lane_esperada: ''
+  nota: ''
+- id: real-t_e4a90eba
+  origem: card real t_e4a90eba (TRE-W5-E01-T01)
+  titulo: ICP Score V1
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: regra de negocio nova, testavel isolada
+  lane_esperada: ''
+  nota: ''
+- id: real-t_11815e63
+  origem: card real t_11815e63 (TRE-W5-E02-T01)
+  titulo: Automation Fit Score V1
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: regra de negocio nova, testavel isolada
+  lane_esperada: ''
+  nota: ''
+- id: real-t_6267d886
+  origem: card real t_6267d886 (TRE-W6-E01-T01)
+  titulo: Configurar Titan SMTP
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: credencial + canal externo de e-mail
+  lane_esperada: ''
+  nota: ''
+- id: real-t_9d38e360
+  origem: card real t_9d38e360 (TRE-W6-E01-T02)
+  titulo: Configurar Titan IMAP
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: credencial + canal externo de e-mail
+  lane_esperada: ''
+  nota: ''
+- id: real-t_eb323dd7
+  origem: card real t_eb323dd7 (TRE-W7-E01-T01)
+  titulo: Website lead capture
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: true
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: canal externo + dado de cliente entrando
+  lane_esperada: ''
+  nota: ''
+- id: real-t_33bc1765
+  origem: card real t_33bc1765 (TRE-W7-E02-T01)
+  titulo: Meta lead ingestion
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: true
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: canal externo + dado de cliente entrando
+  lane_esperada: ''
+  nota: ''
+- id: real-t_6cc75a1d
+  origem: card real t_6cc75a1d (TRE-W8-E01-T01)
+  titulo: Funnel dashboard
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: visualizacao interna, sem efeito externo
+  lane_esperada: ''
+  nota: ''
+- id: real-t_0248a568
+  origem: card real t_0248a568 (TRE-W8-E02-T01)
+  titulo: Conversion by segment
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: consulta/agregacao interna
+  lane_esperada: ''
+  nota: ''
+- id: real-t_f599bd02
+  origem: card real t_f599bd02 (TRE-W9-E01-T01)
+  titulo: Score calibration
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: medium
+  justificativa: calibracao com teste, escopo isolado
+  lane_esperada: ''
+  nota: ''
+- id: real-t_2821c15b
+  origem: card real t_2821c15b (TRE-W9-E02-T01)
+  titulo: Predictive scoring
+  acao: execucao_de_card
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: true
+  lane_proposta_hermes: high
+  justificativa: modelo + dado de cliente; erro silencioso caro
+  lane_esperada: ''
+  nota: ''
+- id: borda-01
+  origem: caso sintetico de borda
+  titulo: Corrigir erro de digitação no README
+  acao: ajuste_de_texto
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: small
+  justificativa: mecanico e isolado (texto de README)
+  lane_esperada: ''
+  nota: ''
+- id: borda-02
+  origem: caso sintetico de borda
+  titulo: Aplicar migration que altera tabela de produção
+  acao: migration
+  sinais:
+    ddl_ou_migration: true
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: 'DDL em ambiente vivo: exemplo literal de critical, exige aprovacao humana'
+  lane_esperada: ''
+  nota: ''
+- id: borda-03
+  origem: caso sintetico de borda
+  titulo: Enviar proposta comercial para lead novo (primeiro contato)
+  acao: primeiro_contato_outbound
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: true
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (primeiro contato)
+  lane_esperada: ''
+  nota: ''
+- id: borda-04
+  origem: caso sintetico de borda
+  titulo: Rotacionar a chave de API do provedor de LLM
+  acao: troca_de_credencial
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: true
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (credencial)
+  lane_esperada: ''
+  nota: ''
+- id: borda-05
+  origem: caso sintetico de borda
+  titulo: Publicar post em nome da Transformativa no LinkedIn
+  acao: publicacao_institucional
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: true
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (publicacao institucional)
+  lane_esperada: ''
+  nota: ''
+- id: borda-06
+  origem: caso sintetico de borda
+  titulo: Dar credencial de deploy ao papel de Sales AI
+  acao: concessao_de_credencial
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: true
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (concessao de credencial)
+  lane_esperada: ''
+  nota: ''
+- id: borda-07
+  origem: caso sintetico de borda
+  titulo: Ajustar rótulo de coluna no dashboard interno
+  acao: ajuste_de_interface
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: small
+  justificativa: ajuste de interface interno, sem efeito operacional
+  lane_esperada: ''
+  nota: ''
+- id: borda-08
+  origem: caso sintetico de borda
+  titulo: Apagar registros duplicados de um cliente em produção
+  acao: exclusao_de_dado
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (exclusao de dado)
+  lane_esperada: ''
+  nota: ''
+- id: borda-09
+  origem: caso sintetico de borda
+  titulo: Dar rollback da versão em produção
+  acao: rollback_producao
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: true
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (rollback em producao)
+  lane_esperada: ''
+  nota: ''
+- id: borda-10
+  origem: caso sintetico de borda
+  titulo: Explicar ao cliente por que o relatório atrasou
+  acao: resposta_a_cliente
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: true
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: outbound em nome da Transformativa; se for comunicacao operacional rotineira, medium
+  lane_esperada: ''
+  nota: ''
+- id: borda-11
+  origem: caso sintetico de borda
+  titulo: Revisar texto de runbook sem efeito operacional
+  acao: ajuste_de_texto
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: small
+  justificativa: mecanico, sem efeito operacional
+  lane_esperada: ''
+  nota: ''
+- id: borda-12
+  origem: caso sintetico de borda
+  titulo: Definir arquitetura do novo módulo de comissão
+  acao: decisao_de_arquitetura
+  sinais:
+    ddl_ou_migration: false
+    mexe_em_segredo: false
+    outbound_para_terceiro: false
+    producao: false
+    aprova_humana_exigida: false
+  lane_proposta_hermes: critical
+  justificativa: acao da lista que nenhuma maquina decide (decisao de arquitetura)
+  lane_esperada: ''
+  nota: ''
+nota_da_versao: 'v1.1: acrescentado `lane_proposta_hermes` + `justificativa` em cada caso (proposta da maquina, ancorada na
+  regua declarada em hermes/jev/policy_v1.yaml -> lanes.<nome>.escopo/risco/exemplos). `lane_esperada` continua VAZIO de proposito:
+  quem rotula e o Anderson. Caso sem lane_esperada e caso PENDENTE, nao valido (criterio do card TRE-W0-E04-T03).'
