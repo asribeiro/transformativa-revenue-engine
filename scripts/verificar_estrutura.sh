@@ -44,3 +44,15 @@ for f in hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md s
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
 done
+
+# Processo de defeitos (card -> defeito -> correcao -> liberacao) versionado
+for f in docs/kanban/processo-de-defeitos.md scripts/kanban/abrir-defeito.sh \
+         scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/kanban/abrir-defeito.sh scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
