@@ -131,6 +131,11 @@ backup_ambiente() {
     if rclone copy "$saida" "$EXTERNO/$(basename "$saida")" >/dev/null 2>&1; then
       ok "copiado para o destino externo ($EXTERNO)"
       echo "externo: enviado ($EXTERNO)" >>"$saida/manifest.txt"
+      # o manifesto sobe ANTES de saber o resultado do envio; reenvia para que a copia
+      # externa nao fique dizendo "pendente" quando o envio deu certo
+      rclone copyto "$saida/manifest.txt" "$EXTERNO/$(basename "$saida")/manifest.txt" >/dev/null 2>&1 \
+        && echo "  (manifesto externo atualizado com o resultado do envio)" \
+        || echo "  (aviso: nao consegui atualizar o manifesto externo)"
     else
       ko "copia para o destino externo falhou ($EXTERNO)"
       echo "externo: falhou ($EXTERNO)" >>"$saida/manifest.txt"

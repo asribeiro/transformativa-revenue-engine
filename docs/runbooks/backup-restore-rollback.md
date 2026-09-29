@@ -127,14 +127,17 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
 
 ## 8. Pendências declaradas (não disfarçadas)
 
-- **Destino externo (Object Storage) — pendente apenas das chaves.** O storage está contratado
-  (Object Storage European Union, 250 GB, região EU → endpoint `https://eu2.contabostorage.com`).
+- **Destino externo (Object Storage) — ATIVO desde 29/09/2026.** Storage: Object Storage European
+  Union, 250 GB (endpoint `https://eu2.contabostorage.com`); bucket `tre-backup`; credenciais em
+  `/etc/tre/rclone.conf` (600, dono `tre-deploy`); `TRE_BACKUP_EXTERNO=contabo:tre-backup` em
+  `/etc/tre/backup.env`. Provado com um backup real enviado e lido de volta do bucket — o artefato
+  da prova fica em `prova-t03/` (não é backup de produção, é a evidência do aceite).
   Para ativar: `scripts/backup/configurar-destino-externo.sh` — pergunta endpoint, access key,
   secret key (sem eco) e bucket; grava `/etc/tre/rclone.conf` com permissão 600 (dono
   `tre-deploy`); cria o bucket e faz **prova de ida e volta** (sobe, confere, remove). O destino
   **só é ligado no backup depois que essa prova passa** — se as chaves estiverem erradas, o
   `backup.env` fica intocado. As chaves são digitadas no prompt da VPS: nunca pelo chat nem no
-  histórico do shell. Enquanto não estiver ligado, o `manifest.txt` registra `externo: pendente`.
+  histórico do shell. O `manifest.txt` de cada execução registra o resultado do envio (`externo: enviado ...` ou `externo: pendente`).
   - **O bucket não precisa existir antes**: o próprio script cria (`rclone mkdir`). Criar pelo
     painel também serve; se já existir, nada muda.
   - Configuração do rclone conforme a Contabo: `provider = Other`, `force_path_style = true`
