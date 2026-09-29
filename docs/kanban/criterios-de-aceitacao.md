@@ -1,3 +1,6 @@
+> **Homologado por Anderson em 29/09/2026** (Telegram). Os critérios abaixo valem como régua de aceite;
+> card cujo critério não bater não fecha. Documento antes chamado `criterios-de-aceitacao-propostos.md`.
+
 # Critérios de aceitação propostos (fila imediata)
 
 Escritos por mim no papel de **Analista de Requisitos** do fluxo (`docs/architecture/fluxo-de-desenvolvimento-e-perfis.md`). **Não valem até o Anderson homologar** — e quem rotula/valida é ele.
