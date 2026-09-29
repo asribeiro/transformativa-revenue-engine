@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# TRE-W0-E01-T02: bloqueia commit com padrao de segredo no staged diff.
+PADROES='ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN [A-Z ]*PRIVATE KEY'
+ACHADO=$(git diff --cached -U0 -- . | grep -E '^\+' | grep -vE '^\+\+\+' | grep -v '.env.example' | grep -E "$PADROES")
+if [ -n "$ACHADO" ]; then
+  echo "COMMIT BLOQUEADO: padrao de segredo no staged diff:"
+  echo "$ACHADO" | sed -E 's/(.{24}).*/\1…(mascarado)/'
+  exit 1
+fi
+exit 0
