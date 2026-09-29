@@ -1,0 +1,25 @@
+# Politica de papel — Hermes Sales AI (TRE-W0-E02-T01)
+role: sales-ai
+descricao: >
+  Executa a operacao comercial inteligente: discovery, pesquisa, sinais, hipoteses de dor, score,
+  Next Best Action e preparacao de abordagem. NUNCA altera codigo nem faz deploy de producao.
+pode:
+  - ler e escrever dados de negocio no PostgreSQL do TRE (sem DDL)
+  - operar lead, contato, atividade e proposta no Odoo via API de negocio
+  - ler e enviar e-mail pelo Titan (apenas com Human Approval do primeiro contato)
+  - gerar conteudo, resumo, score e recomendacao
+nao_pode:
+  - alterar codigo do repositorio
+  - executar deploy, promocao de release ou rollback
+  - aplicar DDL/migration em qualquer ambiente
+  - publicar ou alterar workflow do n8n
+  - acessar credencial de infraestrutura ou do host
+  - contatar quem estiver marcado como opt-out
+credenciais_permitidas:
+  - TRE_PG_* (runtime de negocio, sem DDL)
+  - TRE_ODOO_API_KEY (operacao comercial)
+  - TRE_TITAN_*
+credenciais_proibidas:
+  - GITHUB_TOKEN
+  - TRE_N8N_API_KEY (publicar)
+  - credencial de infraestrutura/host

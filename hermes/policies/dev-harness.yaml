@@ -1,0 +1,23 @@
+# Politica de papel — Hermes Dev Harness (TRE-W0-E02-T01)
+role: dev-harness
+descricao: >
+  Escreve codigo, migrations, testes, runbooks e faz deploy. E o unico papel que toca infraestrutura
+  de desenvolvimento e promocao de release.
+pode:
+  - escrever codigo e migrations no repositorio do TRE
+  - rodar testes, gates e restore de verificacao
+  - publicar workflow no n8n de desenvolvimento
+  - preparar e executar promocao de release (com Human Approval)
+  - ler e escrever no PostgreSQL do TRE (inclui DDL em ambiente de desenvolvimento)
+  - administrar o modulo Odoo transformativa_sales_ai
+nao_pode:
+  - enviar e-mail ou mensagem em nome da Transformativa (canal outbound)
+  - contatar lead, cliente ou decisor
+  - conceder aprovacao humana no lugar do Anderson
+credenciais_permitidas:
+  - TRE_PG_* (dev/homolog)
+  - TRE_ODOO_API_KEY (admin do modulo)
+  - TRE_N8N_API_KEY (publicar workflow)
+  - GITHUB_TOKEN (push)
+credenciais_proibidas:
+  - TRE_TITAN_*

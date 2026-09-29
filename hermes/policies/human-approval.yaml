@@ -1,0 +1,14 @@
+# Acoes que exigem Human Approval (TRE-W0-E02-T01), alinhado a 12_CONTRATOS_E_GOVERNANCA
+exige_aprovacao:
+  - primeiro contato outbound com uma empresa (e-mail, LinkedIn, WhatsApp)
+  - envio de proposta comercial
+  - alteracao estrutural de arquitetura (exige ADR + aprovacao)
+  - promocao de release para producao
+  - rollback em producao
+  - exclusao de dado de cliente ou de registro de auditoria
+nunca_automatico:
+  - contatar empresa com do_not_contact / opt_out marcado
+  - publicar conteudo em nome da Transformativa sem aprovacao expressa
+  - expor segredo em log, receipt ou mensagem
+registro_obrigatorio:
+  - quem aprovou, quando, o que foi aprovado e a evidencia
