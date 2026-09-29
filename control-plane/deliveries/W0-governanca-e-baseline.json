@@ -52,15 +52,16 @@
     {
       "id": "TRE-W0-E01-T03",
       "title": "Backup e rollback baseline",
-      "stage": "IN_DEVELOPMENT",
+      "stage": "BACKLOG",
       "children": [
         {
           "hermes_task_id": "t_c8e69f74",
-          "stage": "IN_DEVELOPMENT",
+          "stage": "BACKLOG",
           "status": "BLOCKED",
           "note": "aguardando provisionamento da VPS Contabo"
         }
-      ]
+      ],
+      "current_gate": "BACKLOG"
     }
   ]
 }
