@@ -1,0 +1,200 @@
+{
+  "contract": {
+    "name": "Data Contract — Transformativa Revenue Engine",
+    "version": "1.0",
+    "frozen_at": "2026-09-29",
+    "card": "TRE-W0-E03-T01",
+    "status": "frozen",
+    "authority_order": ["12", "04", "06", "03", "05"],
+    "authority_docs": {
+      "12": "Contratos e Governança",
+      "04": "Projeto Físico de Dados",
+      "06": "Integrações e Fluxos Sistêmicos",
+      "03": "Arquitetura de Negócio",
+      "05": "Modelo Entidade-Relacionamento"
+    }
+  },
+  "artifacts": {
+    "schema_sql": "db/migrations/0001_sales_intelligence_v1.sql",
+    "document": "docs/data/DATA_CONTRACT_V1.md",
+    "verifier": "scripts/verificar_contrato_dados.py"
+  },
+  "databases": {
+    "operational": { "name": "odoo", "responsibility": "operacao comercial" },
+    "intelligence": { "name": "transformativa_ai", "schema": "sales_intelligence", "responsibility": "inteligencia, historico e auditoria" }
+  },
+  "source_of_truth": {
+    "empresa pesquisada": "PostgreSQL",
+    "sinais": "PostgreSQL",
+    "research": "PostgreSQL",
+    "scores": "PostgreSQL",
+    "hipóteses IA": "PostgreSQL",
+    "contato comercial": "Odoo",
+    "estágio": "Odoo",
+    "atividade": "Odoo",
+    "reunião": "Odoo",
+    "proposta": "Odoo",
+    "valor": "Odoo",
+    "won/lost": "Odoo",
+    "motivo de perda": "Odoo"
+  },
+  "canonical_ids": {
+    "primary_key": "id",
+    "primary_key_type": "UUID",
+    "all_tables_have_uuid_pk": true,
+    "rule": "IDs de sistema externo nunca substituem o UUID canonico",
+    "external_reference_columns": ["odoo_partner_id", "odoo_lead_id"],
+    "odoo_map": {
+      "organizations.id": "res.partner.tf_company_id",
+      "canonical_opportunity": "crm.lead.tf_opportunity_id",
+      "contacts.id": "res.partner (via odoo_partner_id)",
+      "priority score": "res.partner.tf_priority_score / crm.lead.tf_priority_score"
+    },
+    "opportunity_owner": "Odoo",
+    "generation_rule": "UUID v4 gerado no produtor do fato, antes de qualquer chamada externa",
+    "correlation_columns": ["agent_runs.correlation_id", "sync_events.idempotency_key"]
+  },
+  "tables": [
+    { "name": "organizations", "purpose": "empresa pesquisada" },
+    { "name": "contacts", "purpose": "contato comercial" },
+    { "name": "signals", "purpose": "sinal de mudanca/demanda" },
+    { "name": "research_runs", "purpose": "execucao de pesquisa por agente" },
+    { "name": "pain_hypotheses", "purpose": "hipotese de dor (inferencia)" },
+    { "name": "scores", "purpose": "score calculado e versionado" },
+    { "name": "interactions", "purpose": "interacao em qualquer canal" },
+    { "name": "recommendations", "purpose": "proximo passo recomendado" },
+    { "name": "agent_runs", "purpose": "auditoria de execucao de agente" },
+    { "name": "outbox_events", "purpose": "Outbox Pattern (PG -> n8n -> Odoo)" },
+    { "name": "sync_events", "purpose": "trilha de sincronizacao e idempotencia" },
+    { "name": "human_approvals", "purpose": "aprovacao humana registrada" }
+  ],
+  "logical_links_without_fk": [
+    "signals.research_run_id",
+    "recommendations.opportunity_id",
+    "interactions.campaign_id"
+  ],
+  "indexes": [
+    "organizations(domain)",
+    "organizations(cnpj)",
+    "organizations(employee_band)",
+    "organizations(industry_code)",
+    "organizations(state, city)",
+    "contacts(organization_id)",
+    "contacts(email)",
+    "contacts(decision_role)",
+    "signals(organization_id)",
+    "signals(signal_type)",
+    "signals(detected_at DESC)",
+    "scores(organization_id, score_type, calculated_at DESC)",
+    "interactions(organization_id, occurred_at DESC)",
+    "recommendations(organization_id, status)",
+    "outbox_events(status, created_at)",
+    "sync_events(idempotency_key)"
+  ],
+  "dedup": {
+    "strong": ["cnpj", "domain", "linkedin_url"],
+    "weak": ["nome + cidade", "nome + telefone", "nome + endereco"],
+    "auto_merge_threshold": 0.95,
+    "below_threshold": "REVIEW_REQUIRED",
+    "rule": "ambiguidade nao e resolvida por heuristica: e reportada"
+  },
+  "events": {
+    "envelope_required_fields": ["event_type", "event_version", "timestamp", "payload"],
+    "pg_to_odoo": [
+      "COMPANY_QUALIFIED",
+      "COMPANY_UPDATED",
+      "PRIORITY_SCORE_CHANGED",
+      "DECISION_MAKER_FOUND",
+      "NEXT_BEST_ACTION_CHANGED",
+      "OPPORTUNITY_RECOMMENDED"
+    ],
+    "odoo_to_pg": [
+      "STAGE_CHANGED",
+      "ACTIVITY_COMPLETED",
+      "MEETING_CREATED",
+      "OPPORTUNITY_WON",
+      "OPPORTUNITY_LOST",
+      "DEAL_VALUE_CHANGED",
+      "LOSS_REASON_RECORDED"
+    ],
+    "rules": [
+      "toda integracao tem idempotency_key, correlacao, retry limitado, sync_events e estado de erro",
+      "retry nao pode criar duplicata",
+      "falha vai para dead-letter com motivo, visivel",
+      "reconciliacao diaria gera relatorio e nunca corrige em silencio",
+      "evento sem event_version e recusado"
+    ]
+  },
+  "vocabularies": {
+    "organizations.status": ["DISCOVERED"],
+    "human_approvals.status": ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+    "recommendations.status": ["OPEN", "APPROVED", "REJECTED", "EXECUTED", "EXPIRED", "SUPERSEDED"],
+    "pain_hypotheses.status": ["HYPOTHESIS", "VALIDATED", "PARTIALLY_VALIDATED", "REJECTED", "STALE"],
+    "employee_band": ["LT_70", "70_149", "150_299", "300_499", "500_699", "700_1000", "GT_1000", "UNKNOWN"],
+    "decision_role": ["Economic Buyer", "Decision Maker", "Influencer", "Champion", "User", "Blocker", "Unknown"],
+    "signal_type": [
+      "GROWTH", "HIRING", "NEW_EXECUTIVE", "NEW_LOCATION", "ERP_CHANGE", "CRM_CHANGE",
+      "DIGITAL_TRANSFORMATION", "AI_INITIATIVE", "M_AND_A", "NEW_PRODUCT", "TECH_ADOPTION", "FUNDING",
+      "PROCESS_COMPLEXITY", "CUSTOMER_COMPLAINT", "SERVICE_VOLUME", "REGULATORY_CHANGE",
+      "EFFICIENCY_PROGRAM", "COST_REDUCTION"
+    ],
+    "next_best_action": [
+      "RESEARCH_MORE", "FIND_DECISION_MAKER", "SEND_EMAIL", "PREPARE_LINKEDIN", "WAIT", "FOLLOW_UP",
+      "CREATE_MEETING", "NURTURE", "DISQUALIFY"
+    ]
+  },
+  "funnel_stages": [
+    "Descoberto", "Pesquisado", "Qualificado", "Contato identificado", "Abordagem iniciada",
+    "Engajamento", "Reunião", "Diagnóstico", "Proposta", "Negociação", "Won", "Lost", "Nurture"
+  ],
+  "scores": {
+    "types": ["ICP", "AUTOMATION_FIT", "BUYING_SIGNAL", "DATA_QUALITY", "PRIORITY"],
+    "requires_version_column": "score_version",
+    "priority_weights": {
+      "ICP": 0.35,
+      "AUTOMATION_FIT": 0.30,
+      "BUYING_SIGNAL": 0.25,
+      "DATA_QUALITY": 0.10
+    },
+    "tiers": [
+      { "name": "A+", "min": 90.0, "max": 100.0 },
+      { "name": "A", "min": 80.0, "max": 89.99 },
+      { "name": "B", "min": 65.0, "max": 79.99 },
+      { "name": "C", "min": 50.0, "max": 64.99 },
+      { "name": "Nurture", "min": 0.0, "max": 49.99 }
+    ],
+    "icp_context": {
+      "employee_range": "70-1000",
+      "sweet_spot": "150-700",
+      "icps": ["Distribuidores B2B", "Indústrias médias", "Serviços B2B", "Logística", "SaaS/Tech B2B"],
+      "decision_makers": ["CEO/Founder", "COO", "CFO", "CIO/CTO", "CRO", "Diretor Administrativo", "CX"]
+    }
+  },
+  "compliance": {
+    "required_fields": ["legal_basis", "source", "do_not_contact", "opt_out_email", "opt_out_whatsapp", "preferred_channel"],
+    "declared_gaps": ["collected_at", "retention_until"],
+    "rules": [
+      "inferencia marcada como inferencia",
+      "conservar evidencia",
+      "nao contatar opt-out",
+      "acao sensivel exige approval",
+      "registrar operador humano",
+      "preservar audit trail"
+    ]
+  },
+  "governance": {
+    "version_bump_triggers": [
+      "criar/remover tabela, coluna ou indice",
+      "mudar tipo",
+      "mudar vocabulario fechado",
+      "mudar formula ou peso de score",
+      "mudar dono de uma informacao",
+      "mudar envelope de evento"
+    ],
+    "no_bump": ["comentario", "indice puramente operacional registrado na migration seguinte"],
+    "change_procedure": "migration nova versionada + documento + json + CHANGELOG, com o verificador passando",
+    "approval_required": true,
+    "approval_record": "docs/operations/registro-de-aprovacoes.md",
+    "no_ddl_in_production": "ADR-005"
+  }
+}

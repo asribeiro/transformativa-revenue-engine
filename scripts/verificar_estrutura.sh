@@ -15,5 +15,16 @@ for a in $ARQS; do
 done
 ADR=$(ls docs/adr/ADR-*.md 2>/dev/null | wc -l)
 if [ "$ADR" -ge 6 ]; then echo "OK    ADRs iniciais ($ADR)"; else echo "FALHOU ADRs iniciais ($ADR < 6)"; FALHAS=$((FALHAS+1)); fi
+# Artefatos que PRECISAM estar versionados. A regra "data/" do .gitignore ja engoliu docs/data/
+# e o Data Contract V1 foi commitado sem os proprios documentos — este check teria pego.
+for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
+         db/migrations/0001_sales_intelligence_v1.sql CHANGELOG.md; do
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    echo "OK    versionado  $f"
+  else
+    echo "FALHOU versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"
+    FALHAS=$((FALHAS+1))
+  fi
+done
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

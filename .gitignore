@@ -10,6 +10,8 @@ __pycache__/
 *.py[cod]
 .venv/
 node_modules/
-data/
+# Somente o diretorio `data/` da RAIZ e ignorado. Sem a barra inicial, a regra
+# engolia `docs/data/` — e o Data Contract V1.0 ficou sem versionamento por engano.
+/data/
 *.log
 .DS_Store
