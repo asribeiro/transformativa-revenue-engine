@@ -843,6 +843,218 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     itens.checar("D05: entrada de tipo invalido termina em BLOCK com recibo, nunca em excecao",
                  _d05_borda_de_entrada)
 
+    # ------------- correcao de raiz do D06 (card TRE-W0-E04-T07) --------------
+    # Itens que provam a CLASSE do problema, nao as frases do dia: a acao passa a ser
+    # resolvida para um CODIGO antes de decidir, o roteador infere dominio sensivel do
+    # proprio texto e, sem codigo conhecido, acao em tarefa sensivel NAO executa.
+    # Nenhum destes itens depende de prosa nova entrar na tabela de conceitos.
+
+    # Frases inventadas pelo executor deste card (T07): nao estao no card, no D04, no
+    # D06 nem em nenhum teste anterior. Cobrem primeiro contato, credencial, publicacao
+    # em nome da Transformativa e dado de cliente.
+    FRASES_INVENTADAS_T07 = (
+        "enviar mensagem de apresentacao para prospect novo",
+        "enviar mensagem para lead recem-chegado",
+        "trocar a senha de servico do banco",
+        "divulgar comunicado assinado pela Transformativa",
+        "apagar linha do cadastro de clientes",
+    )
+    FRASES_QUE_ESCAPARAM = ("promocao de release para producao",
+                            "promover release para producao",
+                            "publicar release em producao",
+                            "exclusao de registro de auditoria",
+                            "enviar mensagem ao primeiro cliente interessado")
+
+    def _nao_executa(frase, **extra):
+        """Problemas ao decidir a frase: tem de parar em BLOCK/ESCALATE, recibo de 13."""
+        tarefa = {"card_id": "t_t07", "acao": frase, "lane_proposta": "small",
+                  "confianca": alta, "status": "ready"}
+        tarefa.update(extra)
+        resultado = roteador.decidir(tarefa, politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        problemas = []
+        if d["pode_executar"] or d["decidido"] == "executar":
+            problemas.append(f"'{frase}': EXECUTOU (decidido={d['decidido']} "
+                             f"outcome={recibo['outcome']} lane={recibo['lane']})")
+        if recibo["outcome"] not in (roteador.OUTCOME_BLOQUEAR, roteador.OUTCOME_ESCALAR):
+            problemas.append(f"'{frase}': outcome={recibo['outcome']}")
+        if list(recibo.keys()) != list(campos):
+            problemas.append(f"'{frase}': recibo fora do contrato ({len(recibo)} campos)")
+        if recibo["lane"] != lane_conservadora:
+            problemas.append(f"'{frase}': lane={recibo['lane']} (esperado {lane_conservadora})")
+        return problemas
+
+    def _t07_codigo_canonico_e_a_via_principal():
+        problemas = []
+        codigos = roteador.acoes_nunca_decididas_por_maquina(politica)
+        for codigo in codigos:
+            # O texto da acao e INOCENTE de proposito: quem bloqueia e o codigo.
+            resultado = roteador.decidir(
+                {"card_id": "t_t07a", "acao": "ajuste de texto no runbook",
+                 "acao_codigo": codigo, "lane_proposta": "small", "confianca": alta,
+                 "status": "ready"}, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_BLOQUEAR:
+                problemas.append(f"codigo {codigo}: decidido={d['decidido']} "
+                                 f"outcome={recibo['outcome']}")
+            elif d.get("codigo_de_acao") != codigo \
+                    or d.get("origem_do_codigo_de_acao") != "codigo_canonico":
+                problemas.append(f"codigo {codigo}: nao registrado na decisao "
+                                 f"(codigo={d.get('codigo_de_acao')!r} "
+                                 f"origem={d.get('origem_do_codigo_de_acao')!r})")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(codigos)} codigos canonicos bloqueiam pelo campo "
+                      f"{roteador.CAMPO_DO_CODIGO_DE_ACAO!r} com o codigo registrado na decisao")
+
+    itens.checar("T07: o codigo canonico e a via principal (acao_codigo bloqueia sem prosa)",
+                 _t07_codigo_canonico_e_a_via_principal)
+
+    def _t07_codigo_comum_executa():
+        resultado = roteador.decidir(
+            {"card_id": "t_t07b", "acao": "ajuste de texto no runbook",
+             "acao_codigo": "ajuste_de_texto", "lane_proposta": "small",
+             "confianca": alta, "status": "ready"}, politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        return _texto(d["decidido"] == "executar" and recibo["outcome"] == roteador.OUTCOME_EXECUTAR
+                      and d.get("codigo_de_acao") == "ajuste_de_texto"
+                      and d.get("origem_do_codigo_de_acao") == "codigo_canonico"
+                      and d.get("dominios_sensiveis") == [] and list(recibo.keys()) == list(campos),
+                      f"decidido={d['decidido']} outcome={recibo['outcome']} "
+                      f"codigo={d.get('codigo_de_acao')!r} dominios={d.get('dominios_sensiveis')}")
+
+    itens.checar("T07: acao resolvida por codigo canonico comum executa (a falha fechada "
+                 "nao virou bloqueio geral)", _t07_codigo_comum_executa)
+
+    def _t07_benignas_seguem_executando():
+        problemas = []
+        for acao in ("tarefa de exemplo", "ajuste de texto simples",
+                     "consulta de status do card"):
+            resultado = roteador.decidir(
+                {"card_id": "t_t07b2", "acao": acao, "lane_proposta": "small",
+                 "confianca": alta, "status": "ready"}, politica=politica)
+            if resultado["decisao"]["decidido"] != "executar":
+                problemas.append(f"'{acao}': {resultado['decisao']['decidido']} "
+                                 f"({resultado['decisao']['motivos'][0][:60]})")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "3 acoes comuns, sem dominio sensivel, seguem executando")
+
+    itens.checar("T07: acao sem dominio sensivel segue executando (nao ha bloqueio geral)",
+                 _t07_benignas_seguem_executando)
+
+    def _t07_frases_que_escaparam():
+        problemas = [p for frase in FRASES_QUE_ESCAPARAM for p in _nao_executa(frase)]
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"as {len(FRASES_QUE_ESCAPARAM)} frases que escapavam (4 do D04 + 1 "
+                      "do D06) terminam em BLOCK/ESCALATE com recibo de 13 campos")
+
+    itens.checar("T07: as 5 frases que ja escaparam nao executam (4 do D04 + 1 do D06)",
+                 _t07_frases_que_escaparam)
+
+    def _t07_frases_inventadas():
+        problemas = [p for frase in FRASES_INVENTADAS_T07 for p in _nao_executa(frase)]
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(FRASES_INVENTADAS_T07)} frases novas inventadas pelo executor "
+                      "do card tambem terminam em BLOCK/ESCALATE")
+
+    itens.checar("T07: frases novas inventadas pelo executor (primeiro contato, credencial, "
+                 "publicacao, dado de cliente) nao executam", _t07_frases_inventadas)
+
+    def _t07_dominio_inferido_sem_sinal():
+        frase = "enviar mensagem ao primeiro cliente interessado"
+        resultado = roteador.decidir(
+            {"card_id": "t_t07c", "acao": frase, "lane_proposta": "small",
+             "confianca": alta, "status": "ready"}, politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        motivos = " ".join(d["motivos"]).lower()
+        problemas = []
+        if not d.get("dominios_sensiveis_inferidos_do_texto"):
+            problemas.append("nenhum dominio inferido do texto")
+        if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_ESCALAR:
+            problemas.append(f"decidido={d['decidido']} outcome={recibo['outcome']}")
+        if roteador.MOTIVO_ACAO_NAO_CLASSIFICADA not in motivos:
+            problemas.append(f"motivo sem '{roteador.MOTIVO_ACAO_NAO_CLASSIFICADA}': {d['motivos']}")
+        if list(recibo.keys()) != list(campos):
+            problemas.append("recibo fora do contrato")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"chamador nao declarou sinal nenhum: inferiu "
+                      f"{d.get('dominios_sensiveis_inferidos_do_texto')} do texto e escalou "
+                      f"({d['decidido']})")
+
+    itens.checar("T07: dominio sensivel inferido do texto barra mesmo sem sinal declarado",
+                 _t07_dominio_inferido_sem_sinal)
+
+    def _t07_dominio_declarado_barra():
+        resultado = roteador.decidir(
+            {"card_id": "t_t07d", "acao": "ajuste de texto simples", "lane_proposta": "small",
+             "confianca": alta, "status": "ready", "sinais": {"dado_de_cliente": True}},
+            politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        problemas = []
+        if d.get("dominios_sensiveis_declarados") != ["dado_de_cliente"]:
+            problemas.append(f"dominios declarados={d.get('dominios_sensiveis_declarados')}")
+        if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_ESCALAR:
+            problemas.append(f"decidido={d['decidido']} outcome={recibo['outcome']}")
+        if roteador.MOTIVO_ACAO_NAO_CLASSIFICADA not in " ".join(d["motivos"]).lower():
+            problemas.append("motivo obrigatorio ausente")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "uniao dos sinais: dominio declarado no payload tambem barra a acao "
+                      "nao classificada")
+
+    itens.checar("T07: dominio sensivel declarado pelo chamador tambem barra a acao nao "
+                 "classificada", _t07_dominio_declarado_barra)
+
+    def _t07_codigo_desconhecido_e_texto_em_desacordo():
+        problemas = []
+        desconhecido = roteador.decidir(
+            {"card_id": "t_t07e", "acao": "ajuste de texto no runbook",
+             "acao_codigo": "codigo-que-nao-existe", "sinais": {"credencial": True},
+             "lane_proposta": "small", "confianca": alta, "status": "ready"}, politica=politica)
+        d = desconhecido["decisao"]
+        if d["pode_executar"] or desconhecido["recibo"]["outcome"] != roteador.OUTCOME_ESCALAR:
+            problemas.append(f"codigo desconhecido: {d['decidido']}/{desconhecido['recibo']['outcome']}")
+        if d.get("codigo_declarado_e_desconhecido") != "codigo-que-nao-existe":
+            problemas.append(f"codigo desconhecido nao registrado: "
+                             f"{d.get('codigo_declarado_e_desconhecido')!r}")
+        em_desacordo = roteador.decidir(
+            {"card_id": "t_t07f", "acao": "enviar mensagem ao primeiro cliente interessado",
+             "acao_codigo": "ajuste_de_texto", "lane_proposta": "small",
+             "confianca": alta, "status": "ready"}, politica=politica)
+        if em_desacordo["decisao"]["pode_executar"]:
+            problemas.append("codigo comum liberou um texto com dominio sensivel")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "codigo desconhecido e codigo comum em desacordo com o texto escalam, "
+                      "com o codigo declarado registrado na decisao")
+
+    itens.checar("T07: codigo desconhecido e codigo em desacordo com o texto nao abrem buraco",
+                 _t07_codigo_desconhecido_e_texto_em_desacordo)
+
+    def _t07_contrato_de_codigo():
+        proibidos = set(roteador.acoes_nunca_decididas_por_maquina(politica))
+        comuns = set(roteador.CODIGOS_DE_ACAO_COMUNS)
+        problemas = []
+        conflito = sorted(proibidos & comuns)
+        if conflito:
+            problemas.append(f"codigo comum tambem proibido: {conflito}")
+        if not comuns:
+            problemas.append("o lado comum do contrato esta vazio")
+        if not proibidos:
+            problemas.append("a politica nao declara acao proibida")
+        for codigo in sorted(proibidos):
+            resolucao = roteador.resolver_codigo_de_acao(
+                {"card_id": "t", "acao": "ajuste de texto", "acao_codigo": codigo}, politica)
+            if resolucao["classe"] != "proibida" or resolucao["origem"] != "codigo_canonico":
+                problemas.append(f"{codigo}: resolucao={resolucao}")
+        for dominio in roteador.DOMINIOS_SENSIVEIS:
+            if dominio not in set(roteador.SINAIS_DE_DOMINIO_SENSIVEL.values()):
+                problemas.append(f"dominio sensivel sem sinal declaravel correspondente: {dominio}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"contrato fechado: {len(proibidos)} codigos proibidos (da politica) e "
+                      f"{len(comuns)} codigos comuns (do roteador), disjuntos; "
+                      f"{len(roteador.DOMINIOS_SENSIVEIS)} dominios sensiveis declaraveis")
+
+    itens.checar("T07: contrato de codigo e dominios — lados disjuntos e completos",
+                 _t07_contrato_de_codigo)
+
     # --------------------------------------------------------- arquivos-chave
     itens.add("arquivos do roteador existem (router.py e __init__.py)",
               ROTEADOR.is_file() and PACOTE.is_file(),
@@ -904,6 +1116,29 @@ def mutacoes():
         return codigo.replace('        "card_id": card_id,',
                               '        "card_id": tarefa.get("descricao") or card_id,')
 
+    def resolucao_de_codigo_neutralizada(codigo):
+        # A acao volta a depender so de prosa: nenhum codigo resolve.
+        return codigo.replace(
+            "    resolucao = resolver_codigo_de_acao(tarefa, politica) if politica is not None else _resolucao_vazia()",
+            "    resolucao = _resolucao_vazia()")
+
+    def inferencia_de_dominio_desligada(codigo):
+        # O roteador deixa de inferir dominio sensivel do texto (so o declarado conta).
+        return codigo.replace(
+            "    inferidos = _dominios_sensiveis_do_texto(_texto_da_acao(tarefa))",
+            "    inferidos = set()")
+
+    def sinais_declarados_ignorados(codigo):
+        # O roteador deixa de ler os sinais de dominio declarados pelo chamador.
+        return codigo.replace(
+            "    declarados = _dominios_sensiveis_declarados(tarefa)", "    declarados = set()")
+
+    def falha_fechada_removida(codigo):
+        # Sem codigo conhecido, a acao sensivel volta a executar.
+        return codigo.replace(
+            "    incerteza = _falha_fechada_por_acao_nao_classificada(resolucao, dominios)",
+            "    incerteza = None")
+
     return [
         ("aceitar versao de politica desconhecida", versao_desconhecida_aceita, identidade, identidade),
         ("ignorar o guardrail de segredo", guardrail_segredo_ignorado, identidade, identidade),
@@ -915,6 +1150,14 @@ def mutacoes():
         ("ignorar dependencia/prioridade do board", dependencias_ignoradas, identidade, identidade),
         ("deixar o papel proibido passar (Sales AI com deploy)", papel_proibido_liberado, identidade, identidade),
         ("segredo vazando no recibo", segredo_vaza_no_recibo, identidade, identidade),
+        ("T07: acao deixa de resolver para codigo canonico (volta a depender de prosa)",
+         resolucao_de_codigo_neutralizada, identidade, identidade),
+        ("T07: inferencia de dominio sensivel do texto desligada",
+         inferencia_de_dominio_desligada, identidade, identidade),
+        ("T07: sinais de dominio declarados pelo chamador ignorados",
+         sinais_declarados_ignorados, identidade, identidade),
+        ("T07: falha fechada da acao nao classificada removida",
+         falha_fechada_removida, identidade, identidade),
         ("politica com fallback para lane barata", identidade,
          lambda t: t.replace("lane conservadora configurada: high", "lane conservadora configurada: small"),
          identidade),

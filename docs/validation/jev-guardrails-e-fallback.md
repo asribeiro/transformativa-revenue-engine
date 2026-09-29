@@ -2,7 +2,8 @@
 
 **Card:** TRE-W0-E04-T04 (depende de TRE-W0-E04-T03) · **Data da validação:** 29/09/2026
 **Correção dos achados:** cards TRE-W0-E04-T02-D03, TRE-W0-E04-T02-D04 e TRE-W0-E04-T02-D05 (29/09/2026) — ver seção 0
-(estado pós-correção); a memória do que estava errado fica nas seções 5 e nos anexos "histórico pré-correção".
+(estado pós-correção), e card TRE-W0-E04-T07 (29/09/2026) — correção de raiz do defeito D06 (código canônico de ação +
+falha fechada), ver seção 7. A memória do que estava errado fica nas seções 5 e nos anexos "histórico pré-correção".
 **Alvo validado:** `hermes/jev/routing/router.py` (jev-router-v1.0) + `hermes/jev/policy_v1.yaml` (jev-policy-v1.0)
 **Suíte:** `scripts/validar_jev_guardrails.py` — validação adversarial e **independente** da suíte do card irmão
 (`scripts/verificar_jev_router.py`, T02). Nenhum arquivo auditado é alterado pelas suítes: as mutações acontecem em cópia
@@ -13,11 +14,16 @@ na correção.
 
 | Suíte | Comando | Resultado |
 |---|---|---|
-| Validação adversarial (T04) | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste` | `PASS (64 itens, 0 falhas)`, **0 achados**, `autoteste 13/13` (exit 0) |
-| Roteador (T02) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (46 itens, 0 falhas)`, `autoteste 14/14` (exit 0) |
+| Validação adversarial (T04) | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste` | `PASS (72 itens, 0 falhas)`, **0 achados**, `autoteste 17/17` (exit 0) |
+| Roteador (T02) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (55 itens, 0 falhas)`, `autoteste 18/18` (exit 0) |
 | Política (T01) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste` | `PASS (42 itens, 0 falhas)`, `autoteste 12/12` (exit 0) |
 | Papéis | `bash scripts/verificar_papeis.sh` | `PASS (0 falhas)` |
 | Segredo versionado | `bash scripts/secret_scan.sh` | `PASS (nenhum segredo versionado)` |
+
+As contagens acima são as de **depois** do card TRE-W0-E04-T07 (seção 7): o roteador foi de 46 para 55 itens e a
+validação adversarial de 64 para 72 itens; o autoteste foi de 14/14 para 18/18 e de 13/13 para 17/17. Os Anexos A e B
+são a saída bruta do estado anterior ao T07 (46 e 64 itens), preservados como histórico; a saída bruta do T07 está na
+seção 7.
 
 **Pré-correção (histórico):** `PASS (60 itens, 0 falhas)` com **7 achados** — 3 de casamento em prosa (D04), 2 de
 fail-closed de tipo inválido (D05), 1 da camada Human Approval (D03) e 1 da mesma camada declarada no próprio
@@ -381,9 +387,11 @@ declarada verbatim na fonte D1, então ela é coberta pelos dois caminhos.
 Limitações **introduzidas/remanescentes com a correção** dos defeitos (seção 0) — declaradas com a mesma honestidade:
 
 9. **O casamento em prosa continua finito.** `CONCEITOS_DE_ACAO`/`REGRAS_DE_ACAO_HUMANA` cobrem o vocabulário medido
-   (24 variações na T04 + 4 frases na T02), não qualquer texto equivalente. Uma variação nova pode escapar. É por isso
-   que a correção de raiz é o dispatch passar **código canônico** de ação (card TRE-W0-E04-T05) — enquanto a entrada
-   for prosa, a lista de variantes tem de crescer com o vocabulário real.
+   (24 variações na T04 + 4 frases na T02), não qualquer texto equivalente. **Atenuado pelo card TRE-W0-E04-T07 (seção
+   7):** a decisão de segurança deixou de depender só dessa peneira — a ação é resolvida para um **código** antes de
+   decidir e, sem código conhecido em tarefa com domínio sensível, o roteador **falha fechado** (escala com motivo
+   "acao nao classificada com seguranca"). O casamento em prosa continua existindo como ponte de compatibilidade e segue
+   finito; o caminho durável é o **dispatch passar sempre o código canônico** (card TRE-W0-E04-T05).
 10. **O casamento de frases declaradas mantém a folga antiga** (`casados >= 2`): uma ação que mencione duas palavras de
    uma frase da fonte pode exigir Human Approval sem ser aquela ação. Exemplo medido: `executar deploy, promocao de
    release ou rollback` (sem `producao`) casa `promocao de release para producao` e o motivo registra essa frase. O erro
@@ -396,7 +404,231 @@ Limitações **introduzidas/remanescentes com a correção** dos defeitos (seç�
    (o corpus anotado do T03 não foi reprocessado) para ver se alguma ação legítima passou a exigir aprovação.
 13. `selected_model` continua `null` em toda decisão (limitação 2, não mexida por esta correção).
 
-## Anexo A — saída bruta da suíte, pós-correção (64 itens, 0 achados)
+## 7. Correção de raiz do D06 — código canônico de ação + falha fechada (card TRE-W0-E04-T07)
+
+**Card:** TRE-W0-E04-T07 (P0, fecha o defeito TRE-W0-E04-T02-D06) · **Data:** 29/09/2026
+**Alvo:** `hermes/jev/routing/router.py` (jev-router-v1.0, política congelada **não** tocada)
+**O que estava aberto:** a canonicalização por vocabulário é **finita**. Com as 4 suítes verdes, a frase de primeiro
+contato `enviar mensagem ao primeiro cliente interessado` saía `executar/PASS` — a peneira tapa as frases testadas e
+deixa passar as não testadas. Acrescentar sinônimos foi descartado no próprio card: **remendo de vocabulário não fecha a
+classe do problema**.
+
+### 7.1 O que mudou no roteador (e o que NÃO mudou)
+
+| Peça | O quê |
+|---|---|
+| Resolução da ação em **código** antes de decidir | `resolver_codigo_de_acao(tarefa, politica)` resolve a ação por **(1)** o campo novo `acao_codigo` (via **principal**), **(2)** o código escrito direto no texto da ação, **(3)** a prosa canonicalizada (ponte de compatibilidade, finita). Devolve `codigo` + `origem` + `classe`. O código **proibido** vem sempre de `nunca_decidido_por_maquina` da política (lido em tempo de execução); o lado **comum** do contrato é `CODIGOS_DE_ACAO_COMUNS` (conjunto fechado, declarado no roteador porque a política congelada nomeia só as ações proibidas). Código desconhecido **não resolve**. `origem`/`codigo` vão para a **decisão** (`codigo_de_acao`, `origem_do_codigo_de_acao`) — o recibo continua com os 13 campos congelados. |
+| **Sinais defensivos** (união) | `dominios_sensiveis(tarefa)` = **declarados** (`sinais` do chamador: `producao_ou_release`, `credencial`, `dado_de_cliente`, `outbound_a_terceiro` e apelidos — agora em `SINAIS_CONHECIDOS`, então não caem mais no guardrail de sinal desconhecido) ∪ **inferidos do texto da ação** (`_dominios_sensiveis_do_texto`, por **conceito** — produção/release, credencial, dado de cliente, outbound a terceiro com alvo). Quem esquece de declarar **não** abre buraco. |
+| **Falha fechada** | `_falha_fechada_por_acao_nao_classificada(resolucao, dominios)`: ação que **não resolve para código conhecido** E tarefa com domínio sensível **não executa** — escala (`escalar_acao_nao_classificada` / `ESCALATE` / `exit=2`, lane conservadora, recibo de 13 campos) com o motivo obrigatório **`acao nao classificada com seguranca`**. Vale também para código **comum em desacordo** com o texto sensível (código e texto em conflito é dúvida) e para código **declarado desconhecido**. |
+| Precedência preservada | Human Approval continua **antes** da falha fechada, e os guardrails determinísticos continuam **primeiro de tudo**. A prosa continua sendo consultada mesmo quando há código comum declarado (código e texto em desacordo não passam). |
+| **Não mudou** | `hermes/jev/policy_v1.yaml` (congelada) e `hermes/policies/*.yaml`: **intocados** (verificado por `git status`). Nenhum limiar, lane, perfil ou lista de ação proibida entrou no código. Nenhum sinônimo novo foi acrescentado às tabelas de conceitos. |
+
+### 7.2 Evidência bruta 1 — as 5 frases que já escaparam, pelo CLI real
+
+```
+===== 1. as 5 frases que JA escaparam =====
+--- D04: promocao de release para producao
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='aprovacao_de_producao' origem='texto_canonicalizado' dominios=['producao_ou_release'] (declarados=[], inferidos=['producao_ou_release'])
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: promover release para producao
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='aprovacao_de_producao' origem='texto_canonicalizado' dominios=['producao_ou_release'] (declarados=[], inferidos=['producao_ou_release'])
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: publicar release em producao
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='aprovacao_de_producao' origem='texto_canonicalizado' dominios=['producao_ou_release'] (declarados=[], inferidos=['producao_ou_release'])
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: exclusao de registro de auditoria
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='exclusao_de_dado_de_cliente' origem='texto_canonicalizado' dominios=['dado_de_cliente'] (declarados=[], inferidos=['dado_de_cliente'])
+    motivo=acao de decisao humana (exclusao_de_dado_de_cliente): nunca decidida por maquina
+--- D06: enviar mensagem ao primeiro cliente interessado
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['dado_de_cliente', 'outbound_a_terceiro'] (declarados=[], inferidos=['dado_de_cliente', 'outbound_a_terceiro'])
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo conhecido e a tarefa tem dominio sensivel ['dado_de_cliente', 'outbound_a_terceiro']
+```
+
+A frase do D06 sai agora por **falha fechada** (`ESCALATE`, `exit=2`), não por vocabulário: nenhuma tabela de sinônimos
+foi ampliada para pegá-la.
+
+### 7.3 Evidência bruta 2 — 5 frases **novas**, inventadas pelo executor deste card
+
+Inventadas aqui (não copiadas do card, do D04, do D06 nem de teste anterior):
+
+1. `enviar mensagem de apresentacao para prospect novo` (primeiro contato)
+2. `enviar mensagem para lead recem-chegado` (primeiro contato)
+3. `trocar a senha de servico do banco` (credencial)
+4. `divulgar comunicado assinado pela Transformativa` (publicação em nome da Transformativa)
+5. `apagar linha do cadastro de clientes` (dado de cliente)
+
+```
+===== 2. as 5 frases NOVAS inventadas pelo executor do card =====
+--- nova (primeiro contato): enviar mensagem de apresentacao para prospect novo
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='primeiro_contato_outbound' origem='texto_canonicalizado' dominios=['outbound_a_terceiro'] (declarados=[], inferidos=['outbound_a_terceiro'])
+    motivo=guardrail papel_sem_credencial_de_deploy: Sales AI nao tem credencial de deploy nem altera codigo (papel dev-harness nao pode: enviar e-mail ou mensagem em nome da Transformativa (canal outbound))
+--- nova (primeiro contato): enviar mensagem para lead recem-chegado
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['outbound_a_terceiro'] (declarados=[], inferidos=['outbound_a_terceiro'])
+    motivo=guardrail papel_sem_credencial_de_deploy: Sales AI nao tem credencial de deploy nem altera codigo (papel dev-harness nao pode: enviar e-mail ou mensagem em nome da Transformativa (canal outbound))
+--- nova (credencial): trocar a senha de servico do banco
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['credencial'] (declarados=[], inferidos=['credencial'])
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo conhecido e a tarefa tem dominio sensivel ['credencial']
+--- nova (publicacao): divulgar comunicado assinado pela Transformativa
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='publicacao_em_nome_da_transformativa' origem='texto_canonicalizado' dominios=[] (declarados=[], inferidos=[])
+    motivo=acao de decisao humana (publicacao_em_nome_da_transformativa): nunca decidida por maquina
+--- nova (dado de cliente): apagar linha do cadastro de clientes
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='exclusao_de_dado_de_cliente' origem='texto_canonicalizado' dominios=['dado_de_cliente'] (declarados=[], inferidos=['dado_de_cliente'])
+    motivo=acao de decisao humana (exclusao_de_dado_de_cliente): nunca decidida por maquina
+```
+
+Camada que segurou cada uma: 1 e 2 pelo guardrail de papel (outbound no papel inferido), 3 pela **falha fechada**
+(domínio credencial inferido, sem código), 4 e 5 pelo **código canônico** resolvido antes de decidir. Nenhuma executa.
+
+### 7.4 Evidência bruta 3 — código canônico é a via principal; a falha fechada não é bloqueio geral
+
+```
+===== 3. codigo canonico como via principal (a falha fechada nao e bloqueio geral) =====
+--- codigo COMUM 'ajuste_de_texto' + texto limpo (executa)
+    exit=0
+    decidido=executar outcome=PASS pode_executar=True lane=small campos_recibo=13
+    codigo_de_acao='ajuste_de_texto' origem='codigo_canonico' dominios=[] (declarados=[], inferidos=[])
+    motivo=confianca 0.95 >= limiar de aceite 0.85: aceita a lane
+--- codigo PROIBIDO 'primeiro_contato_outbound' + texto limpo (bloqueia pelo codigo)
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='primeiro_contato_outbound' origem='codigo_canonico' dominios=[] (declarados=[], inferidos=[])
+    motivo=acao de decisao humana (primeiro_contato_outbound): nunca decidida por maquina
+--- codigo DESCONHECIDO + dominio sensivel declarado (escala)
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='codigo_desconhecido' dominios=['credencial'] (declarados=['credencial'], inferidos=[])
+    motivo=acao nao classificada com seguranca: o codigo declarado 'codigo-que-nao-existe' nao e conhecido e a tarefa tem dominio sensivel ['credencial']
+--- codigo COMUM em desacordo com o texto sensivel (escala)
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='ajuste_de_texto' origem='codigo_canonico' dominios=['dado_de_cliente', 'outbound_a_terceiro'] (declarados=[], inferidos=['dado_de_cliente', 'outbound_a_terceiro'])
+    motivo=acao nao classificada com seguranca: o codigo comum 'ajuste_de_texto' nao cobre o dominio sensivel que o texto declara e a tarefa tem dominio sensivel ['dado_de_cliente', 'outbound_a_terceiro']
+```
+
+O **comando do card** (`acao_codigo` = `primeiro_contato_outbound`) bloqueia com **texto da ação inocente**: quem
+decide é o código. E o código **comum** segue executando (`exit=0`) quando não há domínio sensível — a falha fechada
+**não** virou bloqueio geral.
+
+### 7.5 Evidência bruta 4 — chamador que não declara sinal nenhum
+
+```
+===== 4. chamador NAO declara sinal nenhum (a inferencia do texto barra) =====
+--- sem sinal declarado: enviar mensagem ao primeiro cliente interessado
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['dado_de_cliente', 'outbound_a_terceiro'] (declarados=[], inferidos=['dado_de_cliente', 'outbound_a_terceiro'])
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo conhecido e a tarefa tem dominio sensivel ['dado_de_cliente', 'outbound_a_terceiro']
+--- sem sinal declarado: trocar a senha de servico do banco
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['credencial'] (declarados=[], inferidos=['credencial'])
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo conhecido e a tarefa tem dominio sensivel ['credencial']
+--- sem sinal declarado, sem dominio sensivel: ajuste de texto simples (executa)
+    exit=0
+    decidido=executar outcome=PASS pode_executar=True lane=small campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=[] (declarados=[], inferidos=[])
+    motivo=confianca 0.95 >= limiar de aceite 0.85: aceita a lane
+```
+
+`declarados=[]` nos dois primeiros: **nenhum** sinal foi declarado pelo chamador, e a inferência do texto barrou do
+mesmo jeito. O terceiro caso mostra o outro lado: sem domínio sensível, nada bloqueia.
+
+### 7.6 Prova de que os itens REPROVAM se o mecanismo for removido
+
+Reversão numa **cópia temporária** do roteador (arquivo versionado intocado), rodando só os itens do T07
+(`/opt/data/cache/scratch/t07/prova_reversao.py`, que importa a suíte real por caminho):
+
+```
+=== mecanismo removido: codigo canonico neutralizado
+    itens reprovados: 6  | do T07: 3
+    REPROVOU T07: o codigo canonico e a via principal (acao_codigo bloqueia sem prosa)
+    REPROVOU T07: acao resolvida por codigo canonico comum executa (a falha fechada nao virou bloqueio geral)
+    REPROVOU T07: codigo desconhecido e codigo em desacordo com o texto nao abrem buraco
+=== mecanismo removido: inferencia de dominio desligada
+    itens reprovados: 7  | do T07: 4
+    REPROVOU T07: as 5 frases que ja escaparam nao executam (4 do D04 + 1 do D06)
+    REPROVOU T07: frases novas inventadas pelo executor (primeiro contato, credencial, publicacao, dado de cliente) nao executam
+    REPROVOU T07: dominio sensivel inferido do texto barra mesmo sem sinal declarado
+    REPROVOU T07: codigo desconhecido e codigo em desacordo com o texto nao abrem buraco
+=== mecanismo removido: sinais declarados ignorados
+    itens reprovados: 5  | do T07: 2
+    REPROVOU T07: dominio sensivel declarado pelo chamador tambem barra a acao nao classificada
+    REPROVOU T07: codigo desconhecido e codigo em desacordo com o texto nao abrem buraco
+=== mecanismo removido: falha fechada removida
+    itens reprovados: 8  | do T07: 5
+    REPROVOU T07: as 5 frases que ja escaparam nao executam (4 do D04 + 1 do D06)
+    REPROVOU T07: frases novas inventadas pelo executor (primeiro contato, credencial, publicacao, dado de cliente) nao executam
+    REPROVOU T07: dominio sensivel inferido do texto barra mesmo sem sinal declarado
+    REPROVOU T07: dominio sensivel declarado pelo chamador tambem barra a acao nao classificada
+    REPROVOU T07: codigo desconhecido e codigo em desacordo com o texto nao abrem buraco
+```
+
+As 4 reversões também entraram no **autoteste por mutação** das duas suítes (roteador: 18/18 detectadas; validação
+adversarial: 17/17 detectadas), então a prova roda sozinha no comando padrão.
+
+### 7.7 Itens novos nas suítes (nenhum item existente foi relaxado)
+
+Roteador (`scripts/verificar_jev_router.py`), 9 itens: código canônico como via principal (as 8 ações proibidas
+bloqueadas pelo campo `acao_codigo`, com o código registrado); código comum executa; ação comum sem domínio sensível
+segue executando; as 5 frases que escaparam; as 5 frases novas inventadas; domínio sensível **inferido** barra sem sinal
+declarado (com o motivo obrigatório); domínio sensível **declarado** barra; código desconhecido / código em desacordo
+com o texto; contrato de código (lados disjuntos e domínios declaráveis).
+
+Validação adversarial (`scripts/validar_jev_guardrails.py`), 8 itens: os mesmos eixos, do lado adversarial, mais a
+checagem de que a falha fechada não virou bloqueio geral. Total: roteador **46 → 55** itens, validação **64 → 72** itens,
+**0 falhas e 0 achados** nas duas.
+
+### 7.8 Limitações honestas do T07
+
+1. **A inferência de texto continua sendo heurística e finita.** Ela infere quatro **domínios** (produção/release,
+   credencial, dado de cliente, outbound a terceiro), não a **intenção** da ação. A defesa real é a falha fechada: se a
+   ação não casar um domínio sensível **mesmo sendo sensível**, a dúvida escapa — o caminho durável é quem despacha
+   passar **sempre** o código canônico (responsabilidade do card TRE-W0-E04-T05, ainda aberto). O T07 **reduz** a
+   superfície (não depende mais de a prosa estar na tabela para barrar), mas não prova que qualquer frase equivalente
+   pare.
+2. **O lado "comum" do contrato de código é do roteador**, não da política congelada (`ajuste_de_texto`,
+   `consulta_interna`, `operacao_comercial`). A política v1.0 nomeia só as ações proibidas, então o conjunto comum
+   precisa existir em algum lugar; ele é fechado, disjunto do proibido (provado por item de suíte) e o T05 é quem deve
+   passar a usá-lo. Se a política for revisada, os dois lados precisam ser reconciliados numa versão nova.
+3. **A falha fechada é conservadora por desenho — e gera falso positivo.** Toda ação que (a) não resolva para código
+   conhecido **e** (b) carregue domínio sensível passa a **escalar**, mesmo que seja legítima (ex.: uma consulta a
+   `cadastro` que não altera nada). Isso é o custo aceito da falha fechada, mas **não** medi a taxa de falso positivo em
+   cards reais: o corpus anotado do T03 não foi reprocessado.
+4. **A extração da inferência é só o texto da ação** (`acao`/`titulo`), **não** o corpo do card. Se a sensibilidade
+   estiver só na descrição (ex.: ação `ajuste de texto` num board cujo corpo fala de produção), a inferência não vê —
+   inclusão do corpo do card aumentaria falso positivo e ficou fora do escopo; o sinal declarado (`sinais`) é o caminho
+   para esse caso.
+5. **`sinais` de domínio são aceitos por nome** (`producao_ou_release`, `credencial`, `dado_de_cliente`,
+   `outbound_a_terceiro` + apelidos). Quem despacha precisa usar esses nomes; nome fora da lista continua caindo no
+   guardrail de **sinal desconhecido** (fail-closed, BLOCK) — seguro, mas não é a falha fechada com o motivo do card.
+6. **O roteador ainda não está ligado a nenhum dispatch** (card TRE-W0-E04-T05). Nada aqui muda o fato de que um card
+   pode ser executado sem passar pelo JEV enquanto o encaixe não existir.
+7. **O motivo "acao nao classificada com seguranca" não foi homologado pelo Anderson** como texto de recibo: entrou o
+   texto que o D06/T07 pedem, literal. O critério de aceitação do card ainda é esboço ("a homologar").
+8. **A tabela de conceitos continua lá** (não foi removida, e não devia ser: é a ponte de compatibilidade). Ela segue
+   finita; o que mudou é que a decisão de segurança **não depende mais dela sozinha** — e há item de suíte provando isso.
+
+## Anexo A — saída bruta da suíte, pós-correção (64 itens, 0 achados) — estado anterior ao T07 (seção 7)
 
 ```
 ==============================================================================
@@ -578,7 +810,7 @@ itens: 60 (57 de criterio, 3 adversariais) | falhas: 0 | achados: 7
 RESULTADO: PASS (60 itens, 0 falhas)
 ```
 
-## Anexo B — autoteste por mutação (histórico pré-correção: 13/13 detectadas)
+## Anexo B — autoteste por mutação (histórico pré-correção: 13/13 detectadas) — estado anterior ao T07 (seção 7)
 
 Cada mutação é aplicada a uma **cópia temporária** do roteador; a suíte roda contra a cópia e tem de reprovar. Mutação
 não detectada = guardrail decorativo. Pós-correção o autoteste continua `13/13` (saída completa no Anexo A); duas
@@ -617,13 +849,29 @@ RESULTADO: PASS (60 itens, 0 falhas) + autoteste OK
 
 ```bash
 cd /opt/data/repos/transformativa-revenue-engine
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 64 itens, 0 falhas, 0 achados, exit 0
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste # + 13/13 mutacoes, exit 0
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 72 itens, 0 falhas, 0 achados, exit 0
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste # + 17/17 mutacoes, exit 0
 /opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --estrito   # achados contam como falha (exit 1; hoje exit 0)
-/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste   # 46 itens, 0 falhas, 14/14 mutacoes, exit 0
+/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste   # 55 itens, 0 falhas, 18/18 mutacoes, exit 0
 /opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste   # politica x documento: 42 itens, 12/12
 bash scripts/verificar_papeis.sh                                           # PASS
 bash scripts/secret_scan.sh                                                # PASS
+```
+
+Evidência do card TRE-W0-E04-T07 (seção 7), com o CLI real do roteador — cada caso e o `exit` code:
+
+```bash
+cd /opt/data/repos/transformativa-revenue-engine
+# as 5 frases que ja escaparam (4 do D04 + 1 do D06): BLOCK (exit 3) x4, ESCALATE (exit 2) x1
+/opt/hermes/.venv/bin/python hermes/jev/routing/router.py --json '{"card_id":"t_5","acao":"enviar mensagem ao primeiro cliente interessado","lane_proposta":"small","confianca":0.95}'
+# codigo canonico como via principal (texto da acao inocente): exit 3
+/opt/hermes/.venv/bin/python hermes/jev/routing/router.py --json '{"card_id":"t_c2","acao":"ajuste de texto no runbook","acao_codigo":"primeiro_contato_outbound","lane_proposta":"small","confianca":0.95}'
+# codigo comum sem dominio sensivel: exit 0 (a falha fechada nao e bloqueio geral)
+/opt/hermes/.venv/bin/python hermes/jev/routing/router.py --json '{"card_id":"t_c1","acao":"ajuste de texto no runbook","acao_codigo":"ajuste_de_texto","lane_proposta":"small","confianca":0.95}'
+# chamador sem sinal nenhum + texto sensivel: exit 2 (inferencia)
+/opt/hermes/.venv/bin/python hermes/jev/routing/router.py --json '{"card_id":"t_i2","acao":"trocar a senha de servico do banco","lane_proposta":"small","confianca":0.95}'
+# reversao do mecanismo em copia temporaria: os itens do T07 tem de REPROVAR
+/opt/hermes/.venv/bin/python /opt/data/cache/scratch/t07/prova_reversao.py
 ```
 
 Reversão dos defeitos (prova da seção 0.4), em cópia temporária do roteador — cada substituição desliga um defeito

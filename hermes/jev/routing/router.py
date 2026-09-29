@@ -18,6 +18,11 @@ aceitacao e estao provadas em `scripts/verificar_jev_router.py`:
   * confianca abaixo do limiar de abstencao gera abstencao e escalacao, nunca
     execucao;
   * as acoes de `nunca_decidido_por_maquina` nunca passam por classificador;
+  * a acao e resolvida para um CODIGO antes de decidir (`acao_codigo` e a via
+    principal; prosa e so ponte de compatibilidade) e acao que NAO resolve para
+    codigo conhecido em tarefa com dominio sensivel — producao/release, credencial,
+    dado de cliente, outbound a terceiro, declarado pelo chamador OU inferido do
+    texto — nao executa: escala com o motivo "acao nao classificada com seguranca";
   * politica ausente, ilegivel, invalida ou de versao desconhecida entra em modo
     degradado (lane conservadora + `degraded_mode`) e NUNCA executa em silencio;
   * o recibo tem exatamente os campos de `recibo.campos` e nunca carrega segredo;
@@ -137,7 +142,24 @@ LIMIAR_CAPACIDADE = 0.5
 
 # Sinais de guardrail que o roteador sabe avaliar. Sinal desconhecido = duvida =
 # BLOCK (fail-closed), nunca "ignora o que nao entende".
-SINAIS_CONHECIDOS = frozenset({"segredo_no_payload", "empresa_do_not_contact"})
+#
+# Os sinais de DOMINIO SENSIVEL entram aqui porque o roteador agora os avalia de
+# verdade (card TRE-W0-E04-T07): eles nao viram guardrail proprio, alimentam a
+# falha fechada de acao nao classificada (`dominios_sensiveis`). Os dois sinais
+# historicos do T02 seguem valendo.
+SINAIS_DE_DOMINIO_SENSIVEL = {
+    # nome do sinal declarado pelo chamador -> dominio sensivel
+    "producao_ou_release": "producao_ou_release",
+    "producao": "producao_ou_release",
+    "release": "producao_ou_release",
+    "credencial": "credencial",
+    "dado_de_cliente": "dado_de_cliente",
+    "cliente": "dado_de_cliente",
+    "outbound_a_terceiro": "outbound_a_terceiro",
+    "outbound": "outbound_a_terceiro",
+}
+SINAIS_CONHECIDOS = frozenset(
+    {"segredo_no_payload", "empresa_do_not_contact"} | set(SINAIS_DE_DOMINIO_SENSIVEL))
 
 # Cada guardrail implementado exige que a politica DECLARE a regra correspondente.
 # Se a politica deixar de declarar uma dessas regras, ela nao e a politica que
@@ -233,6 +255,44 @@ REGRAS_DE_ACAO_HUMANA = (
     ("publicacao_em_nome_da_transformativa", (("transformativa",),
                                               ("publicacao_publica",), ("em_nome",))),
 )
+
+# ---------------------------------------------------------------------------
+# Contrato de CODIGO CANONICO de acao (correcao de raiz do defeito D06, card
+# TRE-W0-E04-T07)
+#
+# O texto livre e uma PONTE de compatibilidade, nunca a via de confianca: casar
+# prosa e FINITO e cada rodada de correcao tapa as frases testadas e deixa as nao
+# testadas passar (medido com as suites verdes: "enviar mensagem ao primeiro
+# cliente interessado" executou). A via principal passa a ser o CODIGO da acao,
+# resolvido ANTES de decidir.
+#
+# O contrato tem dois lados:
+#   * PROIBIDO -> exatamente `nunca_decidido_por_maquina` da politica congelada,
+#     lido em tempo de execucao (nenhuma lista propria de proibicao aqui);
+#   * COMUM -> os codigos abaixo, declarados pelo roteador. A politica congelada
+#     nomeia somente as acoes proibidas, entao o lado comum do contrato e do
+#     roteador. Conjunto FECHADO de proposital: codigo nao e vocabulario aberto —
+#     nao aceita prosa, sinonimo nem codigo inventado por quem chama. A suite prova
+#     que os dois lados sao disjuntos.
+# Qualquer outro valor = codigo DESCONHECIDO = a acao NAO resolve.
+# ---------------------------------------------------------------------------
+CAMPO_DO_CODIGO_DE_ACAO = "acao_codigo"
+
+CODIGOS_DE_ACAO_COMUNS = (
+    "ajuste_de_texto",
+    "consulta_interna",
+    "operacao_comercial",
+)
+
+# Dominios sensiveis que a falha fechada exige que o codigo cubra. Sao os quatro
+# dominios medidos no D06 (producao/release, credencial, dado de cliente, outbound
+# a terceiro). A inferencia e por CONCEITO do texto (as tabelas acima), nao por
+# lista nova de sinonimos.
+DOMINIOS_SENSIVEIS = ("producao_ou_release", "credencial", "dado_de_cliente",
+                      "outbound_a_terceiro")
+
+# Motivo obrigatorio da falha fechada (texto exigido pelo D06/T07).
+MOTIVO_ACAO_NAO_CLASSIFICADA = "acao nao classificada com seguranca"
 
 # Detectores de credencial. Nao ha valor de segredo aqui: sao formatos.
 PADROES_DE_SEGREDO = (
@@ -889,6 +949,132 @@ def acao_canonica_de_decisao_humana(acao: str) -> str:
     return ""
 
 
+def _texto_da_acao(tarefa) -> str:
+    """Texto da acao (campo `acao`, com `titulo` como fallback)."""
+    if not isinstance(tarefa, dict):
+        return ""
+    return str(tarefa.get("acao") or tarefa.get("titulo") or "")
+
+
+def _codigo_declarado_pelo_chamador(tarefa) -> str:
+    """Codigo do campo proprio (`acao_codigo`) — a via principal do contrato."""
+    if not isinstance(tarefa, dict):
+        return ""
+    return str(tarefa.get(CAMPO_DO_CODIGO_DE_ACAO) or "").strip()
+
+
+def _resolucao_vazia() -> dict:
+    return {"codigo": "", "origem": "nao_classificada", "classe": "", "declarado": ""}
+
+
+def resolver_codigo_de_acao(tarefa, politica) -> dict:
+    """Resolve a acao para um CODIGO antes de decidir. Sempre devolve o mesmo mapa.
+
+    Ordem:
+      1. `acao_codigo` declarado -> via PRINCIPAL (nao passa por vocabulario);
+      2. o codigo escrito direto no campo de texto da acao (so o codigo, sem prosa);
+      3. PONTE de compatibilidade: prosa canonicalizada por CONCEITOS/REGRAS — finita
+         e por isso NAO e a via de confianca (quem fecha isso e o dispatch do
+         TRE-W0-E04-T05 passando o codigo sempre).
+
+    `classe` e 'proibida' (codigo consta em `nunca_decidido_por_maquina`), 'comum'
+    (codigo consta em CODIGOS_DE_ACAO_COMUNS) ou '' (nao resolveu). `origem` diz por
+    onde a resolucao veio, e vai para a decisao (o recibo tem contrato congelado).
+    """
+    proibidos = tuple(acoes_nunca_decididas_por_maquina(politica)) if politica else ()
+    texto = _texto_da_acao(tarefa)
+
+    declarado = _codigo_declarado_pelo_chamador(tarefa)
+    if declarado:
+        if declarado in proibidos:
+            return {"codigo": declarado, "origem": "codigo_canonico",
+                    "classe": "proibida", "declarado": declarado}
+        if declarado in CODIGOS_DE_ACAO_COMUNS:
+            return {"codigo": declarado, "origem": "codigo_canonico",
+                    "classe": "comum", "declarado": declarado}
+        return {"codigo": "", "origem": "codigo_desconhecido", "classe": "",
+                "declarado": declarado}
+
+    como_codigo = _normalizar(texto).replace(" ", "_")
+    if como_codigo:
+        if como_codigo in proibidos:
+            return {"codigo": como_codigo, "origem": "codigo_canonico",
+                    "classe": "proibida", "declarado": ""}
+        if como_codigo in CODIGOS_DE_ACAO_COMUNS:
+            return {"codigo": como_codigo, "origem": "codigo_canonico",
+                    "classe": "comum", "declarado": ""}
+
+    canonica = acao_canonica_de_decisao_humana(texto)
+    if canonica:
+        return {"codigo": canonica, "origem": "texto_canonicalizado",
+                "classe": "proibida", "declarado": ""}
+    return _resolucao_vazia()
+
+
+def _dominios_sensiveis_do_texto(texto) -> set:
+    """Dominios sensiveis INFERIDOS do texto da acao (por conceito, sem sinonimo novo).
+
+    * producao/release    -> conceito `producao` ou `release`;
+    * credencial          -> conceito `credencial`;
+    * dado de cliente     -> conceito `dado_sensivel`;
+    * outbound a terceiro -> acao de `envio` COM alvo (`alvo_outbound`, `dado_sensivel`
+      ou `proposta`). Sem alvo, "enviar e-mail pelo Titan" nao vira outbound: quem
+      decide esse caso continua sendo o guardrail de do_not_contact.
+    """
+    presentes = _conceitos_presentes(texto)
+    dominios = set()
+    if presentes & {"producao", "release"}:
+        dominios.add("producao_ou_release")
+    if "credencial" in presentes:
+        dominios.add("credencial")
+    if "dado_sensivel" in presentes:
+        dominios.add("dado_de_cliente")
+    if "envio" in presentes and presentes & {"alvo_outbound", "dado_sensivel", "proposta"}:
+        dominios.add("outbound_a_terceiro")
+    return dominios
+
+
+def _dominios_sensiveis_declarados(tarefa) -> set:
+    """Dominios sensiveis DECLARADOS pelo chamador (sinais ligados no payload)."""
+    sinais = tarefa.get("sinais") if isinstance(tarefa, dict) else {}
+    sinais = sinais if isinstance(sinais, dict) else {}
+    return {SINAIS_DE_DOMINIO_SENSIVEL[nome] for nome, ligado in sinais.items()
+            if ligado and nome in SINAIS_DE_DOMINIO_SENSIVEL}
+
+
+def dominios_sensiveis(tarefa) -> dict:
+    """UNIAO dos sinais declarados pelo chamador com o que o roteador infere do texto.
+
+    Chamador que esquece de declarar nao abre buraco: o texto dele ainda declara.
+    """
+    inferidos = _dominios_sensiveis_do_texto(_texto_da_acao(tarefa))
+    declarados = _dominios_sensiveis_declarados(tarefa)
+    return {"declarados": sorted(declarados), "inferidos": sorted(inferidos),
+            "uniao": sorted(declarados | inferidos)}
+
+
+def _falha_fechada_por_acao_nao_classificada(resolucao: dict, dominios: dict):
+    """Motivo da falha fechada, ou None quando a acao pode seguir.
+
+    Regra do card T07 (correcao de raiz do D06): acao que NAO resolve para codigo
+    conhecido E tarefa com dominio sensivel (declarado ou inferido) NAO executa.
+    Vale tambem quando o codigo declarado e COMUM mas o texto carrega dominio
+    sensivel que ele nao cobre: codigo e texto em desacordo e duvida, e duvida nao
+    executa. Codigo proibido nao chega aqui (a camada Human Approval vem antes).
+    """
+    if resolucao["classe"] == "proibida" or not dominios["uniao"]:
+        return None
+    if not resolucao["codigo"]:
+        detalhe = (f"o codigo declarado {resolucao['declarado']!r} nao e conhecido"
+                   if resolucao["origem"] == "codigo_desconhecido"
+                   else "a acao nao resolve para nenhum codigo conhecido")
+    else:
+        detalhe = (f"o codigo comum {resolucao['codigo']!r} nao cobre o dominio "
+                   "sensivel que o texto declara")
+    return (f"{MOTIVO_ACAO_NAO_CLASSIFICADA}: {detalhe} e a tarefa tem dominio "
+            f"sensivel {dominios['uniao']}")
+
+
 def acao_de_decisao_humana(acao: str, politica, papeis=None, diretorio=None) -> list:
     """Frases (ou o codigo canonico) que levam a acao para a camada Human Approval."""
     texto = str(acao or "")
@@ -1125,6 +1311,20 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         "papel_executor": None, "evidencias": [], "demais": {},
     }
 
+    # ---- Resolucao da acao: CODIGO antes de decidir (card T07) --------------
+    # ANCORA:RESOLUCAO_DA_ACAO
+    resolucao = resolver_codigo_de_acao(tarefa, politica) if politica is not None else _resolucao_vazia()
+    dominios = dominios_sensiveis(tarefa)
+    plano["demais"].update({
+        "codigo_de_acao": resolucao["codigo"] or None,
+        "origem_do_codigo_de_acao": resolucao["origem"],
+        "codigo_declarado_e_desconhecido": (resolucao["declarado"] or None
+                                            if resolucao["origem"] == "codigo_desconhecido" else None),
+        "dominios_sensiveis": dominios["uniao"],
+        "dominios_sensiveis_declarados": dominios["declarados"],
+        "dominios_sensiveis_inferidos_do_texto": dominios["inferidos"],
+    })
+
     # ---- Camada 1: Security -------------------------------------------------
     if politica is not None:
         guardrails.extend(_guardrails_de_politica(tarefa, politica, papeis))
@@ -1155,8 +1355,15 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         plano["motivos"] += list(politica["_avisos_papeis"])
 
     # ---- Camada 2: Human Approval ------------------------------------------
-    acao = str(tarefa.get("acao") or tarefa.get("titulo") or "")
-    humano = acao_de_decisao_humana(acao, politica, papeis)
+    acao = _texto_da_acao(tarefa)
+    # A via principal e o CODIGO resolvido antes de decidir. A prosa entra apenas
+    # como PONTE de compatibilidade (casamento finito com o texto declarado na
+    # politica e na fonte da camada) — e mesmo com codigo comum declarado o texto
+    # ainda e consultado, para que codigo e texto em desacordo nao passem.
+    if resolucao["classe"] == "proibida":
+        humano = [resolucao["codigo"]]
+    else:
+        humano = acao_de_decisao_humana(acao, politica, papeis)
     # ANCORA:PRECEDENCIA_HUMANA
     if humano:
         plano["decidido"] = "bloquear"
@@ -1166,6 +1373,22 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         plano["lane"] = _lane_segura(politica, tarefa)
         plano["motivos"] = [f"acao de decisao humana ({humano[0]}): nunca decidida por maquina",
                             "encaminhar para Human Approval do Anderson"]
+        return _fechar(politica, tarefa, plano, agora)
+
+    # ---- Falha fechada: acao nao classificada em tarefa com dominio sensivel --
+    # Sem codigo conhecido nao ha execucao de acao sensivel. O motivo obrigatorio
+    # ("acao nao classificada com seguranca") vai no recibo/decisao.
+    # ANCORA:FALHA_FECHADA_DE_ACAO
+    incerteza = _falha_fechada_por_acao_nao_classificada(resolucao, dominios)
+    if incerteza:
+        plano["decidido"] = "escalar_acao_nao_classificada"
+        plano["outcome"] = OUTCOME_ESCALAR
+        plano["exige_escalacao"] = True
+        plano["exige_aprovacao_humana"] = True
+        plano["lane"] = _lane_segura(politica, tarefa)
+        plano["motivos"] = [incerteza,
+                            "falha fechada: acao sem codigo conhecido e com dominio "
+                            "sensivel nao executa"]
         return _fechar(politica, tarefa, plano, agora)
 
     # ---- Camada 3: prioridade e dependencias --------------------------------
@@ -1184,8 +1407,8 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         classificacao = classificar_card(tarefa, politica)
     plano["evidencias"] = list(classificacao.get("evidencias") or [])
     plano["confidence"] = classificacao.get("confianca")
-    plano["demais"] = {"origem_da_classificacao": classificacao.get("origem"),
-                       "lane_proposta": classificacao.get("lane_proposta")}
+    plano["demais"].update({"origem_da_classificacao": classificacao.get("origem"),
+                            "lane_proposta": classificacao.get("lane_proposta")})
 
     lane_final, motivo = aplicar_limiares(
         politica, classificacao.get("lane_proposta"), classificacao.get("confianca"))
