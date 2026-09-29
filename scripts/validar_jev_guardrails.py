@@ -21,6 +21,14 @@ ataca o que o T02 nao provou, item a item:
      que o REMOVE (em copia temporaria do roteador/politica) e a suite tem de
      reprovar o mutante. Mutacao que passa despercebida = guardrail decorativo.
 
+A partir dos defeitos D07 e D08 (cards TRE-W0-E04-T02-D07 e -D08) a suite tambem
+carrega os itens de regressao do contrato novo: (a) texto livre que NAO resolve
+para codigo canonico conhecido nao executa em nenhuma hipotese — escala, com o
+motivo dizendo que faltou o codigo canonico; (b) o guardrail de DDL so aciona com
+DDL/migration REAL e o motivo diz a causa real (nenhum motivo de DDL em acao sem
+DDL). Por causa de (a), os itens de caminho APROVA passaram a declarar o codigo
+canonico da acao (`acao_codigo`): nenhum item foi relaxado.
+
 Nada aqui substitui o roteador (sem mock do alvo): os testes chamam o modulo real
 e a CLI real do roteador. Nenhum arquivo versionado e alterado — as mutacoes
 acontecem em copia temporaria. Nenhum segredo real e usado: os valores sao

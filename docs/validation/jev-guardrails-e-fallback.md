@@ -2,8 +2,11 @@
 
 **Card:** TRE-W0-E04-T04 (depende de TRE-W0-E04-T03) · **Data da validação:** 29/09/2026
 **Correção dos achados:** cards TRE-W0-E04-T02-D03, TRE-W0-E04-T02-D04 e TRE-W0-E04-T02-D05 (29/09/2026) — ver seção 0
-(estado pós-correção), e card TRE-W0-E04-T07 (29/09/2026) — correção de raiz do defeito D06 (código canônico de ação +
-falha fechada), ver seção 7. A memória do que estava errado fica nas seções 5 e nos anexos "histórico pré-correção".
+(estado pós-correção), card TRE-W0-E04-T07 (29/09/2026) — correção de raiz do defeito D06 (código canônico de ação +
+falha fechada), ver seção 7, e cards TRE-W0-E04-T02-D07 e TRE-W0-E04-T02-D08 (29/09/2026) — texto livre sem código
+canônico deixa de executar (fecha a classe dos 4 escapes) e o guardrail de DDL só aciona com DDL real, com o motivo
+dizendo a causa verdadeira, ver seção 8. A memória do que estava errado fica nas seções 5 e nos anexos "histórico
+pré-correção".
 **Alvo validado:** `hermes/jev/routing/router.py` (jev-router-v1.0) + `hermes/jev/policy_v1.yaml` (jev-policy-v1.0)
 **Suíte:** `scripts/validar_jev_guardrails.py` — validação adversarial e **independente** da suíte do card irmão
 (`scripts/verificar_jev_router.py`, T02). Nenhum arquivo auditado é alterado pelas suítes: as mutações acontecem em cópia
@@ -14,16 +17,16 @@ na correção.
 
 | Suíte | Comando | Resultado |
 |---|---|---|
-| Validação adversarial (T04) | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste` | `PASS (72 itens, 0 falhas)`, **0 achados**, `autoteste 17/17` (exit 0) |
-| Roteador (T02) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (55 itens, 0 falhas)`, `autoteste 18/18` (exit 0) |
+| Validação adversarial (T04) | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste --estrito` | `PASS (74 itens, 0 falhas)`, **0 achados**, `autoteste 20/20` (exit 0) |
+| Roteador (T02) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (59 itens, 0 falhas)`, `autoteste 21/21` (exit 0) |
 | Política (T01) | `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste` | `PASS (42 itens, 0 falhas)`, `autoteste 12/12` (exit 0) |
 | Papéis | `bash scripts/verificar_papeis.sh` | `PASS (0 falhas)` |
 | Segredo versionado | `bash scripts/secret_scan.sh` | `PASS (nenhum segredo versionado)` |
 
-As contagens acima são as de **depois** do card TRE-W0-E04-T07 (seção 7): o roteador foi de 46 para 55 itens e a
-validação adversarial de 64 para 72 itens; o autoteste foi de 14/14 para 18/18 e de 13/13 para 17/17. Os Anexos A e B
-são a saída bruta do estado anterior ao T07 (46 e 64 itens), preservados como histórico; a saída bruta do T07 está na
-seção 7.
+As contagens acima são as de **depois** dos cards TRE-W0-E04-T02-D07/-D08 (seção 8): o roteador foi de 55 para 59 itens e
+a validação adversarial de 72 para 74 itens; o autoteste foi de 18/18 para 21/21 e de 17/17 para 20/20. O histórico das
+contagens anteriores ao T07 está nos Anexos A e B (46 e 64 itens), a saída bruta do T07 está na seção 7 e a do D07/D08
+está na seção 8.
 
 **Pré-correção (histórico):** `PASS (60 itens, 0 falhas)` com **7 achados** — 3 de casamento em prosa (D04), 2 de
 fail-closed de tipo inválido (D05), 1 da camada Human Approval (D03) e 1 da mesma camada declarada no próprio
@@ -628,6 +631,290 @@ checagem de que a falha fechada não virou bloqueio geral. Total: roteador **46 
 8. **A tabela de conceitos continua lá** (não foi removida, e não devia ser: é a ponte de compatibilidade). Ela segue
    finita; o que mudou é que a decisão de segurança **não depende mais dela sozinha** — e há item de suíte provando isso.
 
+## 8. Defeitos D07 e D08 — texto livre deixa de executar e o guardrail de DDL passa a exigir DDL real (cards TRE-W0-E04-T02-D07 e -D08)
+
+**Cards:** TRE-W0-E04-T02-D07 (severidade alta) e TRE-W0-E04-T02-D08 (severidade média) · **Data:** 29/09/2026
+**Alvo:** `hermes/jev/routing/router.py` (jev-router-v1.0). `hermes/jev/policy_v1.yaml` e `hermes/policies/*.yaml`
+**não** foram tocados (congelados).
+**O que estava aberto:**
+
+- **D07** — a detecção de sensibilidade por vocabulário deixou escapar 4 ações sensíveis escritas com sinônimo não
+  previsto: `conceder permissao de administrador ao usuario de testes` (concessão de credencial/acesso),
+  `restaurar um backup por cima da base` (restauração/rollback), `soltar nota no site da Transformativa` (publicação em
+  nome da empresa) e `limpar a base de contatos antigos` (exclusão de dado de cliente) saíam `executar/PASS`, `exit=0`.
+  Terceira demonstração do mesmo lugar: a decisão dependia da **palavra**, não da **ação**.
+- **D08** — `escrever e publicar o post do LinkedIn` (publicação, **nenhuma DDL**) era bloqueada com o motivo
+  `guardrail ddl_fora_de_producao: DDL nao nasce em producao`. Causa medida: o gatilho do guardrail era o **casamento de
+  prosa** da ação com entradas das políticas de papel que mencionam DDL — `post` casava `postgresql` e `escrever` casava
+  `escrever`, duas entradas de PostgreSQL/DDL. Bloquear pelo motivo errado é pior que não bloquear: o recibo mentia sobre
+  a causa e o humano ia pelo caminho errado.
+
+### 8.1 Postura adotada (conservadora e reversível) e o que mudou
+
+A decisão de postura foi tomada **em nome do dono** (reversível, conservadora de propósito), porque o defeito travava o
+card TRE-W0-E04-T05 (ligar o roteador ao dispatch) e a alternativa de ampliar vocabulário já havia falhado três vezes.
+**Homologada pelo dono em 29/09/2026 — ver 8.9:**
+
+> O texto livre deixa de ser via executável. Uma ação **só executa** quando (a) resolve para um código canônico conhecido
+> e não proibido, **E** (b) não há domínio sensível (declarado ou inferido), **E** (c) a confiança atende ao limiar.
+> Texto que **não** resolve para código conhecido **não executa em nenhuma hipótese**: escala (`ESCALATE`, `exit=2`, lane
+> conservadora) com motivo explícito de que faltou o código canônico. Enquanto o dispatch (card TRE-W0-E04-T05) não
+> passar o código, escalar é o comportamento correto.
+
+| Peça | O quê |
+|---|---|
+| **D07 — falha fechada por classe** | `_falha_fechada_por_acao_nao_classificada(resolucao, dominios)` deixou de exigir domínio sensível para barrar texto livre. Sem código canônico conhecido: **sempre** escala, com o motivo `acao nao classificada com seguranca: ... faltou o codigo canonico da acao ...`. Continua valendo o outro ramo: código **comum** cujo texto declara domínio sensível que ele não cobre também não executa (código e texto em desacordo é dúvida) |
+| **D07 — vocabulário não foi ampliado** | Nenhum sinônimo novo entrou em `CONCEITOS_DE_ACAO`/`REGRAS_DE_ACAO_HUMANA`. As 4 frases do D07 não foram "pegas por vocabulário": elas escalam porque **nenhuma** ação sem código executa. O código proibido continua vindo da política congelada |
+| **D07 — contrato de código** | `CODIGOS_DE_ACAO_COMUNS` ganhou **um** código, `migracao_de_esquema`: DDL/migration em desenvolvimento é operação legítima (o guardrail de DDL tem lado permitido) e, sem um código canônico para ela, a regra nova tornaria DDL impossível até em dev. O código **não** afrouxa o guardrail: quem decide o ambiente continua sendo o guardrail de DDL |
+| **D08 — gatilho do guardrail de DDL** | `_e_acao_ddl` (casamento de prosa contra as políticas de papel) foi substituído por `_operacao_de_ddl(tarefa)`, que reconhece **DDL/migration REAL**: termo `DDL`, `migration`/`migracao`, comando SQL de definição (`CREATE/ALTER/DROP/TRUNCATE` + objeto), `GRANT/REVOKE` e operação de esquema declarada (adicionar/remover/criar coluna, índice, tabela). A busca é só nos **campos de declaração da própria tarefa** (`acao`, `titulo`, `descricao`, `comando`, `operacao`) — nunca em prosa de terceiros |
+| **D08 — motivo verdadeiro** | O motivo do recibo diz a causa real: a operação reconhecida (com o trecho que casou) e o ambiente alvo. Numa ação sem DDL o guardrail é **avaliado e não acionado**, com detalhe vazio: nenhum motivo de DDL aparece no recibo |
+| **Não mudou** | `hermes/jev/policy_v1.yaml` e `hermes/policies/*.yaml` intocados; nenhum limiar, lane, perfil ou lista de ação proibida entrou no código; as 8 ações de `nunca_decidido_por_maquina` continuam saindo pela camada Human Approval; a precedência (security → human approval → dependências → JEV) foi preservada |
+
+### 8.2 Evidência bruta 1 — as 4 frases do D07 e as 5 que já bloqueavam, uma a uma pela CLI
+
+Script: `bash /opt/data/cache/scratch/d07d08/evidencia_d07_d08.sh` (rodado da raiz do repo). Saída:
+
+```
+===== 1. D07: as 4 frases que escaparam (pre-correcao: PASS/exit 0) =====
+--- conceder permissao de administrador ao usuario de testes
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel
+--- restaurar um backup por cima da base
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel
+--- soltar nota no site da Transformativa
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel
+--- limpar a base de contatos antigos
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel
+===== 2. D07: as 5 frases que ja bloqueavam continuam bloqueando =====
+--- D04: promocao de release para producao
+    exit=3
+    decidido=bloquear outcome=BLOCK pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao='aprovacao_de_producao' origem='texto_canonicalizado' dominios=['producao_ou_release']
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: promover release para producao
+    exit=3  decidido=bloquear outcome=BLOCK codigo_de_acao='aprovacao_de_producao'
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: publicar release em producao
+    exit=3  decidido=bloquear outcome=BLOCK codigo_de_acao='aprovacao_de_producao'
+    motivo=acao de decisao humana (aprovacao_de_producao): nunca decidida por maquina
+--- D04: exclusao de registro de auditoria
+    exit=3  decidido=bloquear outcome=BLOCK codigo_de_acao='exclusao_de_dado_de_cliente'
+    motivo=acao de decisao humana (exclusao_de_dado_de_cliente): nunca decidida por maquina
+--- D06: enviar mensagem ao primeiro cliente interessado
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    codigo_de_acao=None origem='nao_classificada' dominios=['dado_de_cliente', 'outbound_a_terceiro']
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel; o texto declara o dominio sensivel ['dado_de_cliente', 'outbound_a_terceiro']
+```
+
+As 4 do D07 saem `ESCALATE`, `exit=2`, lane conservadora (`high`) e recibo de 13 campos — pelo motivo do **código
+canônico faltante**, não por vocabulário. As 5 conhecidas continuam parando (4 em `BLOCK/exit=3` pela camada Human
+Approval; a do D06 em `ESCALATE/exit=2`).
+
+### 8.3 Evidência bruta 2 — controle: a regra NÃO virou bloqueio geral
+
+```
+===== 3. Controle: codigo canonico comum + texto banal (NAO virou bloqueio geral) =====
+--- codigo COMUM 'ajuste_de_texto' + texto banal (executa)
+    exit=0
+    decidido=executar outcome=PASS pode_executar=True lane=small campos_recibo=13
+    codigo_de_acao='ajuste_de_texto' origem='codigo_canonico' dominios=[]
+    motivo=confianca 0.95 >= limiar de aceite 0.85: aceita a lane
+--- codigo COMUM 'operacao_comercial' + texto banal (executa)
+    exit=0
+    decidido=executar outcome=PASS pode_executar=True lane=medium campos_recibo=13
+    codigo_de_acao='operacao_comercial' origem='codigo_canonico' dominios=[]
+--- codigo COMUM 'migracao_de_esquema' + DDL em dev (executa)
+    exit=0
+    decidido=executar outcome=PASS pode_executar=True lane=small campos_recibo=13
+    codigo_de_acao='migracao_de_esquema' origem='codigo_canonico' dominios=[]
+```
+
+### 8.4 Evidência bruta 3 — o motivo falso do D08 e o guardrail de DDL continuando funcional
+
+```
+===== 4. D08: motivo CORRIGIDO (acao sem DDL nao cita DDL) =====
+--- D08: escrever e publicar o post do LinkedIn
+    exit=2
+    decidido=escalar_acao_nao_classificada outcome=ESCALATE pode_executar=False lane=high campos_recibo=13
+    guardrails_acionados=[]
+    motivo=acao nao classificada com seguranca: a acao nao resolve para nenhum codigo canonico conhecido: faltou o codigo canonico da acao e o texto livre nao e via executavel; o texto declara o dominio sensivel ['producao_ou_release']
+===== 5. D08: o guardrail de DDL continua funcionando (DDL real em ambiente errado) =====
+--- DDL declarada, ambiente producao (BLOCK pelo DDL)
+    exit=3  decidido=bloquear outcome=BLOCK guardrails_acionados=['ddl_fora_de_producao']
+    motivo=guardrail ddl_fora_de_producao: DDL nao nasce em producao (DDL declarada no texto da tarefa (termo 'DDL'): 'DDL'; ambiente alvo producao)
+--- DDL declarada, ambiente NAO declarado (BLOCK pelo DDL)
+    exit=3  decidido=bloquear outcome=BLOCK guardrails_acionados=['ddl_fora_de_producao']
+    motivo=guardrail ddl_fora_de_producao: DDL nao nasce em producao (DDL declarada no texto da tarefa (termo 'DDL'): 'DDL'; ambiente alvo nao declarado)
+--- comando SQL de DDL real (CREATE TABLE), ambiente producao
+    exit=3  decidido=bloquear outcome=BLOCK guardrails_acionados=['ddl_fora_de_producao']
+    motivo=guardrail ddl_fora_de_producao: DDL nao nasce em producao (comando de definicao de esquema (CREATE/ALTER/DROP/TRUNCATE + objeto): 'CREATE TABLE'; ambiente alvo producao)
+--- DDL declarada, ambiente dev (executa: lado permitido do guardrail)
+    exit=0  decidido=executar outcome=PASS pode_executar=True guardrails_acionados=[]
+```
+
+A ação do D08 agora **não** carrega guardrail de DDL nem motivo de DDL: ela escala pelo contrato novo (texto livre sem
+código canônico, com domínio `producao_ou_release` inferido do próprio texto). E o guardrail de DDL, quando há DDL real,
+continua bloqueando em produção/ambiente não declarado e liberando em desenvolvimento — com o motivo dizendo **qual**
+operação foi reconhecida e **qual** era o ambiente.
+
+O item de prova também confere o lado silencioso do guardrail (ação sem DDL, com `ambiente_alvo=producao` declarado —
+o cenário exato do defeito):
+
+```
+===== 6. D08: o guardrail de DDL e AVALIADO e nao ACIONADO em acao sem DDL =====
+    'escrever e publicar o post do LinkedIn'
+      decidido=escalar_acao_nao_classificada guardrails_acionados=[] citou_ddl_no_motivo=False
+      guardrail ddl_fora_de_producao: avaliado=True acionado=False detalhe='' (ambiente_alvo=producao declarado)
+    ... (exportar a planilha do time comercial / revisar o texto do rodape do site / as 2 frases do D07) ...
+    ACHADOS de motivo/guardrail de DDL sem DDL: 0 (esperado 0)
+```
+
+### 8.5 Itens de suíte que precisaram mudar (e por quê)
+
+A regra nova invalida itens que **esperavam que texto livre comum executasse**. O ajuste foi sempre no mesmo sentido:
+declarar o **código canônico** da ação (`acao_codigo`) para que o item continue medindo o que media. **Nenhum item foi
+relaxado** — os itens de execução passaram a exigir código, e itens novos provam que o texto livre escalou.
+
+| Arquivo | Item | Mudança | Por quê |
+|---|---|---|---|
+| `scripts/verificar_jev_router.py` | criterio 2 (lane/perfil/confianca), criterio 2 (limiar do YAML), criterio 2 (lane fora da política), criterio 3 (abstenção), criterio 3 (confiança ausente), criterio 3 (borda), criterio 3 (faixa conservadora), recibo/override | passaram a declarar `acao_codigo="ajuste_de_texto"` | o texto livre desses itens não executa mais; sem o código o item mediria a falha fechada em vez do critério |
+| `scripts/verificar_jev_router.py` | T02/harness (Sales AI: credencial proibida, operação comercial, papel desconhecido) | `acao_codigo="operacao_comercial"`; o item da credencial proibida passou a exigir também o guardrail `papel_sem_credencial_de_deploy` | isola a causa: o bloqueio tem de vir da credencial/papel, não de a ação ser inclassificável (mais estrito) |
+| `scripts/verificar_jev_router.py` | board (card, dependência, recibo) | a prova da dependência passou a usar uma tarefa **com** código; somou-se a prova de que o card lido do board (texto livre) **escala** | a camada de dependência continua provada; a leitura pura do card agora escala por falta de código (fato novo, provado no mesmo item) |
+| `scripts/verificar_jev_router.py` | "T07: ação sem domínio sensível segue executando" | **substituído** por três itens: (a) as 4 ações do D07 escalam; (b) texto livre comum (sem domínio sensível) também não executa; (c) os códigos comuns seguem executando | o item antigo media um contrato revogado; os três novos provam a classe (não depende de parecer sensível) e o controle (não virou bloqueio geral) |
+| `scripts/validar_jev_guardrails.py` | guardrail segredo (APROVA), do_not_contact (APROVA), DDL (REPROVA e APROVA), papel/credencial (APROVA), fail-closed (APROVA), abstenção, T07 "não é bloqueio geral" | passaram a declarar `acao_codigo` (DDL: `migracao_de_esquema`) | mesma razão: o caminho APROVA tem de chegar ao critério, e não parar na falha fechada |
+| `scripts/validar_jev_guardrails.py` | T07 "ação comum sem domínio sensível segue executando" | virou "segue executando **quando tem** código canônico" (com os 4 códigos comuns) e ganhou o item D07 de que texto livre sem código não executa | idem |
+| ambos | — | **itens novos**: D07 (4 escapes + texto comum escalam, com o motivo obrigatório), D07 (códigos comuns continuam executando), D08 (nenhum motivo/guardrail de DDL em ação sem DDL), D08 (DDL real bloqueia com o motivo dizendo a causa) | é o teste que reprova se o defeito voltar |
+| ambos | autoteste por mutação | **3 mutações novas**: D07 (falha fechada volta a exigir domínio sensível), D08 (guardrail de DDL volta a acionar sem DDL real), D08 (motivo deixa de dizer a causa) | prova que os itens novos reprovam o mutante — a prova roda sozinha no comando padrão |
+
+Nota de execução: a suíte do roteador também **mantém** o item de CLI com `acao_codigo` explícito (`ajuste_de_texto`)
+saindo `exit=0`; ele é a prova de que o caminho de execução continua existindo pelo campo de código.
+
+### 8.6 Prova de reversão — o item REPROVA se a regra nova for removida
+
+Reversão em **cópia temporária** do roteador (arquivos versionados intocados), rodando as duas suítes reais por caminho
+(`/opt/data/cache/scratch/d07d08/prova_reversao.py`):
+
+```
+=== D07 reverso: texto livre sem codigo volta a executar quando o texto nao declara dominio
+    suite do roteador: 6 itens reprovados | D07/D08: 2
+      REPROVOU D07: as 4 acoes sensiveis que escapavam nao executam — escalam por falta de codigo canonico, nao por vocabulario
+      REPROVOU D07: texto livre comum, sem dominio sensivel, tambem nao executa — a regra nao depende de parecer sensivel
+    validacao adversarial: 1 FALHOU / 0 ACHADO | D07/D08: 1
+      REPROVOU D07 — texto livre sem codigo canonico NAO executa (as 4 que escapavam + texto comum), escalando com o motivo do codigo faltante
+=== D08 reverso: guardrail de DDL volta a acionar sem DDL real no texto
+    suite do roteador: 20 itens reprovados | D07/D08: 5
+      REPROVOU D07: as 4 acoes sensiveis que escapavam nao executam — escalam por falta de codigo canonico, nao por vocabulario
+      REPROVOU D07: texto livre comum, sem dominio sensivel, tambem nao executa — a regra nao depende de parecer sensivel
+      REPROVOU D07: codigo canonico comum com texto limpo segue executando (a regra nao virou bloqueio geral)
+      REPROVOU D08: acao sem DDL nao carrega motivo nem guardrail de DDL (o recibo nao mente)
+      REPROVOU D08: DDL/migration real em ambiente errado continua bloqueando, com o motivo dizendo a causa
+    validacao adversarial: 11 FALHOU / 0 ACHADO | D07/D08: 3
+      REPROVOU guardrail DDL — D08: so aciona com DDL/migration REAL e o motivo diz a causa real (nenhum motivo de DDL em acao sem DDL)
+      REPROVOU T07/D07 — acao comum sem dominio sensivel segue executando QUANDO tem codigo canonico (nao ha bloqueio geral)
+      REPROVOU D07 — texto livre sem codigo canonico NAO executa (as 4 que escapavam + texto comum), escalando com o motivo do codigo faltante
+=== D08 reverso: motivo do guardrail de DDL deixa de dizer a causa real
+    suite do roteador: 4 itens reprovados | D07/D08: 1
+      REPROVOU D08: DDL/migration real em ambiente errado continua bloqueando, com o motivo dizendo a causa
+    validacao adversarial: 1 FALHOU / 0 ACHADO | D07/D08: 1
+      REPROVOU guardrail DDL — D08: so aciona com DDL/migration REAL e o motivo diz a causa real (nenhum motivo de DDL em acao sem DDL)
+```
+
+As três reversões também entraram no **autoteste por mutação** das duas suítes (roteador: **21/21** detectadas; validação
+adversarial: **20/20**), então a prova roda sozinha no comando padrão.
+
+### 8.7 Contagens finais
+
+| Suíte | Resultado |
+|---|---|
+| `scripts/verificar_jev_router.py --autoteste` | `PASS (59 itens, 0 falhas)`, **`autoteste 21/21`** (55 itens / 18 mutações antes) |
+| `scripts/validar_jev_guardrails.py --autoteste --estrito` | `PASS (74 itens, 0 falhas)`, **0 achados**, **`autoteste 20/20`** (72 itens / 17 mutações antes) |
+| `scripts/verificar_jev_policy.py --autoteste` | `PASS (42 itens, 0 falhas)` + `autoteste 12/12` |
+| `bash scripts/verificar_papeis.sh` / `bash scripts/secret_scan.sh` | `PASS (0 falhas)` / `PASS (nenhum segredo versionado)` |
+
+### 8.8 Limitações honestas do D07/D08
+
+1. **A postura é conservadora e foi tomada em nome do dono, depois homologada.** O custo é explícito: **todo card que
+   chega como texto livre** — inclusive os que já existem no board e são legítimos — passa a **escalar** até o dispatch
+   (card TRE-W0-E04-T05) passar o código canônico. Anderson decidiu em 29/09/2026 manter o critério estrito agora e
+   revisitar só depois do T05 (ver 8.9, com o impacto medido em 4 de 32 casos do corpus); continua reversível numa linha.
+2. **O código canônico é do roteador, não da política congelada.** O lado comum virou quatro códigos
+   (`ajuste_de_texto`, `consulta_interna`, `operacao_comercial`, `migracao_de_esquema`). O conjunto é fechado e disjunto
+   do proibido (provado por item), mas a política v1.0 nomeia só as ações proibidas — se a política for revisada, os
+   dois lados precisam ser reconciliados numa versão nova.
+3. **Não medi a taxa de falso positivo** em cards reais: o corpus anotado do T03 não foi reprocessado. A diferença é que
+   antes o falso positivo era *executar o que não devia*; agora é *escalar o que podia executar* (fail-closed).
+4. **O roteador continua não ligado a nenhum dispatch** (card TRE-W0-E04-T05). Nada aqui muda o fato de que um card pode
+   ser executado sem passar pelo JEV enquanto o encaixe não existir.
+5. **A detecção de DDL é por formato declarado**, não por análise semântica: uma DDL escrita em prosa que não use
+   nenhum dos termos reconhecidos (por exemplo "acrescentar um campo naquela tabela de clientes") não aciona o guardrail
+   de DDL. Ela continua barrada pelo outro lado — sem código canônico, a ação **escala** —, mas o motivo seria o do
+   código faltante, não o do ambiente.
+6. **DDL em desenvolvimento passa a exigir código** (`migracao_de_esquema`). Quem despachar DDL/dump/restore precisa
+   passar esse código; texto livre de migration, mesmo em dev, escala.
+7. **O motivo "acao nao classificada com seguranca" continua não homologado** pelo Anderson como texto de recibo (mesma
+   limitação 7 do T07); o D07 apenas acrescentou o fato faltante ("faltou o codigo canonico da acao").
+
+### 8.9 Homologação da postura (29/09/2026) — manter estrito até o T05
+
+O dono decidiu em **29/09/2026 (19:36 BRT, Telegram)**: **manter o critério estrito agora** e **revisitar depois do
+T05**. Palavra dele: *"seguirei Recomendação: manter estrito agora e revisitar só depois do T05. Quando o dispatch
+passar `acao_codigo`, a postura estrita deixa de custar qualquer coisa (não chega texto livre) e a discussão de
+afrouxar vira irrelevante."*
+
+**Impacto medido que sustentou a decisão** (`scripts/analisar_impacto_de_afrouxar.py`, sobre os 32 casos do corpus
+anotado; estrito = o que está no repo, afrouxado = reversão do D07 em cópia temporária):
+
+```
+casos no corpus: 32
+veredito ESTRITO  : {'ESCALATE': 21, 'PASS': 2, 'BLOCK': 9}
+veredito AFROUXADO: {'ESCALATE': 17, 'PASS': 6, 'BLOCK': 9}
+passam a EXECUTAR se afrouxar: 4 de 32 (12.5%)
+    real-t_969affa7 acao=execucao_de_card    lane_proposta=high  lane_esperada=high  sinais=['ddl_ou_migration']
+    real-t_d9cb5755 acao=execucao_de_card    lane_proposta=high  lane_esperada=high  sinais=['ddl_ou_migration']
+    real-t_1acf11f2 acao=execucao_de_card    lane_proposta=high  lane_esperada=-     sinais=[]
+    borda-07        acao=ajuste_de_interface lane_proposta=small lane_esperada=-     sinais=[]
+codigos comuns do roteador: ['ajuste_de_texto', 'consulta_interna', 'migracao_de_esquema', 'operacao_comercial']
+codigos proibidos (politica): 8 (nunca_decidido_por_maquina)
+acoes do corpus que o roteador NAO conhece: ['ajuste_de_interface', 'concessao_de_credencial',
+    'decisao_de_arquitetura', 'exclusao_de_dado', 'execucao_de_card', 'migration',
+    'publicacao_institucional', 'resposta_a_cliente', 'rollback_producao', 'troca_de_credencial']
+acoes do corpus que ele conhece: ['ajuste_de_texto', 'primeiro_contato_outbound']
+```
+
+Leitura do número: **afrouxar compra 4 cards de 32 (12,5%)** — dois deles DDL em ambiente novo (o falso positivo real
+do critério) e dois sem sinal nenhum declarado (exatamente o perfil por onde os 4 escapes do D07 entraram) — e **não
+muda nada** nos 9 `BLOCK` nem em 17 das 21 escaladas. Em troca, volta o critério por vocabulário, sem cerca para o que
+ninguém previu.
+
+**Achado de integração que a medição expôs:** das 12 ações distintas do corpus, o roteador conhece **2**. Ou seja, hoje
+os 20 cards reais do corpus escalam por **desencontro de vocabulário**, não pela postura — afrouxar o D07 não destrava
+o corpus (compraria 4 cards). Quem destrava é a ponte de códigos (T05 / política v1.1).
+
+Premissas da medição (contestáveis; o cabeçalho do script as declara): sinais do corpus mapeados para os do roteador
+(`producao`→`producao_ou_release`, `mexe_em_segredo`→`credencial`, `outbound_para_terceiro`→`outbound_a_terceiro`);
+`ddl_ou_migration` e `aprova_humana_exigida` não têm sinal equivalente e não foram injetados; `ambiente_alvo` =
+produção quando `producao: true`, senão desenvolvimento; confiança 0,95 e lane `small` em todos (o corpus não carrega
+confiança).
+
+Formas de afrouxar — descartadas e aceitas (registrado para a decisão não virar oral):
+
+| Forma | Veredito |
+|---|---|
+| Vocabulário (voltar ao pré-D07) | **descartada** — reabre a classe; falhou 3 vezes (D04, D06, D07) |
+| Allowlist de códigos (nomear mais um código comum, com revisão na política) | **aceita** como a única forma de afrouxar, se e quando for preciso — é auditável e reversível |
+| Só o sinal do chamador, sem código | **descartada por ora** — transfere a confiança para o dispatch que ainda não existe (T05); omissão do chamador vira execução silenciosa (foi assim que os 4 escapes passaram) |
+
+Registro no board: comentário nos cards `t_83242193` (D07) e `t_4200e054` (D08). Registro de aprovação humana:
+`docs/operations/registro-de-aprovacoes.md`.
+
 ## Anexo A — saída bruta da suíte, pós-correção (64 itens, 0 achados) — estado anterior ao T07 (seção 7)
 
 ```
@@ -849,10 +1136,10 @@ RESULTADO: PASS (60 itens, 0 falhas) + autoteste OK
 
 ```bash
 cd /opt/data/repos/transformativa-revenue-engine
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 72 itens, 0 falhas, 0 achados, exit 0
-/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste # + 17/17 mutacoes, exit 0
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py             # 74 itens, 0 falhas, 0 achados, exit 0
+/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --autoteste # + 20/20 mutacoes, exit 0
 /opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py --estrito   # achados contam como falha (exit 1; hoje exit 0)
-/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste   # 55 itens, 0 falhas, 18/18 mutacoes, exit 0
+/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste   # 59 itens, 0 falhas, 21/21 mutacoes, exit 0
 /opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste   # politica x documento: 42 itens, 12/12
 bash scripts/verificar_papeis.sh                                           # PASS
 bash scripts/secret_scan.sh                                                # PASS
@@ -883,7 +1170,26 @@ corrigido e a suíte tem de reprovar:
 | D04 | `    presentes = _conceitos_presentes(acao)` → `    presentes = set()` |
 | D05 | `    tarefa = _tarefa_segura(tarefa)` → `    tarefa = dict(tarefa or {})` |
 
-Nada foi commitado nem enviado. Os arquivos alterados por esta correção são `hermes/jev/routing/router.py`,
+Evidência dos cards TRE-W0-E04-T02-D07 e -D08 (seção 8), com o CLI real do roteador, e a reversão do contrato novo:
+
+```bash
+cd /opt/data/repos/transformativa-revenue-engine
+# as 4 frases do D07 + as 5 conhecidas + o controle + o D08 + o guardrail de DDL (saida bruta na secao 8)
+bash /opt/data/cache/scratch/d07d08/evidencia_d07_d08.sh
+# reversao do contrato novo em copia temporaria: os itens D07/D08 tem de REPROVAR
+/opt/hermes/.venv/bin/python /opt/data/cache/scratch/d07d08/prova_reversao.py
+# impacto de afrouxar o criterio, sobre os 32 casos do corpus anotado (base da homologacao da secao 8.9)
+/opt/hermes/.venv/bin/python scripts/analisar_impacto_de_afrouxar.py
+```
+
+Nada foi commitado nem enviado **pela correção dos D07/D08**. Registro factual de estado: em 29/09/2026 22:14:48 UTC
+outra frente de trabalho no mesmo worktree (card `TRE-W0-E04-T03`, "homologa lanes dos cards 3 e 4") rodou `git add -A`
+e commitou a árvore inteira em `842d62e` — arrastando junto `hermes/jev/routing/router.py` e
+`scripts/verificar_jev_router.py` (D07/D08 completos) e `scripts/validar_jev_guardrails.py` — e fez `push` para
+`origin/develop`. Não foi ação desta correção; ficaram pendentes (não commitados) apenas o acréscimo de docstring em
+`scripts/validar_jev_guardrails.py` e este documento. Hashes de conteúdo no estado entregue: `router.py` `1503c7fe`,
+`verificar_jev_router.py` `2c43a3f8`, `validar_jev_guardrails.py` `7709ef36`, este documento `3fb19208` (antes dos
+últimos parágrafos). Os arquivos alterados por esta correção são `hermes/jev/routing/router.py`,
 `scripts/validar_jev_guardrails.py`, `scripts/verificar_jev_router.py` e este documento; `hermes/jev/policy_v1.yaml`
 (política congelada) e `hermes/policies/*.yaml` **não foram alterados**. As suítes continuam rodando contra cópias
 temporárias e não mutam o repo.
