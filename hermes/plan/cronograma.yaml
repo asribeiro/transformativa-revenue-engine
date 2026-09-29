@@ -1,0 +1,29 @@
+# Cronograma planejado do TRE — início e fim por onda.
+# Fonte de verdade do PLANEJADO na linha do tempo (Gantt). O REAL vem dos carimbos do board
+# (created_at/started_at/completed_at). Os dois aparecem lado a lado para a diferença ficar visível.
+#
+# Como as datas foram propostas: 1,5 dia útil por card aberto, mínimo de 1 semana por onda,
+# emendando uma onda na seguinte. W0 registra o periodo ja executado.
+# Datas sao do Anderson ajustar: editar aqui e recarregar a pagina. Sete dias por semana = uteis;
+# nao ha desconto de feriado nem de recesso.
+
+versao: cronograma-tre-v1.0
+proposta_em: "2026-09-29"
+origem: "derivado do plano (11_KANBAN_DE_IMPLEMENTACAO) — datas ajustaveis pelo Anderson"
+
+ondas:
+  TRE-W0: {inicio: 2026-09-01, fim: 2026-09-29, estado: concluida}
+  TRE-W1: {inicio: 2026-09-30, fim: 2026-10-13}
+  TRE-W2: {inicio: 2026-10-16, fim: 2026-11-04}
+  TRE-W3: {inicio: 2026-11-09, fim: 2026-11-30}
+  TRE-W4: {inicio: 2026-12-03, fim: 2026-12-15}
+  TRE-W5: {inicio: 2026-12-18, fim: 2027-01-04}
+  TRE-W6: {inicio: 2027-01-07, fim: 2027-01-22}
+  TRE-W7: {inicio: 2027-01-25, fim: 2027-02-04}
+  TRE-W8: {inicio: 2027-02-08, fim: 2027-02-17}
+  TRE-W9: {inicio: 2027-02-22, fim: 2027-03-04}
+
+# Ajuste fino por card, quando a onda nao representar o card (opcional):
+# cards:
+#   t_abc123: {inicio: 2026-10-01, fim: 2026-10-05}
+cards: {}
