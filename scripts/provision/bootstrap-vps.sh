@@ -60,9 +60,16 @@ ufw default allow outgoing >/dev/null
 ufw allow 22/tcp >/dev/null
 ufw --force enable >/dev/null
 systemctl enable --now fail2ban >/dev/null 2>&1
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+if [ "${TRE_HARDEN_SSH:-1}" = "1" ]; then
+  sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+  sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+  systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+  SSH_ESTADO="senha desabilitada, root sem senha"
+else
+  # TRE_HARDEN_SSH=0: mantem o login por senha. Usado enquanto o operador humano nao tem
+  # chave propria — desligar a senha antes disso tranca o dono fora da propria maquina.
+  SSH_ESTADO="senha AINDA habilitada (TRE_HARDEN_SSH=0); desligar quando houver chave do operador"
+fi
 
 echo "== 6. atualizacoes automaticas de seguranca =="
 echo 'Unattended-Upgrade::Automatic-Reboot "false";' > /etc/apt/apt.conf.d/51tre-unattended
@@ -75,6 +82,6 @@ echo "  docker:         $(docker --version)"
 echo "  compose:        $(docker compose version --short 2>/dev/null || echo n/d)"
 echo "  arvore:         /opt/tre/{dev,homolog,prod}/{pg,odoo,n8n,backups,compose}"
 echo "  firewall:       $(ufw status | head -1)"
-echo "  ssh:            senha desabilitada, root sem senha"
+echo "  ssh:            $SSH_ESTADO"
 echo "  fuso:           $(timedatectl show -p Timezone --value)"
 echo "RESULTADO: BOOTSTRAP_OK"

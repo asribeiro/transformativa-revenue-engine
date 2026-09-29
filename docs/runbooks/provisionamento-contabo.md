@@ -1,16 +1,16 @@
 # Runbook — provisionamento da VPS do TRE (Contabo Cloud VPS 6)
 
-**Status:** pronto, **não executado** (compra realizada em 29/09/2026; provisionamento em andamento no provedor).
+**Status:** **executado em 29/09/2026** — ver seção "Execução" no fim do runbook.
 **Cards relacionados:** W1 (PostgreSQL), W2 (Odoo) e `TRE-W0-E01-T03` (backup).
 
 ## 1. Antes de começar
 
 | Item | Estado |
 |---|---|
-| VPS Contabo Cloud VPS 6 (6 vCPU · 12 GB · 200 GB) | comprada, aguardando provisionamento (30 min) |
+| VPS Contabo Cloud VPS 6 | **no ar**: `vmi3619453` · `169.58.24.102` · Ubuntu 24.04.5 · 6 vCPU · 11 GB · 193 GB |
 | Object Storage (destino do backup) | comprado (provisionamento imediato) |
 | Chave pública do Hermes para acesso dedicado | gerada (`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINCs…`), anexada no pedido de bootstrap |
-| Credenciais de root da VPS | chegam por e-mail para o Anderson |
+| Credenciais de root da VPS | em poder do Anderson (login por senha preservado; ver "Execução") |
 
 ## 2. Passo 1 — bootstrap (uma vez, como root)
 
@@ -56,3 +56,31 @@ SSH sem senha e root sem senha; atualizações automáticas **sem** reboot.
   provedor, com console VNC).
 - Serviços: cada ambiente é um compose independente; `docker compose down` no ambiente afetado não toca os
   outros dois.
+
+## Execução — 29/09/2026
+
+**Máquina medida:** `vmi3619453` · `169.58.24.102` · Ubuntu 24.04.5 LTS · **6 vCPU** · **11 GB** RAM ·
+**193 GB** SSD (191 GB livres) · fuso `America/Sao_Paulo`.
+
+**Bootstrap (script `scripts/provision/bootstrap-vps.sh`, rodado uma vez como root):**
+
+| Item | Resultado medido |
+|---|---|
+| Docker | `29.8.1` + compose plugin `5.5.1` |
+| Usuário dedicado | `tre-deploy` (uid 1001; grupos `sudo`, `docker`; sudo **sem senha** verificado) |
+| Árvore | `/opt/tre/{dev,homolog,prod}/{pg,odoo,n8n,backups,compose}` + `/opt/tre/{repo,backup}` |
+| Firewall | `ufw` ativo, **só a 22/tcp** liberada, entrada padrão negada |
+| Brute force | `fail2ban` ativo |
+| Atualizações | `unattended-upgrades` habilitado, **sem** reboot automático |
+| Fuso | `America/Sao_Paulo` |
+
+**Duas decisões tomadas na execução — registradas de propósito:**
+
+1. **Login por senha mantido.** O script desliga `PasswordAuthentication` por padrão; rodamos com
+   `TRE_HARDEN_SSH=0` porque desligar a senha antes de o operador humano ter chave própria **trancaria o dono
+   fora da própria máquina**. Desligar quando houver chave do Anderson (uma linha, registrada aqui).
+2. **A chave do Hermes foi removida de `root`** depois de provado o acesso dedicado (`tre-deploy` com sudo
+   sem senha). O Hermes opera como `tre-deploy`; root segue acessível ao Anderson por senha.
+
+**Pendências declaradas:** chaves do Object Storage (destino do backup — só o Anderson insere, nunca por chat);
+hardening do SSH (item 1); provisionamento de PostgreSQL/Odoo (W1/W2).
