@@ -1,4 +1,4 @@
-versao: corpus-anotacao-v1.1
+versao: corpus-anotacao-v1.2
 criado_em: '2026-09-29'
 origem: cards reais do board TRE + bordas sinteticas; SEM rotulo (rotulo e do Anderson)
 casos:
@@ -42,8 +42,10 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: high
   justificativa: DDL novo, porem em ambiente novo e sem dado real
-  lane_esperada: ''
+  lane_esperada: high
   nota: ''
+  homologacao: 'Anderson, 2026-09-29: confirmado high — DDL em ambiente novo/dev nao e critical; critical fica para o que
+    encosta em ambiente vivo (ver borda-02)'
 - id: real-t_d9cb5755
   origem: card real t_d9cb5755 (TRE-W1-E02-T01)
   titulo: Criar tabelas core
@@ -56,8 +58,10 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: high
   justificativa: DDL novo, ambiente novo, sem dado real
-  lane_esperada: ''
+  lane_esperada: high
   nota: ''
+  homologacao: 'Anderson, 2026-09-29: confirmado high — DDL em ambiente novo/dev nao e critical; critical fica para o que
+    encosta em ambiente vivo (ver borda-02)'
 - id: real-t_d6dc5a4c
   origem: card real t_d6dc5a4c (TRE-W2-E01-T01)
   titulo: Instalar Odoo Community
@@ -450,6 +454,7 @@ casos:
   justificativa: acao da lista que nenhuma maquina decide (decisao de arquitetura)
   lane_esperada: ''
   nota: ''
-nota_da_versao: 'v1.1: acrescentado `lane_proposta_hermes` + `justificativa` em cada caso (proposta da maquina, ancorada na
-  regua declarada em hermes/jev/policy_v1.yaml -> lanes.<nome>.escopo/risco/exemplos). `lane_esperada` continua VAZIO de proposito:
-  quem rotula e o Anderson. Caso sem lane_esperada e caso PENDENTE, nao valido (criterio do card TRE-W0-E04-T03).'
+nota_da_versao: 'v1.2: homologadas as lanes dos cards 3 (schema Sales Intelligence) e 4 (tabelas core) = high, por decisao
+  do Anderson em 2026-09-29. Convencao derivada, a formalizar na politica v1.1 (card E04-T06): DDL em ambiente NOVO/dev =
+  high; DDL em ambiente VIVO = critical (aprovacao humana registrada). Os outros 30 casos seguem PENDENTES: caso sem lane_esperada
+  e caso nao revisado, e nao vale como rotulo.'

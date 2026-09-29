@@ -19,10 +19,14 @@ aceitacao e estao provadas em `scripts/verificar_jev_router.py`:
     execucao;
   * as acoes de `nunca_decidido_por_maquina` nunca passam por classificador;
   * a acao e resolvida para um CODIGO antes de decidir (`acao_codigo` e a via
-    principal; prosa e so ponte de compatibilidade) e acao que NAO resolve para
-    codigo conhecido em tarefa com dominio sensivel — producao/release, credencial,
+    principal; prosa e so ponte de compatibilidade) e uma acao SO EXECUTA quando
+    as tres condicoes valem juntas: (a) resolve para codigo canonico conhecido e
+    nao proibido, (b) nao ha dominio sensivel — producao/release, credencial,
     dado de cliente, outbound a terceiro, declarado pelo chamador OU inferido do
-    texto — nao executa: escala com o motivo "acao nao classificada com seguranca";
+    texto — e (c) a confianca atende ao limiar. Texto livre que NAO resolve para
+    codigo canonico conhecido NAO EXECUTA em nenhuma hipotese (defeito D07):
+    escala com o motivo "acao nao classificada com seguranca", dizendo que
+    faltou o codigo canonico da acao;
   * politica ausente, ilegivel, invalida ou de versao desconhecida entra em modo
     degradado (lane conservadora + `degraded_mode`) e NUNCA executa em silencio;
   * o recibo tem exatamente os campos de `recibo.campos` e nunca carrega segredo;
@@ -266,6 +270,11 @@ REGRAS_DE_ACAO_HUMANA = (
 # cliente interessado" executou). A via principal passa a ser o CODIGO da acao,
 # resolvido ANTES de decidir.
 #
+# Postura do D07 (card TRE-W0-E04-T02-D07): a ponte de prosa so pode BLOQUEAR
+# (levar a camada Human Approval) ou escalar. Texto que NAO resolve para codigo
+# canonico conhecido NAO EXECUTA em nenhuma hipotese — o vocabulario nao sera
+# ampliado uma quarta vez para remendar a deteccao.
+#
 # O contrato tem dois lados:
 #   * PROIBIDO -> exatamente `nunca_decidido_por_maquina` da politica congelada,
 #     lido em tempo de execucao (nenhuma lista propria de proibicao aqui);
@@ -282,6 +291,12 @@ CODIGOS_DE_ACAO_COMUNS = (
     "ajuste_de_texto",
     "consulta_interna",
     "operacao_comercial",
+    # DDL/migration em ambiente de desenvolvimento e operacao legitima (o guardrail
+    # "DDL nao nasce em producao" tem lado permitido). Sem um codigo canonico para
+    # ela, a falha fechada do D07 tornaria DDL impossivel ate em dev. O codigo NAO
+    # afrouxa o guardrail: quem decide o ambiente continua sendo o guardrail de DDL,
+    # que so aciona com DDL/migration REAL no texto (defeito D08).
+    "migracao_de_esquema",
 )
 
 # Dominios sensiveis que a falha fechada exige que o codigo cubra. Sao os quatro
@@ -306,6 +321,43 @@ PADROES_DE_SEGREDO = (
         r"(?i)\b(pass(word)?|senha|token|api[_-]?key|secret|credencial)\b\s*[:=]\s*\S{6,}")),
 )
 NOMES_DE_VARIAVEL_DE_SEGREDO = re.compile(r"(?i)(TOKEN|SECRET|PASSWORD|SENHA|CREDENTIAL|API_?KEY|_KEY$)")
+
+# ---------------------------------------------------------------------------
+# Deteccao de DDL REAL (correcao do defeito D08, card TRE-W0-E04-T02-D08)
+#
+# O guardrail "DDL nao nasce em producao" acionava pelo simples fato de o texto da
+# acao casar, por tokens, uma entrada de prosa das politicas de papel que mencionava
+# "DDL". Medido: "escrever e publicar o post do LinkedIn" acionou o guardrail porque
+# "post" casa "postgresql" e "escrever" casa "escrever" — duas entradas de
+# PostgreSQL/DDL das politicas de papel. Ou seja, o gatilho era a PROSA de terceiros,
+# nao a presenca de DDL; e o recibo ia para o humano dizendo "DDL nao nasce em
+# producao" numa acao sem DDL nenhuma (recibo que mente = rastro de auditoria perdido).
+#
+# Regra agora: o guardrail de DDL so aciona com COMANDO ou OPERACAO de DDL (SQL de
+# definicao), ou com DDL/migration DECLARADA no texto da tarefa. Os padroes abaixo
+# sao formatos de comando, nao lista de sinonimo de negocio; nada aqui e limiar, lane,
+# perfil nem acao proibida (tudo isso continua vindo do YAML).
+# ---------------------------------------------------------------------------
+PADROES_DE_DDL = (
+    ("DDL declarada no texto da tarefa (termo 'DDL')",
+     re.compile(r"(?i)(?<![a-z0-9])ddl(?![a-z0-9])")),
+    ("migration declarada no texto da tarefa (termo 'migration'/'migracao')",
+     re.compile(r"(?i)\bmigra(?:tion|coes|cao)\b")),
+    ("comando de definicao de esquema (CREATE/ALTER/DROP/TRUNCATE + objeto)",
+     re.compile(r"(?i)\b(?:create|alter|drop|truncate)\s+(?:table|tabela|index|indice|schema|"
+                r"esquema|view|visao|sequence|sequencia|type|tipo|function|funcao|trigger|"
+                r"extension|extensao|database|role|column|coluna)\b")),
+    ("comando de permissao de esquema (GRANT/REVOKE)",
+     re.compile(r"(?i)\b(?:grant|revoke)\b")),
+    ("operacao de esquema declarada (adicionar/remover/criar coluna, indice ou tabela)",
+     re.compile(r"(?i)\b(?:adicionar|remover|excluir|alterar|criar)\s+(?:a\s+|o\s+|uma\s+|um\s+)?"
+                r"(?:coluna|colunas|indice|indices|tabela|tabelas)\b")),
+)
+
+# Campos da tarefa onde DDL/migration pode estar DECLARADA (o card do board declara
+# no titulo e no corpo). A busca e limitada a esses campos de declaracao — nunca a
+# prosa de outro arquivo, que foi a causa do falso positivo do D08.
+CAMPOS_DE_DECLARACAO_DE_DDL = ("acao", "titulo", "descricao", "comando", "operacao")
 
 # ---------------------------------------------------------------------------
 # Caminhos padrao (identidade de arquivo, nao parametro de politica)
@@ -778,9 +830,29 @@ def _e_acao_outbound(acao: str, politica: dict, papeis: dict) -> bool:
     return bool(_entradas_que_casam(acao, entradas))
 
 
-def _e_acao_ddl(acao: str, politica: dict, papeis: dict) -> bool:
-    return bool(_entradas_que_casam(acao, _entradas_com(papeis, "DDL")
-                                    + _entradas_com(papeis, "migration")))
+def _texto_declarado_para_ddl(tarefa) -> str:
+    """Texto onde DDL/migration pode estar DECLARADA (campos de declaracao da tarefa)."""
+    if not isinstance(tarefa, dict):
+        return ""
+    return " ".join(str(tarefa.get(campo) or "") for campo in CAMPOS_DE_DECLARACAO_DE_DDL)
+
+
+def _operacao_de_ddl(tarefa) -> str:
+    """Rotulo da operacao de DDL REAL identificada; '' quando nao ha DDL nenhuma.
+
+    Devolve o reconhecido (nao um booleano) porque o motivo do recibo tem de
+    descrever a causa real do acionamento. O gatilho e comando/operacao de DDL ou
+    DDL/migration declarada nos campos da propria tarefa — nunca o casamento de
+    prosa de outro arquivo, que era a causa do falso positivo do D08.
+    """
+    texto = _texto_declarado_para_ddl(tarefa)
+    if not texto.strip():
+        return ""
+    for rotulo, padrao in PADROES_DE_DDL:
+        achado = padrao.search(texto)
+        if achado:
+            return f"{rotulo}: {achado.group(0).strip()!r}"
+    return ""
 
 
 def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
@@ -801,13 +873,19 @@ def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
         "empresa marcada como do_not_contact/opt_out em acao outbound"
         if do_not_contact else ""))
 
-    if _e_acao_ddl(acao, politica, papeis):
+    # Guardrail de DDL (defeito D08): so aciona com DDL/migration REAL — comando SQL de
+    # definicao ou declaracao nos campos da propria tarefa. O motivo diz qual operacao
+    # foi reconhecida e qual era o ambiente alvo; numa acao sem DDL o guardrail nao
+    # aciona e o recibo nao menciona DDL.
+    motivo_ddl = _operacao_de_ddl(tarefa)
+    if motivo_ddl:
         ddl_acionado = ambiente != "desenvolvimento" and ambiente != "dev"
+        detalhe_ddl = (f"{motivo_ddl}; ambiente alvo {ambiente or 'nao declarado'}"
+                       if ddl_acionado else f"{motivo_ddl}; ambiente alvo {ambiente}")
         guardrails.append(_guardrail(
             "ddl_fora_de_producao", "DDL nao nasce em producao",
             "ambiente alvo declarado no card/migracao",
-            ddl_acionado,
-            f"acao de DDL com ambiente alvo {ambiente or 'nao declarado'}"))
+            ddl_acionado, detalhe_ddl))
     else:
         guardrails.append(_guardrail(
             "ddl_fora_de_producao", "DDL nao nasce em producao",
@@ -1056,23 +1134,40 @@ def dominios_sensiveis(tarefa) -> dict:
 def _falha_fechada_por_acao_nao_classificada(resolucao: dict, dominios: dict):
     """Motivo da falha fechada, ou None quando a acao pode seguir.
 
-    Regra do card T07 (correcao de raiz do D06): acao que NAO resolve para codigo
-    conhecido E tarefa com dominio sensivel (declarado ou inferido) NAO executa.
-    Vale tambem quando o codigo declarado e COMUM mas o texto carrega dominio
-    sensivel que ele nao cobre: codigo e texto em desacordo e duvida, e duvida nao
-    executa. Codigo proibido nao chega aqui (a camada Human Approval vem antes).
+    Postura do card D07 (fecha a CLASSE dos 4 escapes): uma acao SO EXECUTA com as
+    tres condicoes juntas — (a) resolve para codigo canonico conhecido e nao proibido,
+    (b) nao ha dominio sensivel (declarado pelo chamador ou inferido do texto) e (c) a
+    confianca atende ao limiar (essa parte e do JEV, mais adiante).
+
+    Texto livre que NAO resolve para codigo canonico conhecido NAO EXECUTA em nenhuma
+    hipotese: escala sempre, com motivo explicito de que FALTOU O CODIGO CANONICO da
+    acao. Nao ha mais a exigencia de dominio sensivel para barrar texto livre — foi
+    exatamente esse o buraco do D07: a deteccao de sensibilidade por vocabulario falhou
+    tres vezes (D04, D06, D07) e nao sera remendada com sinonimo novo. Enquanto quem
+    despacha (card TRE-W0-E04-T05) nao passar o codigo, escalar e o comportamento certo.
+
+    Codigo PROIBIDO nao chega aqui (a camada Human Approval vem antes). Codigo COMUM
+    cujo texto carrega dominio sensivel que ele nao cobre tambem nao executa: codigo e
+    texto em desacordo e duvida, e duvida nao executa.
     """
-    if resolucao["classe"] == "proibida" or not dominios["uniao"]:
+    if resolucao["classe"] == "proibida":
         return None
     if not resolucao["codigo"]:
-        detalhe = (f"o codigo declarado {resolucao['declarado']!r} nao e conhecido"
-                   if resolucao["origem"] == "codigo_desconhecido"
-                   else "a acao nao resolve para nenhum codigo conhecido")
-    else:
-        detalhe = (f"o codigo comum {resolucao['codigo']!r} nao cobre o dominio "
-                   "sensivel que o texto declara")
-    return (f"{MOTIVO_ACAO_NAO_CLASSIFICADA}: {detalhe} e a tarefa tem dominio "
-            f"sensivel {dominios['uniao']}")
+        if resolucao["origem"] == "codigo_desconhecido":
+            detalhe = (f"o codigo declarado {resolucao['declarado']!r} nao e conhecido "
+                       f"(campo {CAMPO_DO_CODIGO_DE_ACAO}: codigo conhecido ou nada) e "
+                       "faltou o codigo canonico da acao")
+        else:
+            detalhe = ("a acao nao resolve para nenhum codigo canonico conhecido: "
+                       "faltou o codigo canonico da acao e o texto livre nao e via "
+                       "executavel")
+        cauda = (f"; o texto declara o dominio sensivel {dominios['uniao']}"
+                 if dominios["uniao"] else "")
+        return f"{MOTIVO_ACAO_NAO_CLASSIFICADA}: {detalhe}{cauda}"
+    if dominios["uniao"]:
+        return (f"{MOTIVO_ACAO_NAO_CLASSIFICADA}: o codigo comum {resolucao['codigo']!r} "
+                f"nao cobre o dominio sensivel {dominios['uniao']} que o texto declara")
+    return None
 
 
 def acao_de_decisao_humana(acao: str, politica, papeis=None, diretorio=None) -> list:
@@ -1375,9 +1470,10 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
                             "encaminhar para Human Approval do Anderson"]
         return _fechar(politica, tarefa, plano, agora)
 
-    # ---- Falha fechada: acao nao classificada em tarefa com dominio sensivel --
-    # Sem codigo conhecido nao ha execucao de acao sensivel. O motivo obrigatorio
-    # ("acao nao classificada com seguranca") vai no recibo/decisao.
+    # ---- Falha fechada: acao sem codigo canonico conhecido nao executa ----------
+    # Postura do D07: o texto livre deixou de ser via executavel. Sem codigo canonico
+    # conhecido a acao NAO EXECUTA — escala sempre, com o motivo obrigatorio
+    # ("acao nao classificada com seguranca") dizendo que faltou o codigo canonico.
     # ANCORA:FALHA_FECHADA_DE_ACAO
     incerteza = _falha_fechada_por_acao_nao_classificada(resolucao, dominios)
     if incerteza:
@@ -1387,8 +1483,8 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         plano["exige_aprovacao_humana"] = True
         plano["lane"] = _lane_segura(politica, tarefa)
         plano["motivos"] = [incerteza,
-                            "falha fechada: acao sem codigo conhecido e com dominio "
-                            "sensivel nao executa"]
+                            "falha fechada (D07): sem codigo canonico da acao o texto "
+                            "livre nao executa; escala para decisao humana"]
         return _fechar(politica, tarefa, plano, agora)
 
     # ---- Camada 3: prioridade e dependencias --------------------------------

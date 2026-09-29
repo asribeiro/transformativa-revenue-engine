@@ -19,6 +19,15 @@ Alem disso a suite verifica que o roteador NAO tem limiar/lane/perfil literal
 (prova comportamental: trocar o limiar no YAML muda a decisao) e que a matriz
 Dev x Sales e respeitada (Sales AI nunca recebe credencial de deploy).
 
+A partir da correcao dos defeitos D07 e D08 (cards TRE-W0-E04-T02-D07 e -D08) a
+suite tambem prova o contrato novo: (a) texto livre que NAO resolve para codigo
+canonico conhecido NAO EXECUTA em nenhuma hipotese — escala, com o motivo dizendo
+que faltou o codigo canonico da acao; (b) o guardrail de DDL so aciona com
+DDL/migration REAL e o motivo no recibo diz a causa real (nenhum motivo de DDL em
+acao sem DDL). Por causa de (a), os itens que ANTES esperavam que TEXTO LIVRE comum
+executasse passaram a declarar o codigo canonico da acao (campo `acao_codigo`):
+nenhum item foi relaxado — a mudanca so pode deixar o contrato mais estrito.
+
 Uso:
     python3 scripts/verificar_jev_router.py                 # verifica
     python3 scripts/verificar_jev_router.py --autoteste      # verifica + mutacoes
@@ -192,8 +201,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         problemas = []
         for lane in lanes:
             resultado = roteador.decidir(
-                {"card_id": f"t_{lane}", "acao": "tarefa de exemplo", "lane_proposta": lane,
-                 "confianca": alta, "status": "ready"},
+                {"card_id": f"t_{lane}", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+                 "lane_proposta": lane, "confianca": alta, "status": "ready"},
                 politica=politica)
             recibo = resultado["recibo"]
             esperado_perfil = politica["lanes"][lane]["perfil"]
@@ -219,8 +228,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         caminho.write_text(novo, encoding="utf-8")
         outra = roteador.carregar_politica(caminho, diretorio_de_papeis=diretorio_papeis)
         resultado = roteador.decidir(
-            {"card_id": "t_limiar", "acao": "tarefa de exemplo", "lane_proposta": "small",
-             "confianca": alta, "status": "ready"},
+            {"card_id": "t_limiar", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "small", "confianca": alta, "status": "ready"},
             politica=outra)
         recibo = resultado["recibo"]
         esperado = roteador.lane_mais_conservadora(outra, "small", outra["_lane_conservadora"])
@@ -232,8 +241,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _lane_desconhecida():
         resultado = roteador.decidir(
-            {"card_id": "t_x", "acao": "tarefa de exemplo", "lane_proposta": "turbo",
-             "confianca": alta, "status": "ready"}, politica=politica)
+            {"card_id": "t_x", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "turbo", "confianca": alta, "status": "ready"}, politica=politica)
         return _texto(resultado["decisao"]["decidido"] == "abster_e_escalar"
                       and resultado["decisao"]["pode_executar"] is False,
                       f"decidido={resultado['decisao']['decidido']} lane={resultado['recibo']['lane']}")
@@ -243,8 +252,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     # ------------------------------------------ criterio 3: confianca baixa
     def _abstem_abaixo_do_limiar():
         resultado = roteador.decidir(
-            {"card_id": "t_baixa", "acao": "tarefa de exemplo", "lane_proposta": "medium",
-             "confianca": baixa, "status": "ready"}, politica=politica)
+            {"card_id": "t_baixa", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "medium", "confianca": baixa, "status": "ready"}, politica=politica)
         d, recibo = resultado["decisao"], resultado["recibo"]
         return _texto(d["decidido"] == "abster_e_escalar" and d["outcome"] == roteador.OUTCOME_ESCALAR
                       and d["pode_executar"] is False and d["exige_escalacao"] is True
@@ -256,8 +265,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _nao_infere_confianca():
         resultado = roteador.decidir(
-            {"card_id": "t_sem_conf", "acao": "tarefa de exemplo", "lane_proposta": "small",
-             "status": "ready"}, politica=politica)
+            {"card_id": "t_sem_conf", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "small", "status": "ready"}, politica=politica)
         return _texto(resultado["decisao"]["pode_executar"] is False
                       and resultado["recibo"]["confidence"] is None,
                       f"decidido={resultado['decisao']['decidido']}")
@@ -266,8 +275,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _borda_abster():
         resultado = roteador.decidir(
-            {"card_id": "t_borda", "acao": "tarefa de exemplo", "lane_proposta": "medium",
-             "confianca": abster, "status": "ready"}, politica=politica)
+            {"card_id": "t_borda", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "medium", "confianca": abster, "status": "ready"}, politica=politica)
         return _texto(resultado["decisao"]["decidido"] == "executar"
                       and resultado["recibo"]["lane"] == lane_conservadora,
                       f"na borda {abster} a lane e {resultado['recibo']['lane']} "
@@ -279,7 +288,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         problemas = []
         for lane in lanes:
             resultado = roteador.decidir(
-                {"card_id": f"t_faixa_{lane}", "acao": "tarefa de exemplo", "lane_proposta": lane,
+                {"card_id": f"t_faixa_{lane}", "acao": "tarefa de exemplo",
+                 "acao_codigo": "ajuste_de_texto", "lane_proposta": lane,
                  "confianca": faixa_conservadora, "status": "ready"}, politica=politica)
             final = resultado["recibo"]["lane"]
             if roteador.indice_da_lane(politica, final) < roteador.indice_da_lane(politica, lane):
@@ -421,13 +431,13 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _override_nao_rebaixa():
         resultado = roteador.decidir(
-            {"card_id": "t_ov", "acao": "tarefa de exemplo", "lane_proposta": "high",
-             "confianca": alta, "status": "ready",
+            {"card_id": "t_ov", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "high", "confianca": alta, "status": "ready",
              "override": {"por": "anderson", "lane": "small"}}, politica=politica)
         d = resultado["decisao"]
         elevado = roteador.decidir(
-            {"card_id": "t_ov2", "acao": "tarefa de exemplo", "lane_proposta": "small",
-             "confianca": alta, "status": "ready",
+            {"card_id": "t_ov2", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
+             "lane_proposta": "small", "confianca": alta, "status": "ready",
              "override": {"por": "anderson", "lane": "high"}}, politica=politica)
         return _texto(d["outcome"] == roteador.OUTCOME_BLOQUEAR
                       and elevado["decisao"]["lane"] == "high",
@@ -538,17 +548,22 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
             return _texto(False, "sales-ai nao declara credencial proibida identificavel")
         resultado = roteador.decidir(
             {"card_id": "t_sa2", "acao": "gerar conteudo, resumo, score e recomendacao",
+             "acao_codigo": "operacao_comercial",
              "papel_solicitado": "sales-ai", "credencial_solicitada": escolhida,
              "lane_proposta": "medium", "confianca": alta}, politica=politica)
-        return _texto(resultado["recibo"]["outcome"] == roteador.OUTCOME_BLOQUEAR,
+        return _texto(resultado["recibo"]["outcome"] == roteador.OUTCOME_BLOQUEAR
+                      and "papel_sem_credencial_de_deploy"
+                      in resultado["decisao"]["guardrails_acionados"],
                       f"credencial proibida pedida {escolhida!r}: "
-                      f"outcome={resultado['recibo']['outcome']}")
+                      f"outcome={resultado['recibo']['outcome']} "
+                      f"guardrails={resultado['decisao']['guardrails_acionados']}")
 
     itens.checar("T02/harness: Sales AI nao recebe credencial de deploy", _sales_ai_sem_credencial_de_deploy)
 
     def _sales_ai_operacao_comercial():
         resultado = roteador.decidir(
             {"card_id": "t_sa3", "acao": "gerar conteudo, resumo, score e recomendacao",
+             "acao_codigo": "operacao_comercial",
              "papel_solicitado": "sales-ai", "lane_proposta": "medium", "confianca": alta},
             politica=politica)
         d = resultado["decisao"]
@@ -560,7 +575,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _papel_desconhecido():
         resultado = roteador.decidir(
-            {"card_id": "t_sa4", "acao": "gerar conteudo", "papel_solicitado": "papel-inventado",
+            {"card_id": "t_sa4", "acao": "gerar conteudo", "acao_codigo": "operacao_comercial",
+             "papel_solicitado": "papel-inventado",
              "lane_proposta": "medium", "confianca": alta}, politica=politica)
         return _texto(resultado["recibo"]["outcome"] == roteador.OUTCOME_BLOQUEAR,
                       f"outcome={resultado['recibo']['outcome']} (fail-closed)")
@@ -633,14 +649,27 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
             problemas.append(f"dependencia do filho nao lida: {filho['dependencias_pendentes']}")
 
         tarefa = roteador.tarefa_a_partir_do_card(filho, politica)
+        # O contrato novo (D07) exige codigo canonico para executar, entao a prova da
+        # camada de dependencia declara o codigo: assim ela mede a dependencia, e nao a
+        # falha fechada.
+        tarefa["acao_codigo"] = "ajuste_de_texto"
         resultado = roteador.decidir(tarefa, politica=politica)
         d = resultado["decisao"]
         if d["decidido"] != "aguardar_dependencia" or d["pode_executar"]:
             problemas.append(f"filho com pai pendente executou: {d['decidido']}")
+        # O card lido do board (texto livre, sem codigo) nao executa nem espera
+        # dependencia: escala pela falha fechada do D07 — nao ha codigo canonico.
+        sem_codigo = roteador.decidir(roteador.tarefa_a_partir_do_card(filho, politica),
+                                      politica=politica)
+        if sem_codigo["decisao"]["pode_executar"] or \
+                sem_codigo["recibo"]["outcome"] != roteador.OUTCOME_ESCALAR:
+            problemas.append("card do board sem codigo canonico nao escalou: "
+                             f"{sem_codigo['decisao']['decidido']}")
         if resultado["recibo"]["card_id"] != "t_filho":
             problemas.append("recibo sem o card_id do board")
         return _texto(not problemas, "; ".join(problemas) if problemas else
-                      "card, dependencia pendente e recibo do card conferidos")
+                      "card, dependencia pendente (com codigo) nao inicia, card sem codigo "
+                      "escala e recibo carrega o card_id do board")
 
     itens.checar("board: le o card e as dependencias; filho com pai pendente nao inicia",
                  _board_temporario)
@@ -864,6 +893,19 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
                             "publicar release em producao",
                             "exclusao de registro de auditoria",
                             "enviar mensagem ao primeiro cliente interessado")
+    # D07 (card TRE-W0-E04-T02-D07): as 4 acoes SENSIVEIS escritas com sinonimo nao
+    # previsto que EXECUTAVAM (PASS/exit 0) com as suites verdes. Nenhuma delas entra em
+    # tabela de sinonimo: elas sao o motivo de o texto livre deixar de ser via executavel.
+    FRASES_ESCAPARAM_D07 = (
+        "conceder permissao de administrador ao usuario de testes",
+        "restaurar um backup por cima da base",
+        "soltar nota no site da Transformativa",
+        "limpar a base de contatos antigos",
+    )
+    # Texto livre comum, sem dominio sensivel nenhum: no contrato novo tambem NAO executa.
+    # A regra do D07 nao depende de o texto "parecer sensivel".
+    TEXTOS_LIVRES_COMUNS = ("tarefa de exemplo", "ajuste de texto simples",
+                            "consulta de status do card")
 
     def _nao_executa(frase, **extra):
         """Problemas ao decidir a frase: tem de parar em BLOCK/ESCALATE, recibo de 13."""
@@ -925,21 +967,148 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     itens.checar("T07: acao resolvida por codigo canonico comum executa (a falha fechada "
                  "nao virou bloqueio geral)", _t07_codigo_comum_executa)
 
-    def _t07_benignas_seguem_executando():
+    def _d07_frases_que_escaparam():
         problemas = []
-        for acao in ("tarefa de exemplo", "ajuste de texto simples",
-                     "consulta de status do card"):
+        for frase in FRASES_ESCAPARAM_D07:
             resultado = roteador.decidir(
-                {"card_id": "t_t07b2", "acao": acao, "lane_proposta": "small",
+                {"card_id": "t_d07", "acao": frase, "lane_proposta": "small",
                  "confianca": alta, "status": "ready"}, politica=politica)
-            if resultado["decisao"]["decidido"] != "executar":
-                problemas.append(f"'{acao}': {resultado['decisao']['decidido']} "
-                                 f"({resultado['decisao']['motivos'][0][:60]})")
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            motivos = " ".join(d["motivos"]).lower()
+            if d["pode_executar"] or d["decidido"] == "executar":
+                problemas.append(f"'{frase}': EXECUTOU ({d['decidido']}/{recibo['outcome']})")
+                continue
+            if recibo["outcome"] != roteador.OUTCOME_ESCALAR:
+                problemas.append(f"'{frase}': outcome={recibo['outcome']} (esperado ESCALATE)")
+            if d["decidido"] != "escalar_acao_nao_classificada":
+                problemas.append(f"'{frase}': decidido={d['decidido']}")
+            if recibo["lane"] != lane_conservadora:
+                problemas.append(f"'{frase}': lane={recibo['lane']} "
+                                 f"(esperado {lane_conservadora})")
+            if roteador.MOTIVO_ACAO_NAO_CLASSIFICADA not in motivos \
+                    or "codigo canonico" not in motivos:
+                problemas.append(f"'{frase}': motivo sem o codigo canonico faltante: "
+                                 f"{d['motivos']}")
+            if list(recibo.keys()) != list(campos):
+                problemas.append(f"'{frase}': recibo fora do contrato ({len(recibo)} campos)")
         return _texto(not problemas, "; ".join(problemas) if problemas else
-                      "3 acoes comuns, sem dominio sensivel, seguem executando")
+                      f"as {len(FRASES_ESCAPARAM_D07)} acoes sensiveis do D07 escalam "
+                      f"(ESCALATE, lane {lane_conservadora}, recibo de 13 campos) com o motivo "
+                      "dizendo que faltou o codigo canonico")
 
-    itens.checar("T07: acao sem dominio sensivel segue executando (nao ha bloqueio geral)",
-                 _t07_benignas_seguem_executando)
+    itens.checar("D07: as 4 acoes sensiveis que escapavam nao executam — escalam por falta de "
+                 "codigo canonico, nao por vocabulario", _d07_frases_que_escaparam)
+
+    def _d07_texto_livre_comum_tambem_nao_executa():
+        problemas = []
+        for acao in TEXTOS_LIVRES_COMUNS:
+            resultado = roteador.decidir(
+                {"card_id": "t_d07b", "acao": acao, "lane_proposta": "small",
+                 "confianca": alta, "status": "ready"}, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            motivos = " ".join(d["motivos"]).lower()
+            if d["pode_executar"] or recibo["outcome"] != roteador.OUTCOME_ESCALAR:
+                problemas.append(f"'{acao}': {d['decidido']}/{recibo['outcome']}")
+            elif d.get("dominios_sensiveis") != []:
+                problemas.append(f"'{acao}': dominios={d.get('dominios_sensiveis')} "
+                                 "(o caso tem de ser texto comum, sem dominio sensivel)")
+            elif "codigo canonico" not in motivos:
+                problemas.append(f"'{acao}': motivo sem o codigo canonico: {d['motivos']}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(TEXTOS_LIVRES_COMUNS)} textos comuns sem codigo tambem escalam "
+                      "(a regra nao depende de o texto parecer sensivel)")
+
+    itens.checar("D07: texto livre comum, sem dominio sensivel, tambem nao executa — a regra "
+                 "nao depende de parecer sensivel", _d07_texto_livre_comum_tambem_nao_executa)
+
+    def _d07_com_codigo_comum_continua_executando():
+        problemas = []
+        for codigo in roteador.CODIGOS_DE_ACAO_COMUNS:
+            resultado = roteador.decidir(
+                {"card_id": "t_d07c", "acao": "tarefa de exemplo sem dominio sensivel",
+                 "acao_codigo": codigo, "lane_proposta": "small", "confianca": alta,
+                 "status": "ready"}, politica=politica)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            if d["decidido"] != "executar" or not d["pode_executar"] \
+                    or recibo["outcome"] != roteador.OUTCOME_EXECUTAR:
+                problemas.append(f"codigo {codigo}: {d['decidido']}/{recibo['outcome']} "
+                                 f"({d['motivos'][0][:70]})")
+            elif list(recibo.keys()) != list(campos):
+                problemas.append(f"codigo {codigo}: recibo fora do contrato")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"os {len(roteador.CODIGOS_DE_ACAO_COMUNS)} codigos canonicos comuns "
+                      "seguem executando: a regra do D07 nao virou bloqueio geral")
+
+    itens.checar("D07: codigo canonico comum com texto limpo segue executando (a regra nao "
+                 "virou bloqueio geral)", _d07_com_codigo_comum_continua_executando)
+
+    def _d08_guardrail_de_ddl_so_com_ddl():
+        problemas = []
+        # "escrever e publicar o post do LinkedIn" e a acao exata do defeito D08: sem DDL
+        # nenhuma, ela era BLOQUEADA por "guardrail ddl_fora_de_producao: DDL nao nasce em
+        # producao" (o gatilho era o casamento de prosa com entradas de PostgreSQL/DDL das
+        # politicas de papel). O ambiente aqui e hostil de proposito: producao declarada.
+        casos = ("escrever e publicar o post do LinkedIn", "tarefa de exemplo",
+                 "ajuste de texto simples", "consulta de status do card",
+                 "gerar conteudo, resumo, score e recomendacao")
+        for acao in casos:
+            resultado = roteador.decidir(
+                {"card_id": "t_d08", "acao": acao, "acao_codigo": "ajuste_de_texto",
+                 "ambiente_alvo": "producao", "lane_proposta": "small", "confianca": alta,
+                 "status": "ready"}, politica=politica)
+            d = resultado["decisao"]
+            motivos = " ".join(d["motivos"]).lower()
+            if "ddl" in motivos or "migration" in motivos \
+                    or "ddl_fora_de_producao" in d["guardrails_acionados"]:
+                problemas.append(f"'{acao}': motivo/guardrail de DDL em acao sem DDL: "
+                                 f"{d['guardrails_acionados']} {d['motivos']}")
+            avaliados = [g for g in d["guardrails_avaliados"]
+                         if g["id"] == "ddl_fora_de_producao"]
+            if not avaliados or avaliados[0]["acionado"] or avaliados[0]["detalhe"]:
+                problemas.append(f"'{acao}': guardrail de DDL avaliado errado: {avaliados}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      f"{len(casos)} acoes sem DDL: guardrail avaliado, nao acionado, e nenhum "
+                      "motivo de DDL no recibo (mesmo com ambiente producao declarado)")
+
+    itens.checar("D08: acao sem DDL nao carrega motivo nem guardrail de DDL (o recibo nao mente)",
+                 _d08_guardrail_de_ddl_so_com_ddl)
+
+    def _d08_ddl_real_aciona_com_causa_verdadeira():
+        problemas = []
+        casos = (("aplicar DDL/migration em qualquer ambiente", {"ambiente_alvo": "producao"},
+                  "ddl"),
+                 ("aplicar DDL/migration em qualquer ambiente", {}, "ddl"),
+                 ("rodar CREATE TABLE cliente_novo no banco", {"ambiente_alvo": "producao"},
+                  "create table"))
+        for acao, extra, causa in casos:
+            tarefa = {"card_id": "t_d08b", "acao": acao, "acao_codigo": "migracao_de_esquema",
+                      "lane_proposta": "small", "confianca": alta, "status": "ready"}
+            tarefa.update(extra)
+            resultado = roteador.decidir(tarefa, politica=politica)
+            d = resultado["decisao"]
+            motivos = " ".join(d["motivos"]).lower()
+            if resultado["recibo"]["outcome"] != roteador.OUTCOME_BLOQUEAR \
+                    or "ddl_fora_de_producao" not in d["guardrails_acionados"]:
+                problemas.append(f"'{acao}' {extra}: {d['decidido']}/"
+                                 f"{resultado['recibo']['outcome']} {d['guardrails_acionados']}")
+            elif causa not in motivos or "ambiente alvo" not in motivos:
+                problemas.append(f"'{acao}' {extra}: motivo sem a causa real ({causa!r}): "
+                                 f"{d['motivos']}")
+        dev = roteador.decidir(
+            {"card_id": "t_d08c", "acao": "aplicar DDL/migration em qualquer ambiente",
+             "acao_codigo": "migracao_de_esquema", "ambiente_alvo": "desenvolvimento",
+             "lane_proposta": "small", "confianca": alta, "status": "ready"}, politica=politica)
+        if dev["decisao"]["decidido"] != "executar" \
+                or "ddl_fora_de_producao" in dev["decisao"]["guardrails_acionados"]:
+            problemas.append("DDL em desenvolvimento deixou de ser o lado permitido do "
+                             f"guardrail: {dev['decisao']['decidido']}")
+        return _texto(not problemas, "; ".join(problemas) if problemas else
+                      "DDL/migration REAL (declarada ou comando SQL) em producao/ambiente nao "
+                      "declarado bloqueia com o motivo dizendo a causa (operacao + ambiente); "
+                      "em desenvolvimento executa")
+
+    itens.checar("D08: DDL/migration real em ambiente errado continua bloqueando, com o motivo "
+                 "dizendo a causa", _d08_ddl_real_aciona_com_causa_verdadeira)
 
     def _t07_frases_que_escaparam():
         problemas = [p for frase in FRASES_QUE_ESCAPARAM for p in _nao_executa(frase)]
@@ -1139,6 +1308,30 @@ def mutacoes():
             "    incerteza = _falha_fechada_por_acao_nao_classificada(resolucao, dominios)",
             "    incerteza = None")
 
+    def falha_fechada_so_com_dominio_sensivel(codigo):
+        # D07 reverso: o texto livre volta a executar quando o texto NAO declara dominio
+        # sensivel — era exatamente o buraco do D07 (a peneira por vocabulario).
+        return codigo.replace(
+            '    if resolucao["classe"] == "proibida":\n        return None\n'
+            '    if not resolucao["codigo"]:',
+            '    if not dominios["uniao"]:\n        return None\n'
+            '    if resolucao["classe"] == "proibida":\n        return None\n'
+            '    if not resolucao["codigo"]:')
+
+    def ddl_aciona_sem_ddl(codigo):
+        # D08 reverso: o guardrail de DDL volta a acionar para qualquer acao — o gatilho
+        # deixa de exigir DDL/migration REAL no texto declarado.
+        return codigo.replace(
+            "    for rotulo, padrao in PADROES_DE_DDL:",
+            '    return "DDL declarada (mutacao: gatilho sem DDL real)"\n'
+            "    for rotulo, padrao in PADROES_DE_DDL:")
+
+    def motivo_de_ddl_generico(codigo):
+        # D08 reverso: o guardrail aciona, mas o recibo deixa de dizer a causa real.
+        return codigo.replace(
+            '        detalhe_ddl = (f"{motivo_ddl}; ambiente alvo {ambiente or \'nao declarado\'}"',
+            '        detalhe_ddl = ("guardrail de DDL acionado (mutacao: sem causa real)"')
+
     return [
         ("aceitar versao de politica desconhecida", versao_desconhecida_aceita, identidade, identidade),
         ("ignorar o guardrail de segredo", guardrail_segredo_ignorado, identidade, identidade),
@@ -1158,6 +1351,12 @@ def mutacoes():
          sinais_declarados_ignorados, identidade, identidade),
         ("T07: falha fechada da acao nao classificada removida",
          falha_fechada_removida, identidade, identidade),
+        ("D07: texto livre sem codigo volta a executar (falha fechada volta a exigir dominio "
+         "sensivel)", falha_fechada_so_com_dominio_sensivel, identidade, identidade),
+        ("D08: guardrail de DDL volta a acionar sem DDL real no texto",
+         ddl_aciona_sem_ddl, identidade, identidade),
+        ("D08: motivo do guardrail de DDL deixa de dizer a causa real",
+         motivo_de_ddl_generico, identidade, identidade),
         ("politica com fallback para lane barata", identidade,
          lambda t: t.replace("lane conservadora configurada: high", "lane conservadora configurada: small"),
          identidade),

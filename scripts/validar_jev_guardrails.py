@@ -316,7 +316,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     itens.checar("guardrail segredo — REPROVA: 6 formas de segredo bloqueiam", _segredo_reprova)
 
     def _segredo_aprova():
-        resultado = decisao("ajuste de texto simples", descricao="tarefa sem credencial nenhuma")
+        resultado = decisao("ajuste de texto simples", acao_codigo="ajuste_de_texto",
+                            descricao="tarefa sem credencial nenhuma")
         return ("OK" if resultado["decisao"]["decidido"] == "executar"
                 and "segredo_sem_payload" not in resultado["decisao"]["guardrails_acionados"]
                 else "FALHOU", resumo(resultado))
@@ -352,11 +353,12 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _do_not_contact_aprova():
         problemas = []
-        sem_marca = decisao("enviar e-mail pelo Titan")
+        sem_marca = decisao("enviar e-mail pelo Titan", acao_codigo="operacao_comercial")
         if (sem_marca["decisao"]["decidido"] != "executar"
                 or "do_not_contact" in sem_marca["decisao"]["guardrails_acionados"]):
             problemas.append(f"outbound sem marcacao: {resumo(sem_marca)}")
-        interna = decisao("ajuste de texto simples", sinais={"empresa_do_not_contact": True})
+        interna = decisao("ajuste de texto simples", acao_codigo="ajuste_de_texto",
+                          sinais={"empresa_do_not_contact": True})
         if ("do_not_contact" in interna["decisao"]["guardrails_acionados"]
                 or interna["decisao"]["decidido"] != "executar"):
             problemas.append(f"marcada + acao interna: {resumo(interna)}")
@@ -368,8 +370,11 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _ddl_reprova():
         problemas = []
-        for nome, extra in (("ambiente producao", {"ambiente_alvo": "producao"}),
-                            ("ambiente nao declarado", {})):
+        for nome, extra in (("ambiente producao",
+                             {"ambiente_alvo": "producao",
+                              "acao_codigo": "migracao_de_esquema"}),
+                            ("ambiente nao declarado",
+                             {"acao_codigo": "migracao_de_esquema"})):
             resultado = decisao("aplicar DDL/migration em qualquer ambiente", **extra)
             acionados = resultado["decisao"]["guardrails_acionados"]
             if not (_bloqueia(resultado, roteador) and "ddl_fora_de_producao" in acionados):
@@ -382,9 +387,12 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     def _ddl_aprova():
         problemas = []
-        for nome, extra in (("desenvolvimento", {"ambiente_alvo": "desenvolvimento"}),
+        for nome, extra in (("desenvolvimento",
+                             {"ambiente_alvo": "desenvolvimento",
+                              "acao_codigo": "migracao_de_esquema"}),
                             ("dev", {"ambiente_alvo": "dev",
-                                     "acao": "rodar migration no banco"})):
+                                     "acao": "rodar migration no banco",
+                                     "acao_codigo": "migracao_de_esquema"})):
             extra = dict(extra)
             acao = extra.pop("acao", "aplicar DDL/migration em qualquer ambiente")
             resultado = decisao(acao, **extra)
@@ -395,6 +403,56 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
                 "DDL em desenvolvimento/dev executa")
 
     itens.checar("guardrail DDL — APROVA: DDL em ambiente de desenvolvimento executa", _ddl_aprova)
+
+    def _ddl_so_com_ddl_real():
+        """D08: guardrail de DDL so aciona com DDL/migration REAL, e o motivo diz a causa.
+
+        O defeito D08: `escrever e publicar o post do LinkedIn` (nenhuma DDL) era bloqueada
+        por `guardrail ddl_fora_de_producao: DDL nao nasce em producao` — o gatilho era o
+        casamento de prosa com entradas de PostgreSQL/DDL das politicas de papel. O recibo
+        mentia sobre a causa e mandava o humano pelo caminho errado.
+        """
+        problemas = []
+        # (a) acao SEM DDL: nenhum motivo de DDL, guardrail avaliado e nao acionado. O
+        # ambiente e hostil de proposito (producao declarada).
+        sem_ddl = ("escrever e publicar o post do LinkedIn", "ajuste de texto simples",
+                   "consulta de status do card",
+                   "gerar conteudo, resumo, score e recomendacao")
+        for acao in sem_ddl:
+            resultado = decisao(acao, acao_codigo="ajuste_de_texto", ambiente_alvo="producao")
+            d = resultado["decisao"]
+            motivos = " ".join(d["motivos"]).lower()
+            avaliado = [g for g in d["guardrails_avaliados"]
+                        if g["id"] == "ddl_fora_de_producao"]
+            if "ddl_fora_de_producao" in d["guardrails_acionados"] or "ddl" in motivos \
+                    or "migration" in motivos:
+                problemas.append(f"'{acao}': motivo/guardrail de DDL sem DDL na acao -> "
+                                 f"{d['guardrails_acionados']} {d['motivos']}")
+            if not avaliado or avaliado[0]["acionado"] or avaliado[0]["detalhe"]:
+                problemas.append(f"'{acao}': guardrail de DDL avaliado errado: {avaliado}")
+        # (b) DDL REAL: aciona e o motivo diz a causa (operacao reconhecida + ambiente).
+        for acao, extra, causa in (("aplicar DDL/migration em qualquer ambiente",
+                                    {"ambiente_alvo": "producao"}, "ddl"),
+                                   ("aplicar DDL/migration em qualquer ambiente", {}, "ddl"),
+                                   ("rodar CREATE TABLE cliente_novo no banco",
+                                    {"ambiente_alvo": "producao"}, "create table")):
+            tarefa = dict(extra, acao_codigo="migracao_de_esquema")
+            resultado = decisao(acao, **tarefa)
+            d = resultado["decisao"]
+            motivos = " ".join(d["motivos"]).lower()
+            if resultado["recibo"]["outcome"] != roteador.OUTCOME_BLOQUEAR \
+                    or "ddl_fora_de_producao" not in d["guardrails_acionados"]:
+                problemas.append(f"'{acao}' {extra}: nao bloqueou pelo DDL -> "
+                                 f"{resumo(resultado)}")
+            elif causa not in motivos or "ambiente alvo" not in motivos:
+                problemas.append(f"'{acao}' {extra}: motivo sem a causa real ({causa!r}) -> "
+                                 f"{d['motivos']}")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                f"{len(sem_ddl)} acoes sem DDL nao carregam motivo de DDL; 3 casos de DDL real "
+                "bloqueiam com o motivo dizendo a causa (operacao + ambiente alvo)")
+
+    itens.checar("guardrail DDL — D08: so aciona com DDL/migration REAL e o motivo diz a causa "
+                 "real (nenhum motivo de DDL em acao sem DDL)", _ddl_so_com_ddl_real)
 
     def _papel_reprova():
         problemas = []
@@ -422,10 +480,12 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     def _papel_aprova():
         problemas = []
         comercial = decisao("gerar conteudo, resumo, score e recomendacao",
+                            acao_codigo="operacao_comercial",
                             papel_solicitado="sales-ai", lane_proposta="medium")
         if comercial["decisao"]["decidido"] != "executar":
             problemas.append(f"acao comercial: {resumo(comercial)}")
         credencial_ok = decisao("gerar conteudo, resumo, score e recomendacao",
+                                acao_codigo="operacao_comercial",
                                 papel_solicitado="sales-ai",
                                 credencial_solicitada="TRE_PG_* (runtime de negocio, sem DDL)",
                                 lane_proposta="medium")
@@ -463,7 +523,7 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
                  "nao liberam", _fail_closed_reprova)
 
     def _fail_closed_aprova():
-        resultado = decisao("ajuste de texto simples", sinais={})
+        resultado = decisao("ajuste de texto simples", acao_codigo="ajuste_de_texto", sinais={})
         return ("OK" if resultado["decisao"]["decidido"] == "executar"
                 else "FALHOU", resumo(resultado))
 
@@ -702,7 +762,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
                                                               "lane_proposta": "medium"}),
                               ("confianca ausente", {"confianca": None}),
                               ("lane fora da politica", {"lane_proposta": "turbo"})):
-            tarefa = {"card_id": "t_abs", "acao": "ajuste de texto simples", "status": "ready"}
+            tarefa = {"card_id": "t_abs", "acao": "ajuste de texto simples",
+                      "acao_codigo": "ajuste_de_texto", "status": "ready"}
             tarefa.update(extra)
             resultado = roteador.decidir(tarefa, politica=politica)
             d, recibo = resultado["decisao"], resultado["recibo"]
@@ -831,6 +892,18 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         "divulgar comunicado assinado pela Transformativa",
         "apagar linha do cadastro de clientes",
     )
+    # D07 (card TRE-W0-E04-T02-D07): as 4 acoes SENSIVEIS que EXECUTAVAM (PASS/exit 0) por
+    # sinonimo nao previsto, com as suítes verdes. A correcao nao amplia vocabulario: o
+    # texto livre deixou de ser via executavel, e texto sem codigo escalou sempre.
+    FRASES_ESCAPARAM_D07 = (
+        "conceder permissao de administrador ao usuario de testes",
+        "restaurar um backup por cima da base",
+        "soltar nota no site da Transformativa",
+        "limpar a base de contatos antigos",
+    )
+    # Texto livre comum, sem dominio sensivel nenhum: no contrato novo tambem NAO executa.
+    TEXTOS_LIVRES_COMUNS = ("tarefa de exemplo", "ajuste de texto simples",
+                            "consulta de status do card")
 
     def _t07_frases_nao_executam(frases):
         problemas = []
@@ -933,14 +1006,49 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     def _t07_falha_fechada_nao_e_bloqueio_geral():
         problemas = []
         for acao in ("ajuste de texto simples", "consulta de status do card"):
-            resultado = decisao(acao)
+            resultado = decisao(acao, acao_codigo="ajuste_de_texto")
             if resultado["decisao"]["decidido"] != "executar":
-                problemas.append(f"'{acao}': {resumo(resultado)}")
+                problemas.append(f"'{acao}' (com codigo comum): {resumo(resultado)}")
+        for codigo in roteador.CODIGOS_DE_ACAO_COMUNS:
+            resultado = decisao("tarefa de exemplo sem dominio sensivel", acao_codigo=codigo)
+            if resultado["decisao"]["decidido"] != "executar":
+                problemas.append(f"codigo {codigo}: {resumo(resultado)}")
         return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
-                "acao comum sem dominio sensivel segue executando (nao ha bloqueio geral)")
+                "acao comum COM codigo canonico segue executando "
+                f"({len(roteador.CODIGOS_DE_ACAO_COMUNS)} codigos comuns): nao ha bloqueio geral")
 
-    itens.checar("T07 — acao comum sem dominio sensivel segue executando",
-                 _t07_falha_fechada_nao_e_bloqueio_geral)
+    itens.checar("T07/D07 — acao comum sem dominio sensivel segue executando QUANDO tem codigo "
+                 "canonico (nao ha bloqueio geral)", _t07_falha_fechada_nao_e_bloqueio_geral)
+
+    def _d07_texto_livre_sem_codigo_nao_executa():
+        problemas = []
+        for frase in FRASES_ESCAPARAM_D07 + TEXTOS_LIVRES_COMUNS:
+            resultado = decisao(frase)
+            d, recibo = resultado["decisao"], resultado["recibo"]
+            motivos = " ".join(d["motivos"]).lower()
+            if d["pode_executar"] or d["decidido"] == "executar":
+                problemas.append(f"'{frase}': EXECUTOU ({resumo(resultado)})")
+                continue
+            if recibo["outcome"] != roteador.OUTCOME_ESCALAR:
+                problemas.append(f"'{frase}': outcome={recibo['outcome']} (esperado ESCALATE)")
+            if d["decidido"] != "escalar_acao_nao_classificada":
+                problemas.append(f"'{frase}': decidido={d['decidido']}")
+            if recibo["lane"] != lane_conservadora:
+                problemas.append(f"'{frase}': lane={recibo['lane']}")
+            if roteador.MOTIVO_ACAO_NAO_CLASSIFICADA not in motivos \
+                    or "codigo canonico" not in motivos:
+                problemas.append(f"'{frase}': motivo sem o codigo canonico faltante: "
+                                 f"{d['motivos']}")
+            if list(recibo.keys()) != list(campos):
+                problemas.append(f"'{frase}': recibo fora do contrato ({len(recibo)} campos)")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                f"{len(FRASES_ESCAPARAM_D07)} acoes sensiveis que escapavam + "
+                f"{len(TEXTOS_LIVRES_COMUNS)} textos comuns: nada executa sem codigo canonico e "
+                "todas escalam com o motivo dizendo que faltou o codigo")
+
+    itens.checar("D07 — texto livre sem codigo canonico NAO executa (as 4 que escapavam + texto "
+                 "comum), escalando com o motivo do codigo faltante",
+                 _d07_texto_livre_sem_codigo_nao_executa)
 
     def _t07_contrato_de_codigo():
         proibidos = set(acoes_yaml)
@@ -1107,6 +1215,29 @@ def mutacoes():
             "    incerteza = _falha_fechada_por_acao_nao_classificada(resolucao, dominios)",
             "    incerteza = None")
 
+    def falha_fechada_so_com_dominio_sensivel(codigo):
+        # D07 reverso: o texto livre volta a executar quando o texto NAO declara dominio
+        # sensivel — a peneira por vocabulario, que e exatamente o buraco do D07.
+        return codigo.replace(
+            '    if resolucao["classe"] == "proibida":\n        return None\n'
+            '    if not resolucao["codigo"]:',
+            '    if not dominios["uniao"]:\n        return None\n'
+            '    if resolucao["classe"] == "proibida":\n        return None\n'
+            '    if not resolucao["codigo"]:')
+
+    def ddl_aciona_sem_ddl(codigo):
+        # D08 reverso: o guardrail de DDL volta a acionar sem DDL/migration real no texto.
+        return codigo.replace(
+            "    for rotulo, padrao in PADROES_DE_DDL:",
+            '    return "DDL declarada (mutacao: gatilho sem DDL real)"\n'
+            "    for rotulo, padrao in PADROES_DE_DDL:")
+
+    def motivo_de_ddl_generico(codigo):
+        # D08 reverso: aciona, mas o recibo deixa de dizer a causa real.
+        return codigo.replace(
+            '        detalhe_ddl = (f"{motivo_ddl}; ambiente alvo {ambiente or \'nao declarado\'}"',
+            '        detalhe_ddl = ("guardrail de DDL acionado (mutacao: sem causa real)"')
+
     return [
         ("guardrail segredo removido (payload com segredo passa)", segredo_ignorado, identidade),
         ("guardrail do_not_contact removido (empresa marcada e contatada)",
@@ -1132,6 +1263,12 @@ def mutacoes():
          sinais_declarados_ignorados, identidade),
         ("T07: falha fechada da acao nao classificada removida",
          falha_fechada_removida, identidade),
+        ("D07: texto livre sem codigo volta a executar (falha fechada volta a exigir dominio "
+         "sensivel)", falha_fechada_so_com_dominio_sensivel, identidade),
+        ("D08: guardrail de DDL volta a acionar sem DDL real no texto",
+         ddl_aciona_sem_ddl, identidade),
+        ("D08: motivo do guardrail de DDL deixa de dizer a causa real",
+         motivo_de_ddl_generico, identidade),
     ]
 
 
