@@ -127,9 +127,14 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
 
 ## 8. Pendências declaradas (não disfarçadas)
 
-- **Destino externo (Object Storage) não configurado**: hoje o backup é **só local**. Falta o
-  Anderson inserir as chaves da Contabo no `/etc/tre/backup.env` (nunca pelo chat). Enquanto
-  isso, `manifest.txt` registra `externo: pendente`.
+- **Destino externo (Object Storage) — pendente apenas das chaves.** O storage está contratado
+  (Object Storage European Union, 250 GB, região EU → endpoint `https://eu2.contabostorage.com`).
+  Para ativar: `scripts/backup/configurar-destino-externo.sh` — pergunta endpoint, access key,
+  secret key (sem eco) e bucket; grava `/etc/tre/rclone.conf` com permissão 600 (dono
+  `tre-deploy`); cria o bucket e faz **prova de ida e volta** (sobe, confere, remove). O destino
+  **só é ligado no backup depois que essa prova passa** — se as chaves estiverem erradas, o
+  `backup.env` fica intocado. As chaves são digitadas no prompt da VPS: nunca pelo chat nem no
+  histórico do shell. Enquanto não estiver ligado, o `manifest.txt` registra `externo: pendente`.
 - **Sem PITR**: só dump lógico (não há arquivamento de WAL). Ponto no tempo exato não é
   possível hoje — PITR entra com o PostgreSQL de produção (W1/W2).
 - **Watchdog externo** (checar a idade do último backup de fora da máquina, onde o Hermes vive)
