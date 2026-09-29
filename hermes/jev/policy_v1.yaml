@@ -1,0 +1,163 @@
+# =====================================================================================
+# jev-policy-v1.0 — política de decisão do JEV (System-1 Decision Layer)
+# Autoridade: docs/architecture/jev-decision-policy-v1.md (este arquivo é a forma legível
+# por máquina; os dois têm de dizer a mesma coisa, e o verificador prova isso).
+# Congelada em 29/09/2026. Mudança = nova versão (v1.1, v2.0) e registro do motivo.
+# =====================================================================================
+versao: jev-policy-v1.0
+congelada_em: "2026-09-29"
+autoridade: docs/architecture/jev-decision-policy-v1.md
+origem_no_baseline: "docs 13 e 14 do baseline V1.1.0"
+
+# ---------------------------------------------------------------------------------
+# PRECEDÊNCIA — quem decide primeiro. Nenhuma camada abaixo contraria a de cima.
+# ---------------------------------------------------------------------------------
+precedencia:
+  - security                     # guardrails determinísticos: barreira dura, não sugestão
+  - human_approval               # o que exige humano nunca é delegado a classificador
+  - prioridade_e_dependencias    # ordem do board: card bloqueado não inicia; pai pendente trava
+  - jev                          # classificação/roteamento tipado e finito
+  - llm                          # reasoning, geração, síntese, debugging e design
+
+# ---------------------------------------------------------------------------------
+# LIMIARES de confiança do JEV
+# ---------------------------------------------------------------------------------
+limiares:
+  aceitar: 0.85          # confiança >= 0.85: aceita a classificação do JEV
+  conservador: 0.65      # 0.65 <= confiança < 0.85: aceita, mas pela lane MAIS CONSERVADORA
+  abster: 0.65           # confiança < 0.65: abstém e escala (nunca chuta)
+  empate: "lane mais conservadora (high) + registro explícito de abstenção"
+
+# ---------------------------------------------------------------------------------
+# LANES — quanto de raciocínio (e de custo) a tarefa merece
+# ---------------------------------------------------------------------------------
+lanes:
+  small:
+    escopo: "mecânico e isolado, sem decisão de arquitetura"
+    risco: baixo
+    perfil: worker-barato
+    revisao: "testes automatizados"
+    exemplos: "ajuste de texto, formatação, renomeação, consulta simples"
+  medium:
+    escopo: "engenharia comum, um módulo por vez"
+    risco: medio
+    perfil: reasoning-padrao
+    revisao: "testes automatizados + revisão de diff"
+    exemplos: "função nova com testes, correção de defeito localizado, script de operação"
+  high:
+    escopo: "reasoning complexo ou multi-sistema"
+    risco: alto
+    perfil: reasoning-forte
+    revisao: "revisão dedicada + verificação de regressão"
+    exemplos: "integração entre serviços, migração de dados, diagnóstico de falha intermitente"
+  critical:
+    escopo: "produção, segurança, dados, arquitetura ou regressão persistente"
+    risco: critico
+    perfil: critical-frontier-reviewer
+    revisao: "revisão dedicada + aprovação humana registrada"
+    exemplos: "deploy em produção, DDL, credencial, decisão de arquitetura, incidente"
+
+# ---------------------------------------------------------------------------------
+# PERFIS DE MODELO — o catálogo é configuração versionada, nunca hard-coded no prompt.
+# Nomes e preços NÃO ficam aqui: se confirmam no provedor no momento da configuração
+# (regra do doc 14 do baseline). Preço dentro do arquivo vira mentira em poucas semanas.
+# ---------------------------------------------------------------------------------
+perfis_modelo:
+  worker-barato:            {papel: "execução mecânica", classe: "modelo barato e rápido", custo: baixo, esforco: minimo}
+  reasoning-padrao:         {papel: "engenharia comum", classe: "modelo intermediário", custo: medio, esforco: padrao}
+  reasoning-forte:          {papel: "raciocínio complexo", classe: "modelo forte de reasoning", custo: alto, esforco: alto}
+  critical-frontier-reviewer: {papel: "revisão crítica e adversarial", classe: "modelo de fronteira", custo: alto, esforco: maximo}
+regra_catalogo:
+  - "modelo e preço se confirmam no provedor no momento da configuração"
+  - "nenhum preço ou nome de modelo específico é fixado nesta política"
+  - "troca de modelo não muda política: muda catálogo, e o recibo registra qual foi usado"
+
+# ---------------------------------------------------------------------------------
+# DECISÕES QUE O JEV PODE TOMAR (tipadas e finitas, antes e depois da LLM)
+# ---------------------------------------------------------------------------------
+decisoes_antes_da_llm:
+  - complexidade        # small | medium | high | critical
+  - lane
+  - perfil_modelo
+  - esforco
+  - risco
+  - exige_revisao       # sim | nao
+  - exige_escalacao     # sim | nao
+decisoes_depois_do_ciclo:
+  - resultado           # PASS | RETRY | ESCALATE | BLOCK
+
+# ---------------------------------------------------------------------------------
+# NUNCA DECIDIDO POR MÁQUINA — ação que classificador nenhum decide, em nenhum limiar
+# ---------------------------------------------------------------------------------
+nunca_decidido_por_maquina:
+  - aprovacao_de_producao            # promover release para produção
+  - primeiro_contato_outbound        # e-mail/LinkedIn/WhatsApp para empresa nova
+  - envio_de_proposta_comercial
+  - mudanca_estrutural_de_arquitetura  # exige ADR + aprovação
+  - rollback_em_producao
+  - exclusao_de_dado_de_cliente      # ou de registro de auditoria
+  - rotacao_ou_revogacao_de_credencial
+  - publicacao_em_nome_da_transformativa
+
+# ---------------------------------------------------------------------------------
+# GUARDRAILS DETERMINÍSTICOS (camada `security`: roda ANTES de qualquer classificador)
+# ---------------------------------------------------------------------------------
+guardrails:
+  - regra: "segredo nunca entra em prompt, log, recibo ou mensagem"
+    verifica: "scan de segredo antes de montar o contexto"
+  - regra: "empresa com do_not_contact ou opt_out não é contatada"
+    verifica: "consulta à base antes de qualquer outbound"
+  - regra: "DDL não nasce em produção"
+    verifica: "ambiente alvo declarado no card/migração"
+  - regra: "Sales AI não tem credencial de deploy nem altera código"
+    verifica: "matriz Dev × Sales (docs/architecture/hermes-dev-x-sales.md)"
+  - regra: "falha de guardrail bloqueia, não libera"
+    verifica: "fail-closed: dúvida na avaliação = BLOCK, nunca prosseguir"
+
+# ---------------------------------------------------------------------------------
+# FALLBACK / MODO DEGRADADO
+# ---------------------------------------------------------------------------------
+fallback:
+  gatilho: "JEV indisponível, timeout, saída fora do contrato ou versão de política desconhecida"
+  acao:
+    - "aplicar guardrails determinísticos primeiro"
+    - "seguir pela lane conservadora configurada: high"
+    - "registrar modo degradado no recibo (degraded_mode: true)"
+    - "nunca contornar Human Approval"
+  proibido: "inferir confiança quando o JEV não respondeu — ausência de resposta é abstinência"
+
+# ---------------------------------------------------------------------------------
+# RECIBO DE DECISÃO — o que fica gravado em cada decisão do JEV
+# ---------------------------------------------------------------------------------
+recibo:
+  campos:
+    - decision_id
+    - card_id
+    - task_hash
+    - lane
+    - model_profile
+    - selected_model
+    - effort
+    - confidence
+    - policy_version
+    - router_version
+    - timestamp
+    - override
+    - outcome
+  retencao: "mesmo prazo dos registros de auditoria do projeto"
+  segredo: "nunca"
+
+# ---------------------------------------------------------------------------------
+# MÉTRICAS — o que é sucesso
+# ---------------------------------------------------------------------------------
+metricas:
+  objetivo: "minimizar custo total por card VERIFIED"
+  nao_objetivo: "minimizar tokens isoladamente"
+  acompanhar:
+    - custo_por_card_verified
+    - taxa_de_abstencao
+    - taxa_de_escalacao
+    - falso_rebaixamento        # critical tratado como lane mais barata
+    - latencia_por_lane
+    - regressao_ou_retrabalho
+  criterio_de_aceite: "custo por card VERIFIED cai SEM aumento de regressão, retrabalho ou incidente"

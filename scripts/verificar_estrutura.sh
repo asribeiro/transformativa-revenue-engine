@@ -37,3 +37,10 @@ for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
 done
+
+# Artefatos da JEV Decision Policy V1 (E04-T01) existem E estao versionados
+for f in hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md scripts/verificar_jev_policy.py; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
