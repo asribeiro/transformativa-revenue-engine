@@ -28,3 +28,12 @@ for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
 done
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
+
+# Artefatos do backup/restore (T03) existem E estao versionados
+for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
+         scripts/backup/restore-tre.sh scripts/backup/teste-backup-restore.sh \
+         docs/runbooks/backup-restore-rollback.md deploy/systemd/tre-backup.timer; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done

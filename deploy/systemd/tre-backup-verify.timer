@@ -1,0 +1,13 @@
+[Unit]
+Description=Teste de restore semanal do backup do TRE (domingo 04:00)
+Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+Timezone=America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=600
+Unit=tre-backup-verify.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup diario do TRE (02:30 America/Sao_Paulo)
+Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Timezone=America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=300
+Unit=tre-backup.service
+
+[Install]
+WantedBy=timers.target

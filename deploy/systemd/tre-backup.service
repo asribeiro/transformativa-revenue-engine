@@ -1,0 +1,16 @@
+[Unit]
+Description=Backup do Transformativa Revenue Engine (PostgreSQL por ambiente)
+Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=tre-deploy
+Group=tre-deploy
+EnvironmentFile=-/etc/tre/backup.env
+ExecStart=/opt/tre/repo/scripts/backup/backup-tre.sh todos
+Nice=10
+IOSchedulingClass=idle
+# O backup escreve apenas em /opt/tre/backup e fala com o Docker por socket
+NoNewPrivileges=yes

@@ -1,0 +1,15 @@
+[Unit]
+Description=Teste de RESTORE do backup mais recente do TRE (container descartavel)
+Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=tre-deploy
+Group=tre-deploy
+EnvironmentFile=-/etc/tre/backup.env
+ExecStart=/opt/tre/repo/scripts/backup/verificar-ultimo-backup.sh todos
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
