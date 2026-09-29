@@ -60,3 +60,9 @@
 
 .hg-vazio, .hg-erro { padding: 18px 12px; font-size: 13px; opacity: .8; }
 .hg-erro { color: #E63946; opacity: 1; }
+
+/* Camada PLANEJADA: barra fina de contorno tracejado, atras da barra real (que fica cheia). */
+.hg-plano { position: absolute; top: 1px; height: 7px; border-radius: 3px;
+  border: 1px dashed rgba(128,128,128,.85); background: rgba(128,128,128,.14); }
+.hg-plano-mini { width: 14px; height: 7px; border-radius: 3px; border: 1px dashed rgba(128,128,128,.9);
+  background: rgba(128,128,128,.14); display: inline-block; }

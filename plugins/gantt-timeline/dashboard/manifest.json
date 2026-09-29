@@ -1,13 +1,14 @@
 {
   "name": "gantt-timeline",
   "label": "Gantt",
-  "description": "Linha do tempo do board: barras por card com inicio, fim e status, agrupadas por onda. Le o backend do kanban-gantt (/api/plugins/kanban-gantt/gantt). [ASR]",
+  "description": "Linha do tempo do board: barras REAL (nascimento, execucao, fechamento) e barras PLANEJADAS do cronograma versionado, agrupadas por onda. [ASR]",
   "icon": "Timeline",
-  "version": "1.0.0+asr.1",
+  "version": "1.2.0+asr.1",
   "tab": {
     "path": "/gantt",
     "position": "after:kanban"
   },
   "entry": "dist/index.js",
-  "css": "dist/style.css"
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
 }

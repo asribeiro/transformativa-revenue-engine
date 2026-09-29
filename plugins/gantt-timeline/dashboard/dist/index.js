@@ -19,6 +19,7 @@
   const { useState, useEffect, useMemo } = SDK.hooks;
 
   const API = "/api/plugins/kanban-gantt";
+  const API_PLANO = "/api/plugins/gantt-timeline";
   const COR_ATIVA = "#E63946"; // vermelho Transformativa: trabalho em curso
 
   const CORES = {
@@ -68,6 +69,7 @@
     const [ocultarArquivados, setOcultarArquivados] = useState(true);
     const [ondaFiltro, setOndaFiltro] = useState("todas");
     const [selecionado, setSelecionado] = useState(null);
+    const [plano, setPlano] = useState(null);
 
     useEffect(function () {
       SDK.fetchJSON(API + "/boards")
@@ -90,6 +92,13 @@
         .catch(function (e) { setErro("Não consegui ler o board " + board + ": " + e.message); });
     }, [board]);
 
+    useEffect(function () {
+      // O cronograma e opcional: sem ele a linha do tempo segue so com o REAL, sem inventar planejado.
+      SDK.fetchJSON(API_PLANO + "/planejado")
+        .then(function (p) { setPlano(p && p.disponivel ? p : null); })
+        .catch(function () { setPlano(null); });
+    }, []);
+
     const dados = useMemo(function () {
       if (!snap || !snap.tasks) return null;
       const todos = snap.tasks;
@@ -99,10 +108,18 @@
         return true;
       });
       const agora = Date.now();
+      const planoDe = function (t) {
+        if (!plano) return null;
+        const p = (plano.cards && plano.cards[t.id]) || (plano.ondas && plano.ondas[onda(t.title)]);
+        if (!p) return null;
+        const ini = ms(p.inicio), fim = ms(p.fim);
+        return (ini || fim) ? { inicio: ini, fim: fim, estado: p.estado, daOnda: !(plano.cards && plano.cards[t.id]) } : null;
+      };
       let min = null, max = null;
       visiveis.forEach(function (t) {
         const c = ms(t.created_at), s = ms(t.started_at) || c, f = ms(t.completed_at) || (s ? agora : null);
-        [c, s, f].forEach(function (v) { if (v) { if (min === null || v < min) min = v; if (max === null || v > max) max = v; } });
+        const pl = planoDe(t);
+        [c, s, f, pl && pl.inicio, pl && pl.fim].forEach(function (v) { if (v) { if (min === null || v < min) min = v; if (max === null || v > max) max = v; } });
       });
       if (min === null) { min = agora - 7 * 864e5; max = agora; }
 
@@ -134,11 +151,18 @@
 
       const feito = visiveis.filter(function (t) { return t.status === "done" || t.status === "verified"; }).length;
 
+      const planejadoDaOnda = {};
+      Object.keys(grupos).forEach(function (g) {
+        const pl = plano && plano.ondas && plano.ondas[g];
+        planejadoDaOnda[g] = pl ? { inicio: ms(pl.inicio), fim: ms(pl.fim) } : null;
+      });
+
       return { visiveis: visiveis, grupos: grupos, ordem: ordem, min: min, max: max, span: span,
                marcos: marcos, passo: passo, agora: agora, total: todos.length,
                feito: feito, ocultos: todos.length - visiveis.length,
+               planoDe: planoDe, planejadoDaOnda: planejadoDaOnda,
                deps: (snap.tasks || []).reduce(function (acc, t) { acc[t.id] = t; return acc; }, {}) };
-    }, [snap, zoom, ocultarArquivados, ondaFiltro]);
+    }, [snap, zoom, ocultarArquivados, ondaFiltro, plano]);
 
     const ondas = useMemo(function () {
       if (!snap || !snap.tasks) return [];
@@ -158,7 +182,7 @@
       const concluido = t.status === "done" || t.status === "verified";
       const corr = concluido ? CORES.done : cor;
       const dadosT = { id: t.id, status: t.status, assignee: t.assignee, titulo: t.title,
-                       criado: c, iniciado: ms(t.started_at), fim: f,
+                       criado: c, iniciado: ms(t.started_at), fim: f, plano: pl,
                        pais: (t.parents || []).length, filhos: (t.children || []).length };
       const titulo = t.title + "\n" + (ROTULO_STATUS[t.status] || t.status) +
         "\ncriado " + diaLongo(c) +
@@ -166,6 +190,16 @@
         (f ? "\nfechado " + diaLongo(f) : "") +
         (dadosT.pais ? "\ndepende de " + dadosT.pais + " card(s)" : "");
       const elementos = [];
+      const pl = dados.planoDe(t);
+
+      // PLANEJADO primeiro (fundo): barra fina com contorno tracejado — o real fica por cima, cheio.
+      if (pl && pl.fim) {
+        elementos.push(h("div", {
+          key: "p", className: "hg-plano",
+          title: "planejado" + (pl.daOnda ? " (janela da onda)" : " (do card)") + ": " + diaLongo(pl.inicio) + " a " + diaLongo(pl.fim),
+          style: { left: pct(pl.inicio) + "%", width: Math.max(0.4, ((pl.fim - pl.inicio) / dados.span) * 100) + "%" },
+        }));
+      }
 
       if (s && f) {
         elementos.push(h("div", {
@@ -213,6 +247,7 @@
         h("div", null,
           h("h1", { className: "hg-titulo-pagina" }, "Linha do tempo"),
           h("div", { className: "hg-sub" },
+            (plano && plano.versao ? "cronograma " + plano.versao + " · " : "") +
             dados.visiveis.length + " de " + dados.total + " cards visíveis · " +
             dados.feito + " concluídos (" + progresso + "%)" +
             (dados.ocultos ? " · " + dados.ocultos + " fora do filtro" : "")),
@@ -238,6 +273,7 @@
               h("span", { className: "hg-ponto", style: { background: CORES[s] } }), ROTULO_STATUS[s] || s);
           }),
         h("span", { className: "hg-legenda-item" }, h("span", { className: "hg-marco-mini" }), "não iniciado (sem duração)"),
+        h("span", { className: "hg-legenda-item" }, h("span", { className: "hg-plano-mini" }), "planejado (cronograma)"),
       ),
 
       selecionado ? h("div", { className: "hg-detalhe" },
@@ -247,6 +283,12 @@
           (selecionado.iniciado ? " · iniciado " + diaLongo(selecionado.iniciado) : " · não iniciado") +
           (selecionado.fim ? " · fechado " + diaLongo(selecionado.fim) : "")),
         (selecionado.pais || selecionado.filhos) ? h("div", { className: "hg-sub" }, "depende de " + selecionado.pais + " · libera " + selecionado.filhos) : null,
+        selecionado.plano
+          ? h("div", { className: "hg-sub" },
+              "planejado: " + diaLongo(selecionado.plano.inicio) + " a " + diaLongo(selecionado.plano.fim) +
+              (selecionado.plano.daOnda ? " (janela da onda)" : " (do card)") +
+              (selecionado.fim ? (selecionado.fim <= selecionado.plano.fim ? " · fechou dentro do planejado" : " · fechou DEPOIS do planejado") : ""))
+          : h("div", { className: "hg-sub" }, "sem data planejada no cronograma"),
       ) : null,
 
       h("div", { className: "hg-quadro" },
@@ -259,7 +301,11 @@
             }))),
         dados.ordem.map(function (g) {
           return h("div", { key: g, className: "hg-grupo" },
-            h("div", { className: "hg-grupo-titulo" }, g + "  ·  " + dados.grupos[g].length + " cards"),
+            h("div", { className: "hg-grupo-titulo" },
+              g + "  ·  " + dados.grupos[g].length + " cards" +
+              (dados.planejadoDaOnda[g] && dados.planejadoDaOnda[g].fim
+                ? "  ·  planejado " + dia(dados.planejadoDaOnda[g].inicio) + " a " + dia(dados.planejadoDaOnda[g].fim)
+                : "  ·  sem planejado no cronograma")),
             dados.grupos[g].map(linha));
         }),
         !dados.visiveis.length ? h("div", { className: "hg-vazio" }, "Nenhum card com esses filtros.") : null,
