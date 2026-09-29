@@ -39,3 +39,15 @@ credencial ou permissão do outro.
 4. **Runtime**: quando a instância de produção do Sales AI subir, ela roda com apenas as credenciais do
    próprio papel; até então o papéis são exercidos pelo mesmo processo com políticas distintas e
    verificação — declarado no card para não parecer mais do que é.
+
+## Homologação
+
+- **Quem aprovou:** Anderson Ribeiro (operador humano).
+- **Quando:** 29/09/2026, pelo canal do Hermes (Telegram).
+- **O que foi aprovado:** a matriz de permissões dos dois papéis (Dev Harness × Sales AI) e a regra de que
+  **infraestrutura do host não pertence a nenhum dos papéis** e **conceder aprovação humana é só do
+  Anderson**.
+- **Ressalva mantida:** a separação é por política versionada + verificação automatizada; a separação de
+  *runtime* (processo dedicado) entra quando a instância de produção do Sales AI subir.
+- **Evidência:** comentário nos cards `TRE-W0-E02-T01` e `TRE-W0-E01-T02`; registro em
+  `docs/operations/registro-de-aprovacoes.md`.

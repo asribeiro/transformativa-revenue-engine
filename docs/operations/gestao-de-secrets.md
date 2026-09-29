@@ -1,6 +1,6 @@
 # Gestão de Secrets — Transformativa Revenue Engine
 
-**Card:** TRE-W0-E01-T02 · **Status:** política V1 (aguarda homologação) · **Data:** 29/09/2026
+**Card:** TRE-W0-E01-T02 · **Status:** política V1 **homologada** · **Data:** 29/09/2026
 
 ## 1. Princípios
 
@@ -66,3 +66,12 @@ Previstas para o TRE: `TRE_PG_*`, `TRE_ODOO_*`, `TRE_N8N_*`, `TRE_TITAN_*`, `TRE
 2. Rotacionar e redistribuir pelos canais previstos.
 3. Avaliar o alcance (o que ela permitia acessar) e registrar no changelog.
 4. Se o vazamento veio de log/receipt, corrigir a origem antes de seguir.
+
+## 8. Homologação
+
+- **Quem aprovou:** Anderson Ribeiro (operador humano).
+- **Quando:** 29/09/2026, pelo canal do Hermes (Telegram).
+- **O que foi aprovado:** princípios, locais dos segredos, **matriz de segregação Dev Harness × Sales AI**
+  (§3) e **gatilhos de rotação e revogação** (§5).
+- **Evidência:** mensagem de aprovação registrada como comentário nos cards `TRE-W0-E01-T02` e
+  `TRE-W0-E02-T01`, no board `transformativa-revenue-engine`; registro em `registro-de-aprovacoes.md`.
