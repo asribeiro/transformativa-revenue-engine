@@ -362,3 +362,13 @@ declaracoes:
       que so cobre dev sem credencial e sem producao.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_0f74266d
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (DEFEITO: publicacao versionada falha de forma intermitente no manifesto do staging (exit 6). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
