@@ -1,5 +1,11 @@
 # Relatorio de teste — TRE-W1-E05-T01 (suite de teste do banco)
 
+> **RODADA 2 (30/09/2026) — leia o §9 antes do §1.** O §1 mede o AC2 na **forma antiga** do critério
+> ("consulta sem filtro de tenant"), que o dono **reformulou** em 30/09/2026 (opção A: isolamento físico, um
+> banco por cliente — card `t_e340c29b`) e o §1 fechou em `NAO_TESTAVEL`. A **forma vigente** do critério é
+> "não existem dois clientes no mesmo banco", medida no §9, com a suíte em **verde**. O §1–§8 continuam
+> válidos como registro da rodada 1 (AC1, AC3 e proveniência do dente).
+
 Card: `t_c7281fce` · W1 · E05 · dono: `analista-teste` · commit entregue: `d2a2640` (origin/develop, head de develop na medicao)
 Ambiente medido: VPS do TRE `vmi3619453` (169.58.24.102), container `pg-sales-dev`, base `sales_intelligence`,
 usuario `sales_ai` — o ambiente de **dev**, conforme ADR-0008 (acesso por SSH). Nada foi medido em stub:
@@ -110,4 +116,92 @@ tivesse reprovado primeiro.**
 - **`shellcheck`** — nao existe no ambiente (nem no dev, nem na VPS); a checagem foi `bash -n` nos dois
   scripts (bash 5.2.37 no repo, 5.3.9 na VPS).
 - **Provar AC2 em verde contra o contrato atual** — impossivel por ausencia da dimensao de cliente; provado
-  em fixture descartavel (dente) e devolvido ao Analista de Requisitos.
+  em fixture descartavel (dente) e devolvido ao Analista de Requisitos. _(RESOLVIDO na rodada 2: o dono
+  reformulou o criterio — ver §9.)_
+
+## 9. RODADA 2 (30/09/2026) — AC2 na forma reformulada e defeito do rótulo do RESUMO
+
+**O que destravou esta rodada (os dois pré-requisitos fecharam):**
+
+| pré-requisito | decisão | efeito no E05 |
+|---|---|---|
+| `t_39838c5b` (defeito D01) | dono: opção 1 — realinhar o registro da migration 0001 em dev ao sha do arquivo | etapa `ambiente` da suíte passa a **OK**; `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_OK`, exit 0 |
+| `t_e340c29b` (requisito D02) | dono: **opção A**, isolamento **físico** (um banco por cliente); AC2 reformulado para **"não existem dois clientes no mesmo banco"** | a etapa 5 deixa de ser `tenant/RLS` (não decidível no V1.0) e passa a medir o que é medível |
+
+### 9.1 AC2 × teste (forma vigente), com o caminho proibido e a fronteira
+
+| critério (forma vigente) | teste positivo | teste negativo (caminho proibido) | fronteira | veredito |
+|---|---|---|---|---|
+| **AC2** — "não existem dois clientes no mesmo banco" | `teste_isolamento_clientes.sh dev` → `ISOLAMENTO_OK (5 itens, 0 falhas)`, exit 0: alvo responde, schema presente, **0** dimensão de cliente, **1** base de aplicação na instância, **1** base `pg-*` servindo o schema no host | `--prova-de-dente` (containers descartáveis): **dimensão de cliente com linhas de 2 clientes** → exit 1; **segunda base na mesma instância** → exit 1; **segundo serviço `pg-*` no host** → exit 1 | cada mutação desfeita → volta a `ISOLAMENTO_OK` (exit 0); **docker ausente → exit 3** (medição impossível nunca é verde) | **PASS** em dev (`ISOLAMENTO_OK`, exit 0) |
+
+O instrumento antigo (`teste_tenant_rls.sh`) **saiu da suíte** e continua versionado como **instrumento do
+V2** (mede a forma antiga do critério para o dia em que houver multi-cliente no mesmo banco). Medido nesta
+rodada, ele segue em `TENANT_RLS_NAO_TESTAVEL`, exit 3 — **fora da conta do E05**.
+
+### 9.2 Número, comando e exit code (nada "passou" sem os três) — bateria na VPS do dev
+
+| # | comando (VPS, `/opt/tre/repo`, repo ressincronizado) | resultado medido | exit |
+|---|---|---|---|
+| 1 | `bash scripts/db/suite_banco.sh dev` | `SUITE_OK (89 itens, 0 falhas)` — ambiente 3 · contrato 37 · constraints 16 · dedup sintético 7 · dedup no ambiente 21 · isolamento 5 | **0** |
+| 2 | `... dev --somente-leitura` | `SUITE_OK (69 itens, 0 falhas)` (etapa 4 vira varredura `--detectar`), sem escrever no alvo | **0** |
+| 3 | `... prod` | `FALHOU ADR-005` (recusado antes de tocar no alvo) | **1** |
+| 4 | `... homolog` | `FALHOU ambiente: alvo nao respondeu (No such container: pg-homolog)` | **1** |
+| 5 | `teste_isolamento_clientes.sh dev` | `ISOLAMENTO_OK (5 itens, 0 falhas)` | **0** |
+| 6 | `TRE_ISOLAMENTO_SEM_DOCKER=1 teste_isolamento_clientes.sh dev` | `ISOLAMENTO_NAO_TESTAVEL (5 itens, 0 reprovações, 1 item não medido)` | **3** |
+| 7 | `teste_tenant_rls.sh dev` (instrumento do V2, fora da suíte) | `TENANT_RLS_NAO_TESTAVEL (2 itens)` | **3** |
+| 8 | `aplicar_migracoes.sh dev --somente-checar` | `MIGRACAO_OK (0 aplicada/pendente, 1 pulada, 4 itens, 0 falhas)` | **0** |
+| 9 | `suite_banco.sh --prova-de-dente` | `SUITE_DENTE_OK (19 itens, 0 falhas)` | **0** |
+| 10 | `teste_isolamento_clientes.sh --prova-de-dente` | `ISOLAMENTO_DENTE_OK (17 itens, 0 falhas)` | **0** |
+
+### 9.3 Defeito do rótulo do RESUMO (achado pelo card de D01) — corrigido e provado
+
+- **Reprodução (antes):** a etapa `ambiente` reprovava (`FALHOU … migration do alvo DIVERGE`) e o bloco final
+  imprimia `ambiente ............. OK` — a linha era **texto fixo** no script. Contagem e exit code estavam
+  certos; o rótulo mentia. Quem lê só o resumo conclui "ambiente OK" com a suíte falhando por causa exatamente
+  daquela etapa.
+- **Correção:** a linha do RESUMO passa a sair do veredito **contado** (`FALHOU (N itens)` / `OK (N itens)`) e
+  entrou a **guarda de consistência do RESUMO** (nº de linhas `FALHOU` no resumo ≥ nº de etapas reprovadas;
+  desvio reprova a suíte e imprime `resumo ............... INCONSISTENTE`).
+- **Prova negativa (tem dente):** no alvo descartável, o registro da migration é divergido
+  (`INSERT … sha256='000…'` na tabela de controle) → suíte **exit 1**, aponta `FALHOU ambiente: migration do
+  alvo`, o resumo declara `ambiente ... FALHOU` e **não** existe linha `ambiente ... OK`; removido o registro,
+  a suíte volta ao verde (exit 0). Tudo medido no `--prova-de-dente` (itens 6–10 do `SUITE_DENTE_OK`).
+
+### 9.4 Fronteiras medidas nesta rodada
+
+- **Verde ↔ não-verde:** `ISOLAMENTO_OK` (exit 0) quando todos os itens medem; `ISOLAMENTO_NAO_TESTAVEL`
+  (exit 3) quando a medição de provisionamento **não pode** ser feita; `ISOLAMENTO_FALHOU` (exit 1) quando
+  dois clientes aparecem no mesmo banco/servidor/host. A suíte propaga: 0 → `SUITE_OK`, 3 → `SUITE_NAO_TESTAVEL`,
+  1 → `SUITE_FALHOU`.
+- **Sabotagem de saída (AC3):** `TRE_SUITE_SABOTAGEM=sem-saida` → exit 1 (`SEM linha RESULTADO`);
+  `=zero-itens` → exit 1 (`nao executou item nenhum`) — segue com dente.
+- **Mutações de schema (AC1):** `DROP COLUMN organizations.cnpj` → exit 1 apontando `contrato`; índice a mais
+  → exit 1 apontando `constraints`; cada uma desfeita → volta a `SUITE_OK` (exit 0).
+
+### 9.5 Proveniência (a evidência é do artefato real, não de stub)
+
+- **Cópia operacional `/opt/tre/repo` ressincronizada** por `tar -cz db scripts deploy docs | ssh …` e shas
+  **iguais nos dois lados** para o artefato sob teste: `suite_banco.sh 5fb644a2375e…`,
+  `teste_isolamento_clientes.sh f3586c102e30…`, `teste_tenant_rls.sh 217bfd050a14…`; e para os reusados:
+  `estado_do_ambiente.sh 7f9a12a50481…`, `deduplicar_organizacoes.py e58058469a06…`,
+  `verificar_contrato_dados.py dfb8ad79…`, `verificar_constraints_indices.py 68cc57cb…`,
+  `0001_sales_intelligence_v1.sql 0484a3701b8c…` (inalterado).
+- **Alvo dos testes destrutivos:** containers **descartáveis** criados e destruídos pelo próprio teste
+  (`tre-suite-banco-*`, `tre-isolamento-*`, e o `pg-cliente-b-*` do item de co-locação no host, removido no
+  fim). `docker ps -a` ao fim da bateria: **só `pg-sales-dev`**.
+- **Estado do dev antes × depois:** `12 tabelas | 30 índices` nas duas pontas; a massa sintética da etapa 4
+  é limpa e conferida pela própria etapa (`ambiente volta ao estado anterior`).
+- **Produção e homologação intocadas:** `prod` recusado (ADR-005, exit 1); `/opt/tre/prod` e
+  `/opt/tre/homolog` com **0 arquivo**; nenhum container de homologação.
+- **Logs brutos na VPS:** `/tmp/e05r2_bateria.log` (itens 1–8 + estado final, com `### EXIT=` por comando),
+  `/tmp/e05r2_suite_dente.log` (item 9), `/tmp/e05r2_isolamento_dente.log` (item 10).
+
+### 9.6 O que esta rodada NÃO fecha (declarado, não escondido)
+
+- **Homologação** continua não provisionada — o critério não pôde ser medido lá (o TEST PLAN pedia dev e
+  homolog); `homolog` sai exit 1 apontando o alvo inexistente.
+- **A barreira do AC2 é de provisionamento** (decisão do dono): o teste prova o que é medível e **não**
+  afirma que material de um cliente é indistinguível de outro em uma base sem dimensão de cliente — isso
+  está declarado no runbook §8 e no contrato.
+- **`shellcheck`** não existe no ambiente (nem no dev, nem na VPS): a checagem de sintaxe foi `bash -n` nos
+  quatro scripts alterados.

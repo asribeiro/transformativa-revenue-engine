@@ -68,12 +68,13 @@ for f in scripts/dedup/teste_entity_match_confidence.sh; do
 done
 
 # Artefatos da suite de teste do banco (TRE-W1-E05-T01) existem E estao versionados
-for f in scripts/db/suite_banco.sh scripts/db/teste_tenant_rls.sh docs/runbooks/suite-de-teste-do-banco.md; do
+for f in scripts/db/suite_banco.sh scripts/db/teste_isolamento_clientes.sh \
+         scripts/db/teste_tenant_rls.sh docs/runbooks/suite-de-teste-do-banco.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
 done
-for f in scripts/db/suite_banco.sh scripts/db/teste_tenant_rls.sh; do
+for f in scripts/db/suite_banco.sh scripts/db/teste_isolamento_clientes.sh scripts/db/teste_tenant_rls.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

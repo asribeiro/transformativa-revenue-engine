@@ -3,7 +3,24 @@
 # teste_tenant_rls.sh [ambiente] [--prefixo '<prefixo psql>'] [--papel-app <papel>]
 #                     [--guc-tenant <nome>] [--prova-de-dente]
 #
-# Aceite TRE-W1-E05-T01 (criterio 2, homologado por Anderson em 29/09/2026):
+# INSTRUMENTO DO V2 — NAO e mais chamado pela suite (`scripts/db/suite_banco.sh`).
+#
+# O criterio 2 do TRE-W1-E05-T01 foi REFORMULADO pela decisao do dono de 30/09/2026 (opcao A —
+# isolamento FISICO, um banco por cliente; card t_e340c29b, registrado em
+# `docs/operations/registro-de-aprovacoes.md` e em `docs/data/DATA_CONTRACT_V1.md`):
+#
+#     de:   "consulta sem filtro de tenant devolve vazio ou erro — NUNCA material de outro
+#            cliente"  (que este script mede, e que contra o Data Contract V1.0 — sem dimensao
+#            de cliente, RLS desligada e papel superuser+bypassrls — so pode dar NAO_TESTAVEL)
+#     para: "NAO existem dois clientes no mesmo banco"
+#
+# O criterio NA FORMA NOVA e medido por `scripts/db/teste_isolamento_clientes.sh` (etapa
+# `isolamento` da suite). ESTE script continua versionado como instrumento para o dia em que
+# tenant/RLS voltar como dimensao de primeira classe (V2, se houver multi-cliente no mesmo
+# banco): nesse cenario o contrato ganha a dimensao e este teste passa a ser o que prove o
+# fail-closed. Ele NAO deve ser wireado na suite antes da decisao do V2.
+#
+# Aceite original TRE-W1-E05-T01 (criterio 2, homologado por Anderson em 29/09/2026):
 #   "consulta sem filtro de tenant devolve vazio ou erro — NUNCA material de outro cliente".
 #
 # O que este teste faz, e por que assim:
