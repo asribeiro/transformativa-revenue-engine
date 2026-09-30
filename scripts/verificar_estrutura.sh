@@ -35,6 +35,8 @@ done
 # Artefatos do backup/restore (T03) existem E estao versionados
 for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
          scripts/backup/restore-tre.sh scripts/backup/teste-backup-restore.sh \
+         scripts/backup/verificar-ultimo-backup.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/teste-rotina-ambiente.sh \
          docs/runbooks/backup-restore-rollback.md deploy/systemd/tre-backup.timer; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"

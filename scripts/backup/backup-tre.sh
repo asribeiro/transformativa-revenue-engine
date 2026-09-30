@@ -11,16 +11,31 @@
 #     manifest.txt              metadados da execucao (origem, versao, tamanho, indices, externo)
 #     pg_dump.err               stderr do pg_dump (vazio em caso de sucesso)
 #
-# Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
-#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ
+# Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB (globais — valem em chamada de UM
+#            ambiente), TRE_ENV_DIR, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
+#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ.
+#            O trio de CADA ambiente vem de deploy/environments/<ambiente>.env ou de
+#            TRE_PG_SERVICO_<AMBIENTE> — regra completa em scripts/backup/lib-ambiente.sh.
 #
 # SEGREDOS: o backup NAO copia `.env` de proposito. Segredo se recupera do cofre
 # (docs/operations/gestao-de-secrets.md), nao de arquivo de backup.
 #
-# Ambiente inexistente e PULADO (nao falha): assim o mesmo timer cobre dev/homolog/prod
-# desde o primeiro dia, antes de os tres existirem.
+# AMBIENTE NAO PROVISIONADO e PULADO; ambiente DECLARADO cujo container nao existe e
+# FALHA (exit != 0). Essa distincao e o conserto do defeito t_1b2ab418: a rotina imprimia
+# `BACKUP_OK` com exit 0 cobrindo ZERO ambientes (procurava `pg-dev`; o dev real e
+# `pg-sales-dev`, e nenhum timer lia deploy/environments/dev.env).
+#
+# Resultados possiveis:
+#   BACKUP_OK            — todos os ambientes provisionados foram copiados, nenhuma falha
+#   BACKUP_SEM_AMBIENTE  — nenhum ambiente provisionado: nada foi copiado (nunca "OK")
+#   BACKUP_FALHOU        — pelo menos uma falha (ambiente declarado sem container, dump
+#                          que falhou, destino externo que falhou...): exit 1
 # =====================================================================================
 set -uo pipefail
+
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-ambiente.sh
+. "$AQUI/lib-ambiente.sh"
 
 AMBIENTE="${1:-todos}"
 RAIZ="${TRE_RAIZ:-/opt/tre}"
@@ -28,6 +43,8 @@ DEST="${TRE_BACKUP_DIR:-$RAIZ/backup}"
 RETENCAO="${TRE_BACKUP_RETENCAO_DIAS:-14}"
 EXTERNO="${TRE_BACKUP_EXTERNO:-}"
 FALHAS=0
+COBERTOS=0
+PULADOS=0
 
 ok() { echo "OK    $*"; }
 ko() { echo "FALHOU $*"; FALHAS=$((FALHAS + 1)); }
@@ -47,22 +64,52 @@ sql_contagens() {
 }
 
 backup_ambiente() {
-  local amb="$1"
-  local servico="${TRE_PG_SERVICO:-pg-$amb}"
-  local usuario="${TRE_PG_USER:-tre}"
-  local banco="${TRE_PG_DB:-sales_intelligence}"
+  local amb="$1" modo="${2:-um}"
   local selo saida
+
+  # Resolucao do trio POR AMBIENTE (lib-ambiente.sh). O container NAO vem de uma variavel
+  # global quando a chamada e `todos`: uma variavel unica atravessando os tres ambientes
+  # copiaria o banco do dev tres vezes, rotulado como dev/homolog/prod.
+  if ! tre_resolver_ambiente "$amb" "$modo"; then
+    echo "=================================================================="
+    echo "-- ambiente: $amb   (resolucao de configuracao FALHOU)"
+    ko "$TRE_AMB_ERRO"
+    return 1
+  fi
+  local servico="$TRE_AMB_SERVICO" usuario="$TRE_AMB_USUARIO" banco="$TRE_AMB_BANCO"
+  tre_estado_ambiente
+
   selo="$(date -u +%Y%m%dT%H%M%SZ)"
   saida="$DEST/tre_${amb}_${selo}"
 
   echo "=================================================================="
-  echo "-- ambiente: $amb   servico: $servico   data: $selo"
+  echo "-- ambiente: $amb   servico: $servico   usuario: $usuario   banco: $banco"
+  echo "-- config:   $TRE_AMB_FONTE"
+  echo "-- data:     $selo"
   echo "=================================================================="
+  [ -n "${TRE_AMB_AVISO:-}" ] && echo "NOTA  $TRE_AMB_AVISO"
 
-  if ! docker inspect "$servico" >/dev/null 2>&1; then
-    echo "PULADO ambiente $amb: container '$servico' nao existe (ambiente ainda nao provisionado)"
-    return 0
+  case "$TRE_AMB_ESTADO" in
+    FALHAR)
+      # Era aqui que a rotina mentia: container ausente virava "PULADO" e a execucao
+      # terminava em BACKUP_OK com zero artefato.
+      ko "$TRE_AMB_MOTIVO"
+      return 1
+      ;;
+    PULAR)
+      echo "PULADO $TRE_AMB_MOTIVO"
+      PULADOS=$((PULADOS + 1))
+      return 0
+      ;;
+  esac
+
+  # Dois ambientes apontando para o MESMO container na mesma execucao produziriam um
+  # artefato de 'homolog' com o banco do dev. Recusa o segundo; nunca copia por cima.
+  if ! tre_registrar_origem "$servico"; then
+    ko "ambiente '$amb' aponta para o container '$servico', ja usado por outro ambiente desta execucao — artefato de '$amb' com o banco de outro ambiente e pior que nenhum artefato"
+    return 1
   fi
+
   mkdir -p "$saida" && chmod 700 "$saida"
 
   # 1. o servico responde?
@@ -114,6 +161,8 @@ backup_ambiente() {
     echo "ambiente: $amb"
     echo "servico: $servico"
     echo "banco: $banco"
+    echo "usuario: $usuario"
+    echo "config: $TRE_AMB_FONTE"
     echo "selo_utc: $selo"
     echo "host_origem: $(hostname)"
     echo "postgres: ${versao_pg:-n/d}"
@@ -160,20 +209,25 @@ backup_ambiente() {
   fi
 
   echo "artefato: $saida"
+  COBERTOS=$((COBERTOS + 1))
   return 0
 }
 
 if [ "$AMBIENTE" = "todos" ]; then
-  for amb in dev homolog prod; do backup_ambiente "$amb"; done
+  for amb in dev homolog prod; do backup_ambiente "$amb" todos; done
 else
-  backup_ambiente "$AMBIENTE"
+  backup_ambiente "$AMBIENTE" um
 fi
 
 echo
-if [ "$FALHAS" -eq 0 ]; then
-  echo "RESULTADO: BACKUP_OK ($AMBIENTE)"
+if [ "$FALHAS" -gt 0 ]; then
+  echo "RESULTADO: BACKUP_FALHOU ($AMBIENTE; $FALHAS falha(s), $COBERTOS ambiente(s) coberto(s), $PULADOS pulado(s))"
+  exit 1
+elif [ "$COBERTOS" -eq 0 ]; then
+  # nunca chamar isso de BACKUP_OK: nenhum ambiente foi coberto e nenhum artefato existe
+  echo "RESULTADO: BACKUP_SEM_AMBIENTE ($AMBIENTE; 0 ambiente coberto, $PULADOS pulado(s)) — nenhum ambiente provisionado, nenhum artefato produzido"
   exit 0
 else
-  echo "RESULTADO: BACKUP_FALHOU ($FALHAS falha(s))"
-  exit 1
+  echo "RESULTADO: BACKUP_OK ($AMBIENTE; $COBERTOS ambiente(s) coberto(s), $PULADOS pulado(s))"
+  exit 0
 fi
