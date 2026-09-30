@@ -18,6 +18,31 @@ do operador **vence** o arquivo (mesma precedência do runner de migrations):
 TRE_PG_SERVICO=outro TRE_PG_USER=outro TRE_PG_DB=outro_banco bash scripts/db/suite_banco.sh dev
 ```
 
+### 1.1 De onde vem o artefato que se está testando (o caminho de escrita da cópia)
+
+`/opt/tre/repo` é a **cópia operacional publicada** e o alvo do `ExecStart` dos timers (`tre-backup.service`
+etc.). Ela é escrita **só** pelo caminho versionado:
+
+```bash
+# publica um COMMIT (nunca a árvore de trabalho) — card t_091cfea9 (DEFEITO F3 do E06)
+deploy/publicar.sh --commit <sha|ref>          # destino padrão: /opt/tre/repo
+deploy/publicar.sh --conferir                   # confere a cópia contra o `.publicado` (exit 5 se divergir)
+```
+
+O `--conferir` roda **a partir de um checkout git** (a publicação sai do git, nunca da árvore de trabalho):
+chamá-lo dentro da própria VPS falha com `nao estou num repositorio git`.
+
+**Sincronizar a cópia com `tar -cz … | ssh … 'tar -xz'` é proibido:** foi esse padrão (usado na rodada 1
+deste card) que sobrescreveu a cópia, ressuscitou rotina pré-correção e fez o backup diário voltar a mentir
+— medido pelo card `t_1b2ab418` (DEFEITO F2) e causa-raiz do defeito `t_daca4bda` (dono `devops`). Para
+testar um artefato **antes** de ele estar publicado, use um **destino isolado de ensaio** (decisão 2 do
+`t_091cfea9`), que não é o alvo dos timers:
+
+```bash
+TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao-<card> deploy/publicar.sh --commit <sha> --card <card>
+bash /opt/tre/.teste-publicacao-<card>/scripts/db/suite_banco.sh dev
+```
+
 ## 2. Veredito: o exit code é a resposta
 
 | exit | veredito | significado |

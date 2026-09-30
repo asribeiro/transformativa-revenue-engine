@@ -140,7 +140,11 @@ rodada, ele segue em `TENANT_RLS_NAO_TESTAVEL`, exit 3 — **fora da conta do E0
 
 ### 9.2 Número, comando e exit code (nada "passou" sem os três) — bateria na VPS do dev
 
-| # | comando (VPS, `/opt/tre/repo`, repo ressincronizado) | resultado medido | exit |
+Os comandos foram executados no artefato **publicado pelo caminho versionado em destino isolado de ensaio**
+(`deploy/publicar.sh --commit e74ec02` → `/opt/tre/.teste-publicacao-t_c7281fce`, `PUBLICACAO_OK`, digest
+`3b431df7…`, 307 arquivos) — ver §9.6 para a correção de rota e por que a cópia operacional não foi tocada.
+
+| # | comando (VPS, destino de ensaio `/opt/tre/.teste-publicacao-t_c7281fce`) | resultado medido | exit |
 |---|---|---|---|
 | 1 | `bash scripts/db/suite_banco.sh dev` | `SUITE_OK (89 itens, 0 falhas)` — ambiente 3 · contrato 37 · constraints 16 · dedup sintético 7 · dedup no ambiente 21 · isolamento 5 | **0** |
 | 2 | `... dev --somente-leitura` | `SUITE_OK (69 itens, 0 falhas)` (etapa 4 vira varredura `--detectar`), sem escrever no alvo | **0** |
@@ -180,12 +184,19 @@ rodada, ele segue em `TENANT_RLS_NAO_TESTAVEL`, exit 3 — **fora da conta do E0
 
 ### 9.5 Proveniência (a evidência é do artefato real, não de stub)
 
-- **Cópia operacional `/opt/tre/repo` ressincronizada** por `tar -cz db scripts deploy docs | ssh …` e shas
-  **iguais nos dois lados** para o artefato sob teste: `suite_banco.sh 5fb644a2375e…`,
-  `teste_isolamento_clientes.sh f3586c102e30…`, `teste_tenant_rls.sh 217bfd050a14…`; e para os reusados:
-  `estado_do_ambiente.sh 7f9a12a50481…`, `deduplicar_organizacoes.py e58058469a06…`,
+- **O artefato foi publicado pelo caminho versionado, em destino isolado de ensaio (decisão 2 do
+  `t_091cfea9`):** `TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao-t_c7281fce deploy/publicar.sh --commit
+  e74ec02 --card t_c7281fce` → `PUBLICACAO_OK commit=e74ec02… digest=3b431df75535… arquivos=307`. O script
+  publica o **commit**, nunca a árvore de trabalho, e grava `.publicado`/`.publicado.manifest` no destino.
+- **Shas dos artefatos sob teste no destino de ensaio** (conferidos também no repo local, iguais):
+  `suite_banco.sh 5fb644a2375e…`, `teste_isolamento_clientes.sh f3586c102e30…`,
+  `teste_tenant_rls.sh 217bfd050a14…`; e dos reusados (artefatos executados, não documentação): `estado_do_ambiente.sh 7f9a12a50481…`, `deduplicar_organizacoes.py e58058469a06…`,
   `verificar_contrato_dados.py dfb8ad79…`, `verificar_constraints_indices.py 68cc57cb…`,
   `0001_sales_intelligence_v1.sql 0484a3701b8c…` (inalterado).
+- **A cópia operacional `/opt/tre/repo` não foi tocada por esta rodada** e foi **conferida** no fim:
+  `deploy/publicar.sh --conferir` → `PUBLICACAO_OK commit=c7972ca… digest=89729f5d… arquivos=310`, exit 0.
+  (O `--conferir` sai do **git**, não da árvore de trabalho: roda a partir de um checkout git — o modo
+  `--conferir` na própria VPS falha com `nao estou num repositorio git`, e é assim que tem de ser.)
 - **Alvo dos testes destrutivos:** containers **descartáveis** criados e destruídos pelo próprio teste
   (`tre-suite-banco-*`, `tre-isolamento-*`, e o `pg-cliente-b-*` do item de co-locação no host, removido no
   fim). `docker ps -a` ao fim da bateria: **só `pg-sales-dev`**.
@@ -193,10 +204,34 @@ rodada, ele segue em `TENANT_RLS_NAO_TESTAVEL`, exit 3 — **fora da conta do E0
   é limpa e conferida pela própria etapa (`ambiente volta ao estado anterior`).
 - **Produção e homologação intocadas:** `prod` recusado (ADR-005, exit 1); `/opt/tre/prod` e
   `/opt/tre/homolog` com **0 arquivo**; nenhum container de homologação.
-- **Logs brutos na VPS:** `/tmp/e05r2_bateria.log` (itens 1–8 + estado final, com `### EXIT=` por comando),
-  `/tmp/e05r2_suite_dente.log` (item 9), `/tmp/e05r2_isolamento_dente.log` (item 10).
+- **Logs brutos na VPS:** `/tmp/e05r2_bateria.log` (itens 1–10 + estado final, com `### EXIT=` por comando).
 
-### 9.6 O que esta rodada NÃO fecha (declarado, não escondido)
+### 9.6 Correção de rota registrada — como o artefato chegou à VPS
+
+A **primeira** bateria desta rodada rodou contra a cópia operacional `/opt/tre/repo` sincronizada com
+`tar -cz … | ssh … 'tar -xz'` — o mesmo padrão usado na rodada 1 deste card. Esse padrão **não é o caminho
+de publicação aceito** (`deploy/publicar.sh`, card `t_091cfea9`): a sincronização sobrescreveu a árvore
+publicada (`c7972ca`, `fix/TRE-W1-E06-T01-F2`, publicada 21:34:32Z) com a árvore de `develop`, e o card
+`t_1b2ab418` (DEFEITO F2) **mediu** o dano às 21:43:17Z (`deploy/publicar.sh --conferir` →
+`PUBLICACAO_DIVERGENTE`, exit 5; `scripts/backup/backup-tre.sh` de volta à versão pré-correção; rotina de
+backup voltando a imprimir `BACKUP_OK` sem cobrir ambiente). O dano foi **reparado pelo próprio caminho
+versionado** (republicação às 21:52:24Z, conferida nesta rodada: `PUBLICACAO_OK … arquivos=310`).
+
+O que este card fez com isso, na ordem:
+
+1. **Parou** a bateria que estava rodando contra a cópia (os resultados dela **não** foram usados — evidência
+   colhida no artefato errado não vale);
+2. **Publicou o commit entregue pelo caminho aceito**, em **destino isolado de ensaio**
+   (`/opt/tre/.teste-publicacao-t_c7281fce`), que não é alvo de `ExecStart` de timer nenhum;
+3. **Rodou a bateria inteira de novo** nesse destino (§9.2) — é esta a evidência do card;
+4. **Conferiu a cópia operacional ao fim** (`PUBLICACAO_OK`, `c7972ca`) e **não a escreveu**;
+5. **Corrigiu o runbook** (§1.1): `tar` para a cópia é proibido; artefato de card vai por
+   `deploy/publicar.sh` em destino isolado de ensaio. O padrão da rodada 1 não deve ser repetido por
+   nenhum card.
+
+O instrumento do V2 (`teste_tenant_rls.sh`) segue no repo, fora da suíte, sem mudança de comportamento.
+
+### 9.7 O que esta rodada NÃO fecha (declarado, não escondido)
 
 - **Homologação** continua não provisionada — o critério não pôde ser medido lá (o TEST PLAN pedia dev e
   homolog); `homolog` sai exit 1 apontando o alvo inexistente.
