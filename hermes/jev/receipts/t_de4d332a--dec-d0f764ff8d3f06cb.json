@@ -1,0 +1,15 @@
+{
+  "decision_id": "dec-d0f764ff8d3f06cb",
+  "card_id": "t_de4d332a",
+  "task_hash": "1951fd88bcf4f7b599aa8f3e309c9174ce4271340993db525390564d79d2da49",
+  "lane": "high",
+  "model_profile": "reasoning-forte",
+  "selected_model": null,
+  "effort": "alto",
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.2",
+  "timestamp": "2026-09-30T12:43:59+00:00",
+  "override": null,
+  "outcome": "PASS"
+}
