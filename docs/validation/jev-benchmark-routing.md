@@ -434,7 +434,7 @@ medida do efeito do encaixe, com a mesma régua.
 Fecha a lacuna A1 (§6.1). **Corpus v1.4** (`b66ecd36bd80`), política `jev-policy-v1.1`
 (`4fe3357c1a9c`), roteador `jev-router-v1.1` (`6f44335de494`). Ferramenta da anotação:
 `scripts/anotar_codigos_de_acao_no_corpus.py` (ensaio + real, com guardas de recusa).
-**Nada de rótulo foi tocado** (§10.2, C5/C6).
+**Nada de rótulo foi tocado** (§10.2, C5/C6). **Commit da entrega:** `e34c9ea`.
 
 ### 10.1 O que foi entregue, por critério do card
 
