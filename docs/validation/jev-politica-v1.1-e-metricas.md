@@ -10,6 +10,37 @@ sem código canônico de ação e o classificador empatado com a constante sempr
 
 ---
 
+> **ATUALIZAÇÃO (30/09/2026, card `TRE-W0-E04-T08` / `t_d36c7d0f`).** Este documento é o registro do que o
+> card `T06` entregou — um retrato do momento em que a v1.1 era rascunho. Ele **não** é mais descrição do
+> estado atual: o card `T08` implementou o piso de lane por ambiente no roteador, abriu o portão de versão e
+> colocou a v1.1 **em vigor** (registro do Anderson de 29/09/2026). Onde este texto disser "não está em
+> vigor", "rascunho inerte", `roteador_que_a_executa: null` ou `jev-router-v1.0`, leia como **histórico**.
+>
+> Estado atual, medido: `verificar_jev_policy_v1_1.py --autoteste` = **155 itens, 0 falhas, 63/63 mutações
+> detectadas** (as 33 mutações daqui continuam dentro dessa conta); `verificar_jev_router.py --autoteste` =
+> 59 itens PASS; `validar_jev_guardrails.py` = 74 itens PASS; `benchmark_roteamento.py` = 12/12 no autoteste.
+> Documento vivo da política: `docs/architecture/jev-decision-policy-v1.1.md` (§3.1 "em execução", §10 "em
+> vigor" e preservação da v1.0 para auditoria).
+>
+> **Efeito medido (mesmo corpus anotado, mesmo código, política v1.0 × v1.1):** modo `proposta-homologada`
+> accuracy `13/32 (0,4062)` → `14/32 (0,4375)`; `falso_rebaixamento` `9 → 8` (taxa `0,2812 → 0,25`). O caso
+> que muda é `borda-02` (esperada `critical`, DDL em ambiente vivo): lane registrada `high` → **`critical`**
+> com `exige_aprovacao_humana: true` — o piso. Artefatos: `hermes/jev/benchmarks/resultado-benchmark-2026-09-30-jev-policy-v1.1.json`
+> e `.../metricas-por-lane-2026-09-30-jev-policy-v1.1.json`, ao lado das rodadas da v1.0 (que continuam
+> idênticas em comportamento sob o roteador novo — só latência, data e a versão do roteador mudam).
+>
+> **Achado fora do escopo deste card, registrado (com evidência):** `scripts/verificar_gate_jev.py` (suíte do
+> `TRE-W0-E04-T05`) **não roda** neste host — nem antes desta entrega. Em `construir_overlay`, o laço de
+> symlinks copia `hermes_cli/kanban_jev_gate.py` (o adaptador **instalado** em `/opt/hermes`, 0644 do root)
+> para dentro do overlay; o `shutil.copy2` da linha seguinte abre o destino `'wb'` **através do symlink** e,
+> como o instalado é do root, morre em `PermissionError: [Errno 13] ... overlay/hermes_cli/kanban_jev_gate.py`
+> — a suíte inteira aborta com traceback e exit 1. Reproduzido em árvore limpa em `HEAD` (`29ae3a2`, worktree
+> sem nenhuma alteração desta entrega), o que descarta relação com o piso/vigência. Numa instalação gravável o
+> mesmo caminho **sobrescreveria o adaptador instalado** (o `open` do `copy2` segue symlink), ou seja: além de
+> quebrar a suíte, o overlay não é isolado. Vai em card de defeito próprio, com sintoma/causa/correção prevista.
+
+---
+
 ## 1. O que foi entregue
 
 | Artefato | Papel |

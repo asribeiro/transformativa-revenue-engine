@@ -1,15 +1,18 @@
-# JEV Decision Policy V1.1 — rascunho
+# JEV Decision Policy V1.1 — em vigor
 
-**Versão:** `jev-policy-v1.1` · **Estado:** **RASCUNHO, NÃO HOMOLOGADO** · **Card:** TRE-W0-E04-T06
-**Substitui:** [`jev-policy-v1.0`](jev-decision-policy-v1.md) (em vigor até a homologação)
+**Versão:** `jev-policy-v1.1` · **Estado:** **EM VIGOR** (homologada em 29/09/2026) · **Card:** TRE-W0-E04-T06
+**Substitui:** [`jev-policy-v1.0`](jev-decision-policy-v1.md) — **preservada para auditoria**, congelada e ainda executável
 **Forma legível por máquina:** [`hermes/jev/policy_v1_1.yaml`](../../hermes/jev/policy_v1_1.yaml)
 **Verificador:** [`scripts/verificar_jev_policy_v1_1.py`](../../scripts/verificar_jev_policy_v1_1.py)
 **Origem no baseline:** docs 13 (Hermes Implementation Brief) e 14 (JEV Decision Layer) do baseline V1.1.0
 
-> **Este documento não muda nada sozinho.** Enquanto o `homologacao.registrada_em` do YAML for `null`,
-> a versão em vigor é a v1.0, o roteador em vigor (`jev-router-v1.0`) **recusa** esta versão, e o
-> verificador prova essa recusa. Homologação é do Anderson, com registro em
-> [`docs/operations/registro-de-aprovacoes.md`](../operations/registro-de-aprovacoes.md) — não de máquina.
+> **Esta é a versão em vigor.** A seção `versao_em_vigor` do YAML declara o caminho que o roteador carrega
+> por padrão (`hermes/jev/policy_v1_1.yaml` → `CAMINHO_POLITICA_PADRAO`) e onde a v1.0 fica **preservada
+> para auditoria**: o arquivo antigo continua no repo, congelado, e continua executável, porque o recibo
+> guarda `policy_version` e uma decisão antiga tem de poder ser reconstruída com a política que a tomou.
+> O verificador prova esse casamento contra o código do roteador, por comportamento — não por leitura.
+> Vigência não se declara por edição de arquivo: ela exige a homologação do Anderson registrada em
+> [`docs/operations/registro-de-aprovacoes.md`](../operations/registro-de-aprovacoes.md).
 
 ## 0. O que muda da v1.0 para a v1.1
 
@@ -88,11 +91,16 @@ A regra é **piso de lane**: só **eleva**, nunca rebaixa lane já decidida (mes
 humano, que só aumenta a conservação). Ela **não** substitui a camada Security: o guardrail "DDL não nasce
 em produção" continua rodando antes e continua bloqueando.
 
-**Estado de execução:** a regra está **declarada** e **ainda não executada**. O roteador em vigor
-(`jev-router-v1.0`) não implementa o piso, e é isso que torna esta versão inerte: o roteador **recusa**
-política de versão que ele não implementa. Entrar em vigor exige a homologação do Anderson **e** a
-implementação do piso no roteador — o card que faz isso é o **`TRE-W0-E04-T08` (`t_d36c7d0f`)**, declarado
-em `regra_de_lane_por_ambiente.execucao.card_de_implementacao` e verificado contra o board.
+**Estado de execução:** a regra está **declarada** e **em execução**. O roteador em vigor
+(`jev-router-v1.1`) implementa o piso e é ele que a executa — o mesmo valor declarado em
+`regra_de_lane_por_ambiente.execucao.roteador_que_a_executa` (`jev-router-v1.1`), conferido contra
+`ROUTER_VERSION` do código. Duas provas por comportamento, no verificador: DDL em ambiente vivo com proposta
+`medium` chega a `critical` **com aprovação humana exigida**, e o roteador **recusa** a política se a regra
+declarar uma operação que ele não implementa (fail-closed, nunca "segue ignorando a regra declarada").
+A versão declarada em `versao_em_vigor` é a que o roteador carrega por padrão, e a v1.0 — sem a regra —
+não muda de comportamento (preservada para auditoria). O card que implementou o piso é o
+**`TRE-W0-E04-T08` (`t_d36c7d0f`)**, declarado em `regra_de_lane_por_ambiente.execucao.card_de_implementacao`
+e verificado contra o board.
 
 ## 4. Limiares de confiança
 
@@ -190,11 +198,22 @@ Mudar limiar, lane, precedência, guardrail, fallback, recibo ou métrica exige 
 (`v1.1`, `v2.0`) e registro do motivo — não edição silenciosa do arquivo. O verificador reprova política
 cuja versão no YAML não seja a esperada nem divergência entre documento e arquivo.
 
-O rito é o mesmo da v1.0: **documento + verificador + homologação do Anderson**. Homologar esta v1.1
-significa (1) a palavra dele registrada em `docs/operations/registro-de-aprovacoes.md`, (2) o campo
-`homologacao.registrada_em` preenchido no YAML, e (3) a implementação do piso por ambiente no roteador pelo
-card `TRE-W0-E04-T08` (`t_d36c7d0f`) — porque contrato declarado sem executor é pior que contrato ausente:
-dá sensação de guarda.
+O rito é o mesmo da v1.0: **documento + verificador + homologação do Anderson**. Esta v1.1 está
+**homologada e em vigor**: (1) a palavra do Anderson está registrada em
+`docs/operations/registro-de-aprovacoes.md`, (2) `homologacao.registrada_em` e `congelada_em` estão
+preenchidos no YAML, (3) o piso por ambiente foi implementado no roteador pelo card `TRE-W0-E04-T08`
+(`t_d36c7d0f`) e o portão de versão do roteador foi aberto para `jev-policy-v1.1` — porque contrato
+declarado sem executor é pior que contrato ausente: dá sensação de guarda.
 
-O que depende desta política e vem depois: a implementação do piso por ambiente no roteador e a medição
-comparada (v1.0 × v1.1) sobre o mesmo corpus anotado — a diferença entre as duas rodadas é o efeito medido.
+**A v1.0 não sai do repo: ela fica preservada para auditoria.** O arquivo continua congelado em
+`hermes/jev/policy_v1.yaml`, continua se declarando `jev-policy-v1.0`, e continua **executável** pelo
+roteador (`carregar_politica` recebe o caminho explícito) — o recibo grava `policy_version`, então
+reconstruir uma decisão antiga exige a política antiga, não uma reinterpretação dela pela política nova.
+O endereço da vigência fica em `versao_em_vigor`: `versao` + `caminho` (o mesmo que o roteador carrega por
+padrão) + `preservada_para_auditoria` (versão, caminho e data de congelamento). Sem essa seção, "em vigor"
+seria só prosa.
+
+Medição comparada (v1.0 × v1.1) sobre o mesmo corpus anotado: os dois resultados ficam lado a lado em
+`hermes/jev/benchmarks/resultado-benchmark-2026-09-30-jev-policy-v1.0.json` e
+`resultado-benchmark-2026-09-30-jev-policy-v1.1.json` — a diferença entre as duas rodadas é o efeito medido
+do piso. O que ainda **não** é medível está declarado com motivo em `metricas.instrumentacao.nao_medivel`.

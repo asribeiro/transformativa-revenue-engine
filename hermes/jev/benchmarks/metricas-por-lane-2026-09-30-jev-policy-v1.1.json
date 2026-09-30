@@ -1,15 +1,16 @@
 {
   "instrumento": "metricas-por-lane-v1",
   "card": "TRE-W0-E04-T06",
-  "gerado_em": "2026-09-30T01:40:41+00:00",
+  "gerado_em": "2026-09-30T01:42:24+00:00",
   "politica": {
-    "caminho": "hermes/jev/policy_v1.yaml",
-    "versao": "jev-policy-v1.0",
-    "sha256": "0058db6edf1b5b46ac5051091a8792d6cd6955ce56e6a5c5608a5c7d2f35740f",
+    "caminho": "hermes/jev/policy_v1_1.yaml",
+    "versao": "jev-policy-v1.1",
+    "sha256": "4fe3357c1a9cbc167292f2140dec6a148754e38d9b95771ca5fb2ad6221f10cf",
     "limiares": {
       "aceitar": 0.85,
       "conservador": 0.65,
       "abster": 0.65,
+      "lane_conservadora": "high",
       "empate": "lane mais conservadora (high) + registro explícito de abstenção"
     },
     "lane_conservadora": "high",
@@ -27,13 +28,19 @@
     },
     "metricas_declaradas": [
       "custo_por_card_verified",
+      "custo_por_lane",
       "taxa_de_abstencao",
       "taxa_de_escalacao",
       "falso_rebaixamento",
       "latencia_por_lane",
       "regressao_ou_retrabalho"
     ],
-    "limites_declarados_na_politica": []
+    "limites_declarados_na_politica": [
+      "a classe de custo de `high` e de `critical` é a MESMA (`alto`): o custo por lane NÃO enxerga rebaixamento critical→high; quem enxerga é `falso_rebaixamento`",
+      "custo é unidade relativa declarada, NUNCA dinheiro (a política proíbe fixar preço)",
+      "latência por lane é a da camada de decisão, não a da execução do modelo",
+      "lane sem decisão no período reporta null, nunca zero: 'não medi' e 'medi zero' são coisas diferentes"
+    ]
   },
   "roteador": {
     "caminho": "hermes/jev/routing/router.py",
@@ -68,9 +75,9 @@
         "peso_unitario_de_custo": 1,
         "latencia_ms_da_decisao": {
           "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
-          "mediana": 1.5454,
-          "p95": 1.6514,
-          "max": 1.6514,
+          "mediana": 1.4501,
+          "p95": 1.6025,
+          "max": 1.6025,
           "amostras": 2
         },
         "outcomes": {
@@ -99,47 +106,51 @@
       "high": {
         "perfil_de_modelo": "reasoning-forte",
         "classe_de_custo": "alto",
-        "decisoes": 30,
-        "custo_relativo_da_lane": 90,
+        "decisoes": 29,
+        "custo_relativo_da_lane": 87,
         "peso_unitario_de_custo": 3,
         "latencia_ms_da_decisao": {
           "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
-          "mediana": 1.7265,
-          "p95": 3.7388,
-          "max": 3.9239,
-          "amostras": 30
+          "mediana": 1.6206,
+          "p95": 1.751,
+          "max": 1.8042,
+          "amostras": 29
         },
         "outcomes": {
           "ESCALATE": 21,
-          "BLOCK": 9
+          "BLOCK": 8
         },
         "perfis_registrados_no_recibo": {
-          "None": 30
+          "None": 29
         }
       },
       "critical": {
         "perfil_de_modelo": "critical-frontier-reviewer",
         "classe_de_custo": "alto",
-        "decisoes": 0,
-        "custo_relativo_da_lane": null,
+        "decisoes": 1,
+        "custo_relativo_da_lane": 3,
         "peso_unitario_de_custo": 3,
         "latencia_ms_da_decisao": {
           "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
-          "mediana": null,
-          "p95": null,
-          "max": null,
-          "amostras": 0
+          "mediana": 1.3934,
+          "p95": 1.3934,
+          "max": 1.3934,
+          "amostras": 1
         },
-        "outcomes": {},
-        "perfis_registrados_no_recibo": {}
+        "outcomes": {
+          "BLOCK": 1
+        },
+        "perfis_registrados_no_recibo": {
+          "None": 1
+        }
       }
     },
     "custo_relativo_total": 92,
     "taxa_de_abstencao": 0.6562,
     "taxa_de_escalacao": 0.75,
     "falso_rebaixamento": {
-      "total": 9,
-      "taxa": 0.2812
+      "total": 8,
+      "taxa": 0.25
     },
     "blindagem_de_custo": {
       "definicao": "`high` e `critical` compartilham a mesma classe de custo, entao o custo por lane NAO enxerga rebaixamento critical->high",
@@ -156,8 +167,17 @@
   "metricas_declaradas": {
     "custo_por_card_verified": {
       "medida": false,
-      "motivo": "nenhum card do corpus foi executado ate VERIFIED e o recibo nao carrega custo",
-      "motivo_declarado_na_politica": false
+      "motivo": "nenhum card do corpus foi executado até VERIFIED; o recibo não carrega custo",
+      "motivo_declarado_na_politica": true
+    },
+    "custo_por_lane": {
+      "medida": true,
+      "valor": {
+        "small": 2,
+        "medium": null,
+        "high": 87,
+        "critical": 3
+      }
     },
     "taxa_de_abstencao": {
       "medida": true,
@@ -170,34 +190,23 @@
     "falso_rebaixamento": {
       "medida": true,
       "valor": {
-        "total": 9,
-        "taxa": 0.2812
+        "total": 8,
+        "taxa": 0.25
       }
     },
     "latencia_por_lane": {
       "medida": true,
       "valor": {
-        "small": 1.5454,
+        "small": 1.4501,
         "medium": null,
-        "high": 1.7265,
-        "critical": null
+        "high": 1.6206,
+        "critical": 1.3934
       }
     },
     "regressao_ou_retrabalho": {
       "medida": false,
-      "motivo": "exige historico de execucao de card (retrabalho medido em execucao), que o encanamento ainda nao registra",
-      "motivo_declarado_na_politica": false
-    },
-    "custo_por_lane": {
-      "medida": true,
-      "valor": {
-        "small": 2,
-        "medium": null,
-        "high": 90,
-        "critical": null
-      },
-      "declarada_na_politica": false,
-      "nota": "medida e nao declarada em metricas.acompanhar desta versao"
+      "motivo": "exige histórico de execução de card (retrabalho medido em execução), que o encanamento ainda não registra",
+      "motivo_declarado_na_politica": true
     }
   },
   "decisoes_reais": {
@@ -225,5 +234,5 @@
     "lane sem decisao no periodo reporta null, nunca zero: 'nao medi' e 'medi zero' sao coisas diferentes;",
     "o corpus nao carrega codigo canonico de acao em 28 dos 32 casos (achado do TRE-W0-E04-T03): a lane medida e a do encanamento de bloqueio/escalacao, nao a de execucao;"
   ],
-  "duracao_da_rodada_s": 0.954
+  "duracao_da_rodada_s": 0.762
 }

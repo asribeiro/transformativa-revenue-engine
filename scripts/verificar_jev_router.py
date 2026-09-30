@@ -708,8 +708,12 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
     def _cli_sintetico():
         tarefa = {"card_id": "t_cli", "titulo": "ajuste de texto", "acao": "ajuste_de_texto",
                   "lane_proposta": "small", "confianca": alta, "status": "ready"}
+        # A politica sob teste e a de `caminho_politica` (a suite e parametrizada): sem
+        # `--politica` o CLI carregaria a politica EM VIGOR e o item mediria a politica
+        # errada — o roteador mudou de versao em vigor (v1.1) sem mudar de contrato.
         processo = subprocess.run(
-            [sys.executable, str(origem), "--json", json.dumps(tarefa)],
+            [sys.executable, str(origem), "--json", json.dumps(tarefa),
+             "--politica", str(caminho_politica)],
             capture_output=True, text=True, cwd=str(RAIZ))
         if processo.returncode != 0:
             return _texto(False, f"exit={processo.returncode} stderr={processo.stderr[:120]}")
@@ -742,7 +746,8 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         if not banco.is_file():
             return _texto(False, "banco temporario do board nao existe (item anterior)")
         processo = subprocess.run(
-            [sys.executable, str(origem), "--card", "t_livre", "--board-db", str(banco)],
+            [sys.executable, str(origem), "--card", "t_livre", "--board-db", str(banco),
+             "--politica", str(caminho_politica)],
             capture_output=True, text=True, cwd=str(RAIZ))
         if processo.returncode not in (0, 2, 3):
             return _texto(False, f"exit={processo.returncode} stderr={processo.stderr[:120]}")

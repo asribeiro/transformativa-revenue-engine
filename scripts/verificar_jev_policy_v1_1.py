@@ -18,26 +18,40 @@ O que este verificador acrescenta — e por que cada item existe:
     * a regra de lane por ambiente esta declarada de forma ESTRUTURADA (dois ramos, valores
       enumerados, lane minima por ramo, aprovacao humana no ramo vivo, ramo do ambiente
       nao declarado) e o documento diz a mesma coisa;
+    * `versao_em_vigor` declara UMA versao em vigor, o caminho que o roteador carrega por
+      padrao (conferido contra o codigo, nao por leitura) e onde a v1.0 fica PRESERVADA
+      PARA AUDITORIA — a versao em vigor e uma so, e a antiga continua executavel para
+      reconstruir decisao antiga;
     * as metricas declaradas em `metricas.acompanhar` tem instrumentacao: o que e medivel,
       o que NAO e medivel e COM QUE MOTIVO, e os limites que nao podem ser esquecidos
       (o custo nao enxerga rebaixamento `critical -> high` porque as duas lanes tem a mesma
       classe de custo);
-    * o rascunho se declara rascunho, e ninguem pode marca-lo homologado sem o registro
-      do Anderson em `docs/operations/registro-de-aprovacoes.md`.
+    * a versao se declara EM VIGOR e homologada — e ninguem pode marca-la homologada sem o
+      registro do Anderson em `docs/operations/registro-de-aprovacoes.md`.
 
-  PARTE 3 — as provas de COMPORTAMENTO contra o roteador em vigor (`hermes/jev/routing/router.py`).
+  PARTE 3 — as provas de COMPORTAMENTO contra o roteador (`hermes/jev/routing/router.py`).
     Prosa em YAML nao prova nada; estas provas so valem se exercitarem o codigo:
     B1. com a chave explicita presente e as DUAS prosas REMOVIDAS, o roteador ainda resolve a
-        lane conservadora — e o que torna a chave "legivel por maquina" de fato. Hoje a v1.0
-        nao tem a chave: sem prosa, nao ha lane (e o que esta provado em B1b).
+        lane conservadora — e o que torna a chave "legivel por maquina" de fato (a v1.0 nao
+        tem a chave: sem prosa, nao ha lane; e o que esta provado em B1b).
     B2. chave discordando da prosa = politica inconsistente = recusa (fail-closed).
-    B3. a v1.1 e RECUSADA pelo roteador em vigor (versao desconhecida): o rascunho e inerte por
-        construcao, nao por promessa.
+    B3. a v1.1 e ACEITA pelo roteador em vigor (o portao abriu) e a politica declara a versao
+        em vigor que o roteador carrega POR PADRAO — casamento com `CAMINHO_POLITICA_PADRAO`,
+        medido no codigo. Operacao de piso que o roteador nao implementa e RECUSADA: o portao
+        so foi aberto porque o piso existe.
     B4. o vocabulario de ambiente declarado na regra bate, VALOR A VALOR, com o guardrail de DDL
         do roteador (valores do ramo dev nao acionam; valores do ramo vivo acionam; ambiente
         nao declarado aciona).
-    B5. enquanto `execucao.roteador_que_a_executa` for null, o piso NAO esta ativo: um card com
-        DDL declarada em ambiente vivo NAO e elevado a `critical` pelo roteador em vigor.
+    B5. com a regra declarada EM EXECUCAO, um card com DDL em ambiente vivo, proposta `medium`
+        e confianca alta chega a `critical` COM aprovacao humana exigida — e o roteador e o
+        `roteador_que_a_executa` declarado no YAML.
+    B6. o piso entra no recibo SEM campo novo: os 13 campos do contrato continuam 13, e o piso
+        e o motivo aparecem em `override.piso_por_ambiente` (onde a propria politica manda
+        registrar) e no rastro da decisao.
+    B7. o piso SO ELEVA: proposta `critical` em ambiente dev continua `critical` (nao desce
+        para `high`), proposta `medium` em dev sobe para `high`, tarefa fora da operacao
+        governada nao e tocada, e a politica v1.0 — preservada para auditoria, sem a regra —
+        nao muda de comportamento.
 
 Uso:
     python3 scripts/verificar_jev_policy_v1_1.py                # verifica
@@ -50,6 +64,7 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import json
 import os
 import pathlib
 import re
@@ -135,6 +150,13 @@ def texto_de_yaml(dado: dict) -> str:
     return yaml.safe_dump(dado, allow_unicode=True, sort_keys=False)
 
 
+def _normalizar_simples(texto: str) -> str:
+    """minusculo e sem acento — para comparar NOME escrito a mao no YAML e no registro."""
+    tabela = str.maketrans("áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ",
+                           "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC")
+    return str(texto).translate(tabela).lower()
+
+
 def _card_do_board(card_id: str):
     """(ok, detalhe): o card citado pela politica existe no board de verdade?
 
@@ -171,7 +193,7 @@ def itens_da_bateria_da_v1_0(itens: Itens, yaml_v11: str, doc_v11: str, base) ->
 # ---------------------------------------------------------------------------
 # PARTE 2 — o contrato novo
 # ---------------------------------------------------------------------------
-def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> None:
+def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str, modulo) -> None:
     lanes = list((dado.get("lanes") or {}).keys())
     limiares = dado.get("limiares") or {}
 
@@ -203,20 +225,59 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
               chave in lanes and chave == prosa_fallback == prosa_empate,
               f"chave={chave!r} fallback={prosa_fallback!r} empate={prosa_empate!r}")
 
-    # ---- 2.2 a v1.0 continua sendo a versao em vigor ------------------------
+    # ---- 2.2 a versao EM VIGOR e uma so; a antiga fica preservada para auditoria ----
     itens.add("v1.1: a v1.0 continua existindo e se declarando v1.0 (nada foi sobrescrito)",
               YAML_V10.is_file() and (yaml.safe_load(YAML_V10.read_text(encoding="utf-8")) or {}).get("versao") == VERSAO_V10,
-              f"versao do arquivo em vigor={(yaml.safe_load(YAML_V10.read_text(encoding='utf-8')) or {}).get('versao')!r}")
-    itens.add("v1.1: o rascunho declara `substitui: jev-policy-v1.0`",
+              f"versao do arquivo preservado={(yaml.safe_load(YAML_V10.read_text(encoding='utf-8')) or {}).get('versao')!r}")
+    itens.add("v1.1: a versao declara `substitui: jev-policy-v1.0`",
               dado.get("substitui") == VERSAO_V10, f"substitui={dado.get('substitui')!r}")
-    itens.add("v1.1: o rascunho se declara rascunho (nao homologado)",
-              dado.get("estado") == "rascunho-nao-homologado", f"estado={dado.get('estado')!r}")
+    itens.add("v1.1: a versao se declara EM VIGOR (nao e mais rascunho)",
+              dado.get("estado") == "em-vigor", f"estado={dado.get('estado')!r}")
+    itens.add("v1.1: `congelada_em` preenchido (versao vigente tem data de vigencia)",
+              bool(str(dado.get("congelada_em") or "").strip()), f"congelada_em={dado.get('congelada_em')!r}")
     motivos = dado.get("motivo_da_versao") or []
     itens.add("v1.1: motivo da versao registrado (>= 3 motivos declarados)",
               isinstance(motivos, list) and len(motivos) >= 3, f"{len(motivos)} motivos")
     texto_motivos = " ".join(str(x) for x in motivos).lower()
     for tema in ("lane_conservadora", "ambiente", "metric"):
         itens.add(f"v1.1: motivo da versao cobre {tema!r}", tema in texto_motivos)
+
+    # Declaracao de vigencia: a versao em vigor e UMA, e o caminho declarado tem de ser o
+    # caminho que o roteador carrega POR PADRAO — conferido contra o codigo, nao por leitura.
+    # Sem isto a politica poderia se declarar em vigor enquanto o roteador carrega a antiga
+    # (dizer "em vigor" e nao estar), que e a mesma classe de defeito do card TRE-W0-E04-T08.
+    vig = dado.get("versao_em_vigor") or {}
+    itens.add("v1.1: `versao_em_vigor` declara a versao em vigor",
+              str(vig.get("versao") or "") == VERSAO_V11, f"versao={vig.get('versao')!r}")
+    itens.add("v1.1: `versao_em_vigor` declara desde quando esta em vigor",
+              bool(str(vig.get("desde") or "").strip()), f"desde={vig.get('desde')!r}")
+    itens.add("v1.1: `versao_em_vigor.caminho` e o caminho que o ROTEADOR carrega por padrao (medido no codigo)",
+              bool(vig.get("caminho"))
+              and (RAIZ / str(vig.get("caminho"))).resolve() == pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve(),
+              f"declarado={vig.get('caminho')!r} roteador={modulo.CAMINHO_POLITICA_PADRAO}")
+    itens.add("v1.1: `versao_em_vigor.roteador` e o roteador REAL (medido no codigo)",
+              str(vig.get("roteador") or "") == modulo.ROUTER_VERSION,
+              f"declarado={vig.get('roteador')!r} roteador real={modulo.ROUTER_VERSION!r}")
+    preservada = vig.get("preservada_para_auditoria") or {}
+    itens.add("v1.1: `versao_em_vigor` diz qual versao fica preservada para auditoria",
+              str(preservada.get("versao") or "") == VERSAO_V10 and bool(preservada.get("caminho")),
+              f"preservada={preservada}")
+    itens.add("v1.1: a versao preservada aponta o ARQUIVO v1.0 de verdade",
+              (RAIZ / str(preservada.get("caminho") or "")).resolve() == YAML_V10.resolve(),
+              f"caminho={preservada.get('caminho')!r}")
+    itens.add("v1.1: a versao preservada NAO e a que o roteador carrega por padrao",
+              (RAIZ / str(preservada.get("caminho") or "")).resolve() != pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve(),
+              f"preservada={preservada.get('caminho')!r} padrao={modulo.CAMINHO_POLITICA_PADRAO}")
+
+    def _v10_ainda_carrega():
+        politica = modulo.carregar_politica(YAML_V10)
+        return (politica.get("versao") == VERSAO_V10 and bool(politica.get("_lane_conservadora"))), \
+               f"v1.0 carregada com lane_conservadora={politica.get('_lane_conservadora')!r}"
+
+    # Reconstruir decisao antiga exige a politica antiga EXECUTAVEL: preservar o arquivo e
+    # recusar carrega-lo nao preserva nada.
+    itens.checar("v1.1: a v1.0 preservada ainda CARREGA no roteador (reconstruir decisao antiga)",
+                 _v10_ainda_carrega)
 
     # ---- 2.3 rito de homologacao -------------------------------------------
     hom = dado.get("homologacao") or {}
@@ -236,7 +297,7 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
         r"^\|(?=[^\n]*Anderson Ribeiro)(?=[^\n]*" + re.escape(VERSAO_V11) + r")[^\n]*$",
         registro_txt, re.M)
     registro_cita = linha_homologacao is not None
-    # Ninguem marca o rascunho como homologado sem o registro do dono: e o item que
+    # Ninguem marca a versao como homologada sem o registro do dono: e o item que
     # impede a politica de "entrar em vigor por edicao de arquivo".
     itens.add("v1.1: NAO se declara homologada sem registro do Anderson",
               registrada_em is None or registro_cita,
@@ -244,9 +305,18 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
     itens.add("v1.1: registrada_em preenchido exige `homologacao.estado` coerente (nao pendente)",
               registrada_em is None or str(hom.get("estado") or "") != "pendente",
               f"estado={hom.get('estado')!r} registrada_em={registrada_em!r}")
-    itens.add("v1.1: com a homologacao pendente, `congelada_em` e nulo",
-              registrada_em is not None or dado.get("congelada_em") in (None, ""),
-              f"congelada_em={dado.get('congelada_em')!r}")
+    # A versao esta EM VIGOR: exige data e nome de quem homologou, e a vigencia so existe com
+    # a homologacao aprovada. Sao os itens que impedem "entrar em vigor" por edicao de arquivo
+    # sem rito — o mesmo defeito que a versao anterior evitava recusando-se a se declarar em vigor.
+    itens.add("v1.1: EM VIGOR exige `homologacao.registrada_em` (a vigencia tem data)",
+              bool(str(registrada_em or "").strip()), f"registrada_em={registrada_em!r}")
+    itens.add("v1.1: EM VIGOR exige `homologacao.registrada_por` nomeando quem homologou",
+              "anderson" in _normalizar_simples(str(hom.get("registrada_por") or "")),
+              f"registrada_por={hom.get('registrada_por')!r}")
+    itens.add("v1.1: EM VIGOR exige `homologacao.estado: aprovada`",
+              str(hom.get("estado") or "") == "aprovada", f"estado={hom.get('estado')!r}")
+    itens.add("v1.1: com a versao EM VIGOR, `congelada_em` esta preenchido",
+              bool(str(dado.get("congelada_em") or "").strip()), f"congelada_em={dado.get('congelada_em')!r}")
 
     # ---- 2.4 regra de lane por ambiente ------------------------------------
     regra = dado.get("regra_de_lane_por_ambiente") or {}
@@ -303,6 +373,23 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
     itens.checar("v1.1: o card citado EXISTE no board (a decisao viaja para quem executa)",
                  lambda: _card_do_board(card_do_piso))
 
+    # Onde o piso entra no recibo. O recibo tem 13 campos e nao cresce por conveniencia
+    # (§2.6): o piso tem de caber num campo JA declarado do contrato, e a regra diz qual.
+    registrar = regra.get("registrar_no_recibo") or {}
+    campo_do_registro = str(registrar.get("campo") or "")
+    campos_do_recibo = [str(x) for x in ((dado.get("recibo") or {}).get("campos") or [])]
+    itens.add("v1.1: a regra declara ONDE registrar o piso no recibo",
+              bool(campo_do_registro), f"registrar_no_recibo={registrar}")
+    itens.add("v1.1: o campo declarado para o piso existe no contrato do recibo",
+              campo_do_registro in campos_do_recibo, f"campo={campo_do_registro!r} contrato={campos_do_recibo}")
+    itens.add("v1.1: a regra nomeia a FORMA do registro (`piso_por_ambiente`)",
+              "piso_por_ambiente" in str(registrar.get("forma") or ""),
+              f"forma={str(registrar.get('forma'))[:90]!r}")
+    itens.add("v1.1: a regra declara que o motivo vai para o rastro da decisao",
+              "motivo" in str(registrar.get("motivo") or "").lower()
+              or "rastro" in str(registrar.get("forma") or "").lower(),
+              f"motivo={str(registrar.get('motivo'))[:90]!r}")
+
     # ---- 2.5 metricas instrumentadas ---------------------------------------
     met = dado.get("metricas") or {}
     acompanhar = [str(x) for x in (met.get("acompanhar") or [])]
@@ -358,13 +445,18 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
         itens.add(f"v1.1-doc: o documento diz a lane {lane} na tabela de ambientes", lane in doc_v11)
     itens.add("v1.1-doc: o documento cita a convencao do Anderson de 29/09/2026",
               "29/09/2026" in doc_v11 or "2026-09-29" in doc_v11)
-    itens.add("v1.1-doc: o documento diz que a regra ainda NAO esta em execucao",
-              "não executada" in doc_v11 or "nao executada" in doc_v11)
+    itens.add("v1.1-doc: o documento diz que a regra ESTA em execucao",
+              "em execução" in doc_v11.replace("\n", " ")
+              and "não executada" not in doc_low and "nao executada" not in doc_low)
     itens.add("v1.1-doc: o documento nomeia o instrumento das metricas",
               "medir_metricas_por_lane.py" in doc_v11)
-    itens.add("v1.1-doc: o documento avisa que o rascunho nao esta em vigor",
-              "não homologado" in doc_v11 or "nao homologado" in doc_v11
-              or "RASCUNHO" in doc_v11)
+    itens.add("v1.1-doc: o documento declara a versao EM VIGOR e nao a chama de rascunho",
+              ("EM VIGOR" in doc_v11 or "em vigor" in doc_low)
+              and "rascunho" not in doc_low
+              and "não homologado" not in doc_low and "nao homologado" not in doc_low)
+    itens.add("v1.1-doc: o documento declara qual versao fica preservada para auditoria",
+              "auditoria" in doc_low and ("v1.0" in doc_v11 or "1.0" in doc_v11)
+              and "versao_em_vigor" in doc_v11)
     itens.add("v1.1-doc: o documento manda o rito da v1.0 para a homologacao",
               "registro-de-aprovacoes" in doc_v11 and "homologa" in doc_low)
 
@@ -372,19 +464,20 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
 # ---------------------------------------------------------------------------
 # PARTE 3 — provas de comportamento contra o roteador em vigor
 # ---------------------------------------------------------------------------
-def _politica_temporaria(raiz: pathlib.Path, mutador) -> pathlib.Path:
-    """Copia a politica EM VIGOR (v1.0) para um diretorio temporario e aplica a mutacao.
+def _politica_temporaria(raiz: pathlib.Path, mutador, origem: pathlib.Path = YAML_V10) -> pathlib.Path:
+    """Copia uma politica versionada para um diretorio temporario e aplica a mutacao.
 
-    A copia mantem `versao: jev-policy-v1.0` de proposito: o que se prova aqui e a
-    SEMANTICA da chave explicita no schema que o roteador conhece hoje. O arquivo
-    versionado nunca e tocado.
+    Por padrao a origem e a v1.0 PRESERVADA e a copia mantem `versao: jev-policy-v1.0`:
+    o que se prova ali e a SEMANTICA da chave explicita no schema que o roteador conhece,
+    sem depender da versao em vigor. As provas do piso passam `origem=YAML_V11` (a regra
+    so existe na v1.1). O arquivo versionado nunca e tocado.
 
-    O dump do YAML perde os comentarios, e a v1.0 declara o vocabulario de resultado
-    (`PASS | RETRY | ESCALATE | BLOCK`) justamente num comentario — vocabulario que o
-    roteador EXIGE encontrar no texto da politica. A copia recebe o mesmo vocabulario
+    O dump do YAML perde os comentarios, e as duas politicas declaram o vocabulario de
+    resultado (`PASS | RETRY | ESCALATE | BLOCK`) justamente em comentario — vocabulario
+    que o roteador EXIGE encontrar no texto da politica. A copia recebe o mesmo vocabulario
     como cabecalho: sem isso o mutante nem carrega e a prova mediria a coisa errada.
     """
-    dado = yaml.safe_load(YAML_V10.read_text(encoding="utf-8"))
+    dado = yaml.safe_load(origem.read_text(encoding="utf-8"))
     destino = raiz / "policy_copia.yaml"
     destino.write_text(
         "# copia de prova (mutacao em diretorio temporario)\n"
@@ -462,50 +555,54 @@ def itens_de_comportamento(itens: Itens, dado: dict, modulo) -> None:
                   "divergentes" in motivos and "nao declara o resultado" not in motivos,
                   f"{motivos[:130]}")
 
-    # ---- B3: a v1.1 e recusada pelo roteador em vigor --------------------
-    itens.add("B3 comportamento: a v1.1 e RECUSADA pelo roteador em vigor (rascunho inerte)",
-              VERSAO_V11 not in modulo.VERSOES_DE_POLITICA_SUPORTADAS,
+    # ---- B3: a v1.1 e ACEITA pelo roteador em vigor (o portao abriu) -----
+    itens.add("B3 comportamento: a v1.1 e ACEITA pelo roteador em vigor (o portao de versao abriu)",
+              VERSAO_V11 in modulo.VERSOES_DE_POLITICA_SUPORTADAS,
               f"versao do roteador={modulo.ROUTER_VERSION} suportadas={sorted(modulo.VERSOES_DE_POLITICA_SUPORTADAS)}")
-    # Sensibilidade do item acima, medida: com o portao de versao ABERTO em memoria, a v1.1
-    # CARREGA e resolve a lane conservadora. Ou seja, o que impede a v1.1 de rodar hoje e
-    # exatamente o portao de versao — e nao um defeito de schema. Consequencia que o teste
-    # deixa explicita: abrir o portao sem implementar o piso da regra por ambiente faria o
-    # roteador IGNORAR em silencio uma regra declarada (pior que recusar). A troca e em
-    # memoria: o modulo e recarregado do arquivo, e o arquivo versionado nao e tocado.
-    suportadas_originais = modulo.VERSOES_DE_POLITICA_SUPORTADAS
+    # O portao so podia abrir JUNTO com o piso implementado: abrir antes deixaria uma regra
+    # declarada sendo ignorada em silencio (pior que recusar). Por isso a prova de que o piso
+    # existe e a RECUSA por operacao nao implementada — fail-closed, nao promessa. As provas
+    # de execucao (B5, B6, B7) provam o mesmo por comportamento.
+    def com_operacao_nao_implementada(d):
+        copia = copy.deepcopy(d)
+        copia["regra_de_lane_por_ambiente"]["operacao"] = "backfill_de_dados"
+        return copia
+
     try:
-        modulo.VERSOES_DE_POLITICA_SUPORTADAS = frozenset(set(suportadas_originais) | {VERSAO_V11})
-        politica_v11 = modulo.carregar_politica(YAML_V11)
-        itens.add("B3-sensibilidade: com o portao de versao aberto, a v1.1 CARREGA (o portao e "
-                  "o unico impedimento) e resolve a mesma lane conservadora",
-                  politica_v11.get("_lane_conservadora") == dado["limiares"].get("lane_conservadora"),
-                  f"lane_conservadora={politica_v11.get('_lane_conservadora')!r} "
-                  f"chave no YAML={dado['limiares'].get('lane_conservadora')!r}")
-    except Exception as erro:  # noqa: BLE001
-        itens.add("B3-sensibilidade: com o portao de versao aberto, a v1.1 CARREGA (o portao e "
-                  "o unico impedimento) e resolve a mesma lane conservadora",
-                  False, f"nao carregou nem com o portao aberto: {type(erro).__name__}: {erro}")
-    finally:
-        modulo.VERSOES_DE_POLITICA_SUPORTADAS = suportadas_originais
-    try:
-        modulo.carregar_politica(YAML_V11)
-        itens.add("B3b comportamento: carregar a v1.1 de verdade levanta PoliticaInvalida",
-                  False, "carregou a v1.1 — o rascunho deixou de ser inerte")
+        politica = modulo.carregar_politica(
+            _politica_temporaria(temporario, com_operacao_nao_implementada, origem=YAML_V11))
+        itens.add("B3b comportamento: regra declarada para operacao que o roteador NAO implementa e RECUSADA",
+                  False, f"aceitou e devolveu lane_conservadora={politica.get('_lane_conservadora')!r}")
     except modulo.PoliticaInvalida as erro:
-        itens.add("B3b comportamento: carregar a v1.1 de verdade levanta PoliticaInvalida",
-                  "versao de politica desconhecida" in str(erro), f"{str(erro)[:110]}")
+        motivos = _recusa(erro)
+        itens.add("B3b comportamento: regra declarada para operacao que o roteador NAO implementa e RECUSADA",
+                  "nao implementa" in motivos and "nao declara o resultado" not in motivos,
+                  f"{motivos[:150]}")
+
+    # B3c: a versao declarada como EM VIGOR e a que o roteador carrega POR PADRAO. Uma
+    # politica que se diz em vigor enquanto o roteador carrega a antiga nao esta em vigor.
+    itens.checar("B3c comportamento: `carregar_politica()` sem argumento carrega a versao em vigor",
+                 lambda: ((modulo.carregar_politica().get("versao") == VERSAO_V11
+                           and (dado.get("versao_em_vigor") or {}).get("versao") == VERSAO_V11),
+                          f"padrao carregado={modulo.carregar_politica().get('versao')!r} "
+                          f"declarado no YAML={(dado.get('versao_em_vigor') or {}).get('versao')!r}"))
+    itens.checar("B3d comportamento: o caminho padrao do roteador e o arquivo da versao em vigor",
+                 lambda: (pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve() == YAML_V11.resolve(),
+                          f"padrao={modulo.CAMINHO_POLITICA_PADRAO}"))
 
     # ---- B4: vocabulario de ambiente bate com o guardrail de DDL ---------
+    # Medido contra a politica EM VIGOR: e o vocabulario DECLARADO na v1.1 que tem de casar
+    # com o guardrail do roteador, valor a valor (nao por leitura do YAML).
     regra = dado.get("regra_de_lane_por_ambiente") or {}
     ramos = {str(r.get("ambiente")): r for r in (regra.get("ambientes") or [])}
-    politica_em_vigor = modulo.carregar_politica(YAML_V10)
+    politica_da_regra = modulo.carregar_politica(YAML_V11)
 
     def guardrail_de_ddl_aciona(ambiente) -> bool:
         tarefa = {"card_id": "t_v11_ambiente", "titulo": "aplicar ddl de esquema",
                   "descricao": "aplicar ddl de esquema", "acao": "aplicar ddl de esquema",
                   "acao_codigo": "migracao_de_esquema", "ambiente_alvo": ambiente,
                   "lane_proposta": "high", "confianca": 0.95}
-        decisao = modulo.decidir(tarefa, politica=politica_em_vigor)["decisao"]
+        decisao = modulo.decidir(tarefa, politica=politica_da_regra)["decisao"]
         return "ddl_fora_de_producao" in (decisao.get("guardrails_acionados") or [])
 
     for valor in (ramos.get("novo_ou_dev") or {}).get("valores") or []:
@@ -522,27 +619,105 @@ def itens_de_comportamento(itens: Itens, dado: dict, modulo) -> None:
               guardrail_de_ddl_aciona("") is True and guardrail_de_ddl_aciona(None) is True,
               f"vazio={guardrail_de_ddl_aciona('')} nulo={guardrail_de_ddl_aciona(None)}")
 
-    # ---- B5: o piso NAO esta ativo --------------------------------------
+    # ---- B5..B7: o piso e EXECUTADO pela politica em vigor ---------------
+    politica_em_vigor = modulo.carregar_politica(YAML_V11)          # caminho padrao
+    politica_preservada = modulo.carregar_politica(YAML_V10)        # auditoria
     execucao = regra.get("execucao") or {}
     roteador_declarado = execucao.get("roteador_que_a_executa")
-    itens.add("B5: a execucao declarada e coerente com o roteador real",
-              roteador_declarado in (None, modulo.ROUTER_VERSION),
+
+    itens.add("B5: a execucao declarada e o roteador REAL (quem executa a regra esta no ar)",
+              roteador_declarado == modulo.ROUTER_VERSION,
               f"declarado={roteador_declarado!r} roteador real={modulo.ROUTER_VERSION!r}")
-    tarefa_viva = {"card_id": "t_v11_piso", "titulo": "aplicar migration em tabela viva",
-                   "descricao": "aplicar migration em tabela viva",
-                   "acao": "aplicar migration em tabela viva", "acao_codigo": "migracao_de_esquema",
-                   "ambiente_alvo": "vivo", "lane_proposta": "medium", "confianca": 0.95}
-    decisao = modulo.decidir(tarefa_viva, politica=politica_em_vigor)["decisao"]
-    if roteador_declarado is None:
-        itens.add("B5 comportamento: com `roteador_que_a_executa: null` o piso NAO eleva "
-                  "DDL em ambiente vivo a critical",
-                  decisao["lane"] != "critical",
-                  f"lane registrada={decisao['lane']!r} (a regra declarada manda critical)")
-    else:
-        itens.add("B5 comportamento: com a regra declarada em execucao, DDL em ambiente vivo "
-                  "chega a critical",
-                  decisao["lane"] == "critical",
-                  f"lane registrada={decisao['lane']!r}")
+
+    def decisao_de(ambiente, lane, acao="aplicar DDL/migration em qualquer ambiente",
+                   codigo="migracao_de_esquema", politica=None):
+        tarefa = {"card_id": "t_v11_piso", "titulo": acao, "descricao": acao, "acao": acao,
+                  "acao_codigo": codigo, "lane_proposta": lane, "confianca": 0.95,
+                  "status": "ready"}
+        if ambiente is not None:
+            tarefa["ambiente_alvo"] = ambiente
+        return modulo.decidir(tarefa, politica=politica if politica is not None else politica_em_vigor)
+
+    # DDL em ambiente vivo, proposta medium, confianca alta: o caso do criterio de aceite.
+    saida_viva = decisao_de("vivo", "medium")
+    decisao_viva, recibo_viva = saida_viva["decisao"], saida_viva["recibo"]
+    itens.add("B5 comportamento: DDL em ambiente vivo com proposta medium chega a `critical`",
+              decisao_viva["lane"] == "critical",
+              f"lane registrada={decisao_viva['lane']!r} (proposta medium)")
+    itens.add("B5 comportamento: o ramo vivo exige aprovacao humana REGISTRADA na decisao",
+              bool(decisao_viva["exige_aprovacao_humana"]) is True,
+              f"exige_aprovacao_humana={decisao_viva['exige_aprovacao_humana']!r}")
+    itens.add("B5 comportamento: a decisao registra de qual RAMO veio o piso",
+              (decisao_viva.get("piso_de_lane") or {}).get("ramo") == "vivo_ou_producao",
+              f"piso_de_lane={decisao_viva.get('piso_de_lane')}")
+
+    # ---- B6: o piso entra no recibo SEM campo novo -----------------------
+    campos_do_contrato = [str(x) for x in ((dado.get("recibo") or {}).get("campos") or [])]
+    itens.add("B6 comportamento: o recibo da decisao com piso segue com os 13 campos do contrato",
+              sorted(recibo_viva) == sorted(campos_do_contrato),
+              f"{len(recibo_viva)} campos: {sorted(recibo_viva)}")
+    override = recibo_viva.get("override") or {}
+    registro_do_piso = override.get("piso_por_ambiente") or {}
+    itens.add("B6 comportamento: o piso e registrado em `override.piso_por_ambiente` (campo que a regra declara)",
+              registro_do_piso.get("lane_minima") == "critical"
+              and registro_do_piso.get("ramo") == "vivo_ou_producao",
+              f"override={json.dumps(override, ensure_ascii=False)[:190]}")
+    itens.add("B6 comportamento: o registro nomeia a ORIGEM do piso (nao sugere override humano)",
+              (restringe := list(override.keys())) == ["piso_por_ambiente"],
+              f"chaves do override={restringe}")
+    itens.add("B6 comportamento: o motivo do piso aparece no rastro da decisao (auditavel)",
+              any("piso de lane por ambiente" in str(m) for m in (decisao_viva.get("motivos") or [])),
+              f"motivos={decisao_viva.get('motivos')}")
+    # Override humano declarado continua entrando como esta quando NAO ha piso (o piso nao
+    # substitui nem inventa override: ele so acrescenta o registro de origem dele).
+    declarado = {"por": "anderson", "motivo": "revisao manual"}
+    tarefa_com_override = {"card_id": "t_v11_override", "titulo": "ajuste de texto simples",
+                           "acao": "ajuste de texto simples", "acao_codigo": "ajuste_de_texto",
+                           "lane_proposta": "small", "confianca": 0.95, "override": declarado}
+    recibo_sem_piso = modulo.decidir(tarefa_com_override, politica=politica_em_vigor)["recibo"]
+    itens.add("B6 comportamento: override humano declarado entra no recibo como esta (sem piso)",
+              recibo_sem_piso.get("override") == declarado,
+              f"override={recibo_sem_piso.get('override')!r}")
+    # ...e com piso E override humano declarados, o recibo continua com 13 campos e separa as origens
+    # (`humano` = o que a tarefa declarou; `piso_por_ambiente` = o que a regra elevou). O piso nunca se
+    # disfarca de override humano, e o override humano nunca e sobrescrito nem apagado pelo piso.
+    tarefa_com_os_dois = {"card_id": "t_v11_ambos", "titulo": "aplicar DDL/migration em qualquer ambiente",
+                          "descricao": "aplicar DDL/migration em qualquer ambiente",
+                          "acao": "aplicar DDL/migration em qualquer ambiente",
+                          "acao_codigo": "migracao_de_esquema", "lane_proposta": "medium",
+                          "confianca": 0.95, "ambiente_alvo": "desenvolvimento", "override": declarado}
+    recibo_ambos = modulo.decidir(tarefa_com_os_dois, politica=politica_em_vigor)["recibo"]
+    override_ambos = recibo_ambos.get("override") or {}
+    itens.add("B6 comportamento: piso E override humano no mesmo card: 13 campos e as duas origens separadas",
+              sorted(recibo_ambos) == sorted(campos_do_contrato)
+              and override_ambos.get("humano") == declarado
+              and (override_ambos.get("piso_por_ambiente") or {}).get("ramo") == "novo_ou_dev",
+              f"campos={len(recibo_ambos)} override={json.dumps(override_ambos, ensure_ascii=False)[:160]}")
+
+    # ---- B7: o piso SO ELEVA --------------------------------------------
+    itens.add("B7 comportamento: DDL em dev com proposta medium SOBE para high (piso eleva)",
+              decisao_de("desenvolvimento", "medium")["decisao"]["lane"] == "high",
+              f"lane={decisao_de('desenvolvimento', 'medium')['decisao']['lane']!r}")
+    itens.add("B7 comportamento: DDL em dev com proposta small tambem sobe para high",
+              decisao_de("desenvolvimento", "small")["decisao"]["lane"] == "high")
+    elevada = decisao_de("desenvolvimento", "critical")["decisao"]
+    itens.add("B7 comportamento: DDL em dev com proposta `critical` CONTINUA `critical` (o piso nao rebaixa)",
+              elevada["lane"] == "critical", f"lane={elevada['lane']!r} proposta=critical")
+    sem_ambiente = decisao_de(None, "medium")["decisao"]
+    itens.add("B7 comportamento: sem ambiente declarado o piso cai no ramo MAIS conservador (`critical`)",
+              sem_ambiente["lane"] == "critical"
+              and (sem_ambiente.get("piso_de_lane") or {}).get("ramo_declarado") is False,
+              f"lane={sem_ambiente['lane']!r} piso={sem_ambiente.get('piso_de_lane')}")
+    fora = decisao_de("vivo", "medium", acao="ajuste de texto simples", codigo="ajuste_de_texto")["decisao"]
+    itens.add("B7 comportamento: tarefa FORA da operacao governada nao e tocada pelo piso",
+              fora["lane"] == "medium" and not fora.get("piso_de_lane"),
+              f"lane={fora['lane']!r} piso_de_lane={fora.get('piso_de_lane')!r}")
+    # A versao PRESERVADA nao tem a regra: nada muda nela. Sem isto, "preservar para auditoria"
+    # poderia esconder uma mudanca de comportamento retroativa na politica antiga.
+    auditavel = decisao_de("vivo", "medium", politica=politica_preservada)["decisao"]
+    itens.add("B7 comportamento: a v1.0 preservada (sem a regra) NAO recebe o piso (nada muda nela)",
+              auditavel["lane"] != "critical" and not auditavel.get("piso_de_lane"),
+              f"lane={auditavel['lane']!r} piso={auditavel.get('piso_de_lane')!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -559,9 +734,16 @@ def verificar(yaml_v11: str, doc_v11: str, base, modulo) -> Itens:
               f"{len(dado)} chaves de topo" if isinstance(dado, dict) else "raiz nao e mapa")
     if not isinstance(dado, dict):
         return itens
-    itens_do_contrato(itens, dado, yaml_v11, doc_v11)
-    itens_da_bateria_da_v1_0(itens, yaml_v11, doc_v11, base)
-    itens_de_comportamento(itens, dado, modulo)
+    # Cada parte roda isolada: excecao nao pode abortar a suite (um verificador que morre
+    # nao reprova nada — o traceback vira falha declarada, com o motivo, e a suite segue).
+    for rotulo, parte in (("PARTE 1 (bateria da v1.0)", lambda: itens_da_bateria_da_v1_0(itens, yaml_v11, doc_v11, base)),
+                          ("PARTE 2 (contrato da v1.1)", lambda: itens_do_contrato(itens, dado, yaml_v11, doc_v11, modulo)),
+                          ("PARTE 3 (comportamento do roteador)", lambda: itens_de_comportamento(itens, dado, modulo))):
+        try:
+            parte()
+        except Exception as erro:  # noqa: BLE001
+            itens.add(f"{rotulo}: roda ate o fim", False,
+                      f"excecao: {type(erro).__name__}: {erro}")
     return itens
 
 
@@ -572,16 +754,51 @@ def imprimir(itens: Itens) -> int:
     return itens.falhas()
 
 
+def _arvore_do_roteador_mutado(codigo: str) -> pathlib.Path:
+    """Repo temporario com o roteador mutado, para exercitar o MESMO encanamento.
+
+    O roteador resolve a raiz do repo por `__file__` e carrega a politica padrao por
+    `CAMINHO_POLITICA_PADRAO`; a arvore temporaria reproduz esses caminhos (politicas
+    versionadas e pasta de papeis por symlink) para que a mutacao de codigo seja medida
+    no roteador de verdade — sem tocar no arquivo versionado.
+    """
+    raiz = pathlib.Path(tempfile.mkdtemp(prefix="jev-v11-mut-"))
+    (raiz / "hermes/jev/routing").mkdir(parents=True)
+    (raiz / "hermes/jev/routing/router.py").write_text(codigo, encoding="utf-8")
+    for nome in ("policy_v1.yaml", "policy_v1_1.yaml"):
+        os.symlink(RAIZ / "hermes/jev" / nome, raiz / "hermes/jev" / nome)
+    os.symlink(RAIZ / "hermes/policies", raiz / "hermes/policies")
+    return raiz / "hermes/jev/routing/router.py"
+
+
 def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
     """Cada mutacao TEM de ser detectada — em copia temporaria, nunca no arquivo versionado."""
     print("\n=== AUTOTESTE: mutacoes que o verificador precisa reprovar ===")
     base_dado = yaml.safe_load(yaml_v11)
+    # (nome, yaml, documento, modulo) — modulo None = o roteador de verdade.
     mutacoes = []
 
     def mut(nome, funcao_dado=None, doc=None):
         d = base_dado if funcao_dado is None else funcao_dado(copy.deepcopy(base_dado))
         mutacoes.append((nome, texto_de_yaml(d) if funcao_dado is not None else yaml_v11,
-                         doc if doc is not None else doc_v11))
+                         doc if doc is not None else doc_v11, None))
+
+    def mut_roteador(nome, funcao_codigo):
+        """Mutacao de CODIGO do roteador: a prova de que a suite mede comportamento.
+
+        Prova de YAML sozinha nao distingue "a regra esta declarada" de "a regra e
+        executada": estas mutacoes tiram o piso (ou o invertem) do roteador e exigem que
+        a suite reprove.
+        """
+        original = ROTEADOR.read_text(encoding="utf-8")
+        mutado = funcao_codigo(original)
+        if mutado == original:
+            # Mutacao que nao muda o codigo seria um buraco silencioso no autoteste.
+            mutacoes.append((f"{nome} [MUTACAO NAO APLICADA]", "", "", None))
+            return
+        caminho = _arvore_do_roteador_mutado(mutado)
+        mutacoes.append((nome, yaml_v11, doc_v11,
+                         carregar_modulo(caminho, f"roteador_mutado_{len(mutacoes)}")))
 
     # chave explicita
     mut("chave `lane_conservadora` removida",
@@ -643,13 +860,60 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
         r"^\|(?=[^\n]*Anderson Ribeiro)(?=[^\n]*" + re.escape(VERSAO_V11) + r")[^\n]*$",
         _reg_real, re.M)
     if not _tem_registro:
-        mut("rascunho se declara homologado sem registro",
+        mut("declara-se homologado sem registro do dono",
             lambda d: (d["homologacao"].__setitem__("registrada_em", "2026-09-30"), d)[1])
     mut("registrada_em preenchido com homologacao ainda pendente",
         lambda d: (d["homologacao"].__setitem__("registrada_em", "2026-09-30"),
                    d["homologacao"].__setitem__("estado", "pendente"), d)[1])
-    mut("estado trocado para homologado sem registro",
-        lambda d: (d["estado"].__str__() and d.__setitem__("estado", "homologado"), d)[1])
+    # Estado/vigencia: uma versao EM VIGOR tem de carregar data, nome, homologacao aprovada e
+    # congelamento. Qualquer um faltando volta a permitir "entrar em vigor por edicao de arquivo".
+    mut("estado trocado para rascunho (regressao de vigencia)",
+        lambda d: (d.__setitem__("estado", "rascunho-nao-homologado"), d)[1])
+    mut("`congelada_em` esvaziado com a versao em vigor",
+        lambda d: (d.__setitem__("congelada_em", None), d)[1])
+    mut("EM VIGOR sem `homologacao.registrada_em`",
+        lambda d: (d["homologacao"].__setitem__("registrada_em", None), d)[1])
+    mut("EM VIGOR sem `homologacao.registrada_por`",
+        lambda d: (d["homologacao"].pop("registrada_por"), d)[1])
+    mut("EM VIGOR com `homologacao.estado: pendente`",
+        lambda d: (d["homologacao"].__setitem__("estado", "pendente"), d)[1])
+    mut("`homologacao.registrada_por` apontando quem NAO homologou",
+        lambda d: (d["homologacao"].__setitem__("registrada_por", "ninguem"), d)[1])
+    mut("a versao deixa de se declarar em vigor (estado vazio)",
+        lambda d: (d.__setitem__("estado", ""), d)[1])
+
+    # versao_em_vigor: a vigencia tem de ser ENDERECADA (versao + caminho do roteador)
+    mut("bloco `versao_em_vigor` removido",
+        lambda d: (d.pop("versao_em_vigor"), d)[1])
+    mut("`versao_em_vigor.versao` apontando a versao antiga",
+        lambda d: (d["versao_em_vigor"].__setitem__("versao", VERSAO_V10), d)[1])
+    mut("`versao_em_vigor.caminho` apontando a politica ANTIGA (roteador carregaria a v1.0)",
+        lambda d: (d["versao_em_vigor"].__setitem__("caminho", "hermes/jev/policy_v1.yaml"), d)[1])
+    mut("`versao_em_vigor.caminho` apontando arquivo que nao existe",
+        lambda d: (d["versao_em_vigor"].__setitem__("caminho", "hermes/jev/policy_v9.yaml"), d)[1])
+    mut("`versao_em_vigor.roteador` apontando roteador que nao existe",
+        lambda d: (d["versao_em_vigor"].__setitem__("roteador", "jev-router-v9.9"), d)[1])
+    mut("`versao_em_vigor.desde` esvaziado",
+        lambda d: (d["versao_em_vigor"].__setitem__("desde", ""), d)[1])
+    mut("`preservada_para_auditoria` removida",
+        lambda d: (d["versao_em_vigor"].pop("preservada_para_auditoria"), d)[1])
+    mut("versao preservada apontando arquivo que nao e a v1.0",
+        lambda d: (d["versao_em_vigor"]["preservada_para_auditoria"].__setitem__(
+            "caminho", "hermes/jev/policy_v1_1.yaml"), d)[1])
+    mut("versao preservada apontando a PROPRIA versao em vigor",
+        lambda d: (d["versao_em_vigor"]["preservada_para_auditoria"].__setitem__("versao", VERSAO_V11), d)[1])
+
+    # registrar_no_recibo: o piso tem de caber no contrato de 13 campos
+    mut("`registrar_no_recibo` removido da regra",
+        lambda d: (d["regra_de_lane_por_ambiente"].pop("registrar_no_recibo"), d)[1])
+    mut("`registrar_no_recibo.campo` apontando campo FORA do contrato do recibo",
+        lambda d: (d["regra_de_lane_por_ambiente"]["registrar_no_recibo"].__setitem__(
+            "campo", "piso_de_lane"), d)[1])
+    mut("`registrar_no_recibo.forma` sem nomear `piso_por_ambiente`",
+        lambda d: (d["regra_de_lane_por_ambiente"]["registrar_no_recibo"].__setitem__(
+            "forma", "um registro qualquer"), d)[1])
+    mut("`registrar_no_recibo` sem o destino do motivo",
+        lambda d: (d["regra_de_lane_por_ambiente"]["registrar_no_recibo"].pop("motivo"), d)[1])
     mut("rascunho deixa de declarar o que substitui",
         lambda d: (d.pop("substitui"), d)[1])
     mut("motivo da versao esvaziado",
@@ -679,14 +943,61 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
         doc_v11.replace("lane_conservadora", "a lane conservadora de sempre"))
     mut("documento deixa de citar a convencao de 29/09/2026", None,
         doc_v11.replace("29/09/2026", "em data a registrar"))
-    mut("documento deixa de dizer que a regra nao esta em execucao", None,
-        doc_v11.replace("não executada", "já executada").replace("nao executada", "ja executada"))
+    mut("documento deixa de dizer que a regra ESTA em execucao", None,
+        doc_v11.replace("em execução", "ainda não executada"))
+    mut("documento volta a se declarar RASCUNHO", None,
+        doc_v11.replace("JEV Decision Policy V1.1 — em vigor", "JEV Decision Policy V1.1 — RASCUNHO")
+        .replace("**EM VIGOR**", "**RASCUNHO, NÃO HOMOLOGADO**"))
+    mut("documento deixa de declarar onde a v1.0 fica preservada (auditoria)", None,
+        doc_v11.replace("auditoria", "arquivo").replace("versao_em_vigor", "vigencia"))
     mut("documento deixa de citar o instrumento", None,
         doc_v11.replace("medir_metricas_por_lane.py", "um script qualquer"))
 
+    # codigo do roteador: prova de que a suite mede COMPORTAMENTO, nao declaracao
+    mut_roteador("roteador sem o piso: a regra declarada volta a ser ignorada em silencio",
+                 lambda c: c.replace('    plano["lane"] = _lane_com_piso(politica, tarefa, lane_final)[0]',
+                                     '    plano["lane"] = lane_final'))
+    mut_roteador("piso REBAIXANDO: a lane minima do ramo vira a lane final (sem comparar)",
+                 lambda c: c.replace(
+                     'final = lane_mais_conservadora(politica, lane, piso["lane_minima"]) or piso["lane_minima"]',
+                     'final = piso["lane_minima"]'))
+    mut_roteador("ambiente NAO declarado caindo no PRIMEIRO ramo (dev), nao no conservador",
+                 lambda c: c.replace(
+                     'escolhido = max(ramos, key=lambda r: indice_da_lane(politica, r.get("lane_minima")))',
+                     'escolhido = ramos[0]'))
+    mut_roteador("piso fora do recibo: `override` deixa de registrar o piso",
+                 lambda c: c.replace('    plano["override"] = {"piso_por_ambiente": registro}',
+                                     '    plano["override"] = None'))
+    mut_roteador("ramo vivo sem exigir aprovacao humana na decisao",
+                 lambda c: c.replace('    if piso["exige_aprovacao_humana"]:\n'
+                                     '        plano["exige_aprovacao_humana"] = True\n',
+                                     '    if False:\n'
+                                     '        plano["exige_aprovacao_humana"] = True\n'))
+    mut_roteador("caminho padrao do roteador revertido para a politica ANTIGA",
+                 lambda c: c.replace('CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_1.yaml"',
+                                     'CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"'))
+    mut_roteador("portao de versao fechado de novo para a v1.1",
+                 lambda c: c.replace('VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1"})',
+                                     'VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0"})'))
+    mut_roteador("roteador deixa de recusar regra de operacao que nao implementa (ignora em silencio)",
+                 lambda c: c.replace(
+                     '    if operacao not in OPERACOES_COM_PISO_IMPLEMENTADO:\n'
+                     '        motivos.append(\n'
+                     '            f"{CHAVE_DA_REGRA_DE_PISO} governa a operacao {operacao!r}, que este roteador "\n'
+                     '            f"nao implementa (implementadas: {sorted(OPERACOES_COM_PISO_IMPLEMENTADO)}): "\n'
+                     '            "recusa, em vez de executar ignorando a regra declarada")\n',
+                     '    if False:\n        motivos.append("nunca")\n'))
+    mut_roteador("recibo ganha 14o campo com o piso (contrato crescido por conveniencia)",
+                 lambda c: c.replace('        "outcome": plano.get("outcome"),',
+                                     '        "piso_de_lane": plano["demais"].get("piso_de_lane"),\n'
+                                     '        "outcome": plano.get("outcome"),'))
+
     detectadas = 0
-    for nome, y, dd in mutacoes:
-        itens = verificar(y, dd, base, modulo)
+    for nome, y, dd, modulo_da_vez in mutacoes:
+        if y == "" and dd == "":
+            print(f"FALHOU NAO APLICADA: {nome}  <-- mutacao que nao altera o codigo")
+            continue
+        itens = verificar(y, dd, base, modulo if modulo_da_vez is None else modulo_da_vez)
         falhas = itens.falhas()
         if falhas > 0:
             detectadas += 1
@@ -707,11 +1018,12 @@ def main() -> int:
     modulo = carregar_modulo(ROTEADOR, "roteador_da_suite_v11")
 
     print("=" * 72)
-    print("VERIFICADOR DA JEV DECISION POLICY v1.1 (rascunho, nao homologado)")
+    print("VERIFICADOR DA JEV DECISION POLICY v1.1 (em vigor, homologada em 29/09/2026)")
     print(f"  politica:  {YAML_V11.relative_to(RAIZ)}")
     print(f"  documento: {DOC_V11.relative_to(RAIZ)}")
     print(f"  roteador em vigor: {modulo.ROUTER_VERSION} "
           f"(suporta {sorted(modulo.VERSOES_DE_POLITICA_SUPORTADAS)})")
+    print(f"  preservada para auditoria: {YAML_V10.relative_to(RAIZ)}")
     print("=" * 72)
 
     yaml_v11 = YAML_V11.read_text(encoding="utf-8")
@@ -719,13 +1031,17 @@ def main() -> int:
     itens = verificar(yaml_v11, doc_v11, base, modulo)
     falhas = imprimir(itens)
 
+    pediu_autoteste = "--autoteste" in sys.argv
     teste_ok = True
-    if "--autoteste" in sys.argv:
+    if pediu_autoteste:
         teste_ok = autoteste(base, modulo, yaml_v11, doc_v11)
 
     print()
     if falhas == 0 and teste_ok:
-        print(f"RESULTADO: PASS ({len(itens.lista)} itens, 0 falhas) + autoteste OK")
+        # "teste que nao rodou nao e teste que passou": o autoteste so e anunciado quando
+        # foi pedido — antes, a mensagem dizia "+ autoteste OK" mesmo sem roda-lo.
+        extra = " + autoteste OK" if pediu_autoteste else " (autoteste nao pedido: rode com --autoteste)"
+        print(f"RESULTADO: PASS ({len(itens.lista)} itens, 0 falhas){extra}")
         return 0
     print(f"RESULTADO: FALHOU ({len(itens.lista)} itens, {falhas} falha(s))"
           + ("" if teste_ok else " + autoteste com buraco"))

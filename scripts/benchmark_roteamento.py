@@ -103,7 +103,10 @@ RAIZ = pathlib.Path(__file__).resolve().parent.parent
 CORPUS = RAIZ / "hermes/jev/benchmarks/corpus-anotacao.yaml"
 ROTEADOR = RAIZ / "hermes/jev/routing/router.py"
 
-VERSOES_SUPORTADAS = frozenset({"jev-policy-v1.0"})
+# Versoes de politica que esta convencao de medicao sabe interpretar. A v1.1 entrou
+# aqui ao entrar em vigor (card TRE-W0-E04-T08): o benchmark roda a politica EM VIGOR
+# por padrao, e sem isto ele recusaria medir a propria politica em vigor (exit 3).
+VERSOES_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1"})
 
 # Sinais do corpus que o roteador sabe avaliar (nome do corpus -> nome do roteador).
 MAPA_DE_SINAIS = {"producao": "producao", "mexe_em_segredo": "credencial",
@@ -480,10 +483,19 @@ def autoteste(modulo, politica: dict, casos: list, brutos: dict) -> int:
              novo["falso_rebaixamento"]["total"] != base["falso_rebaixamento"]["total"],
              f"{base['falso_rebaixamento']['total']} -> {novo['falso_rebaixamento']['total']}")
 
-    # 3b. direcao inversa: tirar o rotulo critical de um caso muda o falso rebaixamento
+    # 3b. direcao inversa: tirar o rotulo critical de um caso QUE A METRICA CONTA hoje
+    #     faz o falso rebaixamento cair. O alvo tem de ser um caso que contribui hoje
+    #     (critical esperado E lane registrada mais barata): depois do piso por ambiente
+    #     da v1.1 o corpus passou a ter caso critical decidido como critical, e escolher
+    #     "o primeiro critical" mediria um caso que nao move o numero — verde/vermelho
+    #     por sorte, nao por sensibilidade da metrica.
+    contribuintes = {linha["id"] for linha in brutos["casos"]
+                     if str(linha["lane_esperada"]) == "critical"
+                     and linha["modos"]["proposta-homologada"]["lane"] != "critical"}
     mutado = [dict(c) for c in casos]
-    alvo_critico = next((c for c in mutado if str(c["lane_esperada"]) == "critical"), None)
-    item("corpus tem caso critical para o teste de sensibilidade", alvo_critico is not None)
+    alvo_critico = next((c for c in mutado if c["id"] in contribuintes), None)
+    item("corpus tem caso critical CONTANDO no falso rebaixamento (base do teste de sensibilidade)",
+         alvo_critico is not None, f"{len(contribuintes)} caso(s) contribuindo hoje")
     if alvo_critico is not None:
         alvo_critico["lane_esperada"] = "small"
         novo = executar(modulo, politica, mutado, repeticoes=1)["modos"]["proposta-homologada"]
@@ -537,7 +549,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Benchmark anotado de roteamento do JEV.")
     parser.add_argument("--corpus", default=str(CORPUS))
     parser.add_argument("--politica", default=None,
-                        help=("caminho da politica (padrao: a congelada no repo). Existe para o "
+                        help=("caminho da politica (padrao: a EM VIGOR no repo, hoje a v1.1). Existe para o "
                               "teste negativo do gate: apontar para politica ausente/ilegivel/"
                               "de versao desconhecida tem de RECUSAR (exit 3), nunca medir"))
     parser.add_argument("--saida", default=None,

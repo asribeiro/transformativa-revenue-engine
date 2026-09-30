@@ -2,10 +2,17 @@
 """Pacote do roteador do JEV (card TRE-W0-E04-T02).
 
 O roteador integra o JEV ao Hermes Dev Harness: classifica a tarefa ANTES da LLM
-(lane, perfil de modelo, esforco, revisao) segundo a politica
-`hermes/jev/policy_v1.yaml`, aplica a precedencia
+(lane, perfil de modelo, esforco, revisao) segundo a politica EM VIGOR
+(`hermes/jev/policy_v1_1.yaml`, jev-policy-v1.1), aplica a precedencia
 `Security -> Human Approval -> prioridade/dependencias -> JEV -> LLM` e grava o
 recibo de decisao com os 13 campos declarados na politica.
+
+O roteador carrega a politica em vigor por padrao (`CAMINHO_POLITICA_PADRAO`) e
+executa o piso de lane por ambiente (`regra_de_lane_por_ambiente`, `piso_de_lane`):
+DDL/migration em ambiente novo/dev nao desce abaixo de `high`; em ambiente
+vivo/producao, nao desce abaixo de `critical` (com aprovacao humana registrada). A
+regra SO ELEVA. A v1.0 (`hermes/jev/policy_v1.yaml`) segue legivel/executavel para
+auditoria.
 
 Uso programatico:
 
@@ -46,6 +53,7 @@ from .router import (  # noqa: F401
     montar_recibo,
     ordem_lanes,
     perfil_da_lane,
+    piso_de_lane,
     rotear,
 )
 
@@ -73,5 +81,6 @@ __all__ = [
     "montar_recibo",
     "ordem_lanes",
     "perfil_da_lane",
+    "piso_de_lane",
     "rotear",
 ]

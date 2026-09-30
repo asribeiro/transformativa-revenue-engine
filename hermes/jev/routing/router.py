@@ -2,8 +2,10 @@
 # -*- coding: utf-8 -*-
 """Roteador do JEV (System-1 Decision Layer) integrado ao Hermes Dev Harness.
 
-Card TRE-W0-E04-T02. Este modulo aplica a politica `hermes/jev/policy_v1.yaml`
-na precedencia declarada no proprio arquivo:
+Card TRE-W0-E04-T02 (roteador) e TRE-W0-E04-T08 (piso de lane por ambiente).
+Este modulo aplica a politica EM VIGOR — `hermes/jev/policy_v1_1.yaml`
+(`jev-policy-v1.1`, `CAMINHO_POLITICA_PADRAO`) — na precedencia declarada no
+proprio arquivo:
 
     Security -> Human Approval -> prioridade/dependencias -> JEV -> LLM
 
@@ -27,11 +29,27 @@ aceitacao e estao provadas em `scripts/verificar_jev_router.py`:
     codigo canonico conhecido NAO EXECUTA em nenhuma hipotese (defeito D07):
     escala com o motivo "acao nao classificada com seguranca", dizendo que
     faltou o codigo canonico da acao;
+  * PISO DE LANE POR AMBIENTE (v1.1, `piso_de_lane`): quando a politica declara
+    `regra_de_lane_por_ambiente`, DDL/migration em ambiente novo/dev nao desce
+    abaixo de `high` e em ambiente vivo/producao nao desce abaixo de `critical`
+    (com aprovacao humana registrada); ambiente nao declarado cai no ramo mais
+    conservador. A regra e PISO: so ELEVA a lane ja decidida, nunca rebaixa, e nao
+    substitui o guardrail de DDL (que continua bloqueando antes). O motivo do piso
+    vai no rastro da decisao e no campo `override` do recibo, que e onde a propria
+    regra manda registra-lo — sem campo novo nos 13 do contrato;
   * politica ausente, ilegivel, invalida ou de versao desconhecida entra em modo
-    degradado (lane conservadora + `degraded_mode`) e NUNCA executa em silencio;
+    degradado (lane conservadora + `degraded_mode`) e NUNCA executa em silencio.
+    Regra declarada que o roteador nao implementa (operacao ou direcao de piso
+    desconhecida) tambem e recusada: ignorar em silencio seria pior que recusar;
   * o recibo tem exatamente os campos de `recibo.campos` e nunca carrega segredo;
   * Sales AI (o papel que a politica proibe de deploy) nunca recebe credencial de
     deploy nem tarefa que exija alterar codigo/DDL.
+
+A v1.0 (`hermes/jev/policy_v1.yaml`) fica preservada para auditoria: continua
+legivel e executavel pelo roteador (o recibo grava `policy_version`, e uma decisao
+antiga tem de poder ser reconstruida com a politica que a tomou), mas nao e mais a
+versao em vigor.
+
 
 Uso pela linha de comando (le um card do board ou uma entrada sintetica):
 
@@ -96,11 +114,14 @@ except ModuleNotFoundError:  # pragma: no cover - depende do ambiente
 # executar), o nome do campo que identifica a politica e a rede de seguranca para
 # o caso em que NENHUMA politica pode ser lida.
 # ---------------------------------------------------------------------------
-ROUTER_VERSION = "jev-router-v1.0"
+ROUTER_VERSION = "jev-router-v1.1"
 
 # Declaracao de compatibilidade: o roteador so executa politicas cujo schema ele
 # conhece. Versao fora deste conjunto = recusa (nao ha "tentar mesmo assim").
-VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0"})
+# v1.1 entrou aqui em 30/09/2026 (card TRE-W0-E04-T08), DEPOIS de o piso de lane por
+# ambiente estar implementado: abrir o portao antes faria o roteador ignorar em
+# silencio uma regra declarada — a classe do defeito D08.
+VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1"})
 
 # Ultimo recurso, usado SOMENTE quando o arquivo de politica nao pode ser lido
 # (ausente/ilegivel): sem politica nao ha de onde ler a lane conservadora. A
@@ -206,8 +227,9 @@ SECOES_DE_ACAO_HUMANA = ("exige_aprovacao", "nunca_automatico")
 #
 # ATENCAO ao que estas tabelas NAO sao:
 #   * nao sao limiar, lane, perfil nem lista de acao proibida: nada disso esta
-#     aqui. `hermes/jev/policy_v1.yaml` (jev-policy-v1.0, congelada) continua sendo
-#     a unica fonte dessas coisas. Mexer no vocabulario abaixo nao muda a politica:
+#     aqui. A politica EM VIGOR (`hermes/jev/policy_v1_1.yaml`, jev-policy-v1.1)
+#     continua sendo a unica fonte dessas coisas. Mexer no vocabulario abaixo nao muda
+#     a politica:
 #     muda a leitura do texto que entra.
 #   * nao sao a correcao de raiz. Casamento de prosa e FINITO: uma variacao nova
 #     pode nao estar na tabela. A correcao de raiz e quem despacha a tarefa passar
@@ -360,9 +382,28 @@ PADROES_DE_DDL = (
 CAMPOS_DE_DECLARACAO_DE_DDL = ("acao", "titulo", "descricao", "comando", "operacao")
 
 # ---------------------------------------------------------------------------
-# Caminhos padrao (identidade de arquivo, nao parametro de politica)
+# Piso de lane por ambiente (card TRE-W0-E04-T08; politica v1.1)
+#
+# A regra e DECLARADA na politica (`regra_de_lane_por_ambiente`) e este roteador a
+# EXECUTA. O que existe aqui e a declaracao do que este codigo sabe executar: se a
+# politica declarar uma operacao ou uma direcao que o roteador nao implementa, a
+# politica e RECUSADA (modo degradado) — nunca executada com a regra ignorada em
+# silencio. Lane minima, valores de ambiente e aprovacao humana vem do YAML.
 # ---------------------------------------------------------------------------
-CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"
+CHAVE_DA_REGRA_DE_PISO = "regra_de_lane_por_ambiente"
+OPERACOES_COM_PISO_IMPLEMENTADO = frozenset({"ddl_ou_migration"})
+DIRECOES_DE_PISO_IMPLEMENTADAS = frozenset({"piso_so_eleva"})
+
+# ---------------------------------------------------------------------------
+# Caminhos padrao (identidade de arquivo, nao parametro de politica)
+#
+# A versao EM VIGOR e a v1.1: o roteador carrega `policy_v1_1.yaml` por padrao, e a
+# politica declara isso em `versao_em_vigor` (o verificador da v1.1 prova o casamento
+# entre a declaracao e ESTE caminho). A v1.0 (`policy_v1.yaml`) fica preservada para
+# auditoria: continua executavel pelo roteador quando apontada, e nao recebe mudanca.
+# ---------------------------------------------------------------------------
+CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_1.yaml"
+CAMINHO_POLITICA_ANTERIOR = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"
 DIRETORIO_POLITICAS_DE_PAPEL = _RAIZ_DO_REPO / "hermes/policies"
 DIRETORIO_BOARDS_PADRAO = pathlib.Path(os.environ.get("JEV_BOARDS_DIR", "/opt/data/kanban/boards"))
 BOARD_PADRAO = os.environ.get("JEV_BOARD", "transformativa-revenue-engine")
@@ -485,6 +526,66 @@ def _lane_conservadora(politica: dict, motivos: list) -> str:
                        f"divergentes {sorted(declaradas)} ({validos})")
         return ""
     return validos[0][1]
+
+
+def _ambiente_da_tarefa(tarefa) -> str:
+    """Ambiente declarado na tarefa (`ambiente_alvo`/`ambiente`) — o MESMO que o guardrail de DDL le."""
+    if not isinstance(tarefa, dict):
+        return ""
+    return str(tarefa.get("ambiente_alvo") or tarefa.get("ambiente") or "")
+
+
+def _validar_regra_de_piso(dado: dict, motivos: list) -> None:
+    """Confere a FORMA da `regra_de_lane_por_ambiente` declarada pela politica.
+
+    Regra declarada que este roteador nao sabe executar e RECUSADA — nao existe
+    "seguir executando e ignorar a regra em silencio" (foi a classe do defeito D08).
+    A SEMANTICA da regra (piso so eleva, ambiente nao declarado cai no ramo
+    conservador) e provada por comportamento em `piso_de_lane`.
+    """
+    regra = dado.get(CHAVE_DA_REGRA_DE_PISO)
+    if regra in (None, "", {}, []):
+        return
+    if not isinstance(regra, dict):
+        motivos.append(f"{CHAVE_DA_REGRA_DE_PISO} declara {type(regra).__name__}, nao um mapa")
+        return
+    operacao = str(regra.get("operacao") or "")
+    if operacao not in OPERACOES_COM_PISO_IMPLEMENTADO:
+        motivos.append(
+            f"{CHAVE_DA_REGRA_DE_PISO} governa a operacao {operacao!r}, que este roteador "
+            f"nao implementa (implementadas: {sorted(OPERACOES_COM_PISO_IMPLEMENTADO)}): "
+            "recusa, em vez de executar ignorando a regra declarada")
+    direcao = str(regra.get("direcao") or "")
+    if direcao not in DIRECOES_DE_PISO_IMPLEMENTADAS:
+        motivos.append(
+            f"{CHAVE_DA_REGRA_DE_PISO} declara direcao {direcao!r}, que este roteador nao "
+            f"implementa (implementadas: {sorted(DIRECOES_DE_PISO_IMPLEMENTADAS)})")
+    ramos = regra.get("ambientes")
+    if not isinstance(ramos, list) or not ramos:
+        motivos.append(f"{CHAVE_DA_REGRA_DE_PISO} sem ramos de ambiente declarados")
+        return
+    lanes = list((dado.get("lanes") or {}).keys())
+    nomes, valores = [], {}
+    for ramo in ramos:
+        if not isinstance(ramo, dict):
+            motivos.append(f"ramo de ambiente mal declarado: {ramo!r}")
+            continue
+        nome = str(ramo.get("ambiente") or "")
+        do_ramo = [str(v) for v in (ramo.get("valores") or [])]
+        if not nome or not do_ramo:
+            motivos.append(f"ramo de ambiente sem nome/valores: {ramo!r}")
+            continue
+        if nome in nomes:
+            motivos.append(f"ramo de ambiente repetido: {nome!r}")
+        nomes.append(nome)
+        if ramo.get("lane_minima") not in lanes:
+            motivos.append(f"ramo {nome!r} aponta lane minima inexistente "
+                           f"{ramo.get('lane_minima')!r} (lanes declaradas: {lanes})")
+        for valor in do_ramo:
+            valores.setdefault(_normalizar(valor), []).append(nome)
+    ambiguos = sorted(v for v, donos in valores.items() if len(set(donos)) > 1)
+    if ambiguos:
+        motivos.append(f"valores de ambiente declarados em mais de um ramo: {ambiguos}")
 
 
 def _papeis_do_diretorio(diretorio=None) -> dict:
@@ -649,6 +750,11 @@ def carregar_politica(caminho=None, diretorio_de_papeis=None) -> dict:
             motivos.append(f"politica nao declara o guardrail {nome_guardrail!r} "
                            f"(esperado um dos termos {list(termos)})")
 
+    # Regra de piso por ambiente (v1.1): se a politica declara a regra, este roteador
+    # tem de saber executa-la. E aqui que "declarado" deixa de poder divergir de
+    # "executado" em silencio (classe do defeito D08).
+    _validar_regra_de_piso(dado, motivos)
+
     # Limiares coerentes: faixa invertida nao pode virar decisao. (Os valores vem
     # do YAML; aqui so se confere que a politica nao esta se contradizendo.)
     limiares_declarados = dado.get("limiares") or {}
@@ -732,6 +838,64 @@ def lane_mais_conservadora(politica: dict, *lanes) -> str:
     return max(validas, key=ordem.index)
 
 
+def piso_de_lane(politica: dict, tarefa: dict) -> dict:
+    """Piso de lane por ambiente declarado em `regra_de_lane_por_ambiente` (v1.1).
+
+    Devolve {'lane_minima', 'ramo', 'ambiente', 'ramo_declarado',
+    'exige_aprovacao_humana', 'motivo'}. `lane_minima` nulo = nao ha piso: a politica
+    nao declara a regra, declara uma que este roteador nao executa, ou a tarefa nao e
+    da operacao governada.
+
+    A regra e PISO: o resultado so pode ser usado para ELEVAR a lane ja decidida.
+    Nada aqui e literal de politica — operacao governada, valores de ambiente, lane
+    minima e aprovacao humana saem do YAML. Ambiente nao declarado (ou com valor fora
+    do vocabulario) cai no ramo MAIS CONSERVADOR: ausencia de declaracao e abstinencia,
+    nunca permissao.
+    """
+    vazio = {"lane_minima": None, "ramo": None, "ambiente": "", "ramo_declarado": False,
+             "exige_aprovacao_humana": False, "motivo": ""}
+    if not politica:
+        return vazio
+    regra = politica.get(CHAVE_DA_REGRA_DE_PISO) or {}
+    if not isinstance(regra, dict) or not regra:
+        return vazio
+    if str(regra.get("operacao") or "") not in OPERACOES_COM_PISO_IMPLEMENTADO:
+        return vazio          # carregar_politica ja recusa; defensivo para politica crua
+    if str(regra.get("direcao") or "") not in DIRECOES_DE_PISO_IMPLEMENTADAS:
+        return vazio
+    # A operacao governada e DDL/migration, e o detector e o MESMO do guardrail de DDL:
+    # DDL/migration REAL, declarada nos campos da propria tarefa (defeito D08).
+    operacao = _operacao_de_ddl(tarefa)
+    if not operacao:
+        return vazio
+    ramos = [r for r in (regra.get("ambientes") or []) if isinstance(r, dict)]
+    if not ramos:
+        return vazio
+    ambiente = _normalizar(_ambiente_da_tarefa(tarefa))
+    escolhido = None
+    for ramo in ramos:
+        if ambiente and ambiente in {_normalizar(v) for v in (ramo.get("valores") or [])}:
+            escolhido = ramo
+            break
+    declarado = escolhido is not None
+    if escolhido is None:
+        escolhido = max(ramos, key=lambda r: indice_da_lane(politica, r.get("lane_minima")))
+    lane_minima = escolhido.get("lane_minima")
+    if lane_minima not in ordem_lanes(politica):
+        return vazio
+    ramo = str(escolhido.get("ambiente") or "")
+    aprovacao = bool(escolhido.get("aprovacao_humana_registrada"))
+    lugar = (f"ambiente {ambiente!r}" if declarado else
+             (f"ambiente {ambiente!r} fora do vocabulario declarado" if ambiente
+              else "ambiente nao declarado"))
+    motivo = (f"piso de lane por ambiente: {operacao} em {lugar} -> ramo {ramo!r}; "
+              f"lane nao mais barata que {lane_minima}"
+              + ("; exige aprovacao humana registrada" if aprovacao else ""))
+    return {"lane_minima": lane_minima, "ramo": ramo, "ambiente": ambiente,
+            "ramo_declarado": declarado, "exige_aprovacao_humana": aprovacao,
+            "motivo": motivo}
+
+
 def config_da_lane(politica: dict, lane) -> dict:
     return dict((politica.get("lanes") or {}).get(lane) or {})
 
@@ -747,6 +911,61 @@ def esforco_do_perfil(politica: dict, perfil) -> str:
 def _lane_exige_aprovacao_humana(politica: dict, lane) -> bool:
     revisao = config_da_lane(politica, lane).get("revisao") or ""
     return "aprovacao humana" in _normalizar(revisao)
+
+
+def _lane_com_piso(politica: dict, tarefa: dict, lane):
+    """(lane_final, piso) — a lane decidida com o piso por ambiente aplicado.
+
+    O piso SO ELEVA: a lane final e a MAIS CONSERVADORA entre a lane decidida e a
+    lane minima do ramo (`lane_mais_conservadora`), nunca a mais barata. Com politica
+    que nao declara a regra — ou tarefa fora da operacao governada — a lane decidida
+    volta intacta e `piso['lane_minima']` e nulo.
+    """
+    piso = piso_de_lane(politica, tarefa)
+    if not piso["lane_minima"]:
+        return lane, piso
+    final = lane_mais_conservadora(politica, lane, piso["lane_minima"]) or piso["lane_minima"]
+    return final, piso
+
+
+def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
+    """Registra o piso por ambiente no rastro da decisao e no recibo.
+
+    O recibo tem 13 campos e NAO cresce por conveniencia: a propria politica declara,
+    em `regra_de_lane_por_ambiente.registrar_no_recibo`, que o piso entra no campo
+    `override` — a regra tem a mesma postura do override humano ("so eleva"), e o
+    objeto nomeia a origem (`piso_por_ambiente`) para o recibo nunca sugerir override
+    humano onde houve regra de politica. O motivo tambem vai em `decisao.motivos`, que
+    e gravado junto do recibo pelo encaixe.
+    """
+    if not politica:
+        return
+    piso = piso_de_lane(politica, tarefa)
+    if not piso["lane_minima"]:
+        return
+    plano["motivos"].append(piso["motivo"] + f" (lane registrada: {plano.get('lane')})")
+    registro = {"ramo": piso["ramo"], "ambiente": piso["ambiente"] or None,
+                "ramo_declarado": piso["ramo_declarado"],
+                "lane_minima": piso["lane_minima"], "motivo": piso["motivo"]}
+    plano["demais"]["piso_de_lane"] = registro
+    # O ramo vivo exige aprovacao humana REGISTRADA (declarado no YAML): a decisao
+    # carrega a exigencia em qualquer caminho que registre a lane — inclusive quando o
+    # guardrail de DDL ja bloqueou, porque o humano vai decidir sobre este card.
+    if piso["exige_aprovacao_humana"]:
+        plano["exige_aprovacao_humana"] = True
+        if plano["decidido"] == "executar":
+            # Coerencia: decisao nao "executa" carregando exigencia de aprovacao humana.
+            plano["decidido"] = "escalar_para_aprovacao_humana"
+            plano["outcome"] = OUTCOME_ESCALAR
+            plano["exige_escalacao"] = True
+            plano["motivos"].append(
+                f"lane {plano['lane']} (piso por ambiente) exige aprovacao humana "
+                "registrada antes de executar")
+    humano = plano.get("override")
+    if isinstance(humano, dict) and humano:
+        plano["override"] = {"humano": humano, "piso_por_ambiente": registro}
+    else:
+        plano["override"] = {"piso_por_ambiente": registro}
 
 
 def acoes_nunca_decididas_por_maquina(politica: dict) -> list:
@@ -863,7 +1082,7 @@ def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
     # leitura defensiva garante que a camada de guardrail nunca estoure (fail-closed).
     sinais = sinais_brutos if isinstance(sinais_brutos, dict) else {}
     acao = str(tarefa.get("acao") or tarefa.get("titulo") or "")
-    ambiente = _normalizar(tarefa.get("ambiente_alvo") or tarefa.get("ambiente") or "")
+    ambiente = _normalizar(_ambiente_da_tarefa(tarefa))
 
     do_not_contact = bool(sinais.get("empresa_do_not_contact"))
     guardrails.append(_guardrail(
@@ -990,7 +1209,8 @@ def _papel_para_acao(tarefa: dict, politica: dict, papeis: dict):
 def acoes_de_decisao_humana(politica, papeis=None, diretorio=None) -> list:
     """Acoes que nunca passam por classificador: as da politica + a fonte da camada.
 
-    Fontes: (1) `nunca_decidido_por_maquina` de `hermes/jev/policy_v1.yaml`;
+    Fontes: (1) `nunca_decidido_por_maquina` da politica EM VIGOR
+    (`hermes/jev/policy_v1_1.yaml`);
     (2) `hermes/policies/human-approval.yaml`, lido na carga da politica (chave
     derivada `_acoes_de_human_approval`) — independente de chave `role:`, que esse
     arquivo nao tem (defeito D03). `diretorio` atende quem carrega a politica fora
@@ -1337,7 +1557,11 @@ def montar_recibo(politica, tarefa: dict, plano: dict, agora=None) -> dict:
         "policy_version": versao,
         "router_version": ROUTER_VERSION,
         "timestamp": timestamp,
-        "override": tarefa.get("override") or None,
+        # `override` carrega o override declarado e, quando a regra de piso por ambiente
+        # age, o registro do piso (mesma postura do override humano: so eleva) — o
+        # contrato de 13 campos nao cresce; a politica declara onde o piso se registra.
+        "override": (plano.get("override") if plano.get("override") is not None
+                     else (tarefa.get("override") or None)),
         "outcome": plano.get("outcome"),
     }
     faltando = [c for c in campos if c not in valores]
@@ -1404,6 +1628,10 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         "motivos": [], "guardrails": guardrails, "degraded_mode": politica is None,
         "exige_revisao": False, "exige_escalacao": False, "exige_aprovacao_humana": False,
         "papel_executor": None, "evidencias": [], "demais": {},
+        # `override` do recibo: o declarado pelo chamador; se a regra de piso por
+        # ambiente agir, `_fechar` acrescenta o registro do piso NESTE campo (um dos 13
+        # do contrato — sem campo novo).
+        "override": tarefa.get("override") or None,
     }
 
     # ---- Resolucao da acao: CODIGO antes de decidir (card T07) --------------
@@ -1512,13 +1740,19 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
     if lane_final is None:
         plano["decidido"] = "abster_e_escalar"
         plano["outcome"] = OUTCOME_ESCALAR
-        plano["lane"] = _lane_degradada(politica)
+        # Piso por ambiente (v1.1): tambem na abstencao a lane registrada respeita o piso
+        # — so ELEVA. O motivo entra no rastro; o registro no recibo vem em `_fechar`.
+        plano["lane"] = _lane_com_piso(politica, tarefa, _lane_degradada(politica))[0]
         plano["exige_escalacao"] = True
         plano["motivos"] = [motivo, f"lane conservadora {plano['lane']} registrada no recibo"]
         return _fechar(politica, tarefa, plano, agora)
 
-    # override humano: nunca rebaixa a lane decidida pela politica
-    plano["lane"] = lane_final
+    # override humano: nunca rebaixa a lane decidida pela politica.
+    # O piso de lane por ambiente entra ANTES: ele so ELEVA, e e sobre a lane final
+    # (ja com piso) que o override e comparado — assim o override tambem nao rebaixa
+    # uma lane elevada pelo piso do ambiente, e o perfil/aprovacao derivam da lane final.
+    # ANCORA:PISO_DE_LANE_NA_LANE
+    plano["lane"] = _lane_com_piso(politica, tarefa, lane_final)[0]
     sobrescrita = tarefa.get("override")
     if isinstance(sobrescrita, dict) and sobrescrita.get("lane"):
         pretendida = sobrescrita.get("lane")
@@ -1566,14 +1800,23 @@ def _lane_degradada(politica) -> str:
 
 
 def _lane_segura(politica, tarefa):
-    """Lane para registrar quando a decisao e bloqueio/abstencao."""
+    """Lane para registrar quando a decisao e bloqueio/abstencao.
+
+    Ja com o piso de lane por ambiente aplicado: o piso SO ELEVA, entao a lane
+    registrada e a mais conservadora entre a lane conservadora da politica e a lane
+    minima do ramo de ambiente. Politica que nao declara a regra nao muda nada.
+    """
     if politica:
-        return politica.get("_lane_conservadora") or LANE_DEGRADADA_PADRAO
-    return LANE_DEGRADADA_PADRAO
+        base = politica.get("_lane_conservadora") or LANE_DEGRADADA_PADRAO
+    else:
+        base = LANE_DEGRADADA_PADRAO
+    return _lane_com_piso(politica, tarefa, base)[0]
 
 
 def _fechar(politica, tarefa, plano, agora=None) -> dict:
-    """Fecha a decisao: resolve o papel executor e monta o recibo."""
+    """Fecha a decisao: registra o piso por ambiente, resolve o papel executor e monta o recibo."""
+    # ANCORA:PISO_DE_LANE_NO_RECIBO
+    _registrar_piso_no_plano(politica, tarefa, plano)
     papeis = (politica.get("_papeis") if politica else {}) or {}
     if papeis:
         papel, _motivo = _papel_para_acao(tarefa, politica or {}, papeis)
@@ -1715,7 +1958,8 @@ def main(argv=None) -> int:
     parser.add_argument("--json", help="tarefa sintetica em JSON")
     parser.add_argument("--json-file", help="arquivo com a tarefa sintetica em JSON")
     parser.add_argument("--stdin", action="store_true", help="le a tarefa sintetica da entrada padrao")
-    parser.add_argument("--politica", help="caminho da politica (padrao: hermes/jev/policy_v1.yaml)")
+    parser.add_argument("--politica", help="caminho da politica (padrao: a EM VIGOR, "
+                                           "hermes/jev/policy_v1_1.yaml)")
     parser.add_argument("--papeis", help="diretorio das politicas de papel (padrao: hermes/policies)")
     parser.add_argument("--catalogo", help="JSON com perfil->modelo (catalogo fica FORA da politica)")
     parser.add_argument("--saida", help="grava o recibo neste arquivo")
