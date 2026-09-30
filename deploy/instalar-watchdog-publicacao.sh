@@ -46,8 +46,10 @@ while [ $# -gt 0 ]; do
 done
 
 R() {
+  # ControlMaster: uma conexao TCP para a instalacao inteira (a VPS penaliza rajadas do mesmo IP).
   ssh "${OPCOES_CHAVE[@]}" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-      -o ConnectTimeout=15 "$ALVO" "$@"
+      -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPersist=30 \
+      -o ControlPath="${TRE_SSH_CONTROLE:-/tmp/tre-ssh-control-%r@%h:%p}" "$ALVO" "$@"
 }
 
 if [ "$REMOVER" -eq 1 ]; then

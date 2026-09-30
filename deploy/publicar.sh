@@ -166,8 +166,15 @@ fi
 digest_de() { sha256sum | cut -d' ' -f1; }
 
 R() {
+  # ControlMaster: UMA conexao TCP para a publicacao inteira. Sao ~25 chamadas remotas por
+  # publicacao; uma conexao por chamada (o que este script fazia) e o que derrubava o acesso:
+  # medido em 30/09, o SSH da VPS passou a responder `Connection refused` para o host inteiro
+  # (todos os cards) por ~12 min depois de uma rodada de publicacoes — assinatura de penalidade
+  # por fonte (OpenSSH PerSourcePenalties)/fail2ban, agravada por retentativas. O socket fica em
+  # $TRE_SSH_CONTROLE (padrao /tmp) e e reaproveitado entre chamadas do mesmo script.
   ssh "${OPCOES_CHAVE[@]}" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-      -o ConnectTimeout=15 "$ALVO" "$@"
+      -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPersist="${TRE_SSH_CONTROLE_PERSIST:-30}" \
+      -o ControlPath="${TRE_SSH_CONTROLE:-/tmp/tre-ssh-control-%r@%h:%p}" "$ALVO" "$@"
 }
 # O proprio script e enviado por stdin: funciona antes da primeira publicacao (quando o
 # destino ainda nao tem o script) e nao depende de o destino ter git.
