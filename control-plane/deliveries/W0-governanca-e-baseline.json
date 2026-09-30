@@ -3,21 +3,69 @@
   "project": "Transformativa Revenue Engine",
   "release": "R1 — Foundation",
   "wave": "W0 — Governança e Baseline",
-  "release_status": "IN_PROGRESS",
-  "current_gate": "VALIDATION",
+  "release_status": "DELIVERED",
+  "current_gate": "DONE",
   "production_promotion_authorized": false,
-  "updated_at": "2026-09-29",
+  "updated_at": "2026-09-30",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
     "decision": "APPROVED",
     "approved_by": "Anderson Ribeiro",
-    "approved_at": "2026-09-29",
+    "approved_at": "2026-09-30",
     "scope": [
-      "matriz de permissões Dev Harness × Sales AI",
-      "matriz de segregação de credenciais e gatilhos de rotação (política de secrets V1)"
+      "camada JEV completa: politica v1.0 -> v1.1 -> v1.2 (lane declarada por codigo canonico), roteador, benchmark anotado, guardrails/fallback e gate no dispatch",
+      "backup e rollback baseline (E01-T03)",
+      "linha do tempo com datas planejadas (E07-T01)"
     ],
-    "production_promotion_authorized": false
+    "production_promotion_authorized": false,
+    "round": 2,
+    "decided_by": "Anderson Ribeiro",
+    "decision_at": "2026-09-30",
+    "authority": "HUMAN_ONLY",
+    "approved_items": [
+      "TRE-W0-E01-T03",
+      "TRE-W0-E04-T01",
+      "TRE-W0-E04-T02",
+      "TRE-W0-E04-T03",
+      "TRE-W0-E04-T04",
+      "TRE-W0-E04-T05",
+      "TRE-W0-E04-T06",
+      "TRE-W0-E04-T07",
+      "TRE-W0-E04-T08",
+      "TRE-W0-E04-T09",
+      "TRE-W0-E07-T01"
+    ],
+    "evidence": {
+      "como_foi_aprovado": "sobre a evidencia abaixo, apresentada no Telegram a Anderson Ribeiro: suites medidas em 30/09/2026 e estado do board lido direto do kanban.db (modo leitura). NAO houve bateria item-a-item desta rodada: os verificadores citados sao por artefato (politica/roteador/gate/guardrails).",
+      "medido_em": "2026-09-30",
+      "verificadores": {
+        "verificar_jev_policy_v1_2.py": "233 itens PASS + autoteste 8/8 (mutacoes reprovadas)",
+        "verificar_jev_policy_v1_1.py": "155 itens PASS + autoteste",
+        "verificar_jev_policy.py (v1.0)": "42 itens PASS + autoteste",
+        "verificar_jev_router.py": "63 itens PASS",
+        "validar_jev_guardrails.py": "74 itens PASS",
+        "verificar_gate_jev.py": "30 itens PASS (era o vermelho declarado; ficou verde com a v1.2 em vigor)",
+        "benchmark_roteamento.py --autoteste": "23/23 itens OK"
+      },
+      "medicao_de_comportamento": "corpus v1.4: accuracy de lane 0,375 (igual a constante estrutural — aposentar o classificador nao custou acerto); execucao 3,1% -> 12,5%; escalacao 78,1% -> 68,8%",
+      "em_execucao_no_fechamento": "TRE-W0-E04-T10 (t_e09a95bf, nomear o codigo comum execucao_de_card) rodava no board no momento deste fechamento: NAO entra como item aprovado desta rodada; sera declarado quando entregue.",
+      "nao_autorizado": "promocao de release para producao NAO e autorizada nesta rodada (production_promotion_authorized = false; production_promoted_task_ids vazio)."
+    },
+    "history": [
+      {
+        "round": 1,
+        "status": "APPROVED",
+        "decision": "APPROVED",
+        "decided_by": "Anderson Ribeiro",
+        "decided_at": "2026-09-29",
+        "scope": [
+          "matriz de permissões Dev Harness × Sales AI",
+          "matriz de segregação de credenciais e gatilhos de rotação (política de secrets V1)"
+        ],
+        "production_promotion_authorized": false
+      }
+    ]
   },
   "work_items": [
     {
@@ -64,16 +112,152 @@
     {
       "id": "TRE-W0-E01-T03",
       "title": "Backup e rollback baseline",
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "children": [
         {
           "hermes_task_id": "t_c8e69f74",
-          "stage": "BACKLOG",
-          "status": "BLOCKED",
-          "note": "aguardando provisionamento da VPS Contabo"
+          "stage": "DONE",
+          "evidence": "docs/runbooks/backup-restore-rollback.md — procedimento executavel (segredo fora do backup, restauracao com --confirmo e snapshot previo), provado na VPS Contabo"
         }
       ],
       "current_gate": "BACKLOG"
+    },
+    {
+      "id": "TRE-W0-E04-T01",
+      "title": "JEV Decision Policy V1",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e7d9decd",
+          "stage": "DONE",
+          "evidence": "docs/architecture/jev-decision-policy-v1.md + hermes/jev/policy_v1.yaml (jev-policy-v1.0) — verificador v1.0: 42 itens PASS + autoteste"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T02",
+      "title": "Integrar JEV ao Hermes Dev Harness",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_4f20bd10",
+          "stage": "DONE",
+          "evidence": "hermes/jev/routing/router.py le a politica do YAML (limiar literal proibido no codigo); precedencia Security -> Human Approval -> prioridade/dependencias -> JEV -> LLM; guardrails deterministicos antes do classificador (fail-closed)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T03",
+      "title": "Benchmark anotado de routing",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_d8bc83b3",
+          "stage": "DONE",
+          "evidence": "hermes/jev/benchmarks/corpus-anotacao.yaml (32 casos anotados) + docs/validation/jev-benchmark-routing.md — commit be2788a"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T04",
+      "title": "Validar JEV guardrails e fallback",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_b3387f25",
+          "stage": "DONE",
+          "evidence": "validacao adversarial dos guardrails e do fallback: 72 itens, 0 falhas, autoteste 17/17 (hoje validar_jev_guardrails.py = 74 itens PASS); defeitos D03/D04/D05/D06 fechados"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T05",
+      "title": "Ligar o roteador JEV ao dispatch do board",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_6d326367",
+          "stage": "DONE",
+          "evidence": "JEV consultado ANTES de reivindicar/despachar (claim manual e dispatch); gate armado no runtime em 30/09/2026; scripts/verificar_gate_jev.py = 30 itens PASS"
+        },
+        {
+          "hermes_task_id": "t_38cbab9a",
+          "stage": "DONE",
+          "evidence": "defeito da suite do gate (overlay escrevia atraves do bind) corrigido: scripts/verificar_gate_jev.py, commit 59832b2 — a suite roda e fecha 30 itens PASS"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T06",
+      "title": "Politica JEV v1.1 (lane conservadora legivel por maquina e metricas por lane)",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e9535df3",
+          "stage": "DONE",
+          "evidence": "hermes/jev/policy_v1_1.yaml + docs/architecture/jev-decision-policy-v1.1.md + scripts/verificar_jev_policy_v1_1.py = 155 itens PASS; homologada por Anderson Ribeiro (registro-de-aprovacoes, commit b7f2aa7)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T07",
+      "title": "Codigo canonico de acao e falha fechada para acao nao classificada",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_f8a6e209",
+          "stage": "DONE",
+          "evidence": "hermes/jev/acoes-declaradas.yaml (catalogo de codigos) + falha fechada D07/D08: acao sem codigo comum NAO executa (abstem), acao proibida exige aprovacao"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T08",
+      "title": "Piso de lane por ambiente",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_d36c7d0f",
+          "stage": "DONE",
+          "evidence": "regra de lane por ambiente como PISO em hermes/jev/policy_v1_1.yaml (policy_v1_1 completa sobre esta), verificada pelo proprio roteador"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T09",
+      "title": "Aposentar o classificador de lane e declarar a lane na politica (v1.2)",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_b4b11995",
+          "stage": "DONE",
+          "evidence": "jev-policy-v1.2 em vigor (lane_por_codigo_de_acao, classificador aposentado; portao de versao aberto) — scripts/verificar_jev_policy_v1_2.py = 233 itens PASS + autoteste 8/8; commits 1227310, fbc26a9, 83922db"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E07-T01",
+      "title": "Linha do tempo: somar datas planejadas as reais",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_25ca689e",
+          "stage": "DONE",
+          "evidence": "plugins/gantt-timeline/dashboard/plugin_api.py le hermes/plan/cronograma.yaml (fonte versionada, nao o board) e desenha a barra PLANEJADA; verificado pelo Hermes em 29/09/2026"
+        }
+      ]
+    }
+  ],
+  "completed_at": "2026-09-30T13:13:16+00:00",
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "HUMAN_APPROVAL_GRANTED",
+      "round": 2,
+      "at": "2026-09-30T13:13:16+00:00",
+      "by": "Anderson Ribeiro",
+      "production_promotion_authorized": false,
+      "note": "fechamento da W0: itens declarados DONE; promocao a producao deliberadamente nao autorizada"
     }
   ]
 }
