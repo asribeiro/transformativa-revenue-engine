@@ -127,3 +127,14 @@ Três peças, todas versionadas no repositório:
      não depender da narrativa do agente.
 - Risco declarado e aceito: docker equivale a root; a chave dá a máquina inteira; não existe
   escopo pequeno. Mitigação é o registro e os limites acima, não a cerca.
+
+## 8. Nota de contrato do recibo (correcao de desvio)
+
+O recibo do gate tem contrato **fechado de 13 campos** (`hermes/jev/policy_v1_2.yaml`) e a
+suite do gate reprova campo a mais. O desenho na secao 2 pedia "origem gravada no recibo" e
+a primeira implementacao criou campos novos (`origem`, `aprovador`, `canal`, `validade`,
+`hash`, `aprovacao_motivo`) — **desvio corrigido**: o rastro da aprovacao passa a morar em
+`override.aprovacao_humana`, dentro do campo `override`, que existe exatamente para registrar
+excecao com razao. Nenhum campo novo no recibo; a trilha continua auditavel no arquivo. O
+motivo de uma aprovacao NAO aplicavel viaja na resposta do gate (que o board grava), nunca no
+recibo.
