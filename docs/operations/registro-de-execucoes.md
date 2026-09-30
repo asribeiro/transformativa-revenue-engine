@@ -274,4 +274,26 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   reboot** (`up 6:10`) — penalidade por fonte (`PerSourcePenalties`)/`fail2ban`, agravada pelas
   retentativas. Mitigado: `R()` agora usa **ControlMaster** (`ControlPersist=30`) — uma conexao por
   publicacao; nao insistir em laco quando o SSH recusar (a penalidade se renova).
+- **Verificador com dente (novo: `deploy/verificar-enforcement.sh`):** 13 itens que **tentam** o caminho
+  ad-hoc em destino isolado e exigem que ele FALHE — publicacao pelo caminho unico + trava armada; 4
+  tentativas ad-hoc (`>>`, `sed -i`, arquivo novo, `tar -xz` de arvore alheia) **recusadas**; conteudo
+  intacto; sabotagem com `chattr -i` (o defeito real) **reprovada** pelo detector (exit 5, com atribuicao
+  do arquivo plantado); reparo restaurando do artefato e rearmando a trava. Medido: bateria normal ->
+  `VERIFICADOR_ENFORCEMENT_OK itens=13` (exit 0); **com o guard desligado** (`TRE_ENF_SEM_TRAVA=1`,
+  publicando com `--sem-trava`) -> `VERIFICADOR_ENFORCEMENT_FALHOU itens=13 falhas=7` (**exit 1**: trava
+  ausente, as 4 escritas aceitas, `backup-tre.sh` mudou, conferencia divergente). Verificador que passa
+  por construcao nao vale (defeito D04 do TRE-W0-E04-T01) — este reprova exatamente quando o enforcement
+  nao esta la.
+- **Resposta a pergunta do card — como a ressincronizacao ad-hoc conseguiu reverter um commit publicado:**
+  (a) a copia era escrita por `root` sem nenhuma barreira: `tar -xpf` como root sobrescreve o arquivo e
+  **preserva o mtime** (por isso a copia parecia "antiga" e nada gritava); (b) o `.publicado` e escrito
+  **so** pelo `publicar.sh`, entao a "fonte da verdade" registrada continuou apontando o commit consertado
+  enquanto o disco mudava — o registro **nao era conferido por ninguem**; (c) o `--conferir` so rodava
+  quando alguem lembrava (medido no defeito: publicacao 21:34:32Z -> primeira deteccao 21:43:17Z, com o
+  `tre-backup.service` ja tendo executado a arvore pre-correcao e impresso `BACKUP_OK` cobrindo zero
+  ambientes). **O que impede a terceira recorrencia:** (i) a trava faz a escrita ad-hoc **FALHAR** (EPERM)
+  — medido 4 vezes na copia real e 4 no isolado; (ii) se alguem escapar com `chattr -i`, o watchdog de
+  2 min compara disco x manifesto do **artefato** (referencia independente, `root:root` 700, fora da
+  copia) e **restaura** — medido (deteccao exit 5 com atribuicao; `PUBLICACAO_REPARO_OK`, alerta limpo,
+  trava rearmada); (iii) o verificador com dente impede o enforcement de virar decoracao.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.

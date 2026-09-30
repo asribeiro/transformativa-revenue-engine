@@ -204,6 +204,25 @@ tem `root` pode `chattr -i` e escrever, mas deixa de ser silencioso, e o watchdo
 (iii) o reparo usa o artefato da **última** publicação — sem ele o watchdog detecta e alerta, mas a
 restauração volta a exigir `deploy/publicar.sh --commit <registrado>`.
 
+### 5.1 Verificador com dente (prova que reprova)
+
+`deploy/verificar-enforcement.sh` **não** confere se o enforcement existe no código: ele **tenta o
+caminho ad-hoc e exige que ele falhe**, em destino isolado (nunca `/opt/tre/repo`). Ele mede 13 itens:
+publicação pelo caminho único + trava armada; as quatro tentativas ad-hoc (`>>`, `sed -i`, arquivo novo,
+`tar -xz` de árvore alheia) recusadas; conteúdo intacto depois delas; **sabotagem** (com `chattr -i`, como
+o defeito real) que o detector **tem de reprovar** (exit 5, com atribuição do arquivo plantado); e o
+reparo restaurando do artefato e rearmando a trava.
+
+```bash
+bash deploy/verificar-enforcement.sh                        # VERIFICADOR_ENFORCEMENT_OK itens=13
+TRE_ENF_SEM_TRAVA=1 bash deploy/verificar-enforcement.sh    # auto-sabotagem: TEM de reprovar (exit 1)
+```
+
+A segunda linha é o que separa verificador de decoração: com o guard desligado (`--sem-trava`) ele
+**reprova** (`VERIFICADOR_ENFORCEMENT_FALHOU itens=13 falhas=7` — trava ausente, as quatro escritas
+aceitas, conteúdo mudou, conferência divergente). Verificador que passa por construção não vale
+(defeito D04 do TRE-W0-E04-T01).
+
 ## 6. Rollback do código publicado
 
 A cópia é código, não dado — restaurar dado é o runbook `backup-restore-rollback.md`. Para voltar a cópia
