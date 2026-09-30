@@ -129,6 +129,16 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Fixed
 
+- **`--faixas` se contradizia quando o limiar do contrato não era 0,95** (`TRE-W1-E04-T02-D02`, defeito medido
+  na revisão independente do T02) — a linha de detalhe do comando tinha os **nomes das faixas fixos no código**
+  enquanto as decisões eram calculadas: com o contrato em 0,90 o próprio comando imprimia
+  `MERGE_AUTOMATICO [0.90, 1.00] -> MERGE` na tabela e "0,94 cai em REVISAO_HUMANA" na linha de detalhe, com
+  exit 0 — o artefato que prova o critério 2 se contradizendo. Corrigido extraindo `linha_detalhe_faixas()`,
+  derivada de `faixa_de_confianca()` (a mesma fonte que decide o merge). O teste do projeto deixou de asserir
+  a string constante (que era a evidência do critério) e passa a comparar com a saída do **próprio modelo**,
+  inclusive numa cópia com o limiar em 0,90, onde tabela e linha de detalhe têm de se mover juntas; a suíte
+  ganhou a sabotagem `detalhe` (`--sabotar detalhe` → `TESTE_FALHOU`, exit 1) para o item novo não nascer sem
+  prova de que reprova.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra

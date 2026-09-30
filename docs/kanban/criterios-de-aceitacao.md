@@ -127,6 +127,14 @@ qualificada o score é 0,00 e não a similaridade bruta de nome (que segue audit
 D-T02-5 o registro leva a tabela de faixas vigente e a versão do modelo. Detalhe em
 `docs/data/entity-match-confidence.md` §6.
 
+**Defeito medido na revisão independente (D02) e corrigido:** a linha de detalhe do `--faixas` tinha os nomes
+das faixas fixos no código e se contradizia com a tabela quando o limiar do contrato não era 0,95 (reproduzido
+pela revisão independente em cópia com `auto_merge_threshold=0.90`, exit 0, e reconfirmado aqui na correção); o teste do projeto asseria a string
+constante como evidência do critério. Correção: `linha_detalhe_faixas()` derivada de `faixa_de_confianca()`;
+a verificação compara com o modelo (não com constante) e exige que tabela e detalhe se movam juntos numa cópia
+com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D-T02-6** em
+`docs/data/entity-match-confidence.md` §6 e no `CHANGELOG.md` (Fixed).
+
 ## TRE-W1-E05-T01 — Criar database test suite
 
 - Suíte roda com um comando único e falha (exit ≠ 0) se o schema divergir do contrato.

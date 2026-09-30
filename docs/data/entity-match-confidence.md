@@ -52,6 +52,13 @@ sem sobreposição, e isso é conferido por validador próprio (mesmo espírito 
 3. cenário real em dev: o par fraco (nome + cidade) para em **0,94** e vai para `human_approvals` sem
    mesclar; o par com o mesmo CNPJ (score 1,00) mescla de verdade.
 
+**Fonte única na saída do `--faixas` (correção do defeito D02):** a tabela e a linha de detalhe saem do
+**modelo** (`faixa_de_confianca()`), nunca de nome de faixa escrito no código. O defeito original tinha os
+nomes fixos enquanto as decisões eram calculadas: com o limiar do contrato em 0,90 o comando imprimia
+`MERGE_AUTOMATICO [0.90, 1.00]` na tabela e "0,94 cai em REVISAO_HUMANA" na linha de detalhe — **exit 0**,
+o próprio artefato do critério 2 se contradizendo. Hoje `linha_detalhe_faixas()` deriva faixa e decisão da
+mesma fonte que decide o merge, e a prova exige que tabela e detalhe **andem juntos** quando o limiar se move.
+
 ## 4. Onde o campo é persistido
 
 O score é persistido **no registro auditado de cada decisão** — as duas estruturas que o contrato já
@@ -98,12 +105,17 @@ python3 scripts/dedup/deduplicar_organizacoes.py --faixas
 # suíte do motor: faixa, score, coerência score<->faixa<->decisão e persistência (sem banco)
 python3 scripts/dedup/deduplicar_organizacoes.py --autoteste
 
-# prova negativa: sabotar a persistência, a coerência e o limiar TEM de reprovar
-python3 scripts/dedup/deduplicar_organizacoes.py --autoteste --sabotar persistencia   # coerencia | limiar
+# prova negativa: sabotar a persistência, a coerência, o limiar e a linha de detalhe TEM de reprovar
+python3 scripts/dedup/deduplicar_organizacoes.py --autoteste --sabotar persistencia   # coerencia | limiar | detalhe
 
 # prova completa (faixas + suíte + negativa + cenário real em dev, com read-back do banco)
 bash scripts/dedup/teste_entity_match_confidence.sh dev
 ```
+
+A prova do modelo de faixas não assere string: `teste_entity_match_confidence.sh` calcula a expectativa de
+0,94 e 0,95 **pelo próprio `faixa_de_confianca()`** do motor e, numa cópia com o limiar em 0,90, exige que
+tabela e linha de detalhe se movam juntas (é o defeito D02 virado teste). O contrato do repositório não é
+mutado — a mutação vive numa cópia temporária dentro do teste.
 
 Na VPS do ambiente (ADR-0008 — quem fala com o PostgreSQL é a VPS). `--ambiente prod` é recusado com
 `ADR-005`: nada nasce em produção.
@@ -117,6 +129,7 @@ Na VPS do ambiente (ADR-0008 — quem fala com o PostgreSQL é a VPS). `--ambien
 | **D-T02-3** | Campo persistido no registro auditado (`sync_events` / `human_approvals`); **nenhuma coluna nova** | criar coluna é gatilho de nova versão do contrato (governança §10) + aprovação humana (ADR-0004) — não é decisão de um card de execução. O rollback proposto ("coluna fica nula") não se aplica: não existe coluna, e o registro de auditoria é imutável por contrato (§9) |
 | **D-T02-4** | Sem evidência qualificada o score é **0,00**, não a similaridade de nome | o score é confiança de identidade; registrar 1,00 para "nomes iguais, cidades diferentes" seria valor que mente. A similaridade bruta continua auditável em `evidencias.fracos` |
 | **D-T02-5** | O registro leva a tabela de faixas vigente e a versão do modelo | o registro tem de ser legível sem o código da época: quem auditar vê a régua, não só o número |
+| **D-T02-6** | A linha de detalhe do `--faixas` — e a sua verificação — é **derivada do modelo**, nunca texto fixo | defeito D02 (achado na revisão independente): com os nomes das faixas fixos no código, o comando se contradizia quando o limiar do contrato mudava (tabela dizia uma faixa, o detalhe outra, exit 0) e o teste do projeto asseria a string constante como evidência do critério — provando por construção, mesma classe do D04 do E04-T01 |
 
 ## 7. Rollback
 
@@ -140,6 +153,8 @@ Na VPS do ambiente (ADR-0008 — quem fala com o PostgreSQL é a VPS). `--ambien
 
 ## 9. Evidência medida
 
-Registrada em `docs/operations/registro-de-execucoes.md` (entrada W1/E04-T02) e no card `t_430ba4cc`:
-suíte do motor com os itens de faixa/score/coerência/persistência, as três sabotagens reprovando, e o
-cenário real em dev com o campo lido **de volta do banco** nos dois registros (merge e fila humana).
+Registrada em `docs/operations/registro-de-execucoes.md` (entradas W1/E04-T02 e W1/E04-T02-D02) e no card
+`t_430ba4cc`: suíte do motor com os itens de faixa/score/coerência/persistência, as sabotagens reprovando e o
+cenário real em dev com o campo lido **de volta do banco** nos dois registros (merge e fila humana). A
+correção do defeito D02 entrou com prova de dois lados: o código anterior (com o limiar em 0,90) **reprova**
+a verificação nova e o código corrigido passa, além da sabotagem `detalhe` derrubando a suíte.
