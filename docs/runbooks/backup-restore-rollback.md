@@ -125,8 +125,54 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
    verificador não é carimbo;
 7. reverificação do dump bom continua aprovada (o teste negativo não corrompeu nada).
 
+## 7b. Evidência medida — 30/09/2026 (TRE-W1-E06-T01, **banco do ambiente dev**)
+
+Comando: `set -a; . /etc/tre/backup.env; set +a; bash scripts/backup/teste-backup-restore.sh /opt/tre/repo --ambiente dev`
+— **`RESULTADO: TESTE_OK (14 itens, 0 falhas)`**, exit 0.
+(Note o `bash` explícito: hoje os scripts de `scripts/backup/` estão `100644` no git — ACHADO ABERTO 1, §8.)
+
+1. **origem é o container do ambiente** (`pg-sales-dev`), não um descartável: o modo ambiente não cria
+   container de origem e **falha** se o container do ambiente não existir (testado: `pg-nao-existe` →
+   `TESTE_FALHOU`, exit 1, sem cair para descartável);
+2. `backup-tre.sh dev` com o trio real de `deploy/environments/dev.env` (`pg-sales-dev` / `sales_ai` /
+   `sales_intelligence`) → `BACKUP_OK`, artefato `tre_dev_20260930T193704Z`;
+3. `sha256` do dump confere com o manifesto (`f92f924d…`) e com o `.sha256`;
+4. **manifesto registra `externo: enviado (contabo:tre-backup)`**; o bucket tem os 6 objetos do artefato e
+   a **prova de volta** (baixar o dump do bucket, `sha256sum` + `cmp`) devolve `IDENTICOS`;
+5. **restore real em container novo: `RESTORE_OK`** — 68 objetos no índice, 12 tabelas, 30 índices, **as 12
+   contagens batendo linha a linha**; reproduzido de forma independente (restore próprio → `diff` vazio
+   contra o `contagens.txt`, 14 linhas);
+6. **teste negativo:** dump truncado a 2 KB **REPROVADO** (8 falhas) e dump de 0 byte **REPROVADO**; dump
+   válido de **outro banco** também REPROVADO (5 falhas); contagem mutada REPROVADA (1 falha) — o
+   comparativo não é carimbo;
+7. fronteira: base com **0 linhas** continua sendo comparada (`RESTORE_OK` + `NOTA backup sem linhas`);
+8. `pg-sales-dev` ficou **intacto** (mesmo `Id` e `StartedAt`), produção não existe na máquina.
+
+**Modo do driver:** `--ambiente dev|homolog` é o modo novo; sem argumento o comportamento é o do item 7
+(descartável), que nesta mesma rodada seguiu `TESTE_OK (12 itens, 0 falhas)`.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
+- **ACHADO ABERTO 1 (alta) — o serviço do timer não executa.** `systemctl start tre-backup.service` →
+  `status=203/EXEC`, journal: `Unable to locate executable '/opt/tre/repo/scripts/backup/backup-tre.sh':
+  Permission denied`. Causa raiz: os scripts de `scripts/backup/` estão no git como **100644** (sem bit
+  executável), então toda sincronização a partir do repositório devolve a cópia operacional para 644 e o
+  `ExecStart` do unit falha. Medido no card `TRE-W1-E06-T01` (30/09/2026); o backup diário **não está rodando**.
+- **ACHADO ABERTO 2 (alta) — a rotina cobre zero ambientes e sai `BACKUP_OK`.** `backup-tre.sh` procura
+  `pg-dev`/`pg-homolog`/`pg-prod`, mas o dev real é `pg-sales-dev` (usuário `sales_ai`), e
+  `/etc/tre/backup.env` (o `EnvironmentFile` do unit) não declara `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB`
+  — o trio real está em `deploy/environments/dev.env`, que nenhum timer lê. Resultado medido:
+  `PULADO` nos três ambientes, exit 0, **nenhum artefato novo**. O `tre-backup-verify.timer` também não
+  acusa, porque procura o mesmo prefixo `tre_dev_*` que a rotina nunca produz.
+  Alinhar (ou congelar) o nome do container é **decisão do dono** — o card pode declarar o trio no
+  `backup.env` (caminho mínimo, sem renomear container nem mover dado).
+- **ACHADO ABERTO 3 (média) — a cópia operacional `/opt/tre/repo` é reescrita por qualquer card.** Durante
+  a rodada do `TRE-W1-E06-T01`, um `tar` de outro worker reverteu o driver recém-instalado (sha
+  `d29c9c97…` → `9f24572a…`). Quem sincroniza por último manda: a cópia operacional não é reproduzível.
+- **Usuário do timer não exercitado de ponta a ponta:** o ciclo foi rodado como `root` (acesso do agente,
+  decisão 5); provou-se por partes que `tre-deploy` escreve em `/opt/tre/backup` (`test -w`) e usa a
+  credencial do bucket (`rclone lsl --config /etc/tre/rclone.conf`). Rodar o ciclo inteiro como
+  `tre-deploy` requer um canal de privilégio que o harness bloqueia hoje.
 - **Destino externo (Object Storage) — ATIVO desde 29/09/2026.** Storage: Object Storage European
   Union, 250 GB (endpoint `https://eu2.contabostorage.com`); bucket `tre-backup`; credenciais em
   `/etc/tre/rclone.conf` (600, dono `tre-deploy`); `TRE_BACKUP_EXTERNO=contabo:tre-backup` em
@@ -165,3 +211,8 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
 - **`psql -c` com vários comandos sem `;` é erro de sintaxe** — não é uma lista de consultas.
 - **`git status` não mostra arquivo ignorado**: silêncio ali não é prova de versionamento
   (`git ls-files --error-unmatch <arquivo>` é a prova).
+- **Modo de arquivo não sobrevive a `tar`/`git` sozinho.** O bit executável vive no **git** (100755 ×
+  100644), não no sistema operacional: sincronizar por `tar`/checkout um script que está 100644 no git
+  devolve 644 na cópia operacional e o `ExecStart` do systemd morre com `203/EXEC` — **mesmo que a máquina
+  tenha rodado o timer ontem**. Antes de publicar um script por timer, conferir
+  `git ls-files -s <arquivo>` e, na cópia operacional, `install -m 755`.

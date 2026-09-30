@@ -40,3 +40,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **W0 não está concluído:** faltam `TRE-W0-E01-T03` (backup/rollback testável — bloqueado até o
   provisionamento da VPS Contabo) e os quatro cards de JEV (`TRE-W0-E04-*`).
 - Nada foi aplicado em produção; nenhuma DDL nasce em produção (ADR-005).
+
+## [W1 — PostgreSQL e Base de Dados] — 30/09/2026
+
+### Added
+
+- **Modo "ambiente real" no driver de teste de backup/restore** (`TRE-W1-E06-T01`) —
+  `scripts/backup/teste-backup-restore.sh --ambiente dev|homolog`: faz o backup do banco do **ambiente**
+  (não de um container descartável), confere `sha256` do dump contra o manifesto, exige
+  `externo: enviado` no manifesto e confere que o container do ambiente não foi tocado. O modo
+  descartável (padrão) segue intacto e continua `TESTE_OK`.
+
+### Notas de estado
+
+- **Ciclo de backup/restore provado contra o dev** (`TRE-W1-E06-T01`): artefato
+  `tre_dev_20260930T193704Z` (12 tabelas, 30 índices, contagens batendo linha a linha), enviado ao bucket
+  `tre-backup` com manifesto `externo: enviado`; negativos reprovados (dump truncado, dump de 0 byte, dump
+  de outro banco, contagem mutada, destino externo inexistente).
+- **A rotina automática de backup NÃO está funcionando** — dois achados abertos medidos no mesmo card:
+  o unit `tre-backup.service` falha com `203/EXEC` (scripts de `scripts/backup/` estão `100644` no git) e,
+  mesmo executando, `backup-tre.sh todos` **pula os três ambientes** (procura `pg-dev`, o dev real é
+  `pg-sales-dev`) e sai `BACKUP_OK` sem gerar artefato. Detalhes em
+  `docs/runbooks/backup-restore-rollback.md` §8.
