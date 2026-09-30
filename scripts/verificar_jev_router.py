@@ -273,6 +273,68 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
 
     itens.checar("criterio 3: confianca ausente nao e inferida (abstem)", _nao_infere_confianca)
 
+    # ------------- criterio 3b: lane DECLARADA (classificador aposentado)
+    # Aposentadoria do classificador de card (TRE-W0-E04-T09, 30/09/2026): a lane deixou
+    # de ser estimada por casamento de palavras. Quem declara a lane e a POLITICA
+    # (`lane_por_codigo_de_acao`); sem declaracao, vale a regra homologada — ausencia de
+    # resposta e abstinencia, com a lane conservadora registrada.
+    def _texto_de_risco_nao_decide_lane():
+        resultado = roteador.decidir(
+            {"card_id": "t_pol", "acao": "deploy em producao com credencial de infraestrutura",
+             "descricao": "deploy em producao, credencial, arquitetura, incidente",
+             "acao_codigo": "ajuste_de_texto", "status": "ready"}, politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        return _texto(recibo["lane"] != "critical" and recibo["lane"] == politica["_lane_conservadora"]
+                      and d["pode_executar"] is False and recibo["confidence"] is None,
+                      f"lane={recibo['lane']} esperada={politica['_lane_conservadora']} "
+                      f"decidido={d['decidido']} outcome={recibo['outcome']}")
+
+    itens.checar("criterio 3b: palavra de risco no texto NAO decide lane (nao vira critical); "
+                 "sem lane declarada, abstem na conservadora", _texto_de_risco_nao_decide_lane)
+
+    def _classificador_fora_do_caminho():
+        resultado = roteador.decidir(
+            {"card_id": "t_apos", "acao": "ajuste de texto, formatacao, renomeacao",
+             "descricao": "ajuste de texto, formatacao, renomeacao, consulta simples",
+             "acao_codigo": "ajuste_de_texto", "status": "ready"}, politica=politica)
+        recibo = resultado["recibo"]
+        return _texto(recibo["lane"] != "small" and recibo["lane"] == politica["_lane_conservadora"],
+                      f"lane={recibo['lane']} (o classificador diria a lane pequena)")
+
+    itens.checar("criterio 3b: exemplos da lane pequena nao decidem mais a lane "
+                 "(classificador fora do caminho)", _classificador_fora_do_caminho)
+
+    def _lane_declarada_na_politica_muda_a_decisao():
+        # Invariante do D07/D08: nada de lane literal no roteador. A lane declarada para o
+        # codigo canonico TEM de vir do YAML — trocar o YAML troca a decisao.
+        vistas = []
+        for lane in ("small", "medium", "high"):
+            copia = dict(politica)
+            copia["lane_por_codigo_de_acao"] = {"ajuste_de_texto": lane}
+            resultado = roteador.decidir(
+                {"card_id": "t_yaml", "acao": "tarefa sem proposta de lane",
+                 "descricao": "nada que case com exemplo algum",
+                 "acao_codigo": "ajuste_de_texto", "status": "ready"}, politica=copia)
+            vistas.append((lane, resultado["recibo"]["lane"], resultado["decisao"]["decidido"]))
+        ok = all(declarada == registrada and decidido == "executar"
+                 for declarada, registrada, decidido in vistas)
+        return _texto(ok, f"declarada -> registrada/decidido: {vistas}")
+
+    itens.checar("criterio 3b: lane_por_codigo_de_acao do YAML decide (trocar o YAML troca a lane; "
+                 "nenhuma lane literal no roteador)", _lane_declarada_na_politica_muda_a_decisao)
+
+    def _sem_declaracao_abstem_com_conservadora():
+        resultado = roteador.decidir(
+            {"card_id": "t_sem_lane", "acao": "tarefa sem lane declarada em lugar nenhum",
+             "acao_codigo": "ajuste_de_texto", "status": "ready"}, politica=politica)
+        d, recibo = resultado["decisao"], resultado["recibo"]
+        return _texto(d["decidido"] == "abster_e_escalar" and d["pode_executar"] is False
+                      and recibo["lane"] == politica["_lane_conservadora"],
+                      f"decidido={d['decidido']} lane={recibo['lane']}")
+
+    itens.checar("criterio 3b: sem lane declarada a decisao abstem e registra a conservadora "
+                 "(ausencia de resposta e abstinencia)", _sem_declaracao_abstem_com_conservadora)
+
     def _borda_abster():
         resultado = roteador.decidir(
             {"card_id": "t_borda", "acao": "tarefa de exemplo", "acao_codigo": "ajuste_de_texto",
@@ -701,7 +763,9 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
         return _texto(not problemas, "; ".join(problemas) if problemas else
                       "exemplos do proprio YAML classificam na lane certa; sem evidencia, abstem")
 
-    itens.checar("classificador de card usa os `exemplos` do YAML e abstem sem evidencia",
+    itens.checar("classificador de card: LINHA DE BASE HISTORICA (aposentado em 30/09/2026; "
+                 "nenhum caminho de decisao o chama) — usa os `exemplos` do YAML e abstem "
+                 "sem evidencia",
                  _classificador_de_card)
 
     # ------------------------------------------------------------------- CLI

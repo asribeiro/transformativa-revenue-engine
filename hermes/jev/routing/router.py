@@ -114,14 +114,20 @@ except ModuleNotFoundError:  # pragma: no cover - depende do ambiente
 # executar), o nome do campo que identifica a politica e a rede de seguranca para
 # o caso em que NENHUMA politica pode ser lida.
 # ---------------------------------------------------------------------------
-ROUTER_VERSION = "jev-router-v1.1"
+ROUTER_VERSION = "jev-router-v1.2"
+# v1.2 (30/09/2026): `lane_por_codigo_de_acao` implementado — a lane e DECLARADA pela
+# politica, e o classificador de card sai do caminho de decisao (aposentado, card
+# TRE-W0-E04-T09). Declarar suporte NAO e entrar em vigor: a versao em vigor e a que o
+# roteador carrega por padrao (`CAMINHO_POLITICA_PADRAO`), e o portao so abre depois da
+# homologacao (mesma sequencia da v1.1).
 
 # Declaracao de compatibilidade: o roteador so executa politicas cujo schema ele
 # conhece. Versao fora deste conjunto = recusa (nao ha "tentar mesmo assim").
 # v1.1 entrou aqui em 30/09/2026 (card TRE-W0-E04-T08), DEPOIS de o piso de lane por
 # ambiente estar implementado: abrir o portao antes faria o roteador ignorar em
 # silencio uma regra declarada — a classe do defeito D08.
-VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1"})
+VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1",
+                                           "jev-policy-v1.2"})
 
 # Ultimo recurso, usado SOMENTE quando o arquivo de politica nao pode ser lido
 # (ausente/ilegivel): sem politica nao ha de onde ler a lane conservadora. A
@@ -402,7 +408,13 @@ DIRECOES_DE_PISO_IMPLEMENTADAS = frozenset({"piso_so_eleva"})
 # entre a declaracao e ESTE caminho). A v1.0 (`policy_v1.yaml`) fica preservada para
 # auditoria: continua executavel pelo roteador quando apontada, e nao recebe mudanca.
 # ---------------------------------------------------------------------------
-CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_1.yaml"
+CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_2.yaml"
+# Portao de versao ABERTO em 30/09/2026: a jev-policy-v1.2 foi homologada pelo Anderson
+# ("homologado, de acordo") e este roteador implementa a regra que ela declara
+# (`lane_por_codigo_de_acao`). A v1.1 fica preservada para auditoria e continua executavel
+# (o recibo grava `policy_version`), mas nao e mais a versao que este roteador carrega
+# por padrao. Abrir o portao antes do executor existir faria o roteador ignorar em
+# silencio uma regra declarada — a classe do defeito D08.
 CAMINHO_POLITICA_ANTERIOR = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"
 DIRETORIO_POLITICAS_DE_PAPEL = _RAIZ_DO_REPO / "hermes/policies"
 DIRETORIO_BOARDS_PADRAO = pathlib.Path(os.environ.get("JEV_BOARDS_DIR", "/opt/data/kanban/boards"))
@@ -588,6 +600,34 @@ def _validar_regra_de_piso(dado: dict, motivos: list) -> None:
         motivos.append(f"valores de ambiente declarados em mais de um ramo: {ambiguos}")
 
 
+def _validar_lane_por_codigo_de_acao(dado: dict, motivos: list) -> None:
+    """Confere a FORMA do `lane_por_codigo_de_acao` declarado pela politica (v1.2).
+
+    Mesma disciplina do piso por ambiente: regra declarada que o roteador nao sabe
+    executar e RECUSADA. Aqui, alem disso, o mapa tem de ser UTILIZAVEL — chave que nao
+    e codigo comum do roteador (typo) faria o card abstemer em silencio, e lane
+    inexistente faria a decisao apontar para uma lane que nao existe. Os dois sao
+    recusa: silencio em decisao e o defeito, nao a cortesia.
+    """
+    mapa = dado.get("lane_por_codigo_de_acao")
+    if mapa is None:
+        return  # ausencia declarada nao e erro: sem mapa, a decisao abstem (fail-closed)
+    if not isinstance(mapa, dict) or not mapa:
+        motivos.append("`lane_por_codigo_de_acao` declarado sem ser mapa de codigo->lane "
+                       "(ou vazio): ou declara codigo por codigo, ou nao declara")
+        return
+    lanes = list((dado.get("lanes") or {}).keys())
+    desconhecidos = sorted(c for c in mapa if str(c) not in CODIGOS_DE_ACAO_COMUNS)
+    if desconhecidos:
+        motivos.append(f"`lane_por_codigo_de_acao` declara codigo que o roteador nao "
+                       f"reconhece como comum: {desconhecidos} "
+                       f"(comuns: {sorted(CODIGOS_DE_ACAO_COMUNS)})")
+    invalidas = sorted({str(l) for l in mapa.values() if str(l) not in lanes})
+    if invalidas:
+        motivos.append(f"`lane_por_codigo_de_acao` aponta lane nao declarada: {invalidas} "
+                       f"(lanes declaradas: {lanes})")
+
+
 def _papeis_do_diretorio(diretorio=None) -> dict:
     """Le as politicas de papel (`hermes/policies/*.yaml`) e indexa por `role:`."""
     diretorio = pathlib.Path(diretorio or DIRETORIO_POLITICAS_DE_PAPEL)
@@ -754,6 +794,12 @@ def carregar_politica(caminho=None, diretorio_de_papeis=None) -> dict:
     # tem de saber executa-la. E aqui que "declarado" deixa de poder divergir de
     # "executado" em silencio (classe do defeito D08).
     _validar_regra_de_piso(dado, motivos)
+
+    # Lane declarada por codigo canonico (v1.2): se a politica declara o mapa, este
+    # roteador tem de saber le-lo — e o mapa tem de ser utilizavel. Chave desconhecida
+    # (typo) abstem em silencio e lane inexistente faz a decisao apontar para uma lane
+    # que nao existe: os dois sao recusa, nao aviso.
+    _validar_lane_por_codigo_de_acao(dado, motivos)
 
     # Limiares coerentes: faixa invertida nao pode virar decisao. (Os valores vem
     # do YAML; aqui so se confere que a politica nao esta se contradizendo.)
@@ -1424,8 +1470,29 @@ def classificar_tarefa(tarefa: dict) -> dict:
             "origem": "entrada explicita"}
 
 
+def lane_declarada_para_o_codigo(politica: dict, tarefa: dict) -> str:
+    """Lane DECLARADA na politica para o codigo canonico da acao (se ela declarar).
+
+    Fonte da lane depois da aposentadoria do classificador de card (TRE-W0-E04-T09):
+    quem declara a lane e a POLITICA, nunca o roteador — lane literal no roteador e
+    exatamente o que o D07/D08 proibem ("trocar a lane no YAML tem de mudar a decisao").
+    Sem declaracao devolve "" e a decisao abstem a jusante (ausencia de resposta e
+    abstinencia, nunca permissao silenciosa).
+    """
+    mapa = (politica or {}).get("lane_por_codigo_de_acao") or {}
+    codigo = str(tarefa.get(CAMPO_DO_CODIGO_DE_ACAO) or "").strip()
+    if not codigo or not isinstance(mapa, dict):
+        return ""
+    return str(mapa.get(codigo) or "").strip()
+
+
 def classificar_card(card: dict, politica: dict) -> dict:
     """Classificador deterministico de card: casa o texto com `lanes.*.exemplos`.
+
+    HISTORICO — NAO decide mais nada (aposentado em 30/09/2026, TRE-W0-E04-T09). Fica
+    versionado como LINHA DE BASE do benchmark (`scripts/benchmark_roteamento.py`), para
+    a medicao que justificou a aposentadoria continuar reproduzivel: 0,1875 no modo
+    isolado contra 0,375 da constante estrutural. Nenhum caminho de decisao o chama.
 
     Sem nenhuma evidencia o JEV nao chuta: devolve a confianca base, que fica
     abaixo do limiar de abstencao da politica e leva a abstencao/escalacao.
@@ -1727,15 +1794,49 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
 
     # ---- Camada 4: JEV ------------------------------------------------------
     classificacao = classificar_tarefa(tarefa)
-    if classificacao.get("lane_proposta") in (None, "") and tarefa.get("descricao") is not None:
-        classificacao = classificar_card(tarefa, politica)
+    # ANCORA:CLASSIFICADOR_APOSENTADO
+    # Classificador de card APOSENTADO (decisao do dono, Anderson Ribeiro, 30/09/2026 —
+    # card TRE-W0-E04-T09), sustentado pela medicao do T03-D01: 0,1875 isolado contra
+    # 0,375 da constante estrutural. A lane deixou de ser estimada por casamento de
+    # palavras. A fonte da lane passa a ser DECLARADA, nesta ordem:
+    #   1. proposta explicita de quem chama (com confianca — passa pelos limiares);
+    #   2. lane declarada na PROPRIA POLITICA para o codigo canonico da acao
+    #      (`lane_por_codigo_de_acao`), quando ela declarar;
+    #   3. nada declarado -> abstencao (ausencia de resposta e abstinencia, nunca
+    #      permissao: a politica homologada diz isso com todas as letras).
+    # A falha fechada do D07 (acao sem codigo canonico) NAO depende disto: ela decide
+    # ANTES desta camada.
+    if classificacao.get("lane_proposta") in (None, ""):
+        classificacao = {
+            "lane_proposta": None,
+            "confianca": None,
+            "origem": "sem estimador de lane (classificador aposentado)",
+            "evidencias": ["nenhum estimador de lane decide; sem proposta declarada, "
+                           "a ausencia de resposta abstem"],
+        }
+        lane_do_codigo = lane_declarada_para_o_codigo(politica, tarefa)
+        if lane_do_codigo:
+            classificacao.update({
+                "lane_proposta": lane_do_codigo,
+                "declarada_na_politica": True,
+                "origem": f"politica: lane_por_codigo_de_acao ({lane_do_codigo})",
+                "evidencias": ["lane declarada na politica para o codigo canonico da acao"],
+            })
     plano["evidencias"] = list(classificacao.get("evidencias") or [])
     plano["confidence"] = classificacao.get("confianca")
     plano["demais"].update({"origem_da_classificacao": classificacao.get("origem"),
                             "lane_proposta": classificacao.get("lane_proposta")})
 
-    lane_final, motivo = aplicar_limiares(
-        politica, classificacao.get("lane_proposta"), classificacao.get("confianca"))
+    if classificacao.get("declarada_na_politica") and classificacao.get("lane_proposta"):
+        # Lane DECLARADA pela politica (e nao estimada): os limiares existem para julgar
+        # ESTIMATIVA. Aplicar limiar a valor declarado seria inventar uma confianca que
+        # nao existe — e o recibo passaria a mentir sobre a origem da lane.
+        lane_final = classificacao["lane_proposta"]
+        motivo = (f"lane {lane_final} declarada na politica para o codigo canonico "
+                  "da acao; nao ha estimativa a julgar pelos limiares")
+    else:
+        lane_final, motivo = aplicar_limiares(
+            politica, classificacao.get("lane_proposta"), classificacao.get("confianca"))
 
     if lane_final is None:
         plano["decidido"] = "abster_e_escalar"
@@ -1911,12 +2012,15 @@ def carregar_card_do_board(card_id: str, slug=None, caminho_do_banco=None) -> di
 
 
 def tarefa_a_partir_do_card(card: dict, politica: dict) -> dict:
-    """Tarefa sintetica a partir do card: lane/confianca pelo classificador do JEV."""
-    classificacao = classificar_card(card, politica)
+    """Tarefa sintetica a partir do card — SEM estimador de lane.
+
+    O classificador de card foi APOSENTADO (TRE-W0-E04-T09, 30/09/2026): a lane nao e
+    proposta aqui. `decidir` a resolve pela politica (lane conservadora) e nomeia a
+    origem no rastro e no recibo. `classificar_card` segue versionado APENAS como linha
+    de base historica do benchmark — ninguem decide por ele.
+    """
     tarefa = dict(card)
-    tarefa["acao"] = card.get("card_id") and card.get("titulo") or card.get("titulo")
-    tarefa["lane_proposta"] = classificacao.get("lane_proposta")
-    tarefa["confianca"] = classificacao.get("confianca")
+    tarefa["acao"] = card.get("titulo") or ""
     return tarefa
 
 

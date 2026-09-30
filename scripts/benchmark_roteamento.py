@@ -27,10 +27,17 @@ CONVENCAO DE ENTRADA (o corpus nao carrega lane_proposta nem confianca: quem
 fornece isso e o chamador, e a convencao tem de estar declarada para o numero ser
 auditavel). Duas leituras sao medidas, e as duas saem no resultado:
 
-  * modo `classificador` — o chamador NAO entrega proposta: o roteador classifica o
-    caso sozinho (`classificar_card`, que casa o texto com `lanes.*.exemplos` do
-    proprio YAML). Mede a qualidade do classificador do roteador contra o rotulo
-    humano. NAO e circular.
+  * modo `classificador` — LINHA DE BASE HISTORICA (o classificador foi aposentado em
+    30/09/2026, card TRE-W0-E04-T09): o benchmark chama o estimador aposentado
+    (`classificar_card`, que casa o texto com `lanes.*.exemplos` do proprio YAML) e
+    injeta a proposta dele na entrada. Mede a qualidade do estimador contra o rotulo
+    humano — e mantem reproduzivel a medicao que justificou a aposentadoria. NAO e
+    circular. NAO e o que o roteador decide hoje.
+
+  * modo `politica` — o caminho REAL de hoje: o chamador NAO entrega proposta e nenhum
+    estimador entra; a lane vem declarada na politica para o codigo canonico da acao
+    (`lane_por_codigo_de_acao`), e codigo sem lane declarada abstem. E o modo que mede a
+    decisao em vigor.
 
   * modo `proposta-homologada` — o chamador entrega `lane_proposta` (a proposta do
     corpus) com confianca 0,95. Mede se a maquina de precedencia/limiares PRESERVA
@@ -124,6 +131,7 @@ import json
 import pathlib
 import statistics
 import sys
+import tempfile
 import time
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
@@ -161,7 +169,7 @@ PESO_CUSTO_RELATIVO = {"baixo": 1, "medio": 2, "alto": 3}
 
 REPETICOES_DE_LATENCIA = 15
 
-MODOS = ("classificador", "proposta-homologada")
+MODOS = ("classificador", "politica", "proposta-homologada")
 
 
 # ---------------------------------------------------------------------------
@@ -205,11 +213,11 @@ def tarefa_do_caso(caso: dict, modo: str, confianca: float = CONFIANCA_DECLARADA
                    sem_descricao: bool = False) -> dict:
     """Caso do corpus -> entrada do roteador. Convencao declarada no cabecalho.
 
-    `sem_descricao=True` monta a MESMA entrada sem declarar descricao: com isso o
-    caminho do classificador automatico nao roda (o proprio roteador so o aciona quando
-    ha descricao) e a lane cai na abstencao + lane conservadora da politica. Essa e a
-    CONSTANTE ESTRUTURAL contra a qual o classificador e medido — nao e um modo de
-    decisao, e o piso de comparacao.
+    `sem_descricao=True` monta a MESMA entrada sem declarar descricao e SEM injetar
+    proposta — e a CONSTANTE ESTRUTURAL: nenhum estimador entra, a lane cai na abstencao +
+    lane conservadora da politica. Nao e um modo de decisao; e o piso de comparacao.
+    (Depois da aposentadoria do classificador — TRE-W0-E04-T09 — a injecao da proposta
+    historica acontece em `roda_caso`, para o modo `classificador`.)
     """
     sinais = caso.get("sinais") or {}
     tarefa = {
@@ -240,6 +248,18 @@ def roda_caso(modulo, politica: dict, caso: dict, modo: str,
               confianca: float = CONFIANCA_DECLARADA,
               sem_descricao: bool = False) -> dict:
     tarefa = tarefa_do_caso(caso, modo, confianca, sem_descricao=sem_descricao)
+    # ANCORA:CLASSIFICADOR_APOSENTADO (30/09/2026, card TRE-W0-E04-T09)
+    # O modo `classificador` mede a LINHA DE BASE HISTORICA. O roteador NAO classifica mais
+    # (o classificador foi aposentado), entao o proprio benchmark chama o estimador
+    # aposentado e injeta a proposta dele na entrada: a medicao que justificou a aposentadoria
+    # (0,1875 isolado contra 0,375 da constante estrutural) continua reproduzivel.
+    # `sem_descricao=True` (a constante estrutural) NAO injeta nada: e o piso de comparacao,
+    # o caso em que nenhum estimador entra — abstencao + lane conservadora.
+    if modo == "classificador" and not sem_descricao:
+        historico = modulo.classificar_card(
+            {"titulo": caso.get("titulo") or "", "descricao": caso.get("titulo") or ""}, politica)
+        tarefa["lane_proposta"] = historico.get("lane_proposta")
+        tarefa["confianca"] = historico.get("confianca")
     tempos = []
     resultado = None
     for _ in range(max(1, repeticoes)):
@@ -1020,9 +1040,15 @@ def main(argv=None) -> int:
         print("Regra do card: caso nao revisado fica PENDENTE, nunca valido. "
               "O benchmark nao publica metrica sobre rotulo pendente.")
         return 3
-    if politica is None or politica.get("versao") not in VERSOES_SUPORTADAS:
+    # A fonte de verdade das versoes suportadas e o ROTEADOR — o mesmo que vai decidir.
+    # A lista literal `VERSOES_SUPORTADAS` fica como ultimo recurso, para quando o modulo
+    # nao declarar o conjunto: duas listas separadas divergem em silencio (classe do
+    # defeito D08 — regra declarada de um lado, executada de outro).
+    versoes_suportadas = frozenset(getattr(modulo, "VERSOES_DE_POLITICA_SUPORTADAS",
+                                          VERSOES_SUPORTADAS))
+    if politica is None or politica.get("versao") not in versoes_suportadas:
         print(f"RECUSADO (gate de politica): versao {politica.get('versao') if politica else None!r} "
-              f"fora de {sorted(VERSOES_SUPORTADAS)} — medir em modo degradado nao mede o roteador")
+              f"fora de {sorted(versoes_suportadas)} — medir em modo degradado nao mede o roteador")
         return 3
     lim = modulo.limiares(politica)
     confianca_usada = CONFIANCA_DECLARADA if args.confianca is None else float(args.confianca)
@@ -1136,6 +1162,12 @@ def main(argv=None) -> int:
     # nesta propria frente (a rodada do corpus v1.4 colidiria com o arquivo do v1.3).
     if args.saida:
         destino = pathlib.Path(args.saida)
+    elif args.autoteste:
+        # Rodada de AUTOTESTE nao publica resultado: o arquivo versionado e evidencia do
+        # que foi medido numa rodada deliberada, e sobrescreve-lo numa verificacao sujaria
+        # a linha de base (aconteceu em 30/09/2026: o autoteste do benchmark reescreveu o
+        # resultado da v1.1). Autoteste sem `--saida` grava em diretorio temporario.
+        destino = pathlib.Path(tempfile.mkdtemp(prefix="jev-bench-autoteste-")) / "resultado.json"
     else:
         data = gerado_em[:10]
         destino = (RAIZ / "hermes/jev/benchmarks"

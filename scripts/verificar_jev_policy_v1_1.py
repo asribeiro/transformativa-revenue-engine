@@ -100,6 +100,12 @@ REGISTRO_DE_APROVACOES = RAIZ / "docs/operations/registro-de-aprovacoes.md"
 
 VERSAO_V10 = "jev-policy-v1.0"
 VERSAO_V11 = "jev-policy-v1.1"
+# ANCORA:ROTEADOR_DA_VERSAO_HISTORICA (30/09/2026) — o roteador que POS a v1.1 na rua.
+# A partir do jev-router-v1.2 o codigo passou a declarar suporte a v1.2 (aposentadoria do
+# classificador de card, card TRE-W0-E04-T09), e a igualdade "roteador declarado ==
+# ROUTER_VERSION" virou fato datado: o que se garante agora e que a v1.1 continue
+# EXECUTAVEL pelo roteador no ar.
+ROTEADOR_DA_V11 = "jev-router-v1.1"
 
 # Ramo da regra por ambiente -> (lane minima esperada, aprovacao humana esperada).
 RAMOS_ESPERADOS = (
@@ -251,13 +257,38 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str, mod
               str(vig.get("versao") or "") == VERSAO_V11, f"versao={vig.get('versao')!r}")
     itens.add("v1.1: `versao_em_vigor` declara desde quando esta em vigor",
               bool(str(vig.get("desde") or "").strip()), f"desde={vig.get('desde')!r}")
-    itens.add("v1.1: `versao_em_vigor.caminho` e o caminho que o ROTEADOR carrega por padrao (medido no codigo)",
-              bool(vig.get("caminho"))
-              and (RAIZ / str(vig.get("caminho"))).resolve() == pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve(),
-              f"declarado={vig.get('caminho')!r} roteador={modulo.CAMINHO_POLITICA_PADRAO}")
-    itens.add("v1.1: `versao_em_vigor.roteador` e o roteador REAL (medido no codigo)",
-              str(vig.get("roteador") or "") == modulo.ROUTER_VERSION,
-              f"declarado={vig.get('roteador')!r} roteador real={modulo.ROUTER_VERSION!r}")
+    # ANCORA:VERSAO_SUCESSORA (30/09/2026) — a igualdade "caminho declarado == padrao do
+    # roteador" valia enquanto a v1.1 era a versao em vigor. Com a v1.2 em vigor (card
+    # TRE-W0-E04-T09) ela virou fato datado. A garantia preservada e a mesma de antes —
+    # nem "em vigor" sem estar, nem sucessao silenciosa: ou a v1.1 e a padrao, ou a padrao
+    # e uma versao que DECLARA `substitui: jev-policy-v1.1` (e entao a v1.1 fica preservada
+    # para auditoria, ainda executavel porque o recibo grava `policy_version`).
+    def _vigencia_ou_sucessora():
+        caminho = str(vig.get("caminho") or "")
+        if not caminho or not (RAIZ / caminho).is_file():
+            return False, f"caminho declarado inexistente: {caminho!r}"
+        # O caminho declarado tem de ser o arquivo DESTA versao: apontar a v1.1 para o
+        # arquivo da v1.0 seria dizer "em vigor" apontando para a versao errada.
+        if (RAIZ / caminho).resolve() != YAML_V11.resolve():
+            return False, f"caminho declarado nao e o arquivo da propria v1.1: {caminho!r}"
+        padrao = pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO)
+        if padrao.resolve() == (RAIZ / caminho).resolve():
+            return True, f"a v1.1 e a versao padrao do roteador ({padrao.name})"
+        sucessora = yaml.safe_load(padrao.read_text(encoding="utf-8")) or {}
+        return (sucessora.get("substitui") == VERSAO_V11), (
+            f"padrao do roteador={padrao.name} declara substitui={sucessora.get('substitui')!r} "
+            f"(v1.1 preservada para auditoria)")
+
+    itens.checar("v1.1: o caminho declarado em `versao_em_vigor` e o padrao do roteador — ou uma versao "
+                 "SUCESSORA que declara substitui-la (medido no codigo)", _vigencia_ou_sucessora)
+    # ANCORA:ROTEADOR_DA_VERSAO_HISTORICA — ver a nota da constante `ROTEADOR_DA_V11`.
+    # O que importa nao e o numero do roteador de hoje, e sim (a) o registro historico de
+    # quem pos a v1.1 na rua e (b) que o roteador ATUAL continue executando a v1.1.
+    itens.add("v1.1: `versao_em_vigor.roteador` nomeia quem pos a v1.1 na rua, e o roteador atual ainda a executa",
+              str(vig.get("roteador") or "") == ROTEADOR_DA_V11
+              and VERSAO_V11 in set(modulo.VERSOES_DE_POLITICA_SUPORTADAS),
+              f"declarado={vig.get('roteador')!r} roteador atual={modulo.ROUTER_VERSION!r} "
+              f"suportadas={sorted(modulo.VERSOES_DE_POLITICA_SUPORTADAS)}")
     preservada = vig.get("preservada_para_auditoria") or {}
     itens.add("v1.1: `versao_em_vigor` diz qual versao fica preservada para auditoria",
               str(preservada.get("versao") or "") == VERSAO_V10 and bool(preservada.get("caminho")),
@@ -579,15 +610,32 @@ def itens_de_comportamento(itens: Itens, dado: dict, modulo) -> None:
                   "nao implementa" in motivos and "nao declara o resultado" not in motivos,
                   f"{motivos[:150]}")
 
-    # B3c: a versao declarada como EM VIGOR e a que o roteador carrega POR PADRAO. Uma
+    # B3c/B3d: a versao declarada como EM VIGOR e a que o roteador carrega POR PADRAO. Uma
     # politica que se diz em vigor enquanto o roteador carrega a antiga nao esta em vigor.
-    itens.checar("B3c comportamento: `carregar_politica()` sem argumento carrega a versao em vigor",
-                 lambda: ((modulo.carregar_politica().get("versao") == VERSAO_V11
-                           and (dado.get("versao_em_vigor") or {}).get("versao") == VERSAO_V11),
-                          f"padrao carregado={modulo.carregar_politica().get('versao')!r} "
-                          f"declarado no YAML={(dado.get('versao_em_vigor') or {}).get('versao')!r}"))
-    itens.checar("B3d comportamento: o caminho padrao do roteador e o arquivo da versao em vigor",
-                 lambda: (pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve() == YAML_V11.resolve(),
+    # ANCORA:VERSAO_SUCESSORA (30/09/2026) — com a v1.2 homologada e em vigor (card
+    # TRE-W0-E04-T09), "a versao padrao == a v1.1" virou fato datado. O invariante que
+    # continua valendo — e que era o proposito do item — e mais forte e independe de qual
+    # versao venceu: o arquivo que o roteador carrega POR PADRAO tem de se declarar a SI
+    # MESMO como a versao em vigor (nada de "em vigor" sem estar, e nada de sucessao
+    # silenciosa: a v1.1 so sai de vigor por uma versao que declara `substitui`).
+    def _padrao_e_a_versao_em_vigor():
+        padrao = pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO)
+        carregada = modulo.carregar_politica()
+        declaracao = yaml.safe_load(padrao.read_text(encoding="utf-8")) or {}
+        em_vigor = (declaracao.get("versao_em_vigor") or {}).get("versao")
+        ok = (carregada.get("versao") == em_vigor
+              and declaracao.get("versao") == em_vigor
+              and str(declaracao.get("estado")) == "em-vigor")
+        return ok, (f"padrao={padrao.name} carregada={carregada.get('versao')!r} "
+                    f"declara_em_vigor={em_vigor!r} estado={declaracao.get('estado')!r}")
+
+    itens.checar("B3c comportamento: o arquivo PADRAO do roteador carrega a versao que ele mesmo "
+                 "declara em vigor (rascunho nunca e o padrao)", _padrao_e_a_versao_em_vigor)
+    itens.checar("B3d comportamento: a v1.1 saiu de vigor para uma versao que DECLARA `substitui: "
+                 "jev-policy-v1.1` (sucessao declarada, nunca silenciosa)",
+                 lambda: (pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO).resolve() == YAML_V11.resolve()
+                          or (yaml.safe_load(pathlib.Path(modulo.CAMINHO_POLITICA_PADRAO)
+                                             .read_text(encoding="utf-8")) or {}).get("substitui") == VERSAO_V11,
                           f"padrao={modulo.CAMINHO_POLITICA_PADRAO}"))
 
     # ---- B4: vocabulario de ambiente bate com o guardrail de DDL ---------
@@ -625,9 +673,13 @@ def itens_de_comportamento(itens: Itens, dado: dict, modulo) -> None:
     execucao = regra.get("execucao") or {}
     roteador_declarado = execucao.get("roteador_que_a_executa")
 
-    itens.add("B5: a execucao declarada e o roteador REAL (quem executa a regra esta no ar)",
-              roteador_declarado == modulo.ROUTER_VERSION,
-              f"declarado={roteador_declarado!r} roteador real={modulo.ROUTER_VERSION!r}")
+    # ANCORA:ROTEADOR_DA_VERSAO_HISTORICA — mesmo motivo do item de `versao_em_vigor.roteador`.
+    # A garantia que continua valendo e a que interessa: a regra declarada SEGUE sendo
+    # executada pelo roteador no ar — e isso e medido por comportamento nos itens abaixo.
+    itens.add("B5: a execucao declarada nomeia quem implementou a regra, e o roteador atual a executa",
+              roteador_declarado == ROTEADOR_DA_V11
+              and VERSAO_V11 in set(modulo.VERSOES_DE_POLITICA_SUPORTADAS),
+              f"declarado={roteador_declarado!r} roteador atual={modulo.ROUTER_VERSION!r}")
 
     def decisao_de(ambiente, lane, acao="aplicar DDL/migration em qualquer ambiente",
                    codigo="migracao_de_esquema", politica=None):
@@ -974,11 +1026,13 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
                                      '    if False:\n'
                                      '        plano["exige_aprovacao_humana"] = True\n'))
     mut_roteador("caminho padrao do roteador revertido para a politica ANTIGA",
-                 lambda c: c.replace('CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_1.yaml"',
+                 lambda c: c.replace('CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_2.yaml"',
                                      'CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"'))
-    mut_roteador("portao de versao fechado de novo para a v1.1",
-                 lambda c: c.replace('VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1"})',
-                                     'VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0"})'))
+    mut_roteador("roteador deixa de aceitar a v1.1 (portao fechado de novo para ela)",
+                 lambda c: c.replace('VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1",\n                                           "jev-policy-v1.2"})',
+                                     'VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.2"})'))
+    mut_roteador("roteador deixa de aceitar a versao EM VIGOR (v1.2 fora do conjunto)",
+                 lambda c: c.replace('"jev-policy-v1.2"})', '})'))
     mut_roteador("roteador deixa de recusar regra de operacao que nao implementa (ignora em silencio)",
                  lambda c: c.replace(
                      '    if operacao not in OPERACOES_COM_PISO_IMPLEMENTADO:\n'
