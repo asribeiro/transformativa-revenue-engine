@@ -13,7 +13,13 @@ Sem `--banco` o verificador NAO toca banco, rede ou producao: le arquivos do rep
 e faz contas. Com `--banco` (TRE-W1-E01-T01) ele ACRESCENTA a conferencia do schema REAL
 do ambiente — so consultas de leitura em `information_schema`/`pg_indexes`, executadas com
 o prefixo informado (ADR-0008: quem roda psql e a VPS do TRE, via `docker exec`):
-  --banco 'docker exec -i pg-sales-dev psql -U sales_ai -d sales_intelligence'
+  --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'
+
+O prefixo NAO leva `-i`: `docker exec -i` faz o cliente Docker herdar e consumir o stdin de
+quem chamou o verificador — se ele foi entregue por `ssh ... 'bash -s'`, e o proprio canal do
+ssh que morre, e o script remoto para em silencio logo depois desta linha (defeito D01/D03).
+Por isso `verificar_banco()` roda o psql com `stdin=subprocess.DEVNULL`: o verificador nunca
+precisa de stdin e fica imune a um prefixo com `-i` por engano.
 """
 from __future__ import annotations
 
@@ -37,8 +43,8 @@ PARSER.add_argument(
     "--banco",
     metavar="'<prefixo psql>'",
     default=None,
-    help="prefixo do comando psql do ambiente (ex.: 'docker exec -i pg-sales-dev psql "
-         "-U sales_ai -d sales_intelligence'). Só consultas de leitura.",
+    help="prefixo do comando psql do ambiente (ex.: 'docker exec pg-sales-dev psql "
+         "-U sales_ai -d sales_intelligence'). Sem `-i`. Só consultas de leitura.",
 )
 ARGS = PARSER.parse_args()
 
@@ -292,7 +298,11 @@ def verificar_banco(comando: str) -> None:
 
     def psql(sql: str) -> list[list[str]]:
         cmd = shlex.split(comando) + ["-A", "-t", "-F", "|", "-c", sql]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        # stdin=DEVNULL e deliberado: o verificador nunca le stdin, e sem isso um prefixo
+        # com `docker exec -i` herda (e consome) o stdin de quem chamou — matando em
+        # silencio um script entregue por `ssh ... 'bash -s'` (defeito D03).
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL)
         if proc.returncode != 0:
             raise RuntimeError(f"exit {proc.returncode}: {proc.stderr.strip()[:300]}")
         return [linha.split("|") for linha in proc.stdout.splitlines() if linha.strip() != ""]
