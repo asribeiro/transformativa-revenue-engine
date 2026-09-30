@@ -37,7 +37,7 @@ LOG_REMOTO="${TRE_PUBLICAR_LOG:-/opt/tre/.publicacoes.log}"
 LOCK_VALIDADE_S=1800
 
 COMMIT=""; REF=""; ACAO="publicar"; ENSAIO=0; PERMITIR_SUJA=0; EXIGIR_MODOS=0; FORCAR_LOCK=0
-MANIFESTO_DIR=""
+MANIFESTO_DIR=""; NORM_DIR=""; NORM_MAPA=""
 
 uso() {
   cat <<'TXT'
@@ -46,7 +46,8 @@ Publicacao versionada da copia operacional do TRE (unico caminho de publicacao).
 Uso:
   deploy/publicar.sh --commit <sha|ref> [opcoes]    publica um commit
   deploy/publicar.sh --conferir [opcoes]            confere a copia contra .publicado
-  deploy/publicar.sh --manifesto <dir>              imprime o manifesto de um diretorio
+  deploy/publicar.sh --manifesto <dir>              (interno) manifesto de um diretorio
+  deploy/publicar.sh --normalizar-modos <dir> <mapa> (interno) aplica o modo do git em <dir>
 
 Opcoes:
   --commit <sha|ref>       commit a publicar (padrao: HEAD)
@@ -76,6 +77,7 @@ while [ $# -gt 0 ]; do
     --card)       CARD="${2:-}"; shift 2;;
     --conferir)   ACAO="conferir"; shift;;
     --manifesto)  ACAO="manifesto"; MANIFESTO_DIR="${2:-}"; shift 2;;
+    --normalizar-modos) ACAO="normalizar-modos"; NORM_DIR="${2:-}"; NORM_MAPA="${3:-}"; shift 3;;
     --ensaio)     ENSAIO=1; shift;;
     --permitir-arvore-suja) PERMITIR_SUJA=1; shift;;
     --exigir-modos) EXIGIR_MODOS=1; shift;;
@@ -107,6 +109,25 @@ if [ "$ACAO" = "manifesto" ]; then
   exit 0
 fi
 
+# Normaliza o modo de uma arvore extraida com o modo EXATO do git (100755 -> 755, 100644 -> 644).
+# O `tar` extrai o modo do arquivo mascarado pelo umask de quem extrai (por isso a copia nascia 775
+# onde o git diz 755). Aqui o mapa vem de `git ls-tree`, entao o modo publicado e o modo do git —
+# em qualquer maquina e com qualquer umask. Uso: --normalizar-modos <dir> <arquivo-do-mapa>
+if [ "$ACAO" = "normalizar-modos" ]; then
+  [ -n "$NORM_DIR" ] && [ -n "$NORM_MAPA" ] || { echo "FALHOU --normalizar-modos exige <dir> <mapa>" >&2; exit 2; }
+  [ -d "$NORM_DIR" ] || { echo "FALHOU diretorio inexistente: $NORM_DIR" >&2; exit 2; }
+  [ -f "$NORM_MAPA" ] || { echo "FALHOU mapa inexistente: $NORM_MAPA" >&2; exit 2; }
+  while IFS=' ' read -r m p; do
+    [ -n "$p" ] || continue
+    case "$m" in
+      100755) chmod 755 "$NORM_DIR/$p" 2>/dev/null || true;;
+      100644) chmod 644 "$NORM_DIR/$p" 2>/dev/null || true;;
+    esac
+  done < "$NORM_MAPA"
+  find "$NORM_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
+  exit 0
+fi
+
 digest_de() { sha256sum | cut -d' ' -f1; }
 
 R() {
@@ -130,6 +151,12 @@ extrair_arvore() { # $1 = sha, $2 = diretorio de trabalho (recebe commit.tar e a
   tar --same-permissions -xf "$2/commit.tar" -C "$2/arvore"
 }
 
+extrair_e_normalizar() { # $1 = sha, $2 = diretorio de trabalho
+  extrair_arvore "$1" "$2"
+  git ls-tree -r "$1" | awk '{print $1" "$4}' > "$2/modos.txt"
+  "$AUTO" --normalizar-modos "$2/arvore" "$2/modos.txt"
+}
+
 # ---------------------------------------------------------------- --conferir (verificacao pos-publicacao)
 # Le o commit registrado em .publicado e compara a copia operacional COM ESSE COMMIT, arquivo a
 # arquivo e modo a modo. E a prova de que a copia nao foi reescrita por fora do caminho unico.
@@ -148,7 +175,7 @@ if [ "$ACAO" = "conferir" ]; then
     echo "                     nao da para conferir; publique um commit que exista aqui." >&2; exit 5; }
   TMPC="$(mktemp -d "${TMPDIR:-/tmp}/conferir.XXXXXX")"
   trap 'rm -rf "$TMPC"' EXIT
-  extrair_arvore "$SHA_REG" "$TMPC"
+  extrair_e_normalizar "$SHA_REG" "$TMPC"
   MAN_ESPERADO="$(manifesto_de "$TMPC/arvore")"
   MAN_ATUAL="$(manifesto_remoto "$DESTINO")"
   echo "== conferencia da copia operacional =="
@@ -226,9 +253,21 @@ fi
 [ "$FALTAS_MODOS" -gt 0 ] && echo "AVISO $FALTAS_MODOS alvo(s) de ExecStart sem bit executavel neste commit (registrado em .publicado)"
 
 # ---------------------------------------------------------------- arvore do commit (local)
+# Guardas do que o caminho suporta, fail-closed: so arquivo comum (sem symlink/submodulo) e sem
+# espaco/tab no nome — o manifesto e o mapa de modos sao texto separado por espaco.
+OUTROS="$(git ls-tree -r "$SHA" | awk '$1 != "100644" && $1 != "100755" {print $1" "$4}' | head -5)"
+[ -z "$OUTROS" ] || { echo "PUBLICACAO_FALHOU o commit $SHA tem entrada que nao e arquivo comum (symlink/submodulo): $OUTROS" >&2; exit 2; }
+if git ls-tree -r --name-only "$SHA" | grep -q '[[:space:]]'; then
+  echo "PUBLICACAO_FALHOU o commit $SHA tem caminho com espaco/tab — nao suportado pelo manifesto" >&2
+  exit 2
+fi
+MAPA="$(git ls-tree -r "$SHA" | awk '{print $1" "$4}')"
+[ -n "$MAPA" ] || { echo "PUBLICACAO_FALHOU o commit $SHA nao tem arquivo nenhum" >&2; exit 2; }
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/publicar.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-extrair_arvore "$SHA" "$TMP"
+# Modo EXATO do git (extrair com tar mascara o modo com o umask/mascara de ACL de quem extrai).
+extrair_e_normalizar "$SHA" "$TMP"
 MAN_LOCAL="$(manifesto_de "$TMP/arvore")"
 DIG_LOCAL="$(printf '%s\n' "$MAN_LOCAL" | digest_de)"
 N_ARQ="$(printf '%s\n' "$MAN_LOCAL" | grep -c . || true)"
@@ -292,8 +331,10 @@ fi
 
 # ---------------------------------------------------------------- transferencia (staging fora do destino)
 STG="/opt/tre/.publicacao-staging"
-R "rm -rf '$STG' && install -d -m 755 '$STG' && tar -xpf - -C '$STG' && chmod -R a+rX '$STG' && chmod u+w '$STG'" \
-  < "$TMP/commit.tar"
+MAPA_REMOTO="/opt/tre/.publicacao-modos"
+R "rm -rf '$STG' && install -d -m 755 '$STG' && tar -xpf - -C '$STG'" < "$TMP/commit.tar"
+R "cat > '$MAPA_REMOTO'" < "$TMP/modos.txt"
+R "bash -s -- --normalizar-modos '$STG' '$MAPA_REMOTO'" < "$AUTO"
 
 MAN_STG="$(manifesto_remoto "$STG")"
 if [ "$MAN_STG" != "$MAN_LOCAL" ]; then
@@ -305,8 +346,11 @@ fi
 echo "transferencia: OK (digest identico na origem e no staging)"
 
 # ---------------------------------------------------------------- troca no destino (espelho do commit)
+# O `--normalizar-modos` depois do rsync e o que garante o modo do git tambem quando o rsync pula um
+# arquivo (mesmo tamanho e mesma data, modo diferente — a checagem rapida dele nao olha modo).
 R "rsync -a --delete --exclude '/.publicado' --exclude '/.publicado.manifest' '$STG/' '$DESTINO/' \
-   && chown -R '$DONO' '$DESTINO' && rm -rf '$STG'"
+   && bash -s -- --normalizar-modos '$DESTINO' '$MAPA_REMOTO' \
+   && chown -R '$DONO' '$DESTINO' && rm -rf '$STG' '$MAPA_REMOTO'" < "$AUTO"
 
 AGORA_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PUBLICADO="$(cat <<TXT
