@@ -231,7 +231,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Suíte do banco medida em dev (`TRE-W1-E05-T01`):** `suite_banco.sh dev` → `SUITE_FALHOU` (exit 1) com
   **uma** reprovação e **um** critério não testável; `--somente-leitura` roda a mesma bateria sem escrever
   no alvo (varredura `--detectar` no lugar do cenário). As etapas de contrato (37 itens), constraints/índices
-  (16 itens), dedup sintético (7 itens) e dedup no ambiente (17 itens) passaram; a etapa de tenant/RLS
+  (16 itens), dedup sintético (7 itens) e dedup no ambiente (21 itens) passaram; a etapa de tenant/RLS
   fechou em `TENANT_RLS_NAO_TESTAVEL` (exit 3) — o critério homologado não é provável contra o contrato
   V1.0 (0 coluna de cliente/tenant, RLS desabilitada nas 12 tabelas, 0 policy, papel `sales_ai` superuser e
   `bypassrls`). Provas de dente: `SUITE_DENTE_OK (14 itens)` e `TENANT_RLS_DENTE_OK`. `prod` recusado
