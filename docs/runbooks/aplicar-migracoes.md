@@ -86,3 +86,16 @@ O Data Contract V1.0 declara o banco de inteligência como `transformativa_ai`; 
 provisionado com banco `sales_intelligence` (container `pg-sales-dev`, usuário `sales_ai`), e os scripts de
 backup já assumem `sales_intelligence` como padrão. O runner aplica no par que está em
 `deploy/environments/dev.env`. Alinhar nome (contrato ou ambiente) é decisão do dono — registrada no card.
+
+## Nomenclatura de banco e schema (decidido por Anderson, 30/09/2026)
+
+- **Nome de exibição:** *Sales Intelligence* — em documentação, telas e conversa.
+- **Identificador técnico:** `sales_intelligence`, em **minúsculo e sem aspas**. Decisão: em
+  Postgres, identificador sem aspas é achatado para minúsculo, então `Sales_Intelligence` sem
+  aspas **é** `sales_intelligence`; criar com aspas (`"Sales_Intelligence"`) obrigaria toda query,
+  conexão, DSN, backup e script futuros a carregar aspas, e quem esquecesse receberia
+  `relation does not exist`. O custo é permanente, a fidelidade é só visual.
+- **Divergência conhecida e a reconciliar:** a migration 0001 registra que, nos ambientes de
+  operação, a base é `transformativa_ai` com schema `sales_intelligence`, enquanto no ambiente de
+  desenvolvimento o banco se chama `sales_intelligence`. Não é defeito desta entrega; é
+  nomenclatura a unificar antes de promover qualquer ambiente (card próprio).
