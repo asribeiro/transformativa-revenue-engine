@@ -67,6 +67,12 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
   no container por `docker cp`; ambiente dev reparado pelo próprio plano de rollback (drop + reaplicação).
+- **Verificador: exemplo de `--banco` prescrevia o padrão proibido** (`TRE-W1-E01-T01-D03`, defeito medido
+  na verificação independente do D01) — o help/docstring exemplificava `--banco 'docker exec -i …'`: a
+  mesma forma que consome o stdin de quem orquestra por `ssh … 'bash -s'` e mata o script remoto em
+  silêncio (sem erro visível e deixando container descartável órfão). Corrigido: exemplos passam a
+  `docker exec <container> psql …` (sem `-i`) e `verificar_banco()` roda o psql com
+  `stdin=subprocess.DEVNULL`, ficando imune a qualquer prefixo com `-i`.
 
 ### Notas de estado
 
