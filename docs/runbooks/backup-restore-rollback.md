@@ -209,6 +209,12 @@ Remedição de 20:13:36Z, na VPS `vmi3619453`:
 seria exatamente o padrão que causou o revert. O que se prova aqui é conteúdo e modo idênticos ao
 repositório + os dois critérios do card medidos com horário.
 
+**Republicação idempotente medida às 20:13:40Z:** o mesmo card `t_091cfea9` publicou de novo o mesmo commit
+`f1f1cb6b…` com `digest_antes = digest = e4e1f05d…` (nada mudou) e os modos **continuaram `755`** — a
+publicação versionada não só preserva o modo como é idempotente. Conferido depois dela: `test -x` exit 0,
+`sha256` de `backup-tre.sh` = `1a430637…` (idêntico ao repositório) e `Result=success ExecMainStatus=0`
+como **última** execução do serviço.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
 - **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
