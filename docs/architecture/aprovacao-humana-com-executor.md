@@ -155,5 +155,12 @@ recibo.
     independente do `tester` antes de valer;
   - nada aqui afrouxa o fail-closed: sem aprovacao (individual ou de onda) valida, o gate
     escala exatamente como hoje.
-- Pendente de implementacao: a onda como entrada do registro (lista + hash por card) e a
-  suite que reprova card de onda cujo escopo toque ambiente vivo, credencial ou dado.
+- **IMPLEMENTADO em 30/09/2026** (commit `9c3a84e`, empurrado em `develop`): a onda e entrada do
+  registro declarado (`ondas:` em `hermes/jev/aprovacoes-humanas.yaml`), com regra explicita —
+  `ambiente_alvo` de desenvolvimento, `sinais.producao=false`, `sinais.credencial=false` e nenhum
+  dominio de credencial/dado de cliente. O gate passou a entregar os **sinais** da declaracao a
+  camada de aprovacao; o **hash do texto e fixado no momento da execucao** e gravado no recibo
+  (`override.aprovacao_humana`), de modo que mudanca de texto posterior apareca na auditoria.
+  Dupla entrada no `registro-de-aprovacoes.md` (id da onda + aprovador). Provado nos cards
+  `t_2cc57d80` e `t_eddd00ce`, que estavam retidos pelo gate e passaram a executar.
+  Suites no HEAD: gate **30 itens**, aprovacao **18 itens**, ambas PASS.
