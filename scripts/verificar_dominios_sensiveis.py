@@ -58,6 +58,10 @@ def checar() -> None:
         ("token de API exposto", "credencial"),
         ("dados do cliente", "dado_de_cliente"),
         ("cadastro do titular", "dado_de_cliente"),
+        ("rotacionar as credenciais", "credencial"),
+        ("dados de clientes do cadastro", "dado_de_cliente"),
+        ("publicar nas releases de implantacoes", "producao_ou_release"),
+        ("envio de propostas para leads", "outbound_a_terceiro"),
         ("envio de proposta para o lead", "outbound_a_terceiro"),
         # "versao"/"promover" continuam no vocabulario de release (herdados da tabela
         # original): sao termos de release de verdade e a mudanca nao os afrouxou.
@@ -114,6 +118,11 @@ def autoteste() -> int:
                             {**r.TERMOS_DE_DOMINIO_SENSIVEL,
                              "outbound_a_terceiro": tuple(
                                  r.TERMOS_DE_DOMINIO_SENSIVEL["outbound_a_terceiro"]) + ("time",)}),
+        "tira os PLURAIS do vocabulario (achado da revisao T12)":
+            lambda: setattr(r, "TERMOS_DE_DOMINIO_SENSIVEL",
+                            {**r.TERMOS_DE_DOMINIO_SENSIVEL,
+                             "credencial": tuple(t for t in r.TERMOS_DE_DOMINIO_SENSIVEL["credencial"]
+                                                 if not t.endswith("s"))}),
         "mexe nas regras de acao humana (regressao do item 4)":
             lambda: setattr(r, "REGRAS_DE_ACAO_HUMANA",
                             tuple(x for x in r.REGRAS_DE_ACAO_HUMANA

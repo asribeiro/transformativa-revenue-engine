@@ -297,18 +297,28 @@ CONCEITOS_DE_ACAO = {
 # escalando (ali "registro" e dado sensivel de verdade, na regra de acao humana).
 # ---------------------------------------------------------------------------
 TERMOS_DE_DOMINIO_SENSIVEL = {
-    "producao_ou_release": ("producao", "release", "deploy", "implantacao", "lancamento",
-                            "versao", "publicacao", "publicar", "rollback", "promocao",
+    # Singular E plural: o casamento exato nao infere plural sozinho, e o prefixo antigo
+    # aceitava ("credenciais" ~ "credencial"). Sem os plurais, "rotacionar credenciais" ou
+    # "dados de clientes" deixariam de declarar dominio — achado da revisao independente do
+    # card TRE-W0-E04-T12, fechado aqui.
+    "producao_ou_release": ("producao", "producoes", "release", "releases", "deploy",
+                            "deploys", "implantacao", "implantacoes", "lancamento",
+                            "lancamentos", "versao", "versoes", "publicacao", "publicacoes",
+                            "publicar", "rollback", "rollbacks", "promocao", "promocoes",
                             "promover"),
-    "credencial": ("credencial", "senha", "token", "segredo", "chave", "secret"),
-    "dado_de_cliente": ("cliente", "titular", "cadastro", "auditoria", "lgpd", "cpf",
-                        "cnpj", "pessoais"),
-    "outbound_a_terceiro": ("contato", "contact", "empresa", "lead", "prospect",
-                            "perspectiva", "proposta", "orcamento", "oferta"),
+    "credencial": ("credencial", "credenciais", "senha", "senhas", "token", "tokens",
+                   "segredo", "segredos", "chave", "chaves", "secret", "secrets"),
+    "dado_de_cliente": ("cliente", "clientes", "titular", "titulares", "cadastro",
+                        "cadastros", "auditoria", "auditorias", "lgpd", "cpf", "cnpj",
+                        "pessoais"),
+    "outbound_a_terceiro": ("contato", "contatos", "contact", "empresa", "empresas", "lead",
+                            "leads", "prospect", "prospects", "perspectiva", "perspectivas",
+                            "proposta", "propostas", "orcamento", "orcamentos", "oferta",
+                            "ofertas"),
 }
 # Termos de ENVIO: outbound exige envio COM alvo explicito (o resto continua no
 # guardrail de do_not_contact, como antes).
-TERMOS_DE_ENVIO = ("envio", "enviar", "mandar", "remeter", "apresentar")
+TERMOS_DE_ENVIO = ("envio", "envios", "enviar", "mandar", "remeter", "apresentar")
 
 # Regra: (codigo canonico da politica, grupos de conceitos). A regra aciona quando
 # TODOS os grupos tem pelo menos um conceito presente na acao. O codigo devolvido e
