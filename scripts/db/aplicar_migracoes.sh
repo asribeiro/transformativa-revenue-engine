@@ -21,6 +21,14 @@
 # tabela do contrato. Nenhum segredo passa por aqui — a conexao usa o socket local do
 # container, sem senha em argumento, arquivo ou log.
 #
+# Log da aplicacao (defeito D02 do TRE-W1-E01-T01): o log do `psql` vive em um DIRETORIO
+# TEMPORARIO POR EXECUCAO (`mktemp -d`), nunca em caminho fixo em `/tmp`. Caminho fixo
+# (`/tmp/tre_migracao_<versao>.log`) quebra a execucao seguinte quando o arquivo ja existe
+# e e de OUTRO dono: `/tmp` e sticky (`1777`) e o host tem `fs.protected_regular=2`, entao o
+# `O_CREAT` do redirecionamento da EACCES — inclusive para root. O arquivo precisa existir
+# ANTES do `psql`, por isso o caminho e uma VARIAVEL por execucao, e o diretorio e removido
+# no fim (inclusive em falha).
+#
 # REGRA DE AMBIENTE (ADR-005 — nenhuma DDL nasce em producao):
 #   dev      -> aplica
 #   homolog  -> aplica
@@ -187,10 +195,28 @@ else
   fi
 fi
 
+# ------------------------------------------------------------------ log por execucao
+# Criado ANTES de aplicar (o log precisa existir antes do `psql`). mktemp da nome unico e
+# dono = quem executa, entao duas execucoes concorrentes no mesmo host NAO compartilham log
+# e nenhuma depende de um caminho que outro usuario possa possuir. Removido no fim.
+DIR_LOG=""
+if [ "$MODO" != "--somente-checar" ]; then
+  if ! DIR_LOG="$(mktemp -d "${TMPDIR:-/tmp}/tre_migracao.XXXXXXXXXX" 2>/dev/null)" || [ -z "$DIR_LOG" ]; then
+    morrer "FALHOU nao consegui criar o diretorio de log por execucao em '${TMPDIR:-/tmp}' (permissao/espaco) — sem log confiavel a aplicacao NAO roda. Nada foi aplicado."
+  fi
+  if [ ! -w "$DIR_LOG" ]; then
+    morrer "FALHOU diretorio de log por execucao '$DIR_LOG' nao e gravavel — sem log confiavel a aplicacao NAO roda. Nada foi aplicado."
+  fi
+  trap 'rm -rf "$DIR_LOG"' EXIT INT TERM HUP
+  ok "log da execucao em '$DIR_LOG' (por execucao; removido no fim)"
+fi
+
 # Aplica SEM depender de stdin: o arquivo entra no container por `docker cp` e sai por
 # `psql -f`. (Um `docker exec -i` aqui comeria o stdin de quem orquestra por SSH.)
-aplicar_arquivo() {  # <servico> <usuario> <banco> <arquivo-do-host> <log>
-  local destino="/tmp/tre_aplicar_$(basename "$4")" rc
+# O destino DENTRO do container tambem e unico por execucao (`$$`): duas execucoes
+# concorrentes no mesmo container nao disputam o mesmo arquivo temporario.
+aplicar_arquivo() {  # <servico> <usuario> <banco> <arquivo-do-host> <log-da-execucao>
+  local destino="/tmp/tre_aplicar_$$_$(basename "$4")" rc
   docker cp "$4" "$1:$destino" >/dev/null 2>&1 || return 1
   docker exec "$1" psql -U "$2" -d "$3" -v ON_ERROR_STOP=1 -q -f "$destino" >"$5" 2>&1
   rc=$?
@@ -224,7 +250,8 @@ for arq in "${MAPA[@]}"; do
     continue
   fi
 
-  if aplicar_arquivo "$SERVICO" "$USUARIO" "$BANCO" "$arq" "/tmp/tre_migracao_${versao}.log"; then
+  LOG_APLICACAO="$DIR_LOG/tre_migracao_${versao}.log"
+  if aplicar_arquivo "$SERVICO" "$USUARIO" "$BANCO" "$arq" "$LOG_APLICACAO"; then
     if docker exec "$SERVICO" psql -U "$USUARIO" -d "$BANCO" -v ON_ERROR_STOP=1 -q -c \
       "INSERT INTO $VERSAO_CONTROLE (versao, arquivo, sha256, aplicada_por) VALUES ('$versao','$base','$sha','$AUTOR') ON CONFLICT (versao) DO NOTHING;" >/dev/null 2>&1; then
       ok "versao $versao ($base) aplicada e registrada (${sha:0:12}…)"
@@ -233,7 +260,11 @@ for arq in "${MAPA[@]}"; do
       ko "versao $versao ($base) aplicada mas NAO registrada na tabela de controle — registro obrigatorio"
     fi
   else
-    ko "versao $versao ($base) falhou: $(tail -3 "/tmp/tre_migracao_${versao}.log" | tr '\n' ' ')"
+    if [ -s "$LOG_APLICACAO" ]; then
+      ko "versao $versao ($base) falhou: $(tail -3 "$LOG_APLICACAO" | tr '\n' ' ')"
+    else
+      ko "versao $versao ($base) falhou SEM diagnostico do psql (log '$LOG_APLICACAO' ausente/vazio) — a causa NAO esta no SQL: a aplicacao nao chegou a rodar (docker cp/redirecionamento/container '$SERVICO'). Nada foi aplicado nem registrado."
+    fi
   fi
 done
 

@@ -160,6 +160,20 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Fixed
 
+- **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
+  usuário) morria com diagnóstico vazio** (`TRE-W1-E01-T01-D02`, defeito `F1` achado na revisão
+  independente do `TRE-W1-E01-T01`; card `t_41d17c27`) — `/tmp` é `tmpfs` sticky (`1777`) e o host tem
+  `fs.protected_regular=2`: o `O_CREAT` de um arquivo regular **já existente e de outro dono** recebe
+  `EACCES`, inclusive para `root`. Cada execução deixava o arquivo no host e a seguinte falhava **antes de
+  aplicar**, imprimindo `FALHOU versao 0001 (…) falhou:` com a mensagem vazia (o `tail -3` lia um arquivo
+  que nunca pôde ser escrito); o caminho fixo também era compartilhado por execuções concorrentes. Não
+  houve aceite falso (fail-closed: 0 tabela, 0 linha de versão), o que faltava era robustez e diagnóstico.
+  Corrigido: o log vive em diretório **por execução** (`mktemp -d`, criado antes do `psql` e removido no
+  fim, inclusive em falha), o destino dentro do container também é único por execução (`$$`), e `TMPDIR`
+  não gravável ou log vazio agora **dizem a causa** em vez de imprimir nada. Prova em container
+  descartável próprio: `scripts/db/teste-log-migracao.sh` → `TESTE_OK (19 itens, 0 falhas)`, exit 0, com o
+  comparativo antes/depois (runner anterior no mesmo cenário: exit 1, diagnóstico vazio, fail-closed).
+
 - **Bit executável dos scripts de unit perdido no git → `tre-backup.service` morria com `203/EXEC`**
   (`TRE-W1-E06-T01-D01`, defeito medido na rotina automática pelo card E06) — `scripts/backup/*.sh` estavam
   `100644` no git; como o `ExecStart=` chama o script direto, qualquer sincronização da cópia operacional

@@ -38,6 +38,37 @@ TRE_PG_SERVICO=outro-container TRE_PG_USER=outro TRE_PG_DB=outro_banco \
 
 `--somente-checar` mostra o que seria aplicado sem executar DDL.
 
+### 2.1 Log da aplicação — um diretório por execução (TRE-W1-E01-T01-D02)
+
+O log do `psql` **não** vive em caminho fixo. Cada execução cria o seu com `mktemp -d`
+(`${TMPDIR:-/tmp}/tre_migracao.XXXXXXXXXX`), imprime o caminho na linha
+`OK  log da execucao em '<dir>'` e o **remove no fim**, inclusive em falha (`trap`). O
+arquivo de destino dentro do container também é único por execução
+(`/tmp/tre_aplicar_<pid>_<arquivo>`).
+
+Motivo (defeito `D02` do `TRE-W1-E01-T01`, card `t_41d17c27`): o caminho fixo
+antigo (`/tmp/tre_migracao_<versao>.log`) era deixado no host a cada execução; como `/tmp` é
+sticky (`1777`) e o host tem `fs.protected_regular=2`, a execução seguinte — de **outro**
+usuário, inclusive `root` — falhava no `O_CREAT` do redirecionamento com `EACCES` **antes de
+aplicar**, e a mensagem saía vazia (`FALHOU versao 0001 (…) falhou: `), porque o `tail -3` lia
+um arquivo que nunca pôde ser escrito. O caminho fixo também era compartilhado por execuções
+concorrentes no mesmo host.
+
+Consequências operacionais:
+
+- dois operadores/execuções concorrentes no mesmo host **não** compartilham log (nome único);
+- se o diretório de log não puder ser criado (`TMPDIR` sem permissão/inexistente), o runner
+  **recusa** com causa explícita (`nao consegui criar o diretorio de log por execucao …`) e
+  exit 1 — não existe aplicação "às cegas", sem log;
+- quando o log existe e está vazio (falha antes do `psql`), a mensagem de falha diz isso
+  (`falhou SEM diagnostico do psql (log '…' ausente/vazio) — a causa NAO esta no SQL`), em vez
+  de imprimir nada.
+
+Prova reproduzível (container descartável próprio, cria e remove): `bash scripts/db/teste-log-migracao.sh`
+→ `RESULTADO: TESTE_OK (19 itens, 0 falhas)`, exit 0; com `TRE_D02_RUNNER_ANTIGO=<runner anterior>`
+ele inclui o comparativo antes/depois (o runner antigo falha com diagnóstico vazio e continua
+fail-closed: 0 tabela, 0 linha de versão).
+
 ## 3. Guardrail de produção (fail-closed)
 
 `aplicar_migracoes.sh prod` **recusa** por padrão. Só passa com as três condições, verificadas antes de
