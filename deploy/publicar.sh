@@ -383,7 +383,7 @@ if [ "$MAN_DEPOIS" != "$MAN_LOCAL" ]; then
   exit 6
 fi
 
-R "printf '%s\n' '$AGORA_ISO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ card=$CARD digest_antes=$DIG_ANTES commit_antes=${COMMIT_ANTES:-nenhum}' >> '$LOG_REMOTO'"
+R "printf '%s\n' '$AGORA_ISO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ card=$CARD destino=$DESTINO digest_antes=$DIG_ANTES commit_antes=${COMMIT_ANTES:-nenhum}' >> '$LOG_REMOTO'"
 
 liberar_lock; LOCK_PEGO=0
 

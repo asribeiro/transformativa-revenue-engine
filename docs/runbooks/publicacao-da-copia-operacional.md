@@ -64,10 +64,14 @@ PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
 
 1. **O conteúdo sai do git, não do disco:** `git archive <commit>` → staging → `rsync -a --delete` no
    destino. Arquivo modificado ou não rastreado no checkout não entra (por isso o `digest` é reprodutível).
-2. **O modo sobrevive:** o bit executável vem do índice do git. Antes de publicar, o script lê os
-   `ExecStart=` dos units em `deploy/systemd/` e conta quantos alvos **não** estão `100755` no commit —
-   `AVISO modo` em cada um, e o número vai para `.publicado` (`execstart_sem_bit`). Com `--exigir-modos`
-   a publicação **para** em vez de deixar o systemd morrer com `203/EXEC`.
+2. **O modo é o modo do git.** O modo publicado vem de `git ls-tree` (`100755` → `755`, `100644` → `644`) e
+   é aplicado **nos três pontos**: na árvore local (que gera o `digest`), no staging e no destino **depois**
+   do `rsync`. Extrair com `tar` e confiar no modo do disco não serve: o modo do arquivo extraído leva a
+   marca do `umask`/máscara de ACL de quem extrai (medido: `755` chegava `775` e `644` chegava `664`) e o
+   `rsync -a` pula o arquivo que tem a mesma data e o mesmo tamanho **sem olhar o modo**. Antes de publicar,
+   o script lê os `ExecStart=` dos units em `deploy/systemd/` e conta quantos alvos **não** estão `100755`
+   no commit — `AVISO modo` em cada um, e o número vai para `.publicado` (`execstart_sem_bit`). Com
+   `--exigir-modos` a publicação **para** em vez de deixar o systemd morrer com `203/EXEC`.
 3. **Registro no destino** — `/opt/tre/repo/.publicado` (e `.publicado.manifest`, com modo + sha256 de
    cada arquivo):
 
@@ -93,7 +97,7 @@ PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
 5. **Aviso de concorrência:** se o `.publicado` anterior era de **outro card** com outro commit, a
    publicação avisa e grava `concorrencia:` no registro e no log.
 6. **Log append-only:** `/opt/tre/.publicacoes.log` guarda `quando, commit, digest, arquivos, card,
-   digest_antes, commit_antes` de cada publicação. É o histórico que permite rollback do *código*.
+   destino, digest_antes, commit_antes` de cada publicação. É o histórico que permite rollback do *código*.
 
 ## 4. Conferir (é isto que vale como prova pós-deploy)
 
@@ -134,6 +138,9 @@ conteúdo e o modo vêm do git. Não existe "arquivo solto" a limpar: o `rsync -
 - **não leva segredo**: `.env`/`.env.*` são ignorados pelo git e por isso não têm como entrar no
   `git archive`; a cópia publicada é o commit, e o commit não tem segredo.
 - **não decide qual commit é o certo** — publica exatamente o que foi pedido e registra.
+- **só arquivo comum:** o commit não pode ter symlink/submódulo nem caminho com espaço/tab — o mapa de
+  modos e o manifesto são texto separado por espaço. Se tiver, a publicação **recusa** (exit 2) em vez de
+  publicar um digest que não representa a árvore.
 
 ## 7. Evidência medida (30/09/2026)
 
