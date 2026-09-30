@@ -1,0 +1,23 @@
+{
+  "decision_id": "dec-4bd0899fccf29bad",
+  "card_id": "t_eddd00ce",
+  "task_hash": "58f92ac50e3b227f242fb82ff17621c9ff99f611f899417cb11d0ec76942a11b",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T18:00:20+00:00",
+  "override": {
+    "piso_por_ambiente": {
+      "ramo": "novo_ou_dev",
+      "ambiente": "desenvolvimento",
+      "ramo_declarado": true,
+      "lane_minima": "high",
+      "motivo": "piso de lane por ambiente: migration declarada no texto da tarefa (termo 'migration'/'migracao'): 'migration' em ambiente 'desenvolvimento' -> ramo 'novo_ou_dev'; lane nao mais barata que high"
+    }
+  },
+  "outcome": "ESCALATE"
+}

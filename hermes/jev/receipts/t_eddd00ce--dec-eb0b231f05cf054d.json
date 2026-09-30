@@ -1,0 +1,23 @@
+{
+  "decision_id": "dec-eb0b231f05cf054d",
+  "card_id": "t_eddd00ce",
+  "task_hash": "eff1a5000747c9afa47cdb8d7c9ed06db9289ab3775e0045f9193dc912da5a23",
+  "lane": "critical",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T17:57:18+00:00",
+  "override": {
+    "piso_por_ambiente": {
+      "ramo": "vivo_ou_producao",
+      "ambiente": null,
+      "ramo_declarado": false,
+      "lane_minima": "critical",
+      "motivo": "piso de lane por ambiente: migration declarada no texto da tarefa (termo 'migration'/'migracao'): 'migration' em ambiente nao declarado -> ramo 'vivo_ou_producao'; lane nao mais barata que critical; exige aprovacao humana registrada"
+    }
+  },
+  "outcome": "BLOCK"
+}

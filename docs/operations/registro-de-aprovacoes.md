@@ -36,3 +36,23 @@ corrigidas abaixo).
 - **Validade:** 07/10/2026 (7 dias, decisão 3).
 - **Limite:** aprova a escalada deste card e só ela — não abre credencial, não autoriza ato em produção, não dispensa passo de operador.
 - **Contrapartida:** revisão independente do `tester` e verificação do gate.
+
+## 30/09/2026 — APROVAÇÃO DE ONDA `W1-dev` (canal: telegram)
+
+- **Onda:** `W1-dev` — cobertura por regra para cards de **desenvolvimento**.
+- **Aprovador:** Anderson Ribeiro — palavra no Telegram em 30/09/2026: "aprovo".
+- **Regra:** card com `ambiente_alvo` de desenvolvimento, `sinais: {producao: false, credencial: false}` e sem domínio de credencial ou dado de cliente. O hash do texto é fixado no momento da execução.
+- **Validade:** 07/10/2026 (7 dias).
+- **Fora da onda:** ambiente vivo, credencial e dado de cliente — item a item, com commit do aprovador.
+
+## 30/09/2026 — DECISÃO DO DONO: trio canônico de banco/container/usuário (card `t_27d0a51d`)
+
+- **Decisão (opção 3), por Anderson Ribeiro no Telegram:** congelar o arranjo atual no contrato e
+  padronizar homolog/produção com o mesmo trio.
+- **Trio canônico:** container `pg-<amb>` (dev: `pg-sales-dev`), banco `sales_intelligence`,
+  usuário dedicado por ambiente (dev: `sales_ai`), schema `sales_intelligence`.
+- **Efeito:** o contrato deixa de citar `transformativa_ai` (corrigido por esta mudança registrada
+  em `docs/data/` + nota datada no cabeçalho da migration 0001). Nenhuma DDL muda, nenhum dado é
+  migrado, nenhum ambiente é reprovisionado.
+- **Vale para:** W1/W2 seguintes, `TRE-W1-E05-T01` (suíte de banco), `TRE-W1-E06-T01`
+  (backup/restore) e o provisionamento de homolog/produção.

@@ -127,3 +127,51 @@ Três peças, todas versionadas no repositório:
      não depender da narrativa do agente.
 - Risco declarado e aceito: docker equivale a root; a chave dá a máquina inteira; não existe
   escopo pequeno. Mitigação é o registro e os limites acima, não a cerca.
+
+## 8. Nota de contrato do recibo (correcao de desvio)
+
+O recibo do gate tem contrato **fechado de 13 campos** (`hermes/jev/policy_v1_2.yaml`) e a
+suite do gate reprova campo a mais. O desenho na secao 2 pedia "origem gravada no recibo" e
+a primeira implementacao criou campos novos (`origem`, `aprovador`, `canal`, `validade`,
+`hash`, `aprovacao_motivo`) — **desvio corrigido**: o rastro da aprovacao passa a morar em
+`override.aprovacao_humana`, dentro do campo `override`, que existe exatamente para registrar
+excecao com razao. Nenhum campo novo no recibo; a trilha continua auditavel no arquivo. O
+motivo de uma aprovacao NAO aplicavel viaja na resposta do gate (que o board grava), nunca no
+recibo.
+
+## 9. Decisão 6 — escala das aprovações (onda x item a item)
+
+- **Decisão 6 — HIBRIDA: onda para desenvolvimento, item a item para o resto (opção C)**,
+  escolhida por Anderson Ribeiro em 30/09/2026. Motivo declarado: 65 cards em `todo` (W1→W9)
+  e o pedido individual por card (todas as travas que hoje existem) viraria gargalo do dono —
+  e gargalo de aprovacao termina em aprovacao no automatico, que e pior que nao ter controle.
+  - a ONDA cobre somente escopo estritamente de **desenvolvimento** e grava, no ato da
+    aprovacao, a **lista de cards + o hash do texto de cada um** (card editado depois sai da
+    onda: o hash deixa de bater);
+  - qualquer card cuja declaracao toque **ambiente vivo, credencial ou dado de cliente** fica
+    FORA da onda e exige aprovacao individual, com `canal: commit-do-aprovador` (decisao 1/4);
+  - a onda e entrada do mesmo registro declarado (`aprovacoes-humanas.yaml`), com dupla
+    entrada no `registro-de-aprovacoes.md`, validade de 7 dias (decisao 3) e revisao
+    independente do `tester` antes de valer;
+  - nada aqui afrouxa o fail-closed: sem aprovacao (individual ou de onda) valida, o gate
+    escala exatamente como hoje.
+- **IMPLEMENTADO em 30/09/2026** (commit `9c3a84e`, empurrado em `develop`): a onda e entrada do
+  registro declarado (`ondas:` em `hermes/jev/aprovacoes-humanas.yaml`), com regra explicita —
+  `ambiente_alvo` de desenvolvimento, `sinais.producao=false`, `sinais.credencial=false` e nenhum
+  dominio de credencial/dado de cliente. O gate passou a entregar os **sinais** da declaracao a
+  camada de aprovacao; o **hash do texto e fixado no momento da execucao** e gravado no recibo
+  (`override.aprovacao_humana`), de modo que mudanca de texto posterior apareca na auditoria.
+  Dupla entrada no `registro-de-aprovacoes.md` (id da onda + aprovador). Provado nos cards
+  `t_2cc57d80` e `t_eddd00ce`, que estavam retidos pelo gate e passaram a executar.
+  Suites no HEAD: gate **30 itens**, aprovacao **18 itens**, ambas PASS.
+
+## 10. Decisão 7 — promoção de ambiente (quando o schema sai de dev)
+
+- **Decisão 7 — CONGELAR EM DEV ATÉ A W1 FECHAR (opção A)**, escolhida por Anderson Ribeiro em
+  30/09/2026. Nenhum ambiente vivo recebe o schema enquanto a fundação da W1 não estiver
+  completa e provada: evita migrar duas vezes quando constraints/dedup/suite mudarem o schema.
+  `production_promotion_authorized` continua `false` e `production_promoted_task_ids` vazio.
+- Consequência registrada: a divergência de nomenclatura (`transformativa_ai` base nos ambientes
+  de operação x `sales_intelligence` em dev, apontada pela revisão independente) tem de ser
+  reconciliada ANTES de qualquer promoção — card próprio, na virada da W1.
+- Reabertura: decisão nova, com a W1 fechada e a nomenclatura reconciliada.

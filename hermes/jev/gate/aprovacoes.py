@@ -100,7 +100,71 @@ def _card_no_registro(card_id: str, aprovador: str, caminho=None) -> bool:
     return card_id in texto and aprovador in texto
 
 
+def carregar_ondas(caminho=None) -> list:
+    """Ondas aprovadas (decisao 6): cobertura por REGRA, nao por lista fechada."""
+    alvo = pathlib.Path(caminho) if caminho else CAMINHO_PADRAO
+    if not alvo.is_file():
+        return []
+    dados = _yaml().safe_load(alvo.read_text(encoding="utf-8")) or {}
+    ondas = dados.get("ondas") or []
+    if not isinstance(ondas, list):
+        raise ValueError("ondas deve ser lista")
+    return [dict(o) for o in ondas if isinstance(o, dict)]
+
+
+def avaliar_onda(*, titulo: str, corpo: str, dominios, ambiente_alvo, sinais,
+                 agora=None, caminho=None, caminho_registro=None, ondas=None) -> dict:
+    """Onda: cobre card de DESENVOLVIMENTO, sem credencial e sem dado de cliente.
+
+    Diferente da aprovacao individual (vinculada ao hash no ato), a onda e uma REGRA: o hash
+    do texto e capturado AGORA, no momento da execucao — e vai para o recibo, de modo que o
+    que executou fica auditavel ainda que o card mude depois.
+    """
+    agora = agora or _dt.date.today()
+    ambiente = str(ambiente_alvo or "").strip().lower()
+    sinais = sinais or {}
+    try:
+        lista = carregar_ondas(caminho) if ondas is None else ondas
+    except Exception as erro:
+        return {"aplicavel": False, "motivo": f"registro de ondas invalido: {erro}"}
+    if not lista:
+        # Sem onda registrada, a resposta e a MESMA de antes da onda existir: quem le a
+        # resposta nao pode ver diferenca entre "nao ha onda" e "nao ha aprovacao nenhuma".
+        return {"aplicavel": False, "motivo": "sem aprovacao registrada para o card"}
+    if ambiente not in AMBIENTES_DE_DESENVOLVIMENTO:
+        return {"aplicavel": False,
+                "motivo": f"onda exige ambiente de desenvolvimento (card declara {ambiente or 'nada'})"}
+    if sinais.get("producao") or sinais.get("credencial"):
+        return {"aplicavel": False,
+                "motivo": "sinais do card (producao/credencial) tiram a onda de cobertura"}
+    if set(dominios or []) & set(DOMINIOS_COM_ASSINATURA):
+        return {"aplicavel": False, "motivo": "dominio de credencial/dado de cliente fora da onda"}
+
+    motivos = []
+    for onda in lista:
+        if str(onda.get("aprovador") or "").strip() != APROVADOR_AUTORIZADO:
+            motivos.append("onda com aprovador nao autorizado")
+            continue
+        validade = _data(onda.get("validade"))
+        if validade is None or validade < agora:
+            motivos.append("onda sem validade explicita ou vencida")
+            continue
+        if str(onda.get("canal") or "").strip() != "telegram":
+            motivos.append("onda so vale por canal telegram (dev nao exige assinatura)")
+            continue
+        if not _card_no_registro(str(onda.get("id") or ""), APROVADOR_AUTORIZADO, caminho_registro):
+            motivos.append("dupla entrada incompleta: onda ausente do registro-de-aprovacoes")
+            continue
+        return {"aplicavel": True,
+                "motivo": f"onda '{onda.get('id')}' cobre o card (dev, sem credencial) e o hash foi fixado agora",
+                "aprovador": APROVADOR_AUTORIZADO, "canal": "telegram",
+                "validade": validade.isoformat(), "onda": onda.get("id"),
+                "escopo": list(onda.get("escopo") or []), "hash": hash_do_card(titulo, corpo)}
+    return {"aplicavel": False, "motivo": "; ".join(motivos) or "nenhuma onda aplicavel"}
+
+
 def avaliar(*, card_id: str, titulo: str, corpo: str, dominios, ambiente_alvo=None,
+            sinais=None,
             agora=None, caminho=None, caminho_registro=None, entradas=None) -> dict:
     """Decide se existe aprovacao aplicavel. Sempre devolve {aplicavel, motivo, ...}."""
     agora = agora or _dt.date.today()
@@ -112,7 +176,11 @@ def avaliar(*, card_id: str, titulo: str, corpo: str, dominios, ambiente_alvo=No
         return {"aplicavel": False, "motivo": f"registro de aprovacoes invalido: {erro}"}
     entrada = mapa.get(card_id)
     if not entrada:
-        return faltando
+        # Sem aprovacao individual: a onda (decisao 6) pode cobrir — regra de dev, nunca
+        # ambiente vivo/credencial/dado de cliente, e o hash e fixado neste momento.
+        return avaliar_onda(titulo=titulo, corpo=corpo, dominios=dominios,
+                            ambiente_alvo=ambiente_alvo, sinais=sinais, agora=agora,
+                            caminho=caminho, caminho_registro=caminho_registro)
 
     aprovador = str(entrada.get("aprovador") or "").strip()
     if aprovador != APROVADOR_AUTORIZADO:

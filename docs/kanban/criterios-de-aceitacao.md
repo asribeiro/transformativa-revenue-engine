@@ -83,6 +83,20 @@ Cards: bloco JEV (W0-E04) + W1 (PostgreSQL) + W2 (Odoo). O resto do board segue 
 **Test plan:** Casos sintéticos cobrindo o limite 0,94/0,95 e cada identificador forte, isoladamente e em conjunto.
 **Rollback:** Reverter código; dados já mesclados exigem desfazer com registro — por isso o merge é auditável.
 **Risco:** Alto — mexe em identidade de dado.
+**Componentes afetados:** `scripts/dedup/` (motor + teste sintético + teste de ambiente, novos);
+`sales_intelligence.organizations` (identidade e soft delete) e as tabelas filhas que a referenciam
+(reapontamento no merge); `sales_intelligence.sync_events` (trilha auditável do merge);
+`sales_intelligence.human_approvals` (fila `REVIEW_REQUIRED`); `docs/data/data_contract_v1.json`
+(limiar lido, não editado); `scripts/verificar_estrutura.sh` (artefatos versionados).
+
+**Decisões de implementação registradas (não mudam o contrato):**
+D1 o limiar de merge é lido do contrato a cada chamada — não há parâmetro, constante ajustável nem
+variável de ambiente que o mude (mudar exige mudar o contrato/política); D2 evidência fraca nunca alcança
+a faixa de merge (teto `limiar − 0,01` = 0,94) e vai para a fila humana; D3 CNPJ igual porém inválido
+(dígito verificador) detecta e vai para revisão, nunca mergeia automático; D4 `organizations` não tem
+telefone nem endereço na V1 — fracos "nome + telefone"/"nome + endereço" são lacuna declarada; D5
+auditoria em `sync_events` e fila em `human_approvals` (nenhuma coluna/tabela nova — exigiria nova versão
+do contrato); D6 `--desfazer-merge` reverte o merge com registro `UNMERGE` (rollback executável).
 
 ## TRE-W1-E04-T02 — Implementar entity_match_confidence
 
@@ -93,6 +107,25 @@ Cards: bloco JEV (W0-E04) + W1 (PostgreSQL) + W2 (Odoo). O resto do board segue 
 **Test plan:** Teste unitário por faixa + registro persistido conferido.
 **Rollback:** Reverter o cálculo; coluna fica nula em vez de mentir valor.
 **Risco:** Médio.
+
+**Componentes afetados:** `scripts/dedup/deduplicar_organizacoes.py` (modelo de faixas, score canônico e
+persistência do campo no registro auditado); `scripts/dedup/teste_entity_match_confidence.sh` (novo, prova
+em um comando); `docs/data/entity-match-confidence.md` (novo, o modelo e as faixas documentadas);
+`docs/runbooks/deduplicacao-strong-identifiers.md` (limite declarado que este card fecha);
+`scripts/verificar_estrutura.sh` (artefatos versionados); `CHANGELOG.md`;
+`docs/operations/registro-de-execucoes.md`; tabelas existentes **sem mudança de schema**:
+`sales_intelligence.sync_events` (merge) e `sales_intelligence.human_approvals` (fila humana).
+
+**Decisões de implementação registradas (não mudam o contrato):** D-T02-1 nome canônico
+`entity_match_confidence` com `confianca` mantido como alias de mesmo valor no mesmo registro (compatibilidade
+com o E04-T01); D-T02-2 a decisão do par passou a ser a decisão da faixa do score (3 estados — `MERGE` /
+`REVIEW_REQUIRED` / `SEM_DUPLICIDADE`; o "abaixo do limiar → REVIEW_REQUIRED" do contrato vale para candidato
+a deduplicação); D-T02-3 persistência no registro auditado das decisões, **nenhuma coluna nova** (coluna é
+gatilho de nova versão do contrato + aprovação humana; o rollback proposto "coluna fica nula" não se aplica
+porque não existe coluna e a trilha de auditoria é imutável por contrato §9); D-T02-4 sem evidência
+qualificada o score é 0,00 e não a similaridade bruta de nome (que segue auditável em `evidencias.fracos`);
+D-T02-5 o registro leva a tabela de faixas vigente e a versão do modelo. Detalhe em
+`docs/data/entity-match-confidence.md` §6.
 
 ## TRE-W1-E05-T01 — Criar database test suite
 

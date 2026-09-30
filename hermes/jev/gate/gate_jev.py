@@ -252,6 +252,7 @@ def consultar_aprovacao(modulo, *, card: dict, tarefa: dict, decisao: dict,
             corpo=str(card.get("descricao") or ""),
             dominios=list(decisao.get("dominios_sensiveis") or []),
             ambiente_alvo=ambiente_alvo_do_card(tarefa) or None,
+            sinais=dict(tarefa.get("sinais") or {}),
             caminho=str(alvo),
             caminho_registro=str(alvo_registro),
         )
@@ -334,12 +335,27 @@ def decidir_card(card_id: str, *, board=None, kanban_db=None, politica_path=None
                 f"{campos_da_aprovacao.get('validade')}) cobre os dominios desta decisao"
             ] + list(decisao.get("motivos") or [])
             recibo["outcome"] = decisao["outcome"]
-            recibo["origem"] = origem
-            recibo.update(campos_da_aprovacao)
+            # O recibo tem contrato FECHADO de 13 campos (policy_v1_2.yaml) e a suite do
+            # gate reprova campo a mais. O rastro da aprovacao entra DENTRO do campo
+            # `override`, que existe exatamente para registrar excecao com razao; nenhum
+            # campo novo e criado no recibo.
+            rastro = {"origem": origem,
+                      "aprovador": campos_da_aprovacao.get("aprovador"),
+                      "canal": campos_da_aprovacao.get("canal"),
+                      "validade": campos_da_aprovacao.get("validade"),
+                      "hash": campos_da_aprovacao.get("hash")}
+            anterior = recibo.get("override")
+            if isinstance(anterior, dict):
+                recibo["override"] = {**anterior, "aprovacao_humana": rastro}
+            elif anterior:
+                recibo["override"] = {"anterior": anterior, "aprovacao_humana": rastro}
+            else:
+                recibo["override"] = {"aprovacao_humana": rastro}
         elif aprovacao["ha_registro"]:
-            # Ha registro para consultar e a resposta foi NAO: o motivo fica no recibo.
-            # Sem arquivo de aprovacoes nada e acrescentado — o recibo continua o de hoje.
-            recibo["aprovacao_motivo"] = aprovacao_motivo
+            # Ha registro para consultar e a resposta foi NAO: NADA e acrescentado ao
+            # recibo, que segue com os 13 campos exatos. O motivo viaja na resposta do
+            # gate — e a resposta e o que o board grava no evento e o `kanban tail` mostra.
+            pass
 
     caminho_recibo = gravar_recibo(roteador, recibo, card_id, recibos_dir)
 

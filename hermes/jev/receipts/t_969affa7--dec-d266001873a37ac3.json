@@ -1,0 +1,28 @@
+{
+  "decision_id": "dec-d266001873a37ac3",
+  "card_id": "t_969affa7",
+  "task_hash": "d50c89d7207e8fb5a9202be1352fce64a6e348bbdee5a3ccbad6352be0978066",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T17:20:53+00:00",
+  "override": {
+    "piso_por_ambiente": {
+      "ramo": "novo_ou_dev",
+      "ambiente": "desenvolvimento",
+      "ramo_declarado": true,
+      "lane_minima": "high",
+      "motivo": "piso de lane por ambiente: DDL declarada no texto da tarefa (termo 'DDL'): 'DDL' em ambiente 'desenvolvimento' -> ramo 'novo_ou_dev'; lane nao mais barata que high"
+    }
+  },
+  "outcome": "PASS",
+  "origem": "aprovacao_humana_registrada",
+  "aprovador": "Anderson Ribeiro",
+  "canal": "telegram",
+  "validade": "2026-10-07",
+  "hash": "8054672773fdd4d62115213b935813d110e9a250639d8bc7fe1da0413f0d73fc"
+}

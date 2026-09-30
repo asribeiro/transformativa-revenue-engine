@@ -203,3 +203,54 @@ declaracoes:
       medido. Leitura no repo e comentario no board — nao altera codigo, nao toca producao, nao usa credencial.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_2cc57d80
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Revisao independente (perfil tester) do TRE-W1-E01-T01: conferir NO BANCO dev as 12 tabelas
+      da migration versionada, o runner, o env de ambiente sem segredo, a ampliacao do verificador
+      de contrato de dados e os logs anexados ao card. Leitura no repo e medicao no banco dev — nao
+      altera politica, nao toca producao, nao usa credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_eddd00ce
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Verificacao independente (perfil tester) do conserto do defeito D01 do TRE-W1-E01-T01: o runner
+      aplicava migration no ambiente dev real mesmo com container descartavel pedido e o script remoto
+      morria por stdin. Conferir o sintoma corrigido com prova negativa em ambiente descartavel. Nao
+      toca producao e nao usa credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_41d17c27
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito D02 aberto pela revisao independente do E01: o runner de migrations usa
+      caminho fixo em /tmp para o log no host, deixando arquivo largado e falhando com
+      mensagem vazia quando o arquivo e de outro usuario. Conserto em dev, sem producao e
+      sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_6adbd552
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito D03 aberto na verificacao do D01, sobre o help do verificador de contrato
+      de dados. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_967965f0
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito D04 aberto pelo card E04-T01 sobre o verificador de estrutura. Correcao
+      em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento

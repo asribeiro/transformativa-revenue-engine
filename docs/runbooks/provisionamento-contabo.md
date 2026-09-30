@@ -84,3 +84,11 @@ SSH sem senha e root sem senha; atualizações automáticas **sem** reboot.
 
 **Pendências declaradas:** chaves do Object Storage (destino do backup — só o Anderson insere, nunca por chat);
 hardening do SSH (item 1); provisionamento de PostgreSQL/Odoo (W1/W2).
+
+> **Correção de 30/09/2026 (estado medido, não presumido).** A afirmação deste runbook de que a
+> chave do Hermes foi removida de `root` **não corresponde ao estado atual**: por decisão do dono
+> (opção B, decisão 5 do desenho de aprovação humana), o agente passou a operar as duas máquinas
+> com a chave `hermes-ops@transformativa`
+> (`SHA256:oUy0ikl21DXxRDrONQlLD4l/jl1p+KJ92ffnYZAA4uA`), instalada em `/root/.ssh/authorized_keys`
+> na VPS do TRE e no host do Hermes. A operação como `tre-deploy` continua valendo para o que for
+> do `tre-deploy`; o acesso de agente é `root`, com os limites declarados na decisão 5.

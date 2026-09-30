@@ -59,6 +59,16 @@ RAIZ = pathlib.Path(__file__).resolve().parents[1]
 GATE_PADRAO = RAIZ / "hermes/jev/gate/gate_jev.py"
 APROVACOES_PADRAO = RAIZ / "hermes/jev/gate/aprovacoes.py"
 APROVADOR = "Anderson Ribeiro"
+def _rastro_do_recibo(recibo):
+    """Rastro da aprovacao dentro do recibo.
+
+    O recibo tem contrato FECHADO de 13 campos (policy_v1_2.yaml): a suite do gate reprova
+    campo a mais. Por isso a trilha da aprovacao mora em `override.aprovacao_humana`, nunca
+    como campo novo.
+    """
+    return ((recibo or {}).get("override") or {}).get("aprovacao_humana") or {}
+
+
 ORIGEM = "aprovacao_humana_registrada"
 HOJE = dt.date.today()
 
@@ -255,12 +265,12 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
     def negativo(rotulo: str, resposta: dict, recibo: dict, motivo_esperado: str,
                  dominios_esperados=None) -> tuple:
         """Escala de verdade: desfecho ESCALATE, sem execucao, com o motivo da consulta."""
-        motivo = str(recibo.get("aprovacao_motivo") or "")
+        motivo = str(resposta.get("aprovacao_motivo") or "")
         partes = [
             resposta.get("outcome") == "ESCALATE",
             resposta.get("allow") is False,
             resposta.get("decidido") != "executar",
-            "origem" not in recibo,
+            "aprovacao_humana" not in ((recibo or {}).get("override") or {}),
             motivo_esperado in motivo,
             gate.codigo_de_saida(resposta) == 2,
         ]
@@ -296,9 +306,9 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
         "aprovacao (aprovador, canal, validade, hash) no recibo e na resposta",
         (resposta.get("outcome") == "PASS" and resposta.get("allow") is True
          and resposta.get("decidido") == "executar" and gate.codigo_de_saida(resposta) == 0
-         and recibo.get("outcome") == "PASS" and recibo.get("origem") == ORIGEM
-         and recibo.get("aprovador") == APROVADOR and recibo.get("canal") == "telegram"
-         and recibo.get("validade") == valida.isoformat() and recibo.get("hash") == h
+         and recibo.get("outcome") == "PASS" and _rastro_do_recibo(recibo).get("origem") == ORIGEM
+         and _rastro_do_recibo(recibo).get("aprovador") == APROVADOR and _rastro_do_recibo(recibo).get("canal") == "telegram"
+         and _rastro_do_recibo(recibo).get("validade") == valida.isoformat() and _rastro_do_recibo(recibo).get("hash") == h
          and resposta.get("origem") == ORIGEM and resposta.get("aprovador") == APROVADOR
          and ORIGEM in str(resposta.get("motivo"))),
         f"outcome={resposta.get('outcome')} allow={resposta.get('allow')} origem={recibo.get('origem')} "
@@ -393,7 +403,7 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
     resposta, recibo = decidir(fx)
     itens.checar("canal telegram com ambiente desenvolvimento e dominios comuns -> PASS",
                  (resposta.get("outcome") == "PASS" and resposta.get("allow") is True
-                  and recibo.get("origem") == ORIGEM and recibo.get("canal") == "telegram"),
+                  and _rastro_do_recibo(recibo).get("origem") == ORIGEM and _rastro_do_recibo(recibo).get("canal") == "telegram"),
                  f"outcome={resposta.get('outcome')} origem={recibo.get('origem')} "
                  f"erro={resposta.get('_erro')}")
 
@@ -407,8 +417,8 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
     resposta, recibo = decidir(fx)
     itens.checar("canal commit-do-aprovador com ambiente vivo e todos os dominios cobertos -> PASS",
                  (resposta.get("outcome") == "PASS" and resposta.get("allow") is True
-                  and recibo.get("origem") == ORIGEM
-                  and recibo.get("canal") == "commit-do-aprovador"
+                  and _rastro_do_recibo(recibo).get("origem") == ORIGEM
+                  and _rastro_do_recibo(recibo).get("canal") == "commit-do-aprovador"
                   and sorted(resposta.get("dominios_sensiveis") or [])
                   == ["credencial", "dado_de_cliente", "producao_ou_release"]),
                  f"outcome={resposta.get('outcome')} origem={recibo.get('origem')} "
@@ -476,7 +486,7 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
     itens.checar("encaixe de producao: modulo e caminhos resolvidos por JEV_APROVACOES/"
                  "JEV_REGISTRO_DE_APROVACOES (nenhuma injecao) -> PASS com origem no recibo",
                  (resposta.get("outcome") == "PASS" and resposta.get("allow") is True
-                  and recibo.get("origem") == ORIGEM),
+                  and _rastro_do_recibo(recibo).get("origem") == ORIGEM),
                  f"outcome={resposta.get('outcome')} origem={recibo.get('origem')} "
                  f"erro={resposta.get('_erro')}")
 
@@ -490,8 +500,8 @@ def executar(raiz: pathlib.Path, gate, modulo, itens: Itens) -> None:
     itens.checar("validade declarada como data-hora (datetime do YAML) vale pelo DIA dela -> PASS "
                  "sem estourar TypeError",
                  (resposta.get("outcome") == "PASS" and resposta.get("allow") is True
-                  and recibo.get("origem") == ORIGEM
-                  and recibo.get("validade") == valida.isoformat()),
+                  and _rastro_do_recibo(recibo).get("origem") == ORIGEM
+                  and _rastro_do_recibo(recibo).get("validade") == valida.isoformat()),
                  f"outcome={resposta.get('outcome')} origem={recibo.get('origem')} "
                  f"validade={recibo.get('validade')} erro={resposta.get('_erro')} "
                  f"motivo={resposta.get('aprovacao_motivo')!r}")
