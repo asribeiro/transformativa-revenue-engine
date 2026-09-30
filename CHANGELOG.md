@@ -132,6 +132,31 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (não de um container descartável), confere `sha256` do dump contra o manifesto, exige
   `externo: enviado` no manifesto e confere que o container do ambiente não foi tocado. O modo
   descartável (padrão) segue intacto e continua `TESTE_OK`.
+- **Suíte de teste do banco** (`TRE-W1-E05-T01`) — um comando único por ambiente
+  (`bash scripts/db/suite_banco.sh dev`), com **exit code como resposta** e veredito de três valores:
+  `0 SUITE_OK` / `1 SUITE_FALHOU` / `3 SUITE_NAO_TESTAVEL` (não é verde) — mais `2` para uso errado:
+  - `scripts/db/suite_banco.sh` — reúne as etapas numa execução: ambiente (identidade do alvo, estado do
+    schema e sha da migration registrada × arquivo do repo), contrato (`verificar_contrato_dados.py
+    --banco`), constraints/índices (`verificar_constraints_indices.py --banco`), dedup sintético e dedup
+    no ambiente (motor do E04, com cenário real e limpeza conferida) e tenant/RLS. Guarda de
+    confiabilidade: etapa **sem linha `RESULTADO:`** ou com **0 item executado** reprova a suíte
+    ("sem output" nunca é verde). `--somente-leitura` não escreve no alvo (etapa de dedup vira varredura
+    `--detectar`) e é o modo permitido em `prod`; sem ele, `prod` é recusado (ADR-005);
+  - `scripts/db/teste_tenant_rls.sh` — isolamento entre clientes: mede dimensão de cliente/tenant, RLS
+    (`pg_class.relrowsecurity`, `pg_policies`) e o papel da aplicação (`rolsuper`, `rolbypassrls`, dono de
+    tabela com RLS sem `FORCE`); como o papel da aplicação, prova que a consulta **sem filtro** devolve
+    vazio ou erro na sessão sem cliente e **0 linha de outro cliente** na sessão com cliente X. Sem
+    dimensão de cliente o critério é indecidível e a suíte diz isso com **exit 3**, nunca com verde;
+  - `--prova-de-dente` (nos dois scripts) — provas em container **descartável**: a suíte reprova alvo com
+    coluna removida e com índice a mais (`SUITE_DENTE_OK`, 14 itens), e o teste de tenant reprova policy
+    permissiva (`USING (true)`), `BYPASSRLS` no papel da aplicação e `DISABLE ROW LEVEL SECURITY`, voltando
+    a aprovar quando cada mutação é desfeita (`TENANT_RLS_DENTE_OK`, 18 itens);
+  - `docs/runbooks/suite-de-teste-do-banco.md` — runbook do comando, do vocabulário de exit, das etapas e
+    dos limites conhecidos.
+  **Critério de tenant/RLS não é provável contra o Data Contract V1.0** (medido em dev: 0 coluna de
+  cliente/tenant nas 12 tabelas, RLS desabilitada nas 12, 0 policy, papel `sales_ai` com `superuser=true`
+  e `bypassrls=true`): a suíte fecha em `SUITE_NAO_TESTAVEL` para esse critério e ele volta ao Analista de
+  Requisitos — nenhum verde foi declarado sem essa prova.
 
 ### Fixed
 
@@ -166,6 +191,14 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   artefato fora do git — aceite falso. Corrigido movendo o resumo/exit para o FIM do arquivo e provado com
   dente: com um artefato removido do índice (`git rm --cached`) o verificador devolve `FALHOU nao versionado`,
   `RESULTADO: FALHOU (1)`, exit 1; re-adicionado, `PASS (0 falhas)`, exit 0.
+- **Roteiro de prova da suíte: restauração incompleta e regex errada** (`TRE-W1-E05-T01`, dois defeitos do
+  próprio roteiro, achados pela prova de dente rodando contra alvo descartável) — (i) desfazer
+  `DROP COLUMN cnpj` só recriava a coluna, não o índice `idx_organizations_cnpj`, que o Postgres derruba
+  junto com a coluna: a suíte continuava reprovando depois de "desfeita" a divergência (o roteiro é que
+  estava incompleto, o schema não); (ii) a checagem da guarda de `0 item` esperava a string `0 item`, que
+  **não** é prefixo de `0 itens` — a guarda funcionava e a prova dizia que não. Corrigidos: restauração
+  recria coluna **e** índice; a checagem passou a casar a mensagem real (`nao executou item nenhum`).
+  Segunda execução: `SUITE_DENTE_OK (14 itens, 0 falhas)`.
 
 ### Notas de estado
 
@@ -195,3 +228,17 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   mesmo executando, `backup-tre.sh todos` **pula os três ambientes** (procura `pg-dev`, o dev real é
   `pg-sales-dev`) e sai `BACKUP_OK` sem gerar artefato. Detalhes em
   `docs/runbooks/backup-restore-rollback.md` §8.
+- **Suíte do banco medida em dev (`TRE-W1-E05-T01`):** `suite_banco.sh dev` → `SUITE_FALHOU` (exit 1) com
+  **uma** reprovação e **um** critério não testável; `--somente-leitura` roda a mesma bateria sem escrever
+  no alvo (varredura `--detectar` no lugar do cenário). As etapas de contrato (37 itens), constraints/índices
+  (16 itens), dedup sintético (7 itens) e dedup no ambiente (17 itens) passaram; a etapa de tenant/RLS
+  fechou em `TENANT_RLS_NAO_TESTAVEL` (exit 3) — o critério homologado não é provável contra o contrato
+  V1.0 (0 coluna de cliente/tenant, RLS desabilitada nas 12 tabelas, 0 policy, papel `sales_ai` superuser e
+  `bypassrls`). Provas de dente: `SUITE_DENTE_OK (14 itens)` e `TENANT_RLS_DENTE_OK`. `prod` recusado
+  (ADR-005, exit 1); `homolog` sem container → exit 1 apontando alvo inexistente (falha visível).
+- **Divergência aberta pelo E05 (não corrigida neste card):** a etapa de ambiente da suíte acusa que a
+  migration **registrada** pelo runner em dev (`bc766a818943…`) diverge do arquivo do repo
+  (`0484a3701b8c…`) — o commit da decisão do trio canônico (opção 3) acrescentou um comentário ao arquivo
+  **depois** de ele ter sido aplicado. Só texto (nenhuma DDL muda), mas o runner trata migration aplicada
+  como imutável: `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_FALHOU` (exit 1). Registrado como
+  defeito no board, com o card do E05 esperando por ele.
