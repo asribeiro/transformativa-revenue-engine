@@ -164,3 +164,14 @@ recibo.
   Dupla entrada no `registro-de-aprovacoes.md` (id da onda + aprovador). Provado nos cards
   `t_2cc57d80` e `t_eddd00ce`, que estavam retidos pelo gate e passaram a executar.
   Suites no HEAD: gate **30 itens**, aprovacao **18 itens**, ambas PASS.
+
+## 10. Decisão 7 — promoção de ambiente (quando o schema sai de dev)
+
+- **Decisão 7 — CONGELAR EM DEV ATÉ A W1 FECHAR (opção A)**, escolhida por Anderson Ribeiro em
+  30/09/2026. Nenhum ambiente vivo recebe o schema enquanto a fundação da W1 não estiver
+  completa e provada: evita migrar duas vezes quando constraints/dedup/suite mudarem o schema.
+  `production_promotion_authorized` continua `false` e `production_promoted_task_ids` vazio.
+- Consequência registrada: a divergência de nomenclatura (`transformativa_ai` base nos ambientes
+  de operação x `sales_intelligence` em dev, apontada pela revisão independente) tem de ser
+  reconciliada ANTES de qualquer promoção — card próprio, na virada da W1.
+- Reabertura: decisão nova, com a W1 fechada e a nomenclatura reconciliada.

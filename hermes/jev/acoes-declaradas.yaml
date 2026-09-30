@@ -225,3 +225,14 @@ declaracoes:
       toca producao e nao usa credencial de deploy.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_41d17c27
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito D02 aberto pela revisao independente do E01: o runner de migrations usa
+      caminho fixo em /tmp para o log no host, deixando arquivo largado e falhando com
+      mensagem vazia quando o arquivo e de outro usuario. Conserto em dev, sem producao e
+      sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
