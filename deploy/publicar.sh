@@ -345,10 +345,29 @@ if [ "$ENSAIO" -eq 0 ]; then
     R "printf '%s\n' 'card=$CARD host=$(hostname) inicio=$(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$SHA' > '$LOCK_REMOTO/quem'"
   else
     QUEM="$(R "cat '$LOCK_REMOTO/quem' 2>/dev/null" || true)"
-    IDADE="$(R "stat -c %Y '$LOCK_REMOTO' 2>/dev/null" || echo 0)"
     AGORA="$(date +%s)"
-    echo "AVISO lock ocupado: ${QUEM:-sem identificacao} (idade $((AGORA-IDADE))s)" >&2
-    if [ "$FORCAR_LOCK" -eq 1 ] || [ $((AGORA-IDADE)) -gt "$LOCK_VALIDADE_S" ]; then
+    # Idade do lock: mtime em epoch e, se ela nao for medivel, o `inicio` que o proprio lock grava.
+    # Defeito medido (relatado pelo card t_c7281fce): quando `stat` devolvia vazio, `AGORA-0` virava
+    # "~56 anos" e uma publicacao derrubava o lock VIVO de outra. Sem idade confiavel, NAO derruba
+    # (fail-closed) — o custo de esperar 30 min e menor que o de duas publicacoes em paralelo.
+    IDADE_EPOCH="$(R "stat -c %Y '$LOCK_REMOTO' 2>/dev/null" || true)"
+    case "$IDADE_EPOCH" in (*[!0-9]*|"") IDADE_EPOCH=0;; esac
+    INICIO_ISO="$(printf '%s' "$QUEM" | sed -n 's/.*inicio=\([0-9][0-9T:+-]*Z*\).*/\1/p')"
+    if [ "$IDADE_EPOCH" -le 1 ] && [ -n "$INICIO_ISO" ]; then
+      IDADE_EPOCH="$(date -u -d "$INICIO_ISO" +%s 2>/dev/null || echo 0)"
+      case "$IDADE_EPOCH" in (*[!0-9]*|"") IDADE_EPOCH=0;; esac
+      [ "$IDADE_EPOCH" -le 1 ] || echo "AVISO lock: mtime nao medivel — idade pelo 'inicio' do proprio lock" >&2
+    fi
+    if [ "$IDADE_EPOCH" -le 1 ]; then
+      echo "AVISO lock ocupado: ${QUEM:-sem identificacao} — idade NAO MEDIVEL (mtime nem 'inicio')" >&2
+      echo "PUBLICACAO_FALHOU outra publicacao em andamento e idade nao medida (lock $LOCK_REMOTO) —" >&2
+      echo "                  nao derrubo lock sem idade confiavel. Use --forcar-lock se tiver certeza." >&2
+      exit 3
+    fi
+    IDADE_S=$((AGORA-IDADE_EPOCH))
+    [ "$IDADE_S" -ge 0 ] || IDADE_S=$LOCK_VALIDADE_S
+    echo "AVISO lock ocupado: ${QUEM:-sem identificacao} (idade ${IDADE_S}s)" >&2
+    if [ "$FORCAR_LOCK" -eq 1 ] || [ "$IDADE_S" -gt "$LOCK_VALIDADE_S" ]; then
       echo "AVISO lock obsoleto (> ${LOCK_VALIDADE_S}s ou --forcar-lock): derrubando." >&2
       R "rm -rf '$LOCK_REMOTO'" >/dev/null 2>&1 || true
       R "mkdir '$LOCK_REMOTO'" >/dev/null 2>&1 && { LOCK_PEGO=1; } || true
