@@ -60,6 +60,18 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   passa a conferir também o **schema real do ambiente** (schema, tabelas, colunas/tipos/NOT NULL, PK, FK,
   vínculos lógicos sem FK e os 30 índices), por leitura em `information_schema`/`pg_indexes`; o modo atual
   (arquivos do repo) continua idêntico e passando.
+- **Massa mínima de smoke aplicada e verificada em dev** (`TRE-W1-E02-T01`) — as 12 tabelas core deixaram de
+  estar vazias e passaram a ter contagem conferível:
+  - `scripts/db/aplicar_fixture_smoke.sh` — aplica `db/fixtures/smoke_dev.sql` no ambiente por
+    `docker cp` + `psql -f` (sem stdin), com precedência para a variável do operador, espera robusta do
+    PostgreSQL (duas vezes) e **recusa de produção** (ADR-005);
+  - `scripts/db/verificar_fixture_smoke.sh` — confere a contagem por tabela contra o **esperado do próprio
+    fixture**, obtido de uma linha de base aplicada em container descartável (constante à mão envelheceria e
+    viraria carimbo); só leitura no alvo;
+  - `scripts/db/teste-fixture-smoke.sh` — prova em container descartável que a conferência tem dente: linha a
+    mais e linha a menos **reprovam**, a reaplicação do fixture restaura a contagem;
+  - `db/fixtures/smoke_dev_rollback.sql` — rollback da massa (filhas antes das pais), exercitado de verdade;
+  - `docs/runbooks/massa-de-smoke-dev.md` — runbook da massa (aplicação, conferência, teste negativo, rollback).
 
 ### Fixed
 
