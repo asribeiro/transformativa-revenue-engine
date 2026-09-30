@@ -95,3 +95,13 @@ declaracoes:
       politica e re-anotacao/re-medicao do corpus. Repo-only, sem producao, sem credencial.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_de4d332a
+    acao_codigo: consulta_interna
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Revisao do TRE-W0-E04-T09 (perfil tester): conferir o verificador da v1.2 e as baterias herdadas,
+      reproduzir o teste de aceitacao e a cobertura do mapa, e comparar o commit 1227310 com o que foi
+      medido. Leitura no repo e comentario no board — nao altera codigo, nao toca producao, nao usa credencial.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
