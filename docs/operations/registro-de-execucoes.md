@@ -21,3 +21,26 @@ identificador da máquina. Segredos nunca aparecem aqui.
   `SHOW server_version` → `16.15 (Debian 16.15-1.pgdg13+2)`.
 - Origem do container existente: as tentativas anteriores no terminal do dono (o colar
   quebrado abortou por sintaxe, mas uma delas completou). Estado é o esperado pelo desenho.
+## 2026-09-30 — host do Hermes (Hostinger srv1912562, 187.127.56.17)
+
+- **Chave de acesso instalada** (por Anderson, no terminal dele): `authorized_keys` do root
+  recebeu `hermes-ops@transformativa`.
+- **Teste (agente):** `ssh -i ~/.ssh/id_ed25519_ops root@187.127.56.17` -> host `srv1912562`,
+  **16 containers** rodando.
+- **Janela aprovada pelo dono:** "podemos rodar os 8 pacotes com reboot".
+- **Dry-run e upgrade (agente):** `apt-get -qq update` + `apt-get -y -qq upgrade` ->
+  **1 pacote subiu** (`linux-libc-dev` 6.8.0-142 -> 6.8.0-146). O `needrestart` reiniciou
+  `cron`, `ssh`, `systemd-journald`, `systemd-networkd`, `systemd-resolved`,
+  `systemd-timesyncd`, `systemd-udevd` (a conexao do agente nao caiu) e **diferiu**
+  `systemd-logind`, `dbus`, `unattended-upgrades`. Saida explicita: "No containers need to
+  be restarted". Medicao posterior: **16 containers no ar** e **6 servicos
+  transformativa-\* ativos** — nada perdido.
+- **Reboot NAO executado, por medicao:** kernel em uso `6.8.0-142-generic` e o maior
+  instalado em `/boot` e o mesmo `6.8.0-142`; `needrestart` reportou "Running kernel seems
+  to be up-to-date"; sem `/var/run/reboot-required`. Reiniciar derrubaria 16 containers (e o
+  proprio agente) sem ganho medido. Decisao devolvida ao dono.
+- **7 pacotes segurados (kept back)**, nao tocados: `libegl-mesa0`, `libgbm1`,
+  `libgl1-mesa-dri`, `libglx-mesa0`, `mesa-libgallium`, `mesa-vulkan-drivers`
+  (bibliotecas GL, tipicamente dependencia de navegador headless) e `linux-image-virtual`
+  (metapacote que hoje aponta para o kernel ja instalado — bump cosmetico). Subir exige
+  `apt-get dist-upgrade` (mudanca de dependencias), nao executado.
