@@ -296,4 +296,14 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   2 min compara disco x manifesto do **artefato** (referencia independente, `root:root` 700, fora da
   copia) e **restaura** — medido (deteccao exit 5 com atribuicao; `PUBLICACAO_REPARO_OK`, alerta limpo,
   trava rearmada); (iii) o verificador com dente impede o enforcement de virar decoracao.
+- **Execucao CONCORRENTE medida contra a copia REAL (publicada em `719a628`, digest `d2215645`, 315
+  arquivos):** 12 rodadas x 4 caminhos ad-hoc = **48 tentativas, todas bloqueadas** (`>>` EPERM, `sed -i`
+  EPERM no tempfile, arquivo novo EPERM, `tar -xz` de arvore alheia com `Exiting with failure status`),
+  **0 escritas aceitas**; o `sha256` de `scripts/backup/backup-tre.sh` ficou `3f0bebd9…` em **todas** as
+  12 rodadas e o commit publicado **nao foi revertido** (`.publicado` = `719a628`/`d2215645`, 315 arquivos,
+  trava armada, `alerta=ausente`). No mesmo intervalo o watchdog da VPS conferiu sozinho e deu
+  `PUBLICACAO_OK` as 23:24:08Z, 23:26:17Z, 23:28:27Z e 23:30:35Z, e a par de aceite pelo caminho de
+  referencia deu `PUBLICACAO_OK` com o mesmo digest em **T1 23:26:00Z** e **T2 23:30:21Z** (4m21s de
+  intervalo, com o atacante rodando). Bruto: `ev/concorrencia-real.log` e `ev/ataque-concorrente.log` no
+  workspace do card.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.
