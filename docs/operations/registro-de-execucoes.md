@@ -77,3 +77,14 @@ identificador da máquina. Segredos nunca aparecem aqui.
    `git log` local engana). Procedimento correto: conferir `git branch --show-current` antes de
    commitar e **empurrar pelo SHA** (`git push origin <sha>:develop`), sem `checkout` — trocar
    de branch com worker em execucao atropela o worker.
+
+## 2026-09-30 — Decisão 8 (dono): deixar os 7 pacotes segurados no host do Hermes
+
+Depois da janela aprovada dos 8 pacotes (1 subiu: `linux-libc-dev` 6.8.0-142 -> 146), restaram
+7 segurados (`libegl-mesa0`, `libgbm1`, `libgl1-mesa-dri`, `libglx-mesa0`, `mesa-libgallium`,
+`mesa-vulkan-drivers`, `linux-image-virtual`). Anderson decidiu **deixar como está** (opção A),
+com o racional medido: o kernel em uso e o maior instalado sao o mesmo (`6.8.0-142`), sem
+`/var/run/reboot-required`, e `linux-image-virtual` e metapacote que ja aponta para ele — ganho
+de zero; as bibliotecas GL so afetariam servico que use navegador headless no HOST. Subir os 7
+exigiria `apt-get dist-upgrade` (mudanca de dependencia, com remocao possivel) num host que
+sustenta 16 containers. Nada foi executado.
