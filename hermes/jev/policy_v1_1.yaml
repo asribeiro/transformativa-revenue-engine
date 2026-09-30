@@ -120,7 +120,11 @@ regra_de_lane_por_ambiente:
     # null, o verificador PROVA (por comportamento) que o roteador em vigor ainda não
     # eleva lane nenhuma por causa desta regra — ninguém pode afirmar que ela está ativa.
     roteador_que_a_executa: null
-    entra_em_vigor_com: "homologação do Anderson + card de implementação do piso no roteador (o portão de versão do roteador é o que impede a v1.1 de rodar antes disso)"
+    # O card que executa o que falta: homologação registrada + piso implementado no roteador
+    # + portão de versão aberto (nessa ordem). Enquanto ele estiver `blocked`, esta versão
+    # não sai do papel.
+    card_de_implementacao: t_d36c7d0f          # TRE-W0-E04-T07
+    entra_em_vigor_com: "homologação do Anderson (registro em docs/operations/registro-de-aprovacoes.md) + implementação do piso pelo card TRE-W0-E04-T07 (t_d36c7d0f); o portão de versão do roteador é o que impede a v1.1 de rodar antes disso"
 
 # ---------------------------------------------------------------------------------
 # PERFIS DE MODELO — o catálogo é configuração versionada, nunca hard-coded no prompt.

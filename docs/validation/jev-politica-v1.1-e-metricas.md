@@ -16,7 +16,7 @@ sem código canônico de ação e o classificador empatado com a constante sempr
 |---|---|
 | `hermes/jev/policy_v1_1.yaml` | **rascunho** da política v1.1 (não homologado, não em vigor) |
 | `docs/architecture/jev-decision-policy-v1.1.md` | documento da v1.1, autossuficiente, com a seção de mudanças |
-| `scripts/verificar_jev_policy_v1_1.py` | verificador da v1.1: roda a bateria da v1.0 inteira (42 itens) + 77 itens novos (55 de contrato, 9 de documento, 13 de comportamento) + autoteste por mutação (29 mutações) |
+| `scripts/verificar_jev_policy_v1_1.py` | verificador da v1.1: roda a bateria da v1.0 inteira (42 itens) + 80 itens novos (57 de contrato, 9 de documento, 13 de comportamento, 1 de sanidade do YAML) + autoteste por mutação (33 mutações) |
 | `scripts/medir_metricas_por_lane.py` | instrumento das métricas declaradas em `metricas` (custo e latência por lane) |
 | `scripts/verificar_jev_policy.py` | **uma linha de contrato a mais**: `verificar()` passou a aceitar a versão esperada como parâmetro (default preserva a v1.0) — é o que permite a v1.1 passar pela MESMA bateria |
 | `hermes/jev/benchmarks/metricas-por-lane-2026-09-30-jev-policy-v1.0.json` | resultado medido do instrumento, versionado |
@@ -110,8 +110,9 @@ medidas:
    mesma classe de defeito que o D08 já custou a este projeto (regra declarada que não é a regra executada).
 
 Entrar em vigor exige, no mesmo movimento: (a) o registro do Anderson em `docs/operations/registro-de-aprovacoes.md`,
-(b) `homologacao.registrada_em` preenchido no YAML, (c) o card de implementação do piso no roteador — que
-também abre o portão de versão. O verificador reprova o estado (b) **sem** o registro (a).
+(b) `homologacao.registrada_em` preenchido no YAML, (c) a implementação do piso no roteador pelo card
+`TRE-W0-E04-T07` (`t_d36c7d0f`, criado por este card e **blocked** de propósito) — que também abre o portão de
+versão. O verificador reprova o estado (b) **sem** o registro (a).
 
 O que a v1.1 traz pronto para esse dia: o vocabulário de ambiente declarado (`desenvolvimento`, `dev` ×
 `vivo`, `producao`) foi conferido **valor a valor** contra o guardrail de DDL do roteador em vigor (provas
@@ -125,22 +126,28 @@ declarado aciona — o mesmo fail-closed que o roteador já pratica.
 | `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy.py --autoteste` | `PASS (42 itens, 0 falhas) + autoteste OK` (12/12 mutações) |
 | `/opt/hermes/.venv/bin/python scripts/verificar_jev_router.py --autoteste` | `PASS (59 itens, 0 falhas) + autoteste OK` (21/21 mutações) |
 | `/opt/hermes/.venv/bin/python scripts/validar_jev_guardrails.py` | `itens: 74 … falhas: 0 … achados: 0` → `PASS (74 itens, 0 falhas)` |
-| `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy_v1_1.py --autoteste` | `PASS (119 itens, 0 falhas) + autoteste OK` (29/29 mutações) |
+| `/opt/hermes/.venv/bin/python scripts/verificar_jev_policy_v1_1.py --autoteste` | `PASS (122 itens, 0 falhas) + autoteste OK` (33/33 mutações) |
 | `/opt/hermes/.venv/bin/python scripts/medir_metricas_por_lane.py --autoteste` | `instrumento: OK`, autoteste `10/10 itens OK` |
 | `/opt/hermes/.venv/bin/python scripts/benchmark_roteamento.py` | `benchmark: OK` |
 
 As suítes da v1.0 e do roteador continuam verdes **sem alteração de comportamento**: a mudança em
 `verificar_jev_policy.py` é um parâmetro com default, e o roteador não foi editado.
 
-Mutações que o verificador da v1.1 precisa reprovar (29, todas detectadas): chave removida; chave divergindo
+Mutações que o verificador da v1.1 precisa reprovar (33, todas detectadas): chave removida; chave divergindo
 de cada uma das prosas; chave apontando lane inexistente; prosa apontando lane barata; regra por ambiente
 removida; ramo dev virando `critical`; ramo vivo sem aprovação humana; ramo vivo virando `high`; ramo dev
 recebendo valor de produção; ambiente não declarado caindo no ramo dev; regra deixando de ser piso; regra se
-declarando executada por roteador inexistente; rascunho se declarando homologado sem registro; estado
-trocado para homologado; `substitui` removido; motivo da versão esvaziado; `custo_por_lane` e
+declarando executada por roteador inexistente; card de implementação removido, com id malformado, fora da
+prosa de `entra_em_vigor_com` e apontando card que não existe no board; rascunho se declarando homologado sem
+registro; estado trocado para homologado; `substitui` removido; motivo da versão esvaziado; `custo_por_lane` e
 `latencia_por_lane` fora de `acompanhar`; instrumento inexistente; motivo de não-medibilidade removido;
 limite da cegueira de custo removido; `campos_fora_do_contrato` removido; 14º campo no recibo; e cinco
 mutações no documento.
+
+Um item merece nota porque ele não é sobre o YAML: **o card citado existe no board** (lido do SQLite, em modo
+somente-leitura). Decisão que não viaja para o card seguinte se perde na primeira pressão — a v1.1 aponta
+nominalmente para `TRE-W0-E04-T07` (`t_d36c7d0f`, `status=blocked`, assignee `desenvolvedor`), e o verificador
+confere que o id citado está lá.
 
 ## 7. Limites honestos desta entrega
 

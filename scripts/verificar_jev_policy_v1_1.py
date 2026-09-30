@@ -50,9 +50,11 @@ from __future__ import annotations
 
 import copy
 import importlib.util
+import os
 import pathlib
 import re
 import site
+import sqlite3
 import sys
 import tempfile
 
@@ -131,6 +133,30 @@ class Itens:
 
 def texto_de_yaml(dado: dict) -> str:
     return yaml.safe_dump(dado, allow_unicode=True, sort_keys=False)
+
+
+def _card_do_board(card_id: str):
+    """(ok, detalhe): o card citado pela politica existe no board de verdade?
+
+    Le o SQLite do board em modo somente-leitura (o mesmo caminho que o roteador usa).
+    Board ausente neste host = item nao aplicavel (deterministico e declarado, nunca
+    "passou porque nao olhei"): o host autoritativo do TRE tem o board, e la o item mede.
+    """
+    caminho = pathlib.Path(os.environ.get("JEV_BOARDS_DIR", "/opt/data/kanban/boards")) \
+        / "transformativa-revenue-engine" / "kanban.db"
+    if not caminho.is_file():
+        return True, f"board ausente neste host ({caminho}): item nao aplicavel"
+    if not card_id:
+        return False, "a politica nao cita card de implementacao"
+    conexao = sqlite3.connect(f"file:{caminho}?mode=ro", uri=True)
+    try:
+        linha = conexao.execute("SELECT status, assignee, title FROM tasks WHERE id = ?",
+                                (card_id,)).fetchone()
+    finally:
+        conexao.close()
+    if linha is None:
+        return False, f"card {card_id!r} nao existe no board {caminho}"
+    return True, f"{card_id}: status={linha[0]!r} assignee={linha[1]!r} titulo={str(linha[2])[:48]!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +282,16 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
     itens.add("v1.1: a execucao da regra e declarada (contrato != enforcement)",
               "roteador_que_a_executa" in execucao,
               f"execucao={execucao}")
+    # Decisao que nao viaja para o card seguinte se perde na primeira pressao: a v1.1 tem de
+    # apontar NOMINALMENTE para o card que a executa, e o card tem de existir no board.
+    card_do_piso = str(execucao.get("card_de_implementacao") or "").strip()
+    itens.add("v1.1: a regra aponta o card que a implementa (id do board)",
+              bool(re.fullmatch(r"t_[0-9a-f]{8}", card_do_piso)), f"card={card_do_piso!r}")
+    itens.add("v1.1: o id do card do piso aparece tambem na prosa de `entra_em_vigor_com`",
+              bool(card_do_piso) and card_do_piso in str(execucao.get("entra_em_vigor_com") or ""),
+              f"entra_em_vigor_com={str(execucao.get('entra_em_vigor_com'))[:80]!r}")
+    itens.checar("v1.1: o card citado EXISTE no board (a decisao viaja para quem executa)",
+                 lambda: _card_do_board(card_do_piso))
 
     # ---- 2.5 metricas instrumentadas ---------------------------------------
     met = dado.get("metricas") or {}
@@ -571,6 +607,21 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
     mut("a regra se declara executada por um roteador que nao existe",
         lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
             "roteador_que_a_executa", "jev-router-v9.9"), d)[1])
+    mut("card de implementacao removido da regra",
+        lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].pop("card_de_implementacao"), d)[1])
+    mut("card de implementacao com id malformado (nao e id do board)",
+        lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
+            "card_de_implementacao", "TRE-W0-E04-T07"), d)[1])
+    mut("card de implementacao fora da prosa de `entra_em_vigor_com`",
+        lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
+            "entra_em_vigor_com", "homologacao do Anderson + implementacao do piso"), d)[1])
+    # A mutacao do card INEXISTENTE so vale onde o board existe: a prova de que "o card
+    # citado existe" nao pode depender de o host ter o board (o autoteste precisa ser
+    # honesto nos dois hosts, em vez de verde por acidente).
+    if _card_do_board("t_d36c7d0f")[1].startswith("t_d36c7d0f"):
+        mut("card de implementacao apontando card que nao existe no board",
+            lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
+                "card_de_implementacao", "t_deadbeef"), d)[1])
 
     # homologacao
     mut("rascunho se declara homologado sem registro",
