@@ -59,4 +59,18 @@ codigos_validos:
   - operacao_comercial
   - migracao_de_esquema
 
-declaracoes: []
+declaracoes:
+  # TRE-W0-E04-T03-D01 (lacuna do corpus): anotar o codigo canonico de acao nos casos e re-medir
+  # o benchmark. Artifacto e texto/dado do proprio repo (corpus + resultado versionado), sem
+  # producao e sem credencial -> codigo comum `ajuste_de_texto`.
+  - card_id: t_dfcfc4d4
+    acao_codigo: ajuste_de_texto
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card TRE-W0-E04-T03-D01: anotar `acao_codigo` nos 28 casos do corpus e re-medir o benchmark.
+      Autorizado por Anderson no Telegram em 30/09/2026 ("resolver T03-D01"). Nao altera
+      `lane_esperada` homologada; divergencia vira achado. Producao: nao. Credencial: nao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+
