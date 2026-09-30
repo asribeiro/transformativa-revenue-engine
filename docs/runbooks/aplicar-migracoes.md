@@ -99,3 +99,48 @@ backup já assumem `sales_intelligence` como padrão. O runner aplica no par que
   operação, a base é `transformativa_ai` com schema `sales_intelligence`, enquanto no ambiente de
   desenvolvimento o banco se chama `sales_intelligence`. Não é defeito desta entrega; é
   nomenclatura a unificar antes de promover qualquer ambiente (card próprio).
+
+## 8. Constraints e índices conferidos item a item (TRE-W1-E03-T01)
+
+O modo `--banco` do `verificar_contrato_dados.py` confere o schema do ambiente e **conta** os índices (30).
+Para a prova **item a item** de constraints e índices existe um verificador dedicado, também read-only:
+
+```bash
+# na VPS do ambiente (ADR-0008)
+python3 scripts/db/verificar_constraints_indices.py --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'
+python3 scripts/db/verificar_constraints_indices.py --esperado   # imprime o esperado, sem tocar banco
+```
+
+- O esperado **não é lista escrita à mão**: sai da própria migration (PK inline, UNIQUE inline, `REFERENCES`
+  e os `CREATE INDEX`) e do `docs/data/data_contract_v1.json` (os 16 itens de índice do contrato). Mudou a
+  migration, mudou o esperado — o verificador não envelhece nem vira carimbo.
+- Conta: **30 índices** = 12 PK (`<tabela>_pkey`) + 15 `CREATE INDEX` nomeados + 3 UNIQUE declaradas inline
+  (`organizations.odoo_partner_id`, `contacts.odoo_partner_id`, `sync_events.idempotency_key`).
+- Compara o conjunto **exato** (nome, tabela, unicidade e colunas com direção `DESC`): índice faltando **e**
+  índice sobrando reprovam. E compara item a item: PK (uma por tabela, coluna `id`), FK (par
+  tabela.coluna → tabela.coluna de destino) e UNIQUE (tabela + colunas) — além de provar que os vínculos
+  lógicos declarados (`signals.research_run_id`, `recommendations.opportunity_id`, `interactions.campaign_id`)
+  continuam **sem** FK.
+- Só leitura (`pg_indexes`/`pg_constraint`); sem `--banco` o script sai 2: não existe veredito sem alvo.
+
+A prova de que o verificador tem dente roda em **container descartável** (não toca ambiente nenhum):
+
+```bash
+bash scripts/db/teste-constraints-indices.sh
+```
+
+Ele sobe um `postgres:16`, aplica a migration congelada, confirma `PASS` no alvo íntegro, aplica sete
+mutações — índice removido, índice renomeado, mesmo nome com coluna errada, FK removida, UNIQUE removida, PK
+removida, índice a mais — exige **reprovação apontando o motivo** em cada uma, desfaz a mutação e reverifica.
+
+### 8.1 Evidência medida — 30/09/2026 (dev, VPS Contabo `vmi3619453`)
+
+- `bash scripts/db/estado_do_ambiente.sh dev` → `12 tabelas | 30 índices`;
+- `python3 scripts/db/verificar_constraints_indices.py --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'`
+  → `RESULTADO: PASS (16 itens, 0 falhas)`, exit 0: `pg_indexes` com os 30 índices (12 PK + 15 nomeados + 3
+  UNIQUE) e `pg_constraint` com 12 PK, 10 FK e 3 UNIQUE, iguais ao contrato item a item;
+- `python3 scripts/verificar_contrato_dados.py --banco '…'` → `PASS (37 itens, 0 falhas)`, exit 0;
+- `bash scripts/db/teste-constraints-indices.sh` → `TESTE_OK (18 itens, 0 falhas)`, exit 0 (sete mutações
+  reprovadas pelo motivo certo, todas reversíveis);
+- produção e homologação intocadas: `aplicar_migracoes.sh prod` recusa por ADR-005 (exit 1), `docker ps -a`
+  só com `pg-sales-dev` e `/opt/tre/{prod,homolog}` sem arquivo.

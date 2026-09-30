@@ -72,6 +72,20 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     mais e linha a menos **reprovam**, a reaplicação do fixture restaura a contagem;
   - `db/fixtures/smoke_dev_rollback.sql` — rollback da massa (filhas antes das pais), exercitado de verdade;
   - `docs/runbooks/massa-de-smoke-dev.md` — runbook da massa (aplicação, conferência, teste negativo, rollback).
+- **Constraints e índices do contrato conferidos item a item** (`TRE-W1-E03-T01`) — os 30 índices e as
+  constraints (PK/FK/UNIQUE) da migration 0001 passaram a ter conferência **nome a nome e coluna a coluna**
+  contra o ambiente real, com prova negativa:
+  - `scripts/db/verificar_constraints_indices.py` — verificador **read-only**: deriva o esperado da própria
+    migration e do `data_contract_v1.json` (12 PK `<tabela>_pkey` + 15 `CREATE INDEX` nomeados + 3 UNIQUE
+    inline = 30) e compara com o `pg_indexes`/`pg_constraint` do alvo: conjunto exato de índices (nome,
+    tabela, unicidade e colunas com direção `DESC`), os 16 itens de índice do contrato, PK (uma por tabela,
+    coluna `id`), FK (par tabela.coluna → tabela.coluna) e UNIQUE (tabela + colunas), item a item.
+    `--esperado` imprime o esperado sem tocar banco; sem `--banco` o script sai 2 (fail-closed);
+  - `scripts/db/teste-constraints-indices.sh` — prova em container descartável que o verificador tem dente:
+    sete mutações (índice removido, índice renomeado, mesmo nome com coluna errada, FK removida, UNIQUE
+    removida, PK removida, índice a mais) **reprovam apontando o motivo**, e cada mutação desfeita volta a
+    aprovar (`TESTE_OK`);
+  - `docs/runbooks/aplicar-migracoes.md` §8 — uso, evidência medida e escopo da conferência.
 - **Deduplicação de empresa por identificadores fortes** (`TRE-W1-E04-T01`) — o contrato (seção 5) virou
   código executável no ambiente dev, com merge auditável e fila humana:
   - `scripts/dedup/deduplicar_organizacoes.py` — motor: normaliza e compara **CNPJ → domínio → LinkedIn
