@@ -129,7 +129,8 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
 
 Comando: `set -a; . /etc/tre/backup.env; set +a; bash scripts/backup/teste-backup-restore.sh /opt/tre/repo --ambiente dev`
 — **`RESULTADO: TESTE_OK (14 itens, 0 falhas)`**, exit 0.
-(Note o `bash` explícito: hoje os scripts de `scripts/backup/` estão `100644` no git — ACHADO ABERTO 1, §8.)
+(Note o `bash` explícito: **na data desta medição** os scripts de `scripts/backup/` estavam `100644` no git
+— era o ACHADO ABERTO 1, corrigido depois em §7c; hoje são `100755`.)
 
 1. **origem é o container do ambiente** (`pg-sales-dev`), não um descartável: o modo ambiente não cria
    container de origem e **falha** se o container do ambiente não existir (testado: `pg-nao-existe` →
@@ -157,7 +158,7 @@ Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob 
 
 | Medida | Antes (commit `16c31f0`) | Depois (commit `6a580ee` + `install -m 755`) |
 |---|---|---|
-| `git ls-files -s scripts/backup/` | `100644` nos 7 scripts | `100755` nos 8 (`backup-tre.sh`, `restore-tre.sh`, `verificar-backup.sh`, `verificar-ultimo-backup.sh`, `configurar-destino-externo.sh`, `instalar-timers.sh`, `teste-backup-restore.sh`, `verificar-modos-executaveis.sh`) |
+| `git ls-files -s scripts/backup/` | `100644` em **6 dos 7** scripts que existiam (`teste-backup-restore.sh` já era `100755`; `verificar-modos-executaveis.sh` não existia) | `100755` nos 8 (`backup-tre.sh`, `restore-tre.sh`, `verificar-backup.sh`, `verificar-ultimo-backup.sh`, `configurar-destino-externo.sh`, `instalar-timers.sh`, `teste-backup-restore.sh`, `verificar-modos-executaveis.sh`) |
 | `verificar-modos-executaveis.sh` | `MODOS_FALHOU (4 itens, 2 falhas)`, exit 1 | `MODOS_OK (4 itens, 0 falhas)`, exit 0 |
 | `sudo -u tre-deploy test -x /opt/tre/repo/scripts/backup/backup-tre.sh` | exit 1 | **exit 0** |
 | `systemctl start tre-backup.service` | `START_EXIT=1`, `ExecMainStatus=203`, journal `Failed at step EXEC … Permission denied` | **`START_EXIT=0`**, `Result=success`, journal com o `backup-tre.sh` executando (`PULADO` nos três ambientes — motivo de negócio, ACHADO 2) |
@@ -177,9 +178,41 @@ Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob 
 4. **Os timers seguem habilitados e ativos** (`tre-backup.timer` → próxima execução 01/10 02:33 -03).
    **A geração do artefato diário continua pendente**: depende do ACHADO ABERTO 2.
 
+## 7d. Rodada 2 — a cópia operacional foi revertida e remedida (30/09/2026, 20:02–20:13 UTC)
+
+A instalação de §7c **foi desfeita 39 s depois** por uma publicação concorrente de outro card, e os dois
+critérios que medem a cópia operacional voltaram a reprovar. Cronologia medida em `/opt/tre/.publicacoes.log`
+e `stat` dos arquivos:
+
+| UTC | Evento (fonte) | Estado de `/opt/tre/repo/scripts/backup/*.sh` |
+|---|---|---|
+| 20:03:36–37 | `install -m 755` deste card (§7c) | `755`, `test -x` exit 0, `systemctl start` = `success` |
+| 20:03:59 / 20:06:19 | publicação de teste do card `t_091cfea9` com `commit=16c31f0…` (**anterior à correção**) | volta a `644` (ctime 20:04:15 UTC), `instalar-timers.sh` sem a guarda |
+| 20:10:21 / 20:11:59 | medição da **revisão** (§ comentário 110): `test -x` exit 1, `start` → `ExecMainStatus=203/EXEC` | `644` |
+| 20:12:35 | publicação **versionada** do card `t_091cfea9` (`commit=f1f1cb6b…`, `/opt/tre/repo/.publicado`, `execstart_sem_bit: 0`) | `755` de novo |
+| **20:13:36–37** | **remedição deste card (rodada 2)** | `755` |
+
+Remedição de 20:13:36Z, na VPS `vmi3619453`:
+
+- `sudo -u tre-deploy test -x /opt/tre/repo/scripts/backup/backup-tre.sh` → **`TEST_X_EXIT=0`**;
+- `systemctl start tre-backup.service` → **`START_EXIT=0`**; `systemctl show` → `Result=success`,
+  `ExecMainStatus=0`, `ExecStart pid=230506 code=exited status=0`; journal de 17:13:36-03 (20:13:36Z) com
+  `backup-tre.sh[230506]` imprimindo os três blocos de ambiente e `RESULTADO: BACKUP_OK (todos)` /
+  `Deactivated successfully`. As linhas `203/EXEC` de 20:10:21Z e 20:11:59Z que ainda aparecem no journal
+  **são da medição da revisão**, não desta;
+- `sha256` da cópia operacional × repositório (`origin/develop`, `d2a2640`): **8/8 idênticos** (`diff` vazio);
+  as árvores de `scripts/backup/` em `origin/develop` e no commit publicado `f1f1cb6b` são **os mesmos
+  blobs** (`git ls-tree` idêntico), ou seja, o conteúdo publicado é o da correção.
+
+**Não fiz uma nova instalação ad-hoc nesta rodada** — de propósito: a cópia foi restaurada pela publicação
+**versionada** de 20:12:35Z (a correção do ACHADO ABERTO 3), com modo preservado, e uma sobreposição manual
+seria exatamente o padrão que causou o revert. O que se prova aqui é conteúdo e modo idênticos ao
+repositório + os dois critérios do card medidos com horário.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
-- **RESOLVIDO 30/09/2026 — o serviço do timer não executava (era ACHADO ABERTO 1, alta).**
+- **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
+  já foi revertida duas vezes por publicação anterior à correção.**
   `scripts/backup/*.sh` estavam no git como **100644** (sem bit executável); o `ExecStart=` chama o arquivo
   direto, então toda sincronização a partir do repositório devolvia a cópia operacional para 644 e o unit
   morria com `status=203/EXEC` (`Unable to locate executable …: Permission denied`). Corrigido no **git**
@@ -187,6 +220,16 @@ Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob 
   adicionada a guarda `scripts/backup/verificar-modos-executaveis.sh` (reprova o estado anterior com
   `MODOS_FALHOU` exit 1, aprova o corrigido com `MODOS_OK` exit 0), chamada pelo `instalar-timers.sh`, que
   agora **aborta sem habilitar timer** se algum `ExecStart=` estiver sem bit. Evidência medida em §7c.
+  **Qualificação (30/09/2026, 20:02–20:13 UTC):** a cópia operacional foi **revertida para o estado
+  pré-correção** (`commit=16c31f0`) às 20:04:15Z/20:06:19Z pela publicação de teste do card `t_091cfea9`
+  (prova: `/opt/tre/.publicacoes.log`; as medições `203/EXEC` de 20:10:21Z e 20:11:59Z são da revisão), e
+  **voltará a `203/EXEC` a cada publicação de árvore anterior à correção enquanto o caminho versionado de
+  publicação não for o único usado** (ACHADO ABERTO 3). A partir de 20:12:35Z a cópia voltou a ficar
+  executável por uma publicação **versionada** (`/opt/tre/repo/.publicado` = `f1f1cb6b`, `execstart_sem_bit: 0`)
+  e os dois critérios da cópia operacional foram **remedidos com horário** às 20:13:36Z (`test -x` exit 0;
+  `systemctl start` → `Result=success`, `ExecMainStatus=0`), com conteúdo provado por `sha256` 8/8 idêntico
+  ao repositório — §7d. O que fica **resolvido de forma durável** é o bit no git e a guarda; o que fica
+  **dependente de processo** é a cópia operacional não ser sobrescrita por publicação anterior.
   **A rotina diária ainda não produz artefato** — a causa que resta é o **ACHADO ABERTO 2** (abaixo).
 - **ACHADO ABERTO 2 (alta) — a rotina cobre zero ambientes e sai `BACKUP_OK`.** `backup-tre.sh` procura
   `pg-dev`/`pg-homolog`/`pg-prod`, mas o dev real é `pg-sales-dev` (usuário `sales_ai`), e
@@ -199,6 +242,10 @@ Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob 
 - **ACHADO ABERTO 3 (média) — a cópia operacional `/opt/tre/repo` é reescrita por qualquer card.** Durante
   a rodada do `TRE-W1-E06-T01`, um `tar` de outro worker reverteu o driver recém-instalado (sha
   `d29c9c97…` → `9f24572a…`). Quem sincroniza por último manda: a cópia operacional não é reproduzível.
+  **Atualização 30/09/2026 20:12:35Z (medida):** o card `t_091cfea9` passou a publicar por caminho
+  versionado — `/opt/tre/repo/.publicado` registra `commit: f1f1cb6b…`, `execstart_sem_bit: 0` e
+  `concorrencia: (nenhuma)` — e essa publicação preservou o modo (`755`) e restaurou a cópia executável
+  (§7d). O achado segue **aberto** enquanto esse não for o **único** caminho de publicação em uso.
 - **Usuário do timer não exercitado de ponta a ponta:** o ciclo foi rodado como `root` (acesso do agente,
   decisão 5); provou-se por partes que `tre-deploy` escreve em `/opt/tre/backup` (`test -w`) e usa a
   credencial do bucket (`rclone lsl --config /etc/tre/rclone.conf`). Rodar o ciclo inteiro como
