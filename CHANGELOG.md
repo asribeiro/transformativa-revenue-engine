@@ -173,6 +173,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `docs/runbooks/publicacao-da-copia-operacional.md` é o runbook (comando, guardas, rollback do código
   publicado e o que o caminho não faz).
 
+- **Enforcement do caminho único da cópia operacional — trava de imutabilidade, artefato do commit e
+  watchdog de 2 min** (`t_daca4bda`, recorrência do defeito do `t_091cfea9`) — o `deploy/publicar.sh`
+  **detectava** a escrita ad-hoc (`--conferir`, exit 5), mas ninguém o rodava: bastou um card em execução
+  ressincronizar a cópia por `tar` ad-hoc para o `.publicado` continuar dizendo o commit consertado
+  enquanto a árvore em disco voltava ao estado **pré-correção**. Agora:
+  (i) **`chattr +i`** na cópia publicada — escrita ad-hoc falha com `Operation not permitted` em vez de
+  sobrescrever em silêncio (`--travar`/`--destravar`; `--sem-trava` só para ensaio; `deploy/publicar.sh` é
+  o único que desarma, e só durante a troca);
+  (ii) **artefato do commit** em `/opt/tre/.publicacao-artefato` (`commit.tar` com o modo do git +
+  `modos.txt` + `manifesto` + `commit`/`digest`, `root:root` 700 **fora** da cópia) — fail-closed: se o
+  artefato gravado não conferir com o commit, a publicação para antes de trocar qualquer coisa;
+  (iii) **`deploy/watchdog-publicacao.sh`** (novo; roda na VPS, sem git e sem o checkout) confere a cópia
+  contra o manifesto do commit registrado a cada 2 min
+  (`deploy/systemd/tre-publicacao-watchdog.{service,timer}`), **atribui** a divergência (alterado /
+  plantado / removido, com mtime e se é posterior à publicação), grava `/opt/tre/.publicacao-ALERTA` e
+  `/opt/tre/.publicacao-divergencias.log` e, com `--reparar`, **restaura a cópia a partir do artefato** e
+  rearma a trava (registrado em `.publicacoes.log` como `card=watchdog-reparo`);
+  (iv) `deploy/instalar-watchdog-publicacao.sh` instala os **bytes da cópia publicada** em
+  `/usr/local/lib/tre` (sha256 conferido dos dois lados) — o watchdog sobrevive à cópia quebrada.
+  Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
+  isolado).
+
 ### Fixed
 
 - **A rotina de backup cobria zero ambientes e saía `BACKUP_OK`; o verificador aprovava sem backup nenhum**
@@ -271,6 +293,22 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   publicação** (`deploy/publicar.sh`, ver o `Added` acima): commit explícito, modo do índice do git,
   `.publicado` com o commit em uso, `--conferir` que reprova a cópia divergente e histórico em
   `/opt/tre/.publicacoes.log`. Evidência medida em `docs/runbooks/backup-restore-rollback.md` §7e.
+- **Recorrência: a cópia operacional foi reescrita por fora do caminho único e reverteu o commit
+  publicado** (`t_daca4bda`; mesmo defeito do `t_091cfea9`, um dia depois) — o card `t_c7281fce`, **em
+  execução**, ressincronizou `/opt/tre/repo` da própria árvore de trabalho por `tar` ad-hoc (os `mtime`
+  gravados na cópia batem ao segundo com os arquivos do worktree dele, com `mtime` preservado; o
+  `.publicacoes.log` não tem entrada dele e o `.publicado` continuou apontando para `c7972ca`, o commit
+  consertado) e o `tre-backup.service` voltou a executar a rotina **pré-correção**, imprimindo
+  `BACKUP_OK` cobrindo **zero** ambientes. Causa raiz medida, não inferida: o caminho único existia mas
+  **não tinha enforcement** — o `--conferir` só reprovava quando alguém lembrava de rodar, e nada impedia
+  a escrita. Corrigido com trava de imutabilidade, artefato do commit e watchdog (detalhes no `Added`
+  acima), tudo medido no destino real: com a trava armada, os quatro caminhos ad-hoc do defeito (append,
+  `sed -i`, `tar -xz` de outra árvore, arquivo novo plantado) são **bloqueados** com `Operation not
+  permitted`; removida a trava na mão, a divergência injetada (conteúdo pré-correção com `mtime`
+  preservado + `scripts/db/teste_isolamento_clientes.sh` plantado) foi **detectada, atribuída pelos
+  `mtime` e restaurada** pelo watchdog, e a cópia voltou a bater com o commit registrado. Decisão de
+  processo registrada no runbook: `/opt/tre/repo` é **produção**, bancada de teste é destino isolado
+  (`TRE_PUBLICAR_DESTINO`).
 
 ### Notas de estado
 

@@ -112,9 +112,9 @@ fi
 ESTADO="$(R "bash '$LIB/watchdog-publicacao.sh' --estado")"
 echo "  $ESTADO"
 
-# 5) trava de imutabilidade (opcional neste passo)
-TRAVA=ausente
-if [ "$FAZER_TRAVA" -eq 1 ]; then
+# 5) trava de imutabilidade: reporta o estado real; --travar arma se ainda nao estiver armada
+TRAVA="$(R "bash '$LIB/watchdog-publicacao.sh' --estado | sed -n 's/.*trava=\\([a-z]*\\).*/\\1/p'")"
+if [ "$FAZER_TRAVA" -eq 1 ] && [ "$TRAVA" != "armada" ]; then
   R "bash '$LIB/watchdog-publicacao.sh' --travar"
   TRAVA="$(R "bash '$LIB/watchdog-publicacao.sh' --estado | sed -n 's/.*trava=\\([a-z]*\\).*/\\1/p'")"
 fi

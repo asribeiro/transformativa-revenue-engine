@@ -1,8 +1,10 @@
 # Runbook — Publicação da cópia operacional (`/opt/tre/repo`)
 
-**Card:** `t_091cfea9` (DEFEITO F3 do `TRE-W1-E06-T01`) · **Status:** vigente desde 30/09/2026
-**Máquina:** VPS Contabo `vmi3619453` (`169.58.24.102`) · destino `tre-deploy:tre-deploy`
-**Script:** `deploy/publicar.sh` — **único** caminho de publicação da cópia operacional.
+**Card:** `t_091cfea9` (DEFEITO F3 do `TRE-W1-E06-T01`) · **Revisão 1.1 (enforcement):** `t_daca4bda`
+**Status:** vigente desde 30/09/2026 · **Máquina:** VPS Contabo `vmi3619453` (`169.58.24.102`) · destino `tre-deploy:tre-deploy`
+**Scripts:** `deploy/publicar.sh` (único caminho de escrita) · `deploy/watchdog-publicacao.sh` +
+`deploy/systemd/tre-publicacao-watchdog.{service,timer}` (vigilância de 2 min na VPS) ·
+`deploy/instalar-watchdog-publicacao.sh` (instalação).
 
 ---
 
@@ -45,6 +47,8 @@ deploy/publicar.sh --conferir                    # confere a cópia contra o com
 | `--chave <arquivo>` | chave ssh (padrão `$HOME/.ssh/id_ed25519_ops`, depois `/opt/data/home/.ssh/id_ed25519_ops`) |
 | `--card <id>` | card que publica (padrão `$HERMES_KANBAN_TASK`) — vai para `.publicado` e para o log |
 | `--ensaio` | mostra o que faria (inclusive o digest e a concorrência) sem escrever nada |
+| `--travar` / `--destravar` | arma/desarma a trava de imutabilidade (`chattr +i`) da cópia publicada |
+| `--sem-trava` | publica **sem** armar a trava (`TRE_PUBLICAR_TRAVA=0`) — só para ensaio |
 | `--permitir-arvore-suja` | publica mesmo com arquivo versionado modificado — o conteúdo continua vindo do git e o desvio fica registrado |
 | `--exigir-modos` | transforma em falha (`exit 4`) o `ExecStart=` sem bit executável no commit |
 | `--forcar-lock` | derruba lock obsoleto (> 30 min) de outra publicação |
@@ -55,7 +59,7 @@ Códigos de saída: `0` OK · `1` falha · `2` uso/precondição (árvore suja, 
 A última linha da saída é para automatizar:
 
 ```text
-PUBLICACAO_OK commit=<sha> digest=<sha256> arquivos=<n> digest_antes=<sha256>
+PUBLICACAO_OK commit=<sha> digest=<sha256> arquivos=<n> digest_antes=<sha256> trava=<armada|ausente>
 PUBLICACAO_DIVERGENTE …      (exit 5)
 PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
 ```
@@ -117,7 +121,67 @@ do destino **arquivo a arquivo e modo a modo**:
 Rode `--conferir` **depois de qualquer operação na VPS** e antes de culpar o código por um defeito de
 ambiente: "o container subiu" não é prova de que a cópia é o commit que você acha que é.
 
-## 5. Rollback do código publicado
+## 5. Enforcement — a cópia publicada é imutável e vigiada
+
+O caminho único **sozinho não bastou**. Em 30/09/2026 (recorrência do mesmo defeito, card `t_daca4bda`)
+um card em execução ressincronizou `/opt/tre/repo` por `tar` ad-hoc, com mtime preservado, e a cópia
+voltou para uma árvore **pré-correção**: o `.publicado` continuava dizendo o commit consertado, o
+`tre-backup.service` imprimia `BACKUP_OK` cobrindo **zero** ambientes e ninguém rodava o `--conferir`
+para ver. Caminho único que só *detecta* quando alguém lembra de rodar não é caminho único. Três peças
+fecham isso:
+
+1. **Trava de imutabilidade (`chattr +i`).** Toda publicação deixa a cópia **imutável**. Escrita ad-hoc
+   (`tar -xz`, `sed -i`, `rsync`, `>>`, arquivo novo) passa a falhar com `Operation not permitted` em vez
+   de sobrescrever em silêncio; para escapar é preciso `chattr -i` explícito — o erro deixa de ser
+   silencioso. `deploy/publicar.sh` é o único que desarma, e só durante a troca (rearma antes de
+   terminar); `--travar`/`--destravar` fazem isso à mão e `--sem-trava` publica sem armar (ensaio).
+2. **Artefato do commit publicado.** A publicação grava o commit em `/opt/tre/.publicacao-artefato`
+   (`commit.tar` com o modo do git, `modos.txt`, `manifesto`, `commit`, `digest`; `root:root` 700,
+   **fora** da cópia). É o que permite conferir e restaurar **sem git** e sem o checkout de quem publica —
+   e é uma referência independente: quem escreve na cópia teria de acertar dois lugares. Fail-closed: se o
+   artefato gravado não conferir com o commit, a publicação **para** antes de trocar qualquer coisa.
+3. **Watchdog de 2 minutos (na VPS).** `tre-publicacao-watchdog.timer` roda
+   `/usr/local/lib/tre/watchdog-publicacao.sh --reparar`, instalado **fora** da cópia a partir dos bytes
+   publicados (`deploy/instalar-watchdog-publicacao.sh` confere o sha256 dos dois lados) — o watchdog
+   sobrevive justamente à cópia quebrada. Ele confere a cópia contra o manifesto do commit registrado,
+   **atribui** a divergência (arquivo alterado / plantado / removido, com mtime e se é posterior à
+   publicação), grava `/opt/tre/.publicacao-ALERTA` e `/opt/tre/.publicacao-divergencias.log`
+   (append-only) e, no reparo, **restaura** a cópia do artefato e rearma a trava. Não interfere em
+   publicação em curso: se `/opt/tre/.publicacao.lock` existe, ele só reporta `PUBLICACAO_EM_ANDAMENTO`.
+
+Saída do watchdog (uma linha, para automatizar):
+
+```text
+PUBLICACAO_OK commit=<sha> digest=<sha256> arquivos=<n> em=<quando>
+PUBLICACAO_DIVERGENTE …            (exit 5 — a cópia não é o commit registrado)
+PUBLICACAO_SEM_REGISTRO …          (exit 5 — sem .publicado/.publicado.manifest)
+PUBLICACAO_EM_ANDAMENTO …          (publicação com o lock; não interfere)
+PUBLICACAO_REPARO_OK … / PUBLICACAO_REPARO_FALHOU …   (exit 6)
+PUBLICACAO_TRAVADA / PUBLICACAO_DESTRAVADA
+```
+
+Operação:
+
+```bash
+ssh root@169.58.24.102 'bash /usr/local/lib/tre/watchdog-publicacao.sh --estado'
+ssh root@169.58.24.102 'cat /opt/tre/.publicacao-ALERTA; tail -20 /opt/tre/.publicacao-divergencias.log'
+ssh root@169.58.24.102 'systemctl list-timers tre-publicacao-watchdog.timer; journalctl -u tre-publicacao-watchdog -n 20'
+deploy/instalar-watchdog-publicacao.sh          # instala/atualiza a partir dos bytes publicados (--travar arma se estiver solta)
+```
+
+**Quando o alerta aparece:** a cópia foi escrita por fora do caminho único. Não force `chattr -i` na cópia
+para "resolver" — o destino compartilhado é **produção**. O reparo do timer devolve a cópia ao commit
+registrado e registra em `/opt/tre/.publicacoes.log` como `card=watchdog-reparo`. Quem precisava escrever
+ali, use **destino isolado** (§9).
+
+**Limites (não disfarçados):** (i) a trava é obstáculo contra o erro, não barreira contra `root` — quem
+tem `root` pode `chattr -i` e escrever, mas deixa de ser silencioso, e o watchdog pega no ciclo seguinte;
+(ii) o watchdog compara **conteúdo e modo** com o manifesto registrado, não assina nada: se o `.publicado`
+**e** o artefato forem reescritos, não há como ver (por isso o artefato é `root:root` 700, fora da cópia);
+(iii) o reparo usa o artefato da **última** publicação — sem ele o watchdog detecta e alerta, mas a
+restauração volta a exigir `deploy/publicar.sh --commit <registrado>`.
+
+## 6. Rollback do código publicado
 
 A cópia é código, não dado — restaurar dado é o runbook `backup-restore-rollback.md`. Para voltar a cópia
 ao commit anterior:
@@ -130,7 +194,7 @@ deploy/publicar.sh --commit <commit_anterior>                # republica aquele 
 Publicar um commit **é** um rollback determinístico: o `digest` do commit é o mesmo de antes, porque o
 conteúdo e o modo vêm do git. Não existe "arquivo solto" a limpar: o `rsync --delete` espelha o commit.
 
-## 6. O que este caminho **não** faz
+## 7. O que este caminho **não** faz
 
 - **não empurra para o git** — publicar ≠ integrar. O `push` para `develop`/`feature` é do fluxo de
   branches (`BRANCHING.md`); publicar serve para o que roda **na VPS agora** (timers, scripts de operação).
@@ -143,7 +207,7 @@ conteúdo e o modo vêm do git. Não existe "arquivo solto" a limpar: o `rsync -
   modos e o manifesto são texto separado por espaço. Se tiver, a publicação **recusa** (exit 2) em vez de
   publicar um digest que não representa a árvore.
 
-## 7. Evidência medida (30/09/2026)
+## 8. Evidência medida (30/09/2026)
 
 Duas publicações seguidas do **mesmo commit** terminando no **mesmo digest**, na cópia de teste e na
 cópia operacional real; a sobrescrita ad-hoc detectada por `--conferir` (exit 5) e desfeita por uma nova
@@ -151,9 +215,27 @@ publicação; `tre-backup.service` executando sem `203/EXEC` depois da publicaç
 saídas em `docs/runbooks/backup-restore-rollback.md` §7d e
 `docs/operations/registro-de-execucoes.md` (entrada de 30/09/2026 do card `t_091cfea9`).
 
-## 8. Regra para os próximos cards
+## 9. Regra para os próximos cards
 
 - **Nada publica por `tar`/`scp`/`rsync` direto em `/opt/tre/repo`.** Um caminho só: `deploy/publicar.sh`.
+  Desde a revisão 1.1 isso não depende mais de disciplina: a cópia publicada está **imutável** e escrita
+  ad-hoc falha com `Operation not permitted`; se ainda assim algo escapar (um `chattr -i` na mão), o
+  watchdog de 2 minutos detecta, alerta e restaura.
+- **O destino compartilhado é PRODUÇÃO — bancada de teste é destino isolado.** Se você precisa de uma
+  cópia com a sua árvore (para testar, medir, ensaiar), publique num destino seu e não toque no
+  compartilhado:
+
+  ```bash
+  TRE_PUBLICAR_DESTINO=/opt/tre/.teste-<seu-card> \
+  TRE_PUBLICAR_ARTEFATO=/opt/tre/.teste-<seu-card>-artefato \
+  TRE_PUBLICAR_LOCK=/opt/tre/.teste-<seu-card>.lock \
+  TRE_PUBLICAR_LOG=/opt/tre/.teste-<seu-card>.log \
+  deploy/publicar.sh --commit <sha>              # e --conferir com as MESMAS variáveis
+  ```
+
+  Foi usar o destino compartilhado como bancada que produziu o `t_091cfea9`, o `203/EXEC` e a recorrência
+  do `t_daca4bda`. Se o seu comando em `/opt/tre/repo` falhar com `Operation not permitted`, **não force
+  `chattr -i`**: mudou de lugar o seu ensaio, não a trava.
 - Para a cópia refletir trabalho ainda não integrado, publique o **commit da sua branch** (fica
   registrado com o seu card em `.publicado`) e **republicie o `develop`** depois do merge — assim o
   registro nunca mente sobre o que está no ar.

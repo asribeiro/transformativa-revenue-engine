@@ -64,14 +64,21 @@ epoch_de() { date -u -d "$1" +%s 2>/dev/null || echo 0; }
 
 # Manifesto identico ao do deploy/publicar.sh: "<modo> <sha256> <caminho>", ordenado.
 # O sha256 do proprio manifesto e o DIGEST DA ARVORE do commit publicado.
+# Mesma saida do publicar.sh (comprovada byte a byte contra o manifesto publicado), mas
+# em dois passes — modo por arquivo e UMA chamada de sha256sum para todos — porque um
+# processo por arquivo custa ~15s no VPS compartilhado e isto roda a cada 2 minutos.
 manifesto_de() {
-  local dir="$1"
+  local dir="$1" tmp
   [ -d "$dir" ] || { echo "PUBLICACAO_FALHOU diretorio inexistente: $dir" >&2; return 1; }
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/manifesto.XXXXXX")" || return 1
+  ( cd "$dir" && LC_ALL=C find . -type f \
+        ! -name '.publicado' ! -name '.publicado.manifest' -printf '%m %P\n' \
+      | LC_ALL=C sort -k2 ) > "$tmp/modos"
   ( cd "$dir" && LC_ALL=C find . -type f \
         ! -name '.publicado' ! -name '.publicado.manifest' -printf '%P\n' \
-      | LC_ALL=C sort | while IFS= read -r p; do
-          printf '%s %s %s\n' "$(stat -c '%a' "$p")" "$(sha256sum -- "$p" | cut -d' ' -f1)" "$p"
-        done )
+      | LC_ALL=C sort | xargs -d '\n' -r sha256sum ) > "$tmp/shas"
+  awk 'NR==FNR { sha[$2]=$1; next } { print $1" "sha[$2]" "$2 }' "$tmp/shas" "$tmp/modos"
+  rm -rf "$tmp"
 }
 digest_de() { sha256sum | cut -d' ' -f1; }
 
