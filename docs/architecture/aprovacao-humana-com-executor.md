@@ -96,6 +96,10 @@ Três peças, todas versionadas no repositório:
   - a suíte tem de **reprovar** entrada com `canal: telegram` cujo escopo toque ambiente
     vivo, credencial ou dado de cliente.
 
-- Decisão 2 — escopo e vínculo da aprovação: **pendente**.
+- **Decisão 2 — vínculo: HASH DO TEXTO DO CARD (opção A)**, escolhida por Anderson
+  Ribeiro em 30/09/2026. A entrada guarda o hash de titulo+corpo do card aprovado; vale
+  para todas as tentativas ate vencer e **cai sozinha** se o card for editado depois.
+  Efeito declarado: editar o texto de um card aprovado (inclusive correcao do agente)
+  invalida a aprovacao e exige nova palavra dele — fecha o atalho usado no T11.
 - Decisão 3 — validade: **pendente**.
 - Decisão 4 — primeira aprovação e sequência: **pendente**.
