@@ -22,3 +22,21 @@ aprovacoes:
     limite: >-
       Aprova a ESCALADA deste card e somente ela: nao abre credencial, nao autoriza ato em
       producao e nao dispensa passo de operador.
+
+ondas:
+  - id: W1-dev
+    aprovador: Anderson Ribeiro
+    data: '2026-09-30'
+    validade: '2026-10-07'
+    canal: telegram
+    escopo: [desenvolvimento]
+    regra: >-
+      Cobre card do board TRE que declare ambiente_alvo de desenvolvimento, sinais producao=false
+      e credencial=false, e nenhum dominio de credencial ou dado de cliente. O hash do texto do
+      card e fixado no momento da execucao e gravado no recibo (override.aprovacao_humana).
+    evidencia: 'Palavra do dono no Telegram em 2026-09-30: "aprovo" — resposta ao pedido
+      de aprovacao 2 (onda W1-dev), depois da decisao 6 (onda para dev, item a item para o resto).'
+    limite: >-
+      Nao abre credencial, nao autoriza ato em producao, nao dispensa passo de operador. Card que
+      toque ambiente vivo, credencial ou dado de cliente fica FORA e exige aprovacao individual com
+      commit do aprovador.

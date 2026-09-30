@@ -252,6 +252,7 @@ def consultar_aprovacao(modulo, *, card: dict, tarefa: dict, decisao: dict,
             corpo=str(card.get("descricao") or ""),
             dominios=list(decisao.get("dominios_sensiveis") or []),
             ambiente_alvo=ambiente_alvo_do_card(tarefa) or None,
+            sinais=dict(tarefa.get("sinais") or {}),
             caminho=str(alvo),
             caminho_registro=str(alvo_registro),
         )

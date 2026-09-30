@@ -1,0 +1,30 @@
+{
+  "decision_id": "dec-6e4c74cfd20de192",
+  "card_id": "t_2cc57d80",
+  "task_hash": "fa774f05c21898f611c772109ba49c3087f799920840430af714195965acb737",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T18:01:23+00:00",
+  "override": {
+    "piso_por_ambiente": {
+      "ramo": "novo_ou_dev",
+      "ambiente": "desenvolvimento",
+      "ramo_declarado": true,
+      "lane_minima": "high",
+      "motivo": "piso de lane por ambiente: migration declarada no texto da tarefa (termo 'migration'/'migracao'): 'migration' em ambiente 'desenvolvimento' -> ramo 'novo_ou_dev'; lane nao mais barata que high"
+    },
+    "aprovacao_humana": {
+      "origem": "aprovacao_humana_registrada",
+      "aprovador": "Anderson Ribeiro",
+      "canal": "telegram",
+      "validade": "2026-10-07",
+      "hash": "5aab3ac4b0aa997d83993b28453d5b05bbe0ffb285838f7bb0673af5c73bd04d"
+    }
+  },
+  "outcome": "PASS"
+}

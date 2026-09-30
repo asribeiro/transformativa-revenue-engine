@@ -36,3 +36,11 @@ corrigidas abaixo).
 - **Validade:** 07/10/2026 (7 dias, decisão 3).
 - **Limite:** aprova a escalada deste card e só ela — não abre credencial, não autoriza ato em produção, não dispensa passo de operador.
 - **Contrapartida:** revisão independente do `tester` e verificação do gate.
+
+## 30/09/2026 — APROVAÇÃO DE ONDA `W1-dev` (canal: telegram)
+
+- **Onda:** `W1-dev` — cobertura por regra para cards de **desenvolvimento**.
+- **Aprovador:** Anderson Ribeiro — palavra no Telegram em 30/09/2026: "aprovo".
+- **Regra:** card com `ambiente_alvo` de desenvolvimento, `sinais: {producao: false, credencial: false}` e sem domínio de credencial ou dado de cliente. O hash do texto é fixado no momento da execução.
+- **Validade:** 07/10/2026 (7 dias).
+- **Fora da onda:** ambiente vivo, credencial e dado de cliente — item a item, com commit do aprovador.
