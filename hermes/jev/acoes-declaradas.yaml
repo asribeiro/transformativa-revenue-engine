@@ -322,3 +322,33 @@ declaracoes:
       que so cobre dev sem credencial e sem producao.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_daca4bda
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (DEFEITO: card em execução ressincroniza /opt/tre/repo por fora do caminho único (tar ad-ho). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_25922fe5
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E04-T02-D02 — DEFEITO [revisão independente]: --faixas imprime nome de faixa fixo e). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_44cbc48c
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E04-T02-D01 — DEFEITO [retroativo]: hash do commit no handoff de review com um cara). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
