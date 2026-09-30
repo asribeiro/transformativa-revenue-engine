@@ -1,0 +1,171 @@
+# TRE-W0-E04-T11 (t_b74c2edd) — raiz do registro de entregas DECLARADA (fim do caminho fixo de OUTRO projeto)
+# Alvo: plugins/kanban/dashboard/plugin_api.py do plugin kanban do dashboard (Hermes).
+#
+# Baseline (a que este patch aplica):  sha256 a0d99603463b9188a8cf67adacbfcabad1c8d2d40a02f7c5d81cf4a6674472ef
+#   = /opt/hermes/plugins/kanban/dashboard/plugin_api.py medido em 30/09/2026
+#     (imagem 24/09 + customizacao da projecao de entrega). Copia em baseline/plugin_api.pristina.py.
+# Resultado canonico:                  sha256 cef4412392c89bdcf51cf4500bb19dea8c4b2e4930c33a3e89d50b58f25eacba
+#
+# COMO APLICAR: nao use patch(1) num salto de imagem (os hunks nao entram — ver skill
+# `kanban-plugin-update`). Use o editor ancorado, que exige cada ancora exatamente 1x e
+# aborta sem escrever quando a forma do arquivo muda:
+#   bash deploy/hermes/projecao-entrega/aplicar_projecao_entrega.sh
+# Este .patch existe para versionar/revisar o delta; o editor e a via de aplicacao.
+--- a/plugins/kanban/dashboard/plugin_api.py
++++ b/plugins/kanban/dashboard/plugin_api.py
+@@ -184,6 +184,61 @@
+ 
+ _CARD_SUMMARY_PREVIEW_CHARS = 200
+ 
++# --- RAIZ DO REGISTRO DE ENTREGAS (DECLARADA) -------------------------------
++# Os artefatos de entrega (`<raiz>/control-plane/deliveries/*.json`) vivem no
++# REPOSITORIO do projeto, nao no plugin do dashboard. O plugin so precisa saber
++# ONDE essa raiz esta -- e a resposta depende do board renderizado, porque cada
++# board pertence a um repositorio.
++#
++# Ate 29/09/2026 a resposta era um caminho fixo, literal dentro de cada helper
++# (a raiz do projeto /workspace/financial-dash), o que amarrava a projecao de
++# entrega a UM projeto: o board de qualquer outro repositorio nunca alcancava
++# evidencia terminal e todo card fechado ficava preso na projecao VALIDATION,
++# mesmo com a evidencia ja escrita no repo dele.
++#
++# A raiz agora e DECLARADA, nesta ordem de precedencia (a primeira que existir vence):
++#   1. `delivery_repo` no `board.json` do board renderizado -> a raiz fica
++#      declarada junto do board; e isto que substitui o caminho literal;
++#   2. env `HERMES_DELIVERIES_ROOT` -> override do processo (board ainda nao
++#      declarado, fixtures e testes). `HERMES_DELIVERY_REPO` continua aceito: foi
++#      o nome do override que rodou entre 29/09/2026 e a entrada deste conserto;
++#   3. `_LEGACY_DELIVERIES_ROOT` -> compatibilidade com o unico consumidor que
++#      existia quando a projecao foi escrita.
++#
++# Fail-closed intacto: nada aqui inventa evidencia. Raiz inexistente, sem
++# `control-plane/deliveries/` ou artefato ilegivel => os helpers devolvem vazio e
++# o card nativo `done` com pai de dependencia continua projetado em VALIDATION.
++
++_LEGACY_DELIVERIES_ROOT = Path("/workspace/financial-dash")
++_DELIVERIES_ENV_VARS = ("HERMES_DELIVERIES_ROOT", "HERMES_DELIVERY_REPO")
++
++
++def _delivery_repo_root(board: Optional[str] = None) -> Path:
++    """Raiz do registro de entregas do board (ver bloco acima).
++
++    Resolve apenas ONDE ler. Quem decide se a entrega acabou continuam sendo os
++    campos do artefato, por item, exatamente como antes.
++    """
++    import os
++
++    if board:
++        try:
++            meta_path = kanban_db.board_metadata_path(board)
++            if meta_path.is_file():
++                meta = json.loads(meta_path.read_text()) or {}
++                valor = str(meta.get("delivery_repo") or "").strip()
++                if valor:
++                    return Path(valor).expanduser()
++        except Exception as exc:  # metadado ausente/invalido nunca derruba o board
++            log.warning("delivery_repo invalido no board %s: %s", board, exc)
++
++    for nome in _DELIVERIES_ENV_VARS:
++        env = str(os.environ.get(nome) or "").strip()
++        if env:
++            return Path(env).expanduser()
++
++    return _LEGACY_DELIVERIES_ROOT
++
+ # --- PROJECAO DE ENTREGA (ASR/Transformativa) -------------------------------
+ # Ciclo de entrega do board: validation -> candidate -> human_approval -> done.
+ # Os tres primeiros sao PROJECAO calculada a partir do artefato de entrega
+@@ -194,12 +249,13 @@
+ 
+ def _delivery_production_done_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Return explicitly promoted native Kanban task ids."""
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+     if not deliveries_dir.is_dir():
+@@ -229,6 +285,7 @@
+ 
+ def _delivery_explicit_done_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Return task ids whose delivery artifact explicitly states DONE.
+ 
+@@ -244,7 +301,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -289,6 +346,7 @@
+ 
+ def _delivery_terminal_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Every kind of explicit evidence that makes a native ``done`` terminal.
+ 
+@@ -297,12 +355,13 @@
+     fail-closed projection in VALIDATION honest.
+     """
+     return _delivery_production_done_task_ids(
+-        repo_root
+-    ) | _delivery_explicit_done_task_ids(repo_root)
++        repo_root, board
++    ) | _delivery_explicit_done_task_ids(repo_root, board)
+ 
+ 
+ def _delivery_lifecycle_task_columns(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> dict[str, str]:
+     """Return presentation-only delivery lifecycle projections.
+ 
+@@ -329,7 +388,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -424,7 +483,7 @@
+     return result
+ 
+ 
+-def _delivery_human_approval_task_ids(repo_root: Optional[Path] = None) -> set[str]:
++def _delivery_human_approval_task_ids(repo_root: Optional[Path] = None, board: Optional[str] = None) -> set[str]:
+     """Return Hermes task ids representing deliveries awaiting human approval.
+ 
+     Presentation-only projection.  This MUST NOT create a Hermes status or
+@@ -438,7 +497,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -615,8 +674,8 @@
+         # truncated preview, the full text comes from /tasks/:id.
+         summary_map = kanban_db.latest_summaries(conn, [t.id for t in tasks])
+         # Uma leitura do artefato de entrega por request (nao por card).
+-        lifecycle_columns = _delivery_lifecycle_task_columns()
+-        terminal_ids = _delivery_terminal_task_ids()
++        lifecycle_columns = _delivery_lifecycle_task_columns(board=board)
++        terminal_ids = _delivery_terminal_task_ids(board=board)
+         for t in tasks:
+             full = summary_map.get(t.id)
+             d = _task_dict(t, latest_summary=(full[:_CARD_SUMMARY_PREVIEW_CHARS] if full else None))

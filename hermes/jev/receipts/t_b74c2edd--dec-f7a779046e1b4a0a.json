@@ -1,0 +1,15 @@
+{
+  "decision_id": "dec-f7a779046e1b4a0a",
+  "card_id": "t_b74c2edd",
+  "task_hash": "3205fa5c19f837b4b5bb05818adfd7239dba9c3dd79ad356384bd440ddcc035d",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T13:45:35+00:00",
+  "override": null,
+  "outcome": "ESCALATE"
+}

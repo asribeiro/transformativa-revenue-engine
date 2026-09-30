@@ -1,0 +1,15 @@
+{
+  "decision_id": "dec-a235b5d258bc4f81",
+  "card_id": "t_b74c2edd",
+  "task_hash": "30b938b44d5f7f3812ab3d3a8099657cb06b2983d37ad7d7581e144a8581b42a",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T14:21:45+00:00",
+  "override": null,
+  "outcome": "BLOCK"
+}
