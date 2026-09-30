@@ -105,7 +105,11 @@ Três peças, todas versionadas no repositório:
   Anderson Ribeiro em 30/09/2026. Vencida, o card volta a escalar e o agente pede nova
   palavra. Registrado o racional: com o vinculo por hash (decisao 2), o prazo e higiene,
   nao seguranca — nao ha troca possivel de texto dentro do prazo.
-- Decisão 4 — primeira aprovação e sequência: **pendente**.
+- **Decisão 4 — escopo julgado pelo AMBIENTE e pelo DOMINIO (opção C)**, escolhida por
+  Anderson Ribeiro em 30/09/2026: exige `canal: commit-do-aprovador` quando houver
+  (i) execucao em ambiente que nao seja de desenvolvimento ou (ii) dominio de `credencial`
+  ou `dado_de_cliente`. Mencao a producao/release apenas no TEXTO, com execucao em
+  desenvolvimento, vale por `canal: telegram`. Primeira aprovacao: `TRE-W1-E01-T01`.
 
 ## 7. Decisão de acesso operacional (acesso do agente às máquinas)
 
