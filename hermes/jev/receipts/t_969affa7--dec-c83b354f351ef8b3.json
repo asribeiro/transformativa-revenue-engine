@@ -1,0 +1,23 @@
+{
+  "decision_id": "dec-c83b354f351ef8b3",
+  "card_id": "t_969affa7",
+  "task_hash": "364db458553c42ef790e036375dd0107539d9f666933f65db298c1874a6bd785",
+  "lane": "high",
+  "model_profile": null,
+  "selected_model": null,
+  "effort": null,
+  "confidence": null,
+  "policy_version": "jev-policy-v1.2",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T17:16:31+00:00",
+  "override": {
+    "piso_por_ambiente": {
+      "ramo": "novo_ou_dev",
+      "ambiente": "desenvolvimento",
+      "ramo_declarado": true,
+      "lane_minima": "high",
+      "motivo": "piso de lane por ambiente: DDL declarada no texto da tarefa (termo 'DDL'): 'DDL' em ambiente 'desenvolvimento' -> ramo 'novo_ou_dev'; lane nao mais barata que high"
+    }
+  },
+  "outcome": "ESCALATE"
+}

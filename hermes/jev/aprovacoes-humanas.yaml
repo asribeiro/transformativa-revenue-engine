@@ -1,0 +1,24 @@
+# Aprovacoes humanas registradas (desenho: docs/architecture/aprovacao-humana-com-executor.md)
+# Uma entrada por card. Contrato lido por hermes/jev/gate/aprovacoes.py:
+#   card_id, aprovador, data, escopo (dominios cobertos), ambiente_alvo, canal, hash do
+#   texto aprovado, validade e evidencia. Sem validade explicita NAO vale. Dupla entrada
+#   obrigatoria com docs/operations/registro-de-aprovacoes.md.
+aprovacoes:
+  - card_id: t_969affa7
+    codigo_do_card: TRE-W1-E01-T01
+    aprovador: Anderson Ribeiro
+    data: '2026-09-30'
+    validade: '2026-10-07'
+    canal: telegram
+    ambiente_alvo: desenvolvimento
+    escopo: []
+    escopo_observacao: >-
+      A escalada deste card nao vem de dominio sensivel (dominios_sensiveis vazio): vem do
+      piso de lane por ambiente, porque o texto menciona DDL. O escopo cobre exatamente os
+      dominios da decisao, que sao nenhum.
+    hash: '8054672773fdd4d62115213b935813d110e9a250639d8bc7fe1da0413f0d73fc'
+    evidencia: 'Palavra do dono no Telegram em 30/09/2026: "aprovo" — resposta ao pedido de
+      aprovacao 1 que trouxe o hash do texto, o escopo e a validade de 7 dias.'
+    limite: >-
+      Aprova a ESCALADA deste card e somente ela: nao abre credencial, nao autoriza ato em
+      producao e nao dispensa passo de operador.
