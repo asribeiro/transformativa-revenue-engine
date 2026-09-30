@@ -26,8 +26,11 @@ for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
     FALHAS=$((FALHAS+1))
   fi
 done
-echo "---"
-if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
+# DEFEITO CORRIGIDO (TRE-W1-E04-T01, achado por leitura do proprio verificador): aqui existia
+# `echo "---" ; if FALHAS==0 -> PASS e exit`. Esse `exit` no MEIO do script matava todo o resto
+# do arquivo: os blocos de artefato versionado (backup/T03, JEV policy, dedup, processo de
+# defeitos) nunca rodavam e o script imprimia PASS mesmo com artefato fora do git — aceite falso.
+# O resumo e o exit passaram para o FIM do script; nenhum check abaixo ficou inalcancavel.
 
 # Artefatos do backup/restore (T03) existem E estao versionados
 for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
@@ -45,6 +48,14 @@ for f in hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md s
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos da deduplicacao strong identifiers (TRE-W1-E04-T01) existem E estao versionados
+for f in scripts/dedup/deduplicar_organizacoes.py scripts/dedup/teste_dedup_sintetico.sh \
+         scripts/dedup/teste_dedup_ambiente.sh docs/runbooks/deduplicacao-strong-identifiers.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 # Processo de defeitos (card -> defeito -> correcao -> liberacao) versionado
 for f in docs/kanban/processo-de-defeitos.md scripts/kanban/abrir-defeito.sh \
          scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do
@@ -56,3 +67,6 @@ for f in scripts/kanban/abrir-defeito.sh scripts/kanban/fechar-defeito.sh script
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
+
+echo "---"
+if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

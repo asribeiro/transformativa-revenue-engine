@@ -83,6 +83,20 @@ Cards: bloco JEV (W0-E04) + W1 (PostgreSQL) + W2 (Odoo). O resto do board segue 
 **Test plan:** Casos sintéticos cobrindo o limite 0,94/0,95 e cada identificador forte, isoladamente e em conjunto.
 **Rollback:** Reverter código; dados já mesclados exigem desfazer com registro — por isso o merge é auditável.
 **Risco:** Alto — mexe em identidade de dado.
+**Componentes afetados:** `scripts/dedup/` (motor + teste sintético + teste de ambiente, novos);
+`sales_intelligence.organizations` (identidade e soft delete) e as tabelas filhas que a referenciam
+(reapontamento no merge); `sales_intelligence.sync_events` (trilha auditável do merge);
+`sales_intelligence.human_approvals` (fila `REVIEW_REQUIRED`); `docs/data/data_contract_v1.json`
+(limiar lido, não editado); `scripts/verificar_estrutura.sh` (artefatos versionados).
+
+**Decisões de implementação registradas (não mudam o contrato):**
+D1 o limiar de merge é lido do contrato a cada chamada — não há parâmetro, constante ajustável nem
+variável de ambiente que o mude (mudar exige mudar o contrato/política); D2 evidência fraca nunca alcança
+a faixa de merge (teto `limiar − 0,01` = 0,94) e vai para a fila humana; D3 CNPJ igual porém inválido
+(dígito verificador) detecta e vai para revisão, nunca mergeia automático; D4 `organizations` não tem
+telefone nem endereço na V1 — fracos "nome + telefone"/"nome + endereço" são lacuna declarada; D5
+auditoria em `sync_events` e fila em `human_approvals` (nenhuma coluna/tabela nova — exigiria nova versão
+do contrato); D6 `--desfazer-merge` reverte o merge com registro `UNMERGE` (rollback executável).
 
 ## TRE-W1-E04-T02 — Implementar entity_match_confidence
 

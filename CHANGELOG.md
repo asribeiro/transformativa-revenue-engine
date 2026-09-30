@@ -72,6 +72,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     mais e linha a menos **reprovam**, a reaplicação do fixture restaura a contagem;
   - `db/fixtures/smoke_dev_rollback.sql` — rollback da massa (filhas antes das pais), exercitado de verdade;
   - `docs/runbooks/massa-de-smoke-dev.md` — runbook da massa (aplicação, conferência, teste negativo, rollback).
+- **Deduplicação de empresa por identificadores fortes** (`TRE-W1-E04-T01`) — o contrato (seção 5) virou
+  código executável no ambiente dev, com merge auditável e fila humana:
+  - `scripts/dedup/deduplicar_organizacoes.py` — motor: normaliza e compara **CNPJ → domínio → LinkedIn
+    Company URL** (prioridade do contrato) e o fraco **nome + cidade**; decide `MERGE` / `REVIEW_REQUIRED` /
+    `SEM_DUPLICIDADE`; executa o merge (reaponta as tabelas filhas, soft-delete no duplicado em
+    `deleted_at`) e grava a auditoria em `sync_events`; registra a pendência humana em `human_approvals`
+    e sabe **desfazer** o merge (`--desfazer-merge`, registro `UNMERGE`);
+  - `scripts/dedup/teste_dedup_sintetico.sh` — casos sintéticos (0,94/0,95, cada forte isolado e em
+    conjunto, negativos, auditoria, governança do limiar) **e** prova negativa: quatro sabotagens do alvo
+    têm de reprovar a suíte;
+  - `scripts/dedup/teste_dedup_ambiente.sh` — cenário real no ambiente (semeia massa marcada, mede
+    detecção/decisão/merge/auditoria/fila/rollback e limpa, provando que a contagem por tabela volta ao
+    estado anterior);
+  - `docs/runbooks/deduplicacao-strong-identifiers.md` — runbook do motor, da governança do limiar e do
+    rollback de dado já mesclado.
+  Decisões registradas: o limiar é **lido do contrato** a cada chamada (não há ajuste por código de
+  produção, variável de ambiente ou parâmetro); evidência fraca nunca alcança a faixa de merge (teto
+  `limiar − 0,01` = 0,94) e vai para revisão; CNPJ igual porém inválido detecta e vai para revisão;
+  nenhuma coluna/tabela nova (criar exigiria nova versão do contrato).
 
 ### Fixed
 
@@ -85,6 +104,13 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   silêncio (sem erro visível e deixando container descartável órfão). Corrigido: exemplos passam a
   `docker exec <container> psql …` (sem `-i`) e `verificar_banco()` roda o psql com
   `stdin=subprocess.DEVNULL`, ficando imune a qualquer prefixo com `-i`.
+- **Verificador de estrutura: `exit` no meio do script tornava o resto código morto** (`TRE-W1-E04-T01`,
+  defeito pré-existente achado por leitura ao estender o próprio verificador) — o resumo `RESULTADO:
+  PASS/FALHOU` e o `exit` ficavam na linha 30, então **todos** os blocos de artefato versionado (backup,
+  JEV policy, processo de defeitos e o novo do E04) nunca rodavam: o script imprimia `PASS` mesmo com
+  artefato fora do git — aceite falso. Corrigido movendo o resumo/exit para o FIM do arquivo e provado com
+  dente: com um artefato removido do índice (`git rm --cached`) o verificador devolve `FALHOU nao versionado`,
+  `RESULTADO: FALHOU (1)`, exit 1; re-adicionado, `PASS (0 falhas)`, exit 0.
 
 ### Notas de estado
 
@@ -97,3 +123,12 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Divergência registrada (decisão do dono):** o Data Contract V1.0 declara o banco de inteligência como
   `transformativa_ai`; o ambiente dev provisionado usa banco `sales_intelligence` (container
   `pg-sales-dev`, usuário `sales_ai`) — nome que os scripts de backup já assumem como padrão.
+- **Deduplicação medida em dev (`TRE-W1-E04-T01`):** `teste_dedup_sintetico.sh` → `TESTE_DEDUP_SINTETICO_OK
+  (7 itens, 0 falhas)` com a suíte em `TESTE_OK (30 itens, 0 falhas)`; `teste_dedup_ambiente.sh dev` →
+  `TESTE_DEDUP_AMBIENTE_OK (4 itens, 0 falhas)` com o cenário em `CENARIO_OK (17 itens, 0 falhas)` — par
+  com mesmo CNPJ detectado e mesclado com confiança 1,0, par fraco (nome + cidade) parado em 0,94 e
+  mandado para a fila humana, merge repetido recusado por idempotência, `UNMERGE` devolvendo os vínculos e
+  contagem por tabela idêntica ao estado anterior depois da limpeza. `--detectar` no dev real: 0
+  candidatos entre as duas organizações do fixture. Nada tocado em homol/prod: `docker ps -a` só tem
+  `pg-sales-dev` e `/opt/tre/{prod,homolog}` seguem sem arquivo.
+
