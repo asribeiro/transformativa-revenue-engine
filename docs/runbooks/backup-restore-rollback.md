@@ -32,6 +32,9 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
 - Artefatos: `/opt/tre/backup/tre_<ambiente>_<YYYYmmddTHHMMSSZ>/` (permissão 700).
 - Retenção: **14 dias** (`TRE_BACKUP_RETENCAO_DIAS`), aplicada só ao prefixo do próprio ambiente.
 - Configuração: `/etc/tre/backup.env` (caminhos e destino — **sem segredo**).
+- **Cópia operacional (`/opt/tre/repo`):** instalada **somente** por `deploy/publicar.sh` (um commit por
+  vez, com `.publicado` gravando o commit em uso). Nada de `tar`/`scp`/`rsync` direto — runbook
+  `publicacao-da-copia-operacional.md`.
 - Ambiente ainda não provisionado é **pulado**, não falha: um timer cobre os três desde já.
 - Ambiente provisionado **sem** backup é **falha** na verificação, assim como backup com
   **mais de 48h** (é o sinal de que a rotina parou).
@@ -215,6 +218,64 @@ publicação versionada não só preserva o modo como é idempotente. Conferido 
 `sha256` de `backup-tre.sh` = `1a430637…` (idêntico ao repositório) e `Result=success ExecMainStatus=0`
 como **última** execução do serviço.
 
+**Nota de atribuição (medida pelo card `t_091cfea9`):** as publicações de ensaio de 20:03:59Z e 20:06:19Z que
+aparecem em `/opt/tre/.publicacoes.log` (card `t_091cfea9-TESTE`, `commit=16c31f0`) foram para o destino
+**isolado** `/opt/tre/.teste-publicacao`, **não** para `/opt/tre/repo` — o campo `destino=` só passou a ser
+gravado no log depois delas, e é isso que tornava a leitura ambígua. O revert da cópia operacional medido às
+20:04:15Z/20:06:19Z é, portanto, de uma sincronização por `tar` (ad-hoc) de outro card, não da publicação
+versionada deste item.
+
+## 7e. Evidência medida — 30/09/2026, publicação versionada da cópia operacional (`fix/TRE-W1-E06-T01-F3-publicacao`)
+
+**Destino isolado primeiro** (`TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao`, para não interferir em card
+que estivesse usando a cópia real), **depois a cópia operacional de verdade**. Máquina: VPS `vmi3619453`; o
+agente conecta como `root` (decisão 5) e a publicação deixa a árvore com `tre-deploy:tre-deploy`.
+
+Destino isolado (300 arquivos, `digest 692c244a…`):
+
+1. duas publicações seguidas do **mesmo commit** (`16c31f0`) → **mesmo `digest`** (`692c244a…`), com
+   `idempotente: a copia ja estava neste commit`;
+2. `--conferir` → `PUBLICACAO_OK … digest=692c244a… arquivos=300`, exit 0;
+3. **sobrescrita ad-hoc simulada** (o defeito, reproduzido de propósito): `README.md` alterado por fora, modo
+   de `scripts/db/aplicar_migracoes.sh` de `755` para `664` e um `sobra-de-outro-card.sh` largado na árvore →
+   `--conferir` devolveu **`PUBLICACAO_DIVERGENTE`**, **exit 5**, com o `diff` do manifesto apontando
+   exatamente os três (conteúdo, modo e arquivo a mais);
+4. republicação → `PUBLICACAO_OK` com o `digest` do commit de volta e `--conferir` de novo
+   `PUBLICACAO_OK`: o `rsync --delete` espelha o commit, não sobra arquivo de fora nem modo errado;
+5. destino isolado removido ao fim (`/opt/tre` ficou sem cópia de teste).
+
+Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `digest 502d4381…`):
+
+6. **a cópia estava reescrita por fora do caminho único:** `.publicado` dizia `f1f1cb6b…`, mas o manifesto da
+   cópia tinha **307 arquivos** e **611 linhas diferentes** do commit registrado — leitura (não medida linha a
+   linha, o manifesto anterior não é guardado): sincronização por `tar -cz scripts docs db | ssh …` de outro
+   card, que reescreve centenas de arquivos com o modo do *checkout* e acrescenta arquivos ainda não
+   commitados. A publicação mediu e **corrigiu**; a segunda publicação do mesmo commit mediu
+   **`divergencia_antes = 0`** e o **mesmo `digest`** (`502d4381…`, idempotente);
+7. `--conferir` → `PUBLICACAO_OK commit=3586d08… digest=502d4381… arquivos=306`, exit 0; `.publicado` grava
+   `commit`, `arvore`, `ref`, `digest`, `arquivos`, `publicado_em`, `publicado_por: t_091cfea9`,
+   `arvore_suja: 0`, `execstart_sem_bit: 0`, `divergencia_antes: 0`, `concorrencia: (nenhuma)`;
+8. **modo e dono na cópia:** `deploy/publicar.sh`, `scripts/backup/backup-tre.sh`,
+   `scripts/backup/verificar-ultimo-backup.sh` e `scripts/db/suite_banco.sh` em **`755 tre-deploy tre-deploy`**
+   e `README.md` em `644` — o modo é o **do git**. (A primeira versão do script publicava `775`/`664`: o modo
+   do arquivo extraído com `tar` leva a marca do `umask`/máscara de ACL de quem extrai, e o `rsync -a` pula o
+   arquivo de mesma data e tamanho sem olhar o modo. Corrigido com o mapa de `git ls-tree` aplicado na árvore
+   local, no staging **e** no destino depois do `rsync` — os dois digests medidos, `c5f169c9…` antes e
+   `692c244a…` depois, são do mesmo commit `16c31f0` e diferem exatamente pelo modo.)
+9. **verificação pós-deploy com dado real:** `systemctl start tre-backup.service` → `START_EXIT=0`,
+   `Result=success`, `ExecMainStatus=0`, `User=tre-deploy`, journal com `backup-tre.sh[281579]` imprimindo os
+   três blocos de ambiente e `RESULTADO: BACKUP_OK (todos)` + `Deactivated successfully` — **nenhum
+   `203/EXEC`**; `sudo -u tre-deploy test -x` → exit 0 em `backup-tre.sh`, `verificar-ultimo-backup.sh` e
+   `deploy/publicar.sh`;
+10. **o que a publicação não deixa passar:** árvore suja → `PUBLICACAO_FALHOU arvore suja`, **exit 2**
+    (medido duas vezes, com a lista dos arquivos modificados); `--exigir-modos` contra um commit com os alvos
+    do `ExecStart=` em `100644` (o `16c31f0`) → **exit 4** nomeando `backup-tre.sh` e
+    `verificar-ultimo-backup.sh`, enquanto contra o commit atual → 0 aviso, exit 0;
+11. **lock e log:** `/opt/tre/.publicacao.lock` (uma publicação por vez) e `/opt/tre/.publicacoes.log` com uma
+    linha por publicação (`quando, commit, digest, arquivos, card, destino, digest_antes, commit_antes,
+    divergencia_antes`) — é o histórico que permite rollback do *código* publicado e a fonte da cronologia
+    de §7d.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
 - **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
@@ -245,13 +306,29 @@ como **última** execução do serviço.
   acusa, porque procura o mesmo prefixo `tre_dev_*` que a rotina nunca produz.
   Alinhar (ou congelar) o nome do container é **decisão do dono** — o card pode declarar o trio no
   `backup.env` (caminho mínimo, sem renomear container nem mover dado).
-- **ACHADO ABERTO 3 (média) — a cópia operacional `/opt/tre/repo` é reescrita por qualquer card.** Durante
+- **RESOLVIDO 30/09/2026 — a cópia operacional era reescrita por qualquer card (era ACHADO ABERTO 3,
+  média).** Cada card publicava o seu pedaço com `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'`: durante
   a rodada do `TRE-W1-E06-T01`, um `tar` de outro worker reverteu o driver recém-instalado (sha
   `d29c9c97…` → `9f24572a…`). Quem sincroniza por último manda: a cópia operacional não é reproduzível.
   **Atualização 30/09/2026 20:12:35Z (medida):** o card `t_091cfea9` passou a publicar por caminho
   versionado — `/opt/tre/repo/.publicado` registra `commit: f1f1cb6b…`, `execstart_sem_bit: 0` e
   `concorrencia: (nenhuma)` — e essa publicação preservou o modo (`755`) e restaurou a cópia executável
-  (§7d). O achado segue **aberto** enquanto esse não for o **único** caminho de publicação em uso.
+  (§7d).
+  **Fechamento (30/09/2026 20:27–20:29Z):** o caminho versionado passou a ser o **único** de escrita —
+  `deploy/publicar.sh` (branch `fix/TRE-W1-E06-T01-F3-publicacao`) publica um **commit** (`git archive` →
+  staging → `rsync -a --delete`, com o modo exato do `git ls-tree`), recusa árvore suja, grava o commit em
+  uso em `/opt/tre/repo/.publicado`, aceita uma publicação por vez (`/opt/tre/.publicacao.lock`), avisa
+  quando outro card publicou antes, mantém o histórico em `/opt/tre/.publicacoes.log` e confere o `digest`
+  depois do `rsync`; `deploy/publicar.sh --conferir` compara a cópia com o commit registrado arquivo a
+  arquivo **e modo a modo** e devolve `PUBLICACAO_DIVERGENTE` (exit 5) com o `diff`. Medido na cópia de
+  30/09: **307 arquivos e 611 linhas de manifesto divergentes** do commit que o `.publicado` dizia estar
+  publicado (sincronização por `tar` de outro card) — detectado e corrigido por uma publicação, e a
+  republicação seguinte mediu `divergencia_antes = 0` com o mesmo `digest` (§7e itens 6–10). Runbook:
+  `docs/runbooks/publicacao-da-copia-operacional.md`.
+  **Regra nova:** nenhum card escreve em `/opt/tre/repo` com `tar`/`scp`/`rsync` direto — o caminho é
+  `deploy/publicar.sh`. Enquanto a regra depender de disciplina (e não de um gancho no dispatch), o achado
+  fica **resolvido no instrumento e aberto no processo**. Medição de partida do defeito (para comparação):
+  antes do caminho único a cópia tinha **122 dos 300 arquivos** versionados e nenhum registro de commit.
 - **Usuário do timer não exercitado de ponta a ponta:** o ciclo foi rodado como `root` (acesso do agente,
   decisão 5); provou-se por partes que `tre-deploy` escreve em `/opt/tre/backup` (`test -w`) e usa a
   credencial do bucket (`rclone lsl --config /etc/tre/rclone.conf`). Rodar o ciclo inteiro como
@@ -301,3 +378,9 @@ como **última** execução do serviço.
   devolve 644 na cópia operacional e o `ExecStart` do systemd morre com `203/EXEC` — **mesmo que a máquina
   tenha rodado o timer ontem**. Antes de publicar um script por timer, conferir
   `git ls-files -s <arquivo>` e, na cópia operacional, `install -m 755`.
+- **"Só o meu pedaço" na cópia operacional.** `tar -cz <subconjunto> | ssh … 'tar -xz -C /opt/tre/repo'`
+  parece inofensivo e é o defeito: o `tar` da árvore de trabalho leva o modo do *checkout* (não o do
+  git), **não apaga** o que não vai no pacote (arquivo velho sobrevive ao lado do novo) e não deixa
+  registro de qual commit ficou no ar — a cópia de 30/09/2026 tinha 122 dos 300 arquivos versionados.
+  `sha256` igual nos dois lados **do artefato que você lembrou de conferir** não é prova de que a cópia é
+  o commit. Publique com `deploy/publicar.sh --commit <commit>` e confira com `--conferir` (§7e).
