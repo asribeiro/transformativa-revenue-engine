@@ -39,6 +39,9 @@
 # limiar em vigor e a origem dele (não toca o banco)
 python3 scripts/dedup/deduplicar_organizacoes.py --limiar
 
+# faixas de entity_match_confidence: fronteiras vindas do contrato + a decisão de cada faixa
+python3 scripts/dedup/deduplicar_organizacoes.py --faixas
+
 # suíte sintética: 0,94/0,95, cada identificador forte isolado e em conjunto, negativos,
 # auditoria e governança do limiar (sem banco)
 python3 scripts/dedup/deduplicar_organizacoes.py --autoteste
@@ -105,5 +108,9 @@ WHERE action_type = 'ORGANIZATION_MERGE_REVIEW' AND status = 'PENDING';
 - O motor **não** decide o que fazer com as linhas filhas de negócio (score, sinal, recomendação) além de
   reapontá-las: nenhum dado é recalculado no merge.
 - Propagação para o Odoo (evento de outbox) é do W2 — aqui o merge é só do lado PostgreSQL.
-- `entity_match_confidence` como campo persistido é o card `TRE-W1-E04-T02`; este motor calcula a confiança
-  em memória e a grava na evidência da auditoria.
+- `entity_match_confidence` **implementado no card `TRE-W1-E04-T02`**: o score é calculado pelo motor, decidido
+  por faixa (fronteira = limiar do contrato) e **persistido no registro auditado** da decisão — merge em
+  `sync_events.request_payload` e revisão em `human_approvals.proposed_action`. O nome `confianca` do E04-T01
+  continua no mesmo registro como alias de mesmo valor. Modelo, faixas e decisões:
+  `docs/data/entity-match-confidence.md`. Prova em um comando:
+  `bash scripts/dedup/teste_entity_match_confidence.sh dev`.

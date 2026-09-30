@@ -56,6 +56,17 @@ for f in scripts/dedup/deduplicar_organizacoes.py scripts/dedup/teste_dedup_sint
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos do campo entity_match_confidence (TRE-W1-E04-T02) existem E estao versionados
+for f in scripts/dedup/teste_entity_match_confidence.sh docs/data/entity-match-confidence.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/dedup/teste_entity_match_confidence.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 # Processo de defeitos (card -> defeito -> correcao -> liberacao) versionado
 for f in docs/kanban/processo-de-defeitos.md scripts/kanban/abrir-defeito.sh \
          scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do

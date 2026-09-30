@@ -29,11 +29,27 @@ Decisoes de implementacao registradas no card (nao mudam o contrato):
   D6. Rollback de dado mesclado: a auditoria guarda sobrevivente, duplicado e evidencia;
       `--desfazer-merge <idempotency_key>` reverte os vinculos e registra UNMERGE.
 
+TRE-W1-E04-T02 — `entity_match_confidence` (o campo/score da decisao de merge):
+
+  - o score canonico e `entity_match_confidence` (constante `CAMPO_CONFIANCA`); o nome antigo
+    `confianca` continua no MESMO registro como alias do E04-T01 (mesmo valor, mesma origem);
+  - o score e calculado por evidencia (forte valido => 1,0; forte invalido => teto fraco;
+    fraco qualificado => min(similaridade, teto fraco); sem evidencia qualificada => 0,0);
+  - as FAIXAS sao derivadas do contrato a cada chamada (fronteira = `auto_merge_threshold`):
+    MERGE_AUTOMATICO [limiar, 1] · REVISAO_HUMANA [piso de candidatura, limiar) ·
+    SEM_DUPLICIDADE [0, piso de candidatura). Cobertura de [0,1] sem lacuna/sobreposicao;
+  - a decisao do par E a decisao da faixa do score (fonte unica: `faixas_confianca()`), provada
+    por teste de coerencia;
+  - persistencia: `sync_events.request_payload` (merge) e `human_approvals.proposed_action`
+    (revisao) levam `entity_match_confidence`, `..._faixa` e `..._modelo` — nao ha coluna nova
+    (criar coluna exige nova versao do contrato; ver `docs/data/entity-match-confidence.md`).
+
 Uso (na VPS do ambiente — ADR-0008, quem fala com o PostgreSQL e a VPS):
 
   python3 scripts/dedup/deduplicar_organizacoes.py --limiar
+  python3 scripts/dedup/deduplicar_organizacoes.py --faixas
   python3 scripts/dedup/deduplicar_organizacoes.py --autoteste
-  python3 scripts/dedup/deduplicar_organizacoes.py --autoteste --sabotar limiar
+  python3 scripts/dedup/deduplicar_organizacoes.py --autoteste --sabotar persistencia
   python3 scripts/dedup/deduplicar_organizacoes.py --detectar --ambiente dev
   python3 scripts/dedup/deduplicar_organizacoes.py --cenario-ambiente dev
 """
@@ -59,6 +75,9 @@ FONTE_AUDITORIA = "dedup_strong_identifiers"
 ACAO_REVISAO = "ORGANIZATION_MERGE_REVIEW"
 VERSAO_POLITICA = "dedup-strong-identifiers-v1"
 PISO_CANDIDATO_FRACO = 0.80  # abaixo disso nem e candidato a duplicidade (D4, contrato omisso)
+CAMPO_CONFIANCA = "entity_match_confidence"      # nome canonico do campo (TRE-W1-E04-T02)
+CAMPO_CONFIANCA_LEGADO = "confianca"             # alias do E04-T01, mesmo valor, mesmo registro
+VERSAO_MODELO_CONFIANCA = "entity-match-confidence-v1"
 CENARIO = "tre-w1-e04-t01"
 IDENTIFICADORES_FORTES = ("cnpj", "domain", "linkedin_url")
 IDENTIFICADORES_REBAIXAVEIS = ("cnpj",)
@@ -95,6 +114,71 @@ def limiar_merge() -> float:
 def teto_evidencia_fraca() -> float:
     """Evidencia fraca nunca alcanca a faixa de merge (D2)."""
     return round(limiar_merge() - 0.01, 4)
+
+
+# ------------------------------------------------------- faixas de confianca (T02)
+def _validar_faixas(faixas) -> None:
+    """As faixas tem de cobrir [0, 1] sem lacuna e sem sobreposicao.
+
+    Mesmo espirito do tiering de scores do contrato (faixas que cobrem a escala inteira sao
+    conferidas por script). Faixa que deixa buraco faria a confianca cair em lugar nenhum.
+    """
+    ordenadas = sorted(faixas, key=lambda f: f["piso"])
+    if ordenadas[0]["piso"] != 0.0 or not ordenadas[0]["piso_inclusivo"]:
+        raise RuntimeError("faixas de confianca nao comecam em 0")
+    if ordenadas[-1]["teto"] != 1.0 or not ordenadas[-1]["teto_inclusivo"]:
+        raise RuntimeError("faixas de confianca nao terminam em 1")
+    for atual, seguinte in zip(ordenadas, ordenadas[1:]):
+        if atual["teto_inclusivo"] or atual["teto"] != seguinte["piso"] or not seguinte["piso_inclusivo"]:
+            raise RuntimeError(f"faixas de confianca com lacuna ou sobreposicao em {atual['teto']}")
+
+
+def faixas_confianca() -> list:
+    """Faixas de confianca do match, DERIVADAS do contrato a cada chamada (D1/T02).
+
+    A fronteira da faixa de merge e o `dedup.auto_merge_threshold` do contrato e o piso das
+    faixas inferiores e o piso de candidatura (decisao D4 do E04-T01, o contrato e omisso).
+    Nao ha constante de fronteira ajustavel: mudar o limiar no contrato move as faixas junto.
+    O modelo SE RECUSA a operar com um contrato que nao consiga representar.
+    """
+    limiar = limiar_merge()
+    piso = PISO_CANDIDATO_FRACO
+    teto_fraco = teto_evidencia_fraca()
+    if not (0.0 < piso < teto_fraco < limiar <= 1.0):
+        raise RuntimeError(
+            f"contrato: limiar {limiar} incompativel com as faixas de confianca "
+            f"(piso de candidatura {piso}, teto de evidencia fraca {teto_fraco})"
+        )
+    faixas = [
+        {"faixa": "MERGE_AUTOMATICO", "piso": limiar, "teto": 1.0, "piso_inclusivo": True,
+         "teto_inclusivo": True, "decisao": "MERGE",
+         "significado": "identificador forte valido e identico: merge automatico acontece"},
+        {"faixa": "REVISAO_HUMANA", "piso": piso, "teto": limiar, "piso_inclusivo": True,
+         "teto_inclusivo": False, "decisao": "REVIEW_REQUIRED",
+         "significado": "evidencia suficiente para duvidar e insuficiente para mesclar: fila humana"},
+        {"faixa": "SEM_DUPLICIDADE", "piso": 0.0, "teto": piso, "piso_inclusivo": True,
+         "teto_inclusivo": False, "decisao": "SEM_DUPLICIDADE",
+         "significado": "sem evidencia de identidade que qualifique candidatura"},
+    ]
+    _validar_faixas(faixas)
+    return faixas
+
+
+def faixa_de_confianca(confianca) -> dict:
+    """Faixa documentada em que a confianca cai — e a decisao que ela implica."""
+    try:
+        valor = float(confianca)
+    except (TypeError, ValueError):
+        raise ValueError(f"confianca invalida: {confianca!r}")
+    if not (0.0 <= valor <= 1.0):
+        raise ValueError(f"confianca fora de [0, 1]: {valor}")
+    valor = round(valor, 6)
+    for faixa in faixas_confianca():
+        dentro_piso = valor >= faixa["piso"] if faixa["piso_inclusivo"] else valor > faixa["piso"]
+        dentro_teto = valor <= faixa["teto"] if faixa["teto_inclusivo"] else valor < faixa["teto"]
+        if dentro_piso and dentro_teto:
+            return dict(faixa)
+    raise RuntimeError(f"confianca {valor} fora das faixas documentadas")
 
 
 def tabelas_do_contrato() -> list:
@@ -202,11 +286,16 @@ def similaridade_nome(a, b) -> float:
 
 # --------------------------------------------------------------------------- decisao
 def decidir_por_confianca(confianca: float) -> str:
-    """MERGE se confianca >= limiar vigente (inclusivo); senao REVIEW_REQUIRED.
+    """Decisao do par = decisao da faixa em que a confianca cai (fonte unica).
 
-    O limiar vem do contrato e nao e parametro (D1).
+    MERGE            -> [limiar, 1] (limiar inclusivo)
+    REVIEW_REQUIRED  -> [piso de candidatura, limiar) — fila humana, nunca merge
+    SEM_DUPLICIDADE  -> [0, piso de candidatura) — nem candidato a duplicidade
+
+    O limiar vem do contrato e nao e parametro (D1); o piso de candidatura e a decisao D4
+    do E04-T01 (o contrato e omisso nele).
     """
-    return "MERGE" if round(float(confianca), 6) >= limiar_merge() else "REVIEW_REQUIRED"
+    return faixa_de_confianca(confianca)["decisao"]
 
 
 def _campo_forte(org: dict, normalizador, alternativas=()):
@@ -247,10 +336,10 @@ def avaliar_par(a: dict, b: dict) -> dict:
             decisivos.append(nome)
 
     if decisivos:
-        confianca, decisao, candidato, motivo = 1.0, "MERGE", True, "identificador_forte"
+        confianca, candidato, motivo = 1.0, True, "identificador_forte"
     elif iguais:
         # so identificador forte invalido (D3): detecta, mas nunca mergeia automatico
-        confianca, decisao, candidato, motivo = teto_fraco, "REVIEW_REQUIRED", True, "identificador_forte_invalido"
+        confianca, candidato, motivo = teto_fraco, True, "identificador_forte_invalido"
     else:
         sim = round(similaridade_nome(a.get("legal_name") or a.get("trade_name"),
                                       b.get("legal_name") or b.get("trade_name")), 4)
@@ -265,14 +354,22 @@ def avaliar_par(a: dict, b: dict) -> dict:
         evidencias["fracos"] = evid_fraca
         estado_conflita = bool(estado_a and estado_b and estado_a != estado_b)
         if evid_fraca["cidade_igual"] and sim >= PISO_CANDIDATO_FRACO and not estado_conflita:
-            confianca = min(sim, teto_fraco)
-            decisao, candidato, motivo = "REVIEW_REQUIRED", True, "identificador_fraco"
+            confianca, candidato, motivo = min(sim, teto_fraco), True, "identificador_fraco"
         else:
-            confianca, decisao, candidato, motivo = sim, "SEM_DUPLICIDADE", False, "sem_candidatura"
+            # Sem evidencia de identidade que qualifique candidatura: o score NAO finge
+            # identidade (vale 0,0) — a similaridade bruta de nome segue em `evidencias.fracos`.
+            confianca, candidato, motivo = 0.0, False, "sem_candidatura"
+
+    faixa = faixa_de_confianca(confianca)
+    decisao = faixa["decisao"]
 
     return {
         "candidato": candidato,
         "confianca": round(float(confianca), 6),
+        "entity_match_confidence": round(float(confianca), 6),
+        "entity_match_confidence_faixa": faixa["faixa"],
+        "entity_match_confidence_decisao": faixa["decisao"],
+        "entity_match_confidence_modelo": VERSAO_MODELO_CONFIANCA,
         "decisao": decisao,
         "motivo": motivo,
         "identificadores_iguais": iguais,
@@ -283,6 +380,15 @@ def avaliar_par(a: dict, b: dict) -> dict:
         "teto_evidencia_fraca": teto_fraco,
         "piso_candidato_fraco": PISO_CANDIDATO_FRACO,
     }
+
+
+def entity_match_confidence(a: dict, b: dict) -> float:
+    """O campo/score canonico da decisao de merge: confianca de `a` e `b` serem a MESMA entidade.
+
+    Ponto de entrada publico do T02 — mesma fonte que decide o merge (`avaliar_par`), para nao
+    existir um segundo calculo que possa divergir do que e persistido.
+    """
+    return avaliar_par(a, b)["entity_match_confidence"]
 
 
 # ----------------------------------------------------------------------- SQL / banco
@@ -380,10 +486,24 @@ def contar_tabelas(prefixo, tabelas) -> dict:
 
 
 def montar_evidencia(avaliacao: dict, sobrevivente: str, duplicado: str, executado_por: str, extra=None) -> dict:
+    """Evidencia persistida do registro auditado (merge em `sync_events`,
+    revisao em `human_approvals`).
+
+    TRE-W1-E04-T02: o score canonico vai PERSISTIDO com o nome do contrato
+    (`entity_match_confidence`), junto da faixa em que caiu e da versao do modelo que o
+    calculou — o registro nao depende de quem le para saber sob que regua decidiu. O nome
+    antigo (`confianca`, E04-T01) permanece no MESMO registro como alias de mesmo valor.
+    """
+    faixa = avaliacao.get("entity_match_confidence_faixa") or faixa_de_confianca(avaliacao["confianca"])["faixa"]
     evidencia = {
         "schema": SCHEMA,
         "sobrevivente_id": sobrevivente,
         "duplicado_id": duplicado,
+        CAMPO_CONFIANCA: avaliacao["confianca"],
+        f"{CAMPO_CONFIANCA}_faixa": faixa,
+        f"{CAMPO_CONFIANCA}_modelo": VERSAO_MODELO_CONFIANCA,
+        f"{CAMPO_CONFIANCA}_faixas": faixas_confianca(),
+        CAMPO_CONFIANCA_LEGADO: avaliacao["confianca"],  # alias do E04-T01 (mesmo valor) — mesma chave de `confianca`
         "confianca": avaliacao["confianca"],
         "decisao": avaliacao["decisao"],
         "motivo": avaliacao["motivo"],
@@ -598,10 +718,12 @@ def _org(**campos) -> dict:
 
 SABOTAGENS = {
     # cada sabotagem quebra um pedaco real do alvo e a suite TEM de reprovar
-    "limiar": "decidir_por_confianca passa a aceitar tudo como MERGE",
+    "limiar": "decidir_por_confianca e faixa_de_confianca passam a aceitar tudo como MERGE",
     "auditoria": "merge deixa de gravar o registro auditavel em sync_events",
     "identificadores": "normalizacao de CNPJ deixa de reconhecer o identificador",
     "fraco": "evidencia fraca passa a alcancar a faixa de merge",
+    "persistencia": "o registro auditado (merge/revisao) perde o entity_match_confidence",
+    "coerencia": "a decisao do par deixa de ser a decisao da faixa do score",
 }
 
 
@@ -609,6 +731,10 @@ def aplicar_sabotagem(nome: str):
     modulo = sys.modules[__name__]
     if nome == "limiar":
         setattr(modulo, "decidir_por_confianca", lambda confianca: "MERGE")
+        setattr(modulo, "faixa_de_confianca", lambda confianca: {
+            "faixa": "MERGE_AUTOMATICO", "piso": 0.0, "teto": 1.0, "piso_inclusivo": True,
+            "teto_inclusivo": True, "decisao": "MERGE", "significado": "sabotagem",
+        })
     elif nome == "auditoria":
         def _sql_sem_auditoria(sobrevivente, duplicado, avaliacao, colunas, idempotency_key=None,
                                executado_por="dedup", contexto=None):
@@ -618,12 +744,46 @@ def aplicar_sabotagem(nome: str):
         setattr(modulo, "normalizar_cnpj", lambda valor: None)
     elif nome == "fraco":
         setattr(modulo, "teto_evidencia_fraca", lambda: 1.0)
+    elif nome == "persistencia":
+        _original = montar_evidencia
+
+        def _evidencia_sem_campo(*args, **kwargs):
+            evidencia = _original(*args, **kwargs)
+            for chave in (CAMPO_CONFIANCA, f"{CAMPO_CONFIANCA}_faixa", f"{CAMPO_CONFIANCA}_modelo"):
+                evidencia.pop(chave, None)
+            return evidencia
+
+        setattr(modulo, "montar_evidencia", _evidencia_sem_campo)
+    elif nome == "coerencia":
+        _original_avaliar = avaliar_par
+
+        def _avaliar_com_decisao_solta(a, b):
+            avaliacao = _original_avaliar(a, b)
+            avaliacao["decisao"] = "MERGE"  # score e faixa intactos: so a decisao mente
+            return avaliacao
+
+        setattr(modulo, "avaliar_par", _avaliar_com_decisao_solta)
     else:
         raise SystemExit(f"FALHOU sabotagem desconhecida: {nome}")
 
 
 def rodar_sintetico() -> int:
+    """Suite sintetica do motor (sem banco).
+
+    Toda excecao vira ITEM REPROVADO: o wrapper `teste_dedup_sintetico.sh` exige
+    `RESULTADO: TESTE_FALHOU` com exit != 0 — um traceback cru cumpriria o exit code sem
+    dizer que a suite reprovou, e o teste de sabotagem passaria a medir a coisa errada.
+    """
     suite = Suite("deduplicacao — casos sinteticos")
+    try:
+        _itens_sinteticos(suite)
+    except Exception as erro:  # noqa: BLE001 — qualquer excecao e falha medida, nao crash
+        suite.chk(f"a suite roda ate o fim sem estourar ({type(erro).__name__})", False,
+                  f"{type(erro).__name__}: {erro}")
+    return suite.resultado()
+
+
+def _itens_sinteticos(suite: Suite) -> None:
     limiar = limiar_merge()
     teto = teto_evidencia_fraca()
     cnpj_a = cnpj_com_dv("112223330001")
@@ -729,6 +889,41 @@ def rodar_sintetico() -> int:
     suite.chk("negativo: nome igual mas cidade diferente => SEM_DUPLICIDADE (fraco e nome+cidade)",
               (not av["candidato"]) and av["decisao"] == "SEM_DUPLICIDADE", f"decisao={av['decisao']}")
 
+    # ---- entity_match_confidence: score calculado, com faixa (TRE-W1-E04-T02)
+    faixas = faixas_confianca()
+    suite.chk("faixas: modelo tem as 3 faixas documentadas, da maior para a menor",
+              [f["faixa"] for f in faixas] == ["MERGE_AUTOMATICO", "REVISAO_HUMANA", "SEM_DUPLICIDADE"],
+              str([f["faixa"] for f in faixas]))
+    suite.chk("faixas: cobertura de [0,1] sem lacuna e sem sobreposicao (validador recusa faixa invalida)",
+              _faixas_cobrem_a_escala())
+    suite.chk("faixas: a fronteira da faixa de merge e o limiar do CONTRATO (nao constante do codigo)",
+              faixas[0]["piso"] == limiar and faixas[1]["teto"] == limiar
+              and faixas[2]["teto"] == PISO_CANDIDATO_FRACO,
+              f"faixas={[(f['piso'], f['teto']) for f in faixas]} limiar={limiar}")
+    suite.chk(f"faixas: {teto} (teto da evidencia fraca) cai em REVISAO_HUMANA, com REVIEW_REQUIRED",
+              faixa_de_confianca(teto)["faixa"] == "REVISAO_HUMANA"
+              and decidir_por_confianca(teto) == "REVIEW_REQUIRED")
+    suite.chk("faixas: 0,94 NAO mescla e 1,0 mescla, caindo na faixa MERGE_AUTOMATICO",
+              decidir_por_confianca(0.94) == "REVIEW_REQUIRED" and decidir_por_confianca(1.0) == "MERGE"
+              and faixa_de_confianca(1.0)["faixa"] == "MERGE_AUTOMATICO")
+    suite.chk("faixas: 0,7999 nao e duplicidade e 0,80 ja e candidato (piso inclusivo)",
+              faixa_de_confianca(0.7999)["faixa"] == "SEM_DUPLICIDADE"
+              and faixa_de_confianca(0.80)["faixa"] == "REVISAO_HUMANA")
+    suite.chk("faixas: confianca fora de [0,1] e recusada (nao existe valor silencioso)",
+              _recusa_confianca_fora_da_escala())
+    suite.chk("score: par forte devolve entity_match_confidence 1,0 na faixa de merge",
+              _score_do_par((g, h), 1.0, "MERGE_AUTOMATICO", "MERGE"))
+    suite.chk(f"score: par fraco devolve {teto} e nunca alcanca a faixa de merge",
+              _score_do_par((k, l), teto, "REVISAO_HUMANA", "REVIEW_REQUIRED"))
+    suite.chk("score: par sem evidencia de identidade devolve 0,0 (nao finge identidade)",
+              _score_do_par((m, n), 0.0, "SEM_DUPLICIDADE", "SEM_DUPLICIDADE"))
+    suite.chk("score: entity_match_confidence(a, b) e a MESMA fonte que decide o merge",
+              entity_match_confidence(g, h) == avaliar_par(g, h)["entity_match_confidence"] == 1.0)
+    suite.chk("coerencia: em todo par avaliado, a decisao E a decisao da faixa do score",
+              _decisoes_coerentes_com_faixas())
+    suite.chk("aceite (faixa): no ponto exato, 0,94 nao mescla (merge recusado) e 0,95 mescla (SQL gerado)",
+              _limite_094_nao_mescla_095_mescla())
+
     # ---- limiar nao e ajustavel por codigo de producao (D1)
     suite.chk("governanca: o limiar vigente e o do contrato (0,95) e o teto fraco e 0,94",
               abs(limiar - 0.95) < 1e-9 and abs(teto - 0.94) < 1e-9, f"limiar={limiar} teto={teto}")
@@ -759,7 +954,114 @@ def rodar_sintetico() -> int:
               "human_approvals" in sql_rev and "PENDING" in sql_rev and ACAO_REVISAO in sql_rev)
     suite.chk("fila humana: o registro de revisao nao mescla nem apaga organizacao (so uma pendencia)",
               "UPDATE" not in sql_rev.upper() and "organizations" not in sql_rev)
-    return suite.resultado()
+
+    # ---- persistencia do campo canonico no registro auditado (TRE-W1-E04-T02)
+    suite.chk("persistencia: o registro de MERGE carrega entity_match_confidence, a faixa e o modelo",
+              f'"{CAMPO_CONFIANCA}": 1.0' in sql
+              and f'"{CAMPO_CONFIANCA}_faixa": "MERGE_AUTOMATICO"' in sql
+              and f'"{CAMPO_CONFIANCA}_modelo": "{VERSAO_MODELO_CONFIANCA}"' in sql,
+              "o registro auditado do merge nao leva o campo canonico")
+    suite.chk("persistencia: o registro de REVISAO carrega entity_match_confidence e a faixa REVISAO_HUMANA",
+              f'"{CAMPO_CONFIANCA}": 0.94' in sql_rev
+              and f'"{CAMPO_CONFIANCA}_faixa": "REVISAO_HUMANA"' in sql_rev,
+              "o registro da fila humana nao leva o campo canonico")
+    suite.chk("persistencia: campo canonico e alias `confianca` (E04-T01) com o MESMO valor no registro",
+              f'"{CAMPO_CONFIANCA_LEGADO}": 1.0' in sql and f'"{CAMPO_CONFIANCA}": 1.0' in sql)
+    suite.chk("persistencia: o registro leva as faixas vigentes (nao depende de quem le para saber a regua)",
+              f'"{CAMPO_CONFIANCA}_faixas"' in sql and '"piso": 0.95' in sql and '"piso": 0.8' in sql)
+
+
+def _faixas_cobrem_a_escala() -> bool:
+    """O validador aceita as faixas do contrato e RECUSA faixa com buraco ou sobreposicao."""
+    try:
+        _validar_faixas(faixas_confianca())
+    except RuntimeError:
+        return False
+    com_buraco = [dict(f) for f in faixas_confianca()]
+    com_buraco[1]["teto"] = 0.90            # deixa buraco entre 0,90 e a faixa de merge
+    sobreposta = [dict(f) for f in faixas_confianca()]
+    sobreposta[1]["teto"] = 0.99            # invade a faixa de merge
+    for invalida in (com_buraco, sobreposta):
+        try:
+            _validar_faixas(invalida)
+            return False
+        except RuntimeError:
+            continue
+    return True
+
+
+def _recusa_confianca_fora_da_escala() -> bool:
+    for valor in (1.5, -0.1, "alta", None):
+        try:
+            faixa_de_confianca(valor)
+            return False
+        except (ValueError, TypeError):
+            continue
+    return True
+
+
+def _score_do_par(par, esperado: float, faixa: str, decisao: str) -> bool:
+    a, b = par
+    avaliacao = avaliar_par(a, b)
+    return (abs(avaliacao["entity_match_confidence"] - esperado) < 1e-9
+            and avaliacao["entity_match_confidence"] == avaliacao["confianca"]
+            and avaliacao["entity_match_confidence_faixa"] == faixa
+            and avaliacao["entity_match_confidence_decisao"] == decisao
+            and avaliacao["decisao"] == decisao)
+
+
+def _decisoes_coerentes_com_faixas() -> bool:
+    """Score, faixa e decisao contam a MESMA historia em pares de todos os tipos de evidencia."""
+    cnpj_a = cnpj_com_dv("112223330001")
+    cnpj_b = cnpj_com_dv("445556660001")
+    pares = [
+        (_org(legal_name="Alfa Teste Ltda", cnpj=cnpj_a), _org(legal_name="Nome Bem Diferente", cnpj=cnpj_a)),
+        (_org(legal_name="Beta Logistica Integrada LTDA", city="Sorocaba", state="SP"),
+         _org(legal_name="Beta Logistica Integrada", city="Sorocaba", state="SP")),
+        (_org(legal_name="Marca Um Comercio", cnpj=cnpj_a, city="Niteroi"),
+         _org(legal_name="Outra Coisa Distinta", cnpj=cnpj_b, city="Niteroi")),
+        (_org(legal_name="Zeta Comercio", cnpj="12345678000199", city="Bauru"),
+         _org(legal_name="Zeta Comercio ME", cnpj="12345678000199", city="Bauru")),
+    ]
+    for a, b in pares:
+        avaliacao = avaliar_par(a, b)
+        confianca = avaliacao["entity_match_confidence"]
+        faixa = faixa_de_confianca(confianca)
+        dentro = confianca >= faixa["piso"] and (
+            confianca <= faixa["teto"] if faixa["teto_inclusivo"] else confianca < faixa["teto"])
+        if (avaliacao["decisao"] != faixa["decisao"]
+                or avaliacao["entity_match_confidence_faixa"] != faixa["faixa"]
+                or not dentro):
+            return False
+    return True
+
+
+def _avaliacao_no_limite(confianca: float) -> dict:
+    """Avaliacao sintetica no ponto exato do limiar, para exercitar o caminho do merge."""
+    faixa = faixa_de_confianca(confianca)
+    return {
+        "candidato": True, "confianca": confianca, "decisao": faixa["decisao"], "motivo": "teste_do_limite",
+        "identificadores_iguais": ["cnpj"], "identificadores_decisivos": ["cnpj"], "rebaixamentos": [],
+        "evidencias": {}, "limiar_vigente": limiar_merge(), "teto_evidencia_fraca": teto_evidencia_fraca(),
+        "piso_candidato_fraco": PISO_CANDIDATO_FRACO,
+        "entity_match_confidence": confianca, "entity_match_confidence_faixa": faixa["faixa"],
+        "entity_match_confidence_decisao": faixa["decisao"], "entity_match_confidence_modelo": VERSAO_MODELO_CONFIANCA,
+    }
+
+
+def _limite_094_nao_mescla_095_mescla() -> bool:
+    """O teste de faixa do aceite, no ponto exato: 0,94 o merge RECUSA; 0,95 o merge ACONTECE."""
+    sobrevivente, duplicado = str(uuid.uuid4()), str(uuid.uuid4())
+    try:
+        gerar_sql_merge(sobrevivente, duplicado, _avaliacao_no_limite(0.94), [])
+        return False                      # 0,94 gerou SQL de merge: aceite falso
+    except ValueError:
+        pass
+    try:
+        sql = gerar_sql_merge(sobrevivente, duplicado, _avaliacao_no_limite(0.95), [])
+    except ValueError:
+        return False                      # 0,95 recusado: o limiar deixou de ser inclusivo
+    return "'MERGE'" in sql and CAMPO_CONFIANCA in sql
 
 
 def _recusa_kwarg_limiar() -> bool:
@@ -894,6 +1196,10 @@ def rodar_cenario_ambiente(ambiente: str, prefixo_txt: str | None = None) -> int
         prefixo,
         f"SELECT json_build_object('auditoria', count(*), 'operacao', max(operation), "
         f"'confianca', max((request_payload->>'confianca')::numeric), "
+        f"'entity_match_confidence', max((request_payload->>'{CAMPO_CONFIANCA}')::numeric), "
+        f"'faixa', max(request_payload->>'{CAMPO_CONFIANCA}_faixa'), "
+        f"'modelo', max(request_payload->>'{CAMPO_CONFIANCA}_modelo'), "
+        f"'faixas_no_registro', (bool_and(request_payload ? '{CAMPO_CONFIANCA}_faixas')), "
         f"'limiar', max(request_payload->>'limiar_vigente'))::text "
         f"FROM {SCHEMA}.sync_events WHERE idempotency_key = {_sql_txt(res['idempotency_key'])}",
     )
@@ -902,6 +1208,16 @@ def rodar_cenario_ambiente(ambiente: str, prefixo_txt: str | None = None) -> int
               rc == 0 and registro.get("auditoria") == 1 and registro.get("operacao") == "MERGE"
               and float(registro.get("confianca") or 0) == 1.0 and float(registro.get("limiar") or 0) == 0.95,
               str(registro))
+    suite.chk("campo persistido e lido DE VOLTA do banco: entity_match_confidence 1,0 na faixa MERGE_AUTOMATICO",
+              float(registro.get("entity_match_confidence") or 0) == 1.0
+              and registro.get("faixa") == "MERGE_AUTOMATICO"
+              and registro.get("modelo") == VERSAO_MODELO_CONFIANCA,
+              str(registro))
+    suite.chk("campo canonico e alias `confianca` do E04-T01 com o MESMO valor no registro persistido",
+              str(registro.get("confianca")) == str(registro.get("entity_match_confidence")) != "None",
+              str(registro))
+    suite.chk("o registro persistido leva a tabela de faixas vigente (registro autossuficiente)",
+              registro.get("faixas_no_registro") is True, str(registro))
     rc, out, err = rodar_sql(
         prefixo,
         f"SELECT json_build_object('duplicado_soft_deleted', (SELECT deleted_at IS NOT NULL FROM {SCHEMA}.organizations WHERE id='{SINTETICOS['B']}'), "
@@ -948,12 +1264,17 @@ def rodar_cenario_ambiente(ambiente: str, prefixo_txt: str | None = None) -> int
         f"SELECT json_build_object("
         f"'revisoes_pendentes', (SELECT count(*) FROM {SCHEMA}.human_approvals WHERE action_type='{ACAO_REVISAO}' AND status='PENDING' AND proposed_action->>'cenario'='{CENARIO}'), "
         f"'confianca', (SELECT max((proposed_action->>'confianca')::numeric) FROM {SCHEMA}.human_approvals WHERE action_type='{ACAO_REVISAO}' AND proposed_action->>'cenario'='{CENARIO}'), "
+        f"'entity_match_confidence', (SELECT max((proposed_action->>'{CAMPO_CONFIANCA}')::numeric) FROM {SCHEMA}.human_approvals WHERE action_type='{ACAO_REVISAO}' AND proposed_action->>'cenario'='{CENARIO}'), "
+        f"'faixa', (SELECT max(proposed_action->>'{CAMPO_CONFIANCA}_faixa') FROM {SCHEMA}.human_approvals WHERE action_type='{ACAO_REVISAO}' AND proposed_action->>'cenario'='{CENARIO}'), "
         f"'nada_mesclado', (SELECT count(*) = 2 FROM {SCHEMA}.organizations WHERE id IN ('{SINTETICOS['C']}','{SINTETICOS['D']}') AND deleted_at IS NULL))::text",
     )
     fila = _json_da_saida(out) or {}
     suite.chk("fila humana medida no banco: 1 pendencia com confianca 0,94 e nenhuma organizacao mesclada",
               fila.get("revisoes_pendentes") == 1 and abs(float(fila.get("confianca") or 0) - 0.94) < 1e-9
               and fila.get("nada_mesclado"), str(fila))
+    suite.chk("fila humana: o campo canonico persistido na pendencia e 0,94 na faixa REVISAO_HUMANA",
+              abs(float(fila.get("entity_match_confidence") or 0) - 0.94) < 1e-9
+              and fila.get("faixa") == "REVISAO_HUMANA", str(fila))
 
     # ---- guardrail de ambiente + limpeza + estado final
     suite.chk("nenhum merge silencioso: o merge do cenario deixou registro auditavel no banco",
@@ -995,6 +1316,7 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--prefixo", default=None, help="prefixo psql explicito (ex.: 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence')")
     p.add_argument("--executado-por", default="hermes-dev-harness", help="quem executa (vai para a auditoria)")
     p.add_argument("--limiar", action="store_true", help="imprime o limiar em vigor e a origem (contrato)")
+    p.add_argument("--faixas", action="store_true", help="imprime as faixas de confianca do match (fronteiras vindas do contrato)")
     p.add_argument("--autoteste", action="store_true", help="roda a suite sintetica (sem banco)")
     p.add_argument("--sabotar", default=None, choices=sorted(SABOTAGENS), help="quebra o alvo de proposito: a suite TEM de reprovar")
     p.add_argument("--detectar", action="store_true", help="varre organizacoes do ambiente e lista candidatos (somente leitura)")
@@ -1014,6 +1336,18 @@ def main(argv=None) -> int:
         print(f"teto de evidencia fraca (nunca mergeia): {teto_evidencia_fraca():.4f}")
         return 0
 
+    if args.faixas:
+        limiar = limiar_merge()
+        print(f"faixas de {CAMPO_CONFIANCA} (modelo {VERSAO_MODELO_CONFIANCA})")
+        print(f"origem das fronteiras: {CONTRATO_ARQ.relative_to(RAIZ)} (dedup.auto_merge_threshold={limiar:.4f}) "
+              f"+ piso de candidatura {PISO_CANDIDATO_FRACO:.2f} (decisao D4 do E04-T01)")
+        for faixa in faixas_confianca():
+            print(f"  {faixa['faixa']:<17} [{faixa['piso']:.2f}, {faixa['teto']:.2f}{']' if faixa['teto_inclusivo'] else ')'}"
+                  f"  -> {faixa['decisao']:<16} {faixa['significado']}")
+        print(f"detalhe: 0,94 cai em REVISAO_HUMANA ({decidir_por_confianca(0.94)}); "
+              f"0,95 cai em MERGE_AUTOMATICO ({decidir_por_confianca(0.95)}); limiar inclusivo")
+        return 0
+
     if args.autoteste:
         if args.sabotar:
             aplicar_sabotagem(args.sabotar)
@@ -1030,7 +1364,8 @@ def main(argv=None) -> int:
         print(f"-- ambiente '{args.ambiente}' · candidatos a duplicidade: {len(achados)}")
         for f in achados:
             av = f["avaliacao"]
-            print(f"   {f['a']} x {f['b']} -> {av['decisao']} confianca={av['confianca']} "
+            print(f"   {f['a']} x {f['b']} -> {av['decisao']} {CAMPO_CONFIANCA}={av['entity_match_confidence']} "
+                  f"faixa={av['entity_match_confidence_faixa']} "
                   f"motivo={av['motivo']} iguais={av['identificadores_iguais']}")
         return 0
 

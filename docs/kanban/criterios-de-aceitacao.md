@@ -108,6 +108,25 @@ do contrato); D6 `--desfazer-merge` reverte o merge com registro `UNMERGE` (roll
 **Rollback:** Reverter o cálculo; coluna fica nula em vez de mentir valor.
 **Risco:** Médio.
 
+**Componentes afetados:** `scripts/dedup/deduplicar_organizacoes.py` (modelo de faixas, score canônico e
+persistência do campo no registro auditado); `scripts/dedup/teste_entity_match_confidence.sh` (novo, prova
+em um comando); `docs/data/entity-match-confidence.md` (novo, o modelo e as faixas documentadas);
+`docs/runbooks/deduplicacao-strong-identifiers.md` (limite declarado que este card fecha);
+`scripts/verificar_estrutura.sh` (artefatos versionados); `CHANGELOG.md`;
+`docs/operations/registro-de-execucoes.md`; tabelas existentes **sem mudança de schema**:
+`sales_intelligence.sync_events` (merge) e `sales_intelligence.human_approvals` (fila humana).
+
+**Decisões de implementação registradas (não mudam o contrato):** D-T02-1 nome canônico
+`entity_match_confidence` com `confianca` mantido como alias de mesmo valor no mesmo registro (compatibilidade
+com o E04-T01); D-T02-2 a decisão do par passou a ser a decisão da faixa do score (3 estados — `MERGE` /
+`REVIEW_REQUIRED` / `SEM_DUPLICIDADE`; o "abaixo do limiar → REVIEW_REQUIRED" do contrato vale para candidato
+a deduplicação); D-T02-3 persistência no registro auditado das decisões, **nenhuma coluna nova** (coluna é
+gatilho de nova versão do contrato + aprovação humana; o rollback proposto "coluna fica nula" não se aplica
+porque não existe coluna e a trilha de auditoria é imutável por contrato §9); D-T02-4 sem evidência
+qualificada o score é 0,00 e não a similaridade bruta de nome (que segue auditável em `evidencias.fracos`);
+D-T02-5 o registro leva a tabela de faixas vigente e a versão do modelo. Detalhe em
+`docs/data/entity-match-confidence.md` §6.
+
 ## TRE-W1-E05-T01 — Criar database test suite
 
 - Suíte roda com um comando único e falha (exit ≠ 0) se o schema divergir do contrato.

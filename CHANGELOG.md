@@ -105,6 +105,27 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   produção, variável de ambiente ou parâmetro); evidência fraca nunca alcança a faixa de merge (teto
   `limiar − 0,01` = 0,94) e vai para revisão; CNPJ igual porém inválido detecta e vai para revisão;
   nenhuma coluna/tabela nova (criar exigiria nova versão do contrato).
+- **Campo `entity_match_confidence` calculado e persistido** (`TRE-W1-E04-T02`) — o score da decisão de merge
+  deixou de ser um número em memória e passou a ter nome canônico, faixa declarada e registro persistido:
+  - `scripts/dedup/deduplicar_organizacoes.py` — modelo de **faixas derivadas do contrato**
+    (`MERGE_AUTOMATICO [0,95; 1]`, `REVISAO_HUMANA [0,80; 0,95)`, `SEM_DUPLICIDADE [0; 0,80)`; cobre `[0,1]`
+    sem lacuna/sobreposição, validador próprio e recusa de operar com contrato incompatível); o score é
+    calculado por evidência (forte válido 1,00; forte inválido 0,94; fraco qualificado `min(similaridade,
+    0,94)`; sem evidência qualificada **0,00**) e a **decisão do par é a decisão da faixa do score**;
+    `--faixas` imprime o modelo com a origem das fronteiras;
+  - persistência no registro auditado que o contrato já governa (`sync_events.request_payload` no merge e
+    `human_approvals.proposed_action` na fila humana) com `entity_match_confidence`, `..._faixa`,
+    `..._modelo` e a tabela de faixas vigente — **sem coluna nova** (coluna exigiria nova versão do contrato
+    + aprovação humana); o nome `confianca` do E04-T01 fica no mesmo registro como alias de mesmo valor;
+  - `scripts/dedup/teste_entity_match_confidence.sh` — prova em um comando: faixas impressas, suíte do motor,
+    **prova negativa** (sabotar `persistencia` / `coerencia` / `limiar` tem de reprovar) e cenário real em dev
+    com o campo **lido de volta do banco** nos dois registros;
+  - `docs/data/entity-match-confidence.md` — modelo, faixas, onde persiste, decisões D-T02-1..5, rollback e
+    limites declarados.
+  Decisões registradas: nome canônico com alias de compatibilidade; score sem evidência qualificada é 0,00 e
+  não a similaridade bruta (que segue auditável em `evidencias.fracos`); sem coluna em `organizations` (o
+  score é do par, não atributo solto da empresa). Desvio declarado: o rollback proposto no card ("coluna fica
+  nula") não se aplica — não existe coluna e a trilha de auditoria é imutável (contrato §9).
 
 ### Fixed
 
