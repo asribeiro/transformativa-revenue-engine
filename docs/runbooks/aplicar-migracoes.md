@@ -175,3 +175,22 @@ removida, índice a mais — exige **reprovação apontando o motivo** em cada u
   reprovadas pelo motivo certo, todas reversíveis);
 - produção e homologação intocadas: `aplicar_migracoes.sh prod` recusa por ADR-005 (exit 1), `docker ps -a`
   só com `pg-sales-dev` e `/opt/tre/{prod,homolog}` sem arquivo.
+
+## Realinhamento de registro de migration (regra, decidida por Anderson em 30/09/2026)
+
+Quando uma migration **ja aplicada** tiver o arquivo alterado **apenas em comentario** — e isso for
+provado por `pg_dump --schema-only` mostrando schema identico — o registro em `tre_schema_migrations`
+pode ser **realinhado ao sha do arquivo**, valendo as condicoes:
+
+1. **So em desenvolvimento.** Homologacao e producao exigem decisao nova, registrada.
+2. **Ato registrado, com a assinatura do dono:** aprovacao do dono + linha em
+   `docs/operations/registro-de-aprovacoes.md`.
+3. **Evidencia obrigatoria:** estado do registro ANTES e DEPOIS, e a saida do runner
+   (`aplicar_migracoes.sh <amb> --somente-checar`) mostrando `MIGRACAO_OK`.
+4. **`UPDATE` condicionado ao sha antigo** (`WHERE versao=... AND sha256=<sha antigo>`): se o
+   registro ja tiver mudado, o comando nao faz nada em vez de sobrescrever.
+5. O realinhamento **nao** altera schema, nao recria tabela e nao toca em dado.
+
+Precedente desta regra: a nota datada do trio canonico acrescentada ao cabecalho da migration 0001
+(commit `c795677`) mudou o sha do arquivo e derrubou o runner em dev; o schema foi provado identico
+por `pg_dump` em containers descartaveis, e o registro foi realinhado com o dono aprovando a opcao 1.
