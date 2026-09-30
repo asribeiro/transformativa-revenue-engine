@@ -20,9 +20,10 @@ O que esta suite prova (e como), sem tocar em nada de producao:
     configuracao, que segura.
 
 Como a suite roda o kernel REAL sem escrever em /opt/hermes (root): monta um
-overlay de `hermes_cli/` num diretorio temporario (symlink para tudo, copia real
-dos modulos que o encaixe edita, com as edicoes aplicadas) e roda os subprocessos
-com `PYTHONPATH=<overlay>`. O board de teste vive em `HERMES_KANBAN_HOME` temporario.
+overlay de `hermes_cli/` num diretorio temporario (symlink para o que a suite nao
+toca, copia real dos modulos editados e do adaptador, com as edicoes APLICADAS —
+ou DESFEITAS, na prova por mutacao) e roda os subprocessos com `PYTHONPATH=<overlay>`.
+O board de teste vive em `HERMES_KANBAN_HOME` temporario.
 
 Uso:  /opt/hermes/.venv/bin/python scripts/verificar_gate_jev.py [--manter]
 """
@@ -97,31 +98,44 @@ def construir_overlay(destino: pathlib.Path, *, edicoes_revertidas: tuple = ()) 
     """Cria `<destino>/hermes_cli` = copia do instalado com o encaixe aplicado.
 
     `edicoes_revertidas` (nomes de `EDICOES` do editor) sai SEM o encaixe — e o que
-    permite a prova por mutacao.
+    permite a prova por mutacao. Reverter de verdade exige DESFAZER a ancora na
+    copia: se o kernel instalado ja tem o encaixe (instalacao real, via
+    `deploy/hermes/aplicar_gate_jev.sh`), "nao aplicar" manteria a edicao dentro do
+    overlay e a mutacao mediria o oposto do que promete.
     """
     editor = _carregar_editor()
     pacote = destino / "hermes_cli"
     pacote.mkdir(parents=True, exist_ok=True)
-    editados = set()
-    for nome, (arquivo, antiga, nova) in editor.EDICOES:
-        if nome in edicoes_revertidas:
-            continue
-        editados.add(arquivo)
+    # Todo modulo tocado por alguma edicao e COPIA REAL (nunca symlink): a copia
+    # pode precisar APLICAR o encaixe ou DESFAZE-LO, e nos dois casos o arquivo
+    # instalado tem de ficar fora do experimento.
+    editados = {arquivo for _, (arquivo, _, _) in editor.EDICOES}
 
+    nomes_que_viram_copia = editados | {ADAPTADOR_VERSIONADO.name}
     for entrada in sorted(DIR_CLI.iterdir()):
         alvo = pacote / entrada.name
         if alvo.exists() or alvo.is_symlink():
             continue
-        if entrada.name in editados and entrada.is_file():
+        # O nome que vira COPIA sai do laco de symlinks: com o symlink no lugar,
+        # o `open(dst,'wb')` do copy2 segue o link e escreve no arquivo INSTALADO
+        # (PermissionError quando /opt/hermes e do root; e, em instalacao gravavel,
+        # sobrescrita do adaptador de producao — o overlay deixaria de ser isolado
+        # e a suite mediria um estado que ela mesma criou). Defeito TRE-W0-E04-T05-D02.
+        if entrada.name in nomes_que_viram_copia and entrada.is_file():
             continue
         os.symlink(entrada, alvo)
 
-    # modulos editados: copia real + edicoes aplicadas
+    # modulos editados: copia real + edicoes aplicadas (ou desfeitas, na mutacao)
     for arquivo in sorted(editados):
         origem = DIR_CLI / arquivo
         texto = origem.read_text(encoding="utf-8")
         for nome, (arq, antiga, nova) in editor.EDICOES:
-            if arq != arquivo or nome in edicoes_revertidas:
+            if arq != arquivo:
+                continue
+            if nome in edicoes_revertidas:
+                # mutacao: desfaz o encaixe NA COPIA (a instalacao pode ja te-lo)
+                if nova in texto:
+                    texto = texto.replace(nova, antiga, 1)
                 continue
             if nova in texto:
                 continue
@@ -557,6 +571,18 @@ def executar_suite(raiz: pathlib.Path) -> Itens:
         itens.pular("S10 adaptador instalado em /opt/hermes == versionado no repo",
                     f"ainda nao instalado ({ADAPTADOR_INSTALADO}) — precisa de root; "
                     "ver deploy/hermes/aplicar_gate_jev.sh")
+
+    # Isolamento do harness (defeito TRE-W0-E04-T05-D02): o adaptador DENTRO do overlay
+    # tem de ser arquivo proprio — nunca symlink para o instalado — e identico ao
+    # versionado. Com symlink no lugar, o `open(dst,'wb')` do copy2 segue o link: a
+    # suite escreveria ATRAVES dele, no adaptador instalado de /opt/hermes.
+    adaptador_no_overlay = c3.overlay / "hermes_cli" / ADAPTADOR_VERSIONADO.name
+    itens.checar("S10 isolamento: adaptador do overlay e copia real (nao symlink para o "
+                 "instalado) e igual ao versionado — a suite nao escreve fora do overlay",
+                 adaptador_no_overlay.is_file() and not adaptador_no_overlay.is_symlink()
+                 and adaptador_no_overlay.read_bytes() == ADAPTADOR_VERSIONADO.read_bytes(),
+                 f"existe={adaptador_no_overlay.is_file()} "
+                 f"symlink={adaptador_no_overlay.is_symlink()}")
     try:
         import yaml
         espec = importlib.util.spec_from_file_location("rot_gate", ROTEADOR)
