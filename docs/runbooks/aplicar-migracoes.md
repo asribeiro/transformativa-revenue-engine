@@ -38,6 +38,37 @@ TRE_PG_SERVICO=outro-container TRE_PG_USER=outro TRE_PG_DB=outro_banco \
 
 `--somente-checar` mostra o que seria aplicado sem executar DDL.
 
+### 2.1 Log da aplicação — um diretório por execução (TRE-W1-E01-T01-D02)
+
+O log do `psql` **não** vive em caminho fixo. Cada execução cria o seu com `mktemp -d`
+(`${TMPDIR:-/tmp}/tre_migracao.XXXXXXXXXX`), imprime o caminho na linha
+`OK  log da execucao em '<dir>'` e o **remove no fim**, inclusive em falha (`trap`). O
+arquivo de destino dentro do container também é único por execução
+(`/tmp/tre_aplicar_<pid>_<arquivo>`).
+
+Motivo (defeito `D02` do `TRE-W1-E01-T01`, card `t_41d17c27`): o caminho fixo
+antigo (`/tmp/tre_migracao_<versao>.log`) era deixado no host a cada execução; como `/tmp` é
+sticky (`1777`) e o host tem `fs.protected_regular=2`, a execução seguinte — de **outro**
+usuário, inclusive `root` — falhava no `O_CREAT` do redirecionamento com `EACCES` **antes de
+aplicar**, e a mensagem saía vazia (`FALHOU versao 0001 (…) falhou: `), porque o `tail -3` lia
+um arquivo que nunca pôde ser escrito. O caminho fixo também era compartilhado por execuções
+concorrentes no mesmo host.
+
+Consequências operacionais:
+
+- dois operadores/execuções concorrentes no mesmo host **não** compartilham log (nome único);
+- se o diretório de log não puder ser criado (`TMPDIR` sem permissão/inexistente), o runner
+  **recusa** com causa explícita (`nao consegui criar o diretorio de log por execucao …`) e
+  exit 1 — não existe aplicação "às cegas", sem log;
+- quando o log existe e está vazio (falha antes do `psql`), a mensagem de falha diz isso
+  (`falhou SEM diagnostico do psql (log '…' ausente/vazio) — a causa NAO esta no SQL`), em vez
+  de imprimir nada.
+
+Prova reproduzível (container descartável próprio, cria e remove): `bash scripts/db/teste-log-migracao.sh`
+→ `RESULTADO: TESTE_OK (19 itens, 0 falhas)`, exit 0; com `TRE_D02_RUNNER_ANTIGO=<runner anterior>`
+ele inclui o comparativo antes/depois (o runner antigo falha com diagnóstico vazio e continua
+fail-closed: 0 tabela, 0 linha de versão).
+
 ## 3. Guardrail de produção (fail-closed)
 
 `aplicar_migracoes.sh prod` **recusa** por padrão. Só passa com as três condições, verificadas antes de
@@ -144,3 +175,22 @@ removida, índice a mais — exige **reprovação apontando o motivo** em cada u
   reprovadas pelo motivo certo, todas reversíveis);
 - produção e homologação intocadas: `aplicar_migracoes.sh prod` recusa por ADR-005 (exit 1), `docker ps -a`
   só com `pg-sales-dev` e `/opt/tre/{prod,homolog}` sem arquivo.
+
+## Realinhamento de registro de migration (regra, decidida por Anderson em 30/09/2026)
+
+Quando uma migration **ja aplicada** tiver o arquivo alterado **apenas em comentario** — e isso for
+provado por `pg_dump --schema-only` mostrando schema identico — o registro em `tre_schema_migrations`
+pode ser **realinhado ao sha do arquivo**, valendo as condicoes:
+
+1. **So em desenvolvimento.** Homologacao e producao exigem decisao nova, registrada.
+2. **Ato registrado, com a assinatura do dono:** aprovacao do dono + linha em
+   `docs/operations/registro-de-aprovacoes.md`.
+3. **Evidencia obrigatoria:** estado do registro ANTES e DEPOIS, e a saida do runner
+   (`aplicar_migracoes.sh <amb> --somente-checar`) mostrando `MIGRACAO_OK`.
+4. **`UPDATE` condicionado ao sha antigo** (`WHERE versao=... AND sha256=<sha antigo>`): se o
+   registro ja tiver mudado, o comando nao faz nada em vez de sobrescrever.
+5. O realinhamento **nao** altera schema, nao recria tabela e nao toca em dado.
+
+Precedente desta regra: a nota datada do trio canonico acrescentada ao cabecalho da migration 0001
+(commit `c795677`) mudou o sha do arquivo e derrubou o runner em dev; o schema foi provado identico
+por `pg_dump` em containers descartaveis, e o registro foi realinhado com o dono aprovando a opcao 1.

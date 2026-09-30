@@ -45,11 +45,21 @@ sudo chmod 644 /etc/systemd/system/tre-backup*.service /etc/systemd/system/tre-b
 sudo systemctl daemon-reload
 echo "  copiadas"
 
-echo "== 4. habilitar =="
+echo "== 4. bit executavel dos scripts chamados pelos units =="
+# O ExecStart= chama o script direto: sem bit executavel (100755 no git) o systemd
+# falha com 203/EXEC e o timer "instalado" nunca roda. Conferir ANTES de habilitar.
+if ! bash "$RAIZ_REPO/scripts/backup/verificar-modos-executaveis.sh"; then
+  echo
+  echo "ABORTADO: script de unit sem bit executavel — timer NAO habilitado."
+  echo "  Corrija no repositorio (git update-index --chmod=+x <arquivo>) e reinstale."
+  exit 1
+fi
+
+echo "== 5. habilitar =="
 sudo systemctl enable --now tre-backup.timer tre-backup-verify.timer >/dev/null
 echo "  habilitados"
 
-echo "== 5. agenda =="
+echo "== 6. agenda =="
 systemctl list-timers 'tre-backup*' --no-pager
 echo
 echo "RESULTADO: TIMERS_OK"

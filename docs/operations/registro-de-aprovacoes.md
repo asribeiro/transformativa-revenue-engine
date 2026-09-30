@@ -56,3 +56,28 @@ corrigidas abaixo).
   migrado, nenhum ambiente é reprovisionado.
 - **Vale para:** W1/W2 seguintes, `TRE-W1-E05-T01` (suíte de banco), `TRE-W1-E06-T01`
   (backup/restore) e o provisionamento de homolog/produção.
+
+## 30/09/2026 — DECISAO DO DONO: isolamento entre clientes (card `t_e340c29b`, AC2 do E05)
+
+- **Aprovador:** Anderson Ribeiro, palavra no Telegram em 30/09/2026 ("A").
+- **Decisao:** opcao A — isolamento fisico, um banco por cliente. O AC2 deixa de ser
+  "consulta sem filtro de tenant nao devolve dado de outro cliente" e passa a ser
+  "nao existem dois clientes no mesmo banco", que e testavel com o ambiente atual.
+- **Canal:** telegram (card de documentacao de contrato em dev; nao toca ambiente vivo, credencial
+  nem dado de cliente).
+- **Efeito:** contrato atualizado (`docs/data/DATA_CONTRACT_V1.md`), card de decisao fechado e
+  `TRE-W1-E05-T01` (t_c7281fce) liberado para fechar o AC2 na forma nova.
+
+## 30/09/2026 — DECISAO DO DONO: realinhar o registro da migration 0001 em dev (card `t_39838c5b`)
+
+- **Aprovador:** Anderson Ribeiro, palavra no Telegram em 30/09/2026 ("1").
+- **Contexto:** o sha256 do arquivo `db/migrations/0001_sales_intelligence_v1.sql` mudou de
+  `bc766a818943…` para `0484a3701b8c…` porque o **proprio agente** acrescentou a nota datada do trio
+  canonico no cabecalho do arquivo (commit `c795677`). O runner passou a falhar em dev.
+- **Prova de que o schema nao mudou:** `pg_dump --schema-only` em dois containers descartaveis
+  (arquivo atual x arquivo sem o comentario) — diferenca apenas nos tokens internos do dump.
+- **Ato executado em dev (com evidencia):** `UPDATE ... WHERE versao='0001' AND sha256=<sha antigo>`
+  -> `UPDATE 1`; registro DEPOIS = `0484a3701b8c…`; e o runner na copia operacional respondeu
+  `MIGRACAO_OK (--somente-checar; 0 aplicada(s), 1 pulada(s), 4 itens, 0 falhas)`, exit 0.
+- **Regra que passa a valer:** secao "Realinhamento de registro de migration" em
+  `docs/runbooks/aplicar-migracoes.md`.

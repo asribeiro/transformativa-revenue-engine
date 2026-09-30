@@ -250,3 +250,16 @@ registrada para o W1 — o contrato não finge que existem.
 
 *Contrato congelado no W0. Qualquer divergência entre este texto, o JSON e o SQL é falha de contrato, e o
 verificador `scripts/verificar_contrato_dados.py` tem de acusar.*
+
+## Modelo de isolamento entre clientes (decidido por Anderson, 30/09/2026)
+
+- **Opção A, isolamento FÍSICO:** cada cliente tem **banco próprio**. O critério original de
+  tenant/RLS foi reformulado para a forma testavel: **"nao existem dois clientes no mesmo banco"**.
+- Racional medido: em dev nao ha coluna de cliente nas 12 tabelas, RLS esta desabilitada em todas,
+  nao existe policy e o papel da aplicacao e superuser com bypassrls — sem dimensao de cliente a
+  consulta proibida nao e nem expressavel. A barreira passa a ser de provisionamento, nao de schema.
+- **Consequencia aceita pelo dono:** o isolamento e regra de OPERACAO, nao barreira no banco. O
+  controle substituto e explicito: a suite de banco passa a verificar que cada base tem um unico
+  cliente, e o provisionamento nao co-loca clientes sem decisao nova registrada.
+- Tenant/RLS como dimensao de primeira classe fica para o **V2**, se e quando houver multi-cliente
+  no mesmo banco — e nesse caso entra medido desde o inicio, nao depois.

@@ -127,6 +127,51 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   score é do par, não atributo solto da empresa). Desvio declarado: o rollback proposto no card ("coluna fica
   nula") não se aplica — não existe coluna e a trilha de auditoria é imutável (contrato §9).
 
+- **Modo "ambiente real" no driver de teste de backup/restore** (`TRE-W1-E06-T01`) —
+  `scripts/backup/teste-backup-restore.sh --ambiente dev|homolog`: faz o backup do banco do **ambiente**
+  (não de um container descartável), confere `sha256` do dump contra o manifesto, exige
+  `externo: enviado` no manifesto e confere que o container do ambiente não foi tocado. O modo
+  descartável (padrão) segue intacto e continua `TESTE_OK`.
+- **Suíte de teste do banco** (`TRE-W1-E05-T01`) — um comando único por ambiente
+  (`bash scripts/db/suite_banco.sh dev`), com **exit code como resposta** e veredito de três valores:
+  `0 SUITE_OK` / `1 SUITE_FALHOU` / `3 SUITE_NAO_TESTAVEL` (não é verde) — mais `2` para uso errado:
+  - `scripts/db/suite_banco.sh` — reúne as etapas numa execução: ambiente (identidade do alvo, estado do
+    schema e sha da migration registrada × arquivo do repo), contrato (`verificar_contrato_dados.py
+    --banco`), constraints/índices (`verificar_constraints_indices.py --banco`), dedup sintético e dedup
+    no ambiente (motor do E04, com cenário real e limpeza conferida) e tenant/RLS. Guarda de
+    confiabilidade: etapa **sem linha `RESULTADO:`** ou com **0 item executado** reprova a suíte
+    ("sem output" nunca é verde). `--somente-leitura` não escreve no alvo (etapa de dedup vira varredura
+    `--detectar`) e é o modo permitido em `prod`; sem ele, `prod` é recusado (ADR-005);
+  - `scripts/db/teste_tenant_rls.sh` — isolamento entre clientes: mede dimensão de cliente/tenant, RLS
+    (`pg_class.relrowsecurity`, `pg_policies`) e o papel da aplicação (`rolsuper`, `rolbypassrls`, dono de
+    tabela com RLS sem `FORCE`); como o papel da aplicação, prova que a consulta **sem filtro** devolve
+    vazio ou erro na sessão sem cliente e **0 linha de outro cliente** na sessão com cliente X. Sem
+    dimensão de cliente o critério é indecidível e a suíte diz isso com **exit 3**, nunca com verde;
+  - `--prova-de-dente` (nos dois scripts) — provas em container **descartável**: a suíte reprova alvo com
+    coluna removida e com índice a mais (`SUITE_DENTE_OK`, 14 itens), e o teste de tenant reprova policy
+    permissiva (`USING (true)`), `BYPASSRLS` no papel da aplicação e `DISABLE ROW LEVEL SECURITY`, voltando
+    a aprovar quando cada mutação é desfeita (`TENANT_RLS_DENTE_OK`, 18 itens);
+  - `docs/runbooks/suite-de-teste-do-banco.md` — runbook do comando, do vocabulário de exit, das etapas e
+    dos limites conhecidos.
+  **Critério de tenant/RLS não é provável contra o Data Contract V1.0** (medido em dev: 0 coluna de
+  cliente/tenant nas 12 tabelas, RLS desabilitada nas 12, 0 policy, papel `sales_ai` com `superuser=true`
+  e `bypassrls=true`): a suíte fecha em `SUITE_NAO_TESTAVEL` para esse critério e ele volta ao Analista de
+  Requisitos — nenhum verde foi declarado sem essa prova.
+
+### Changed
+
+- **AC2 do E05 passou a ser medido na forma reformulada — "não existem dois clientes no mesmo banco"**
+  (`TRE-W1-E05-T01`, decisão do dono `A` de 30/09/2026, card `t_e340c29b`; isolamento **físico**, um banco
+  por cliente) — a etapa 5 da suíte deixa de ser `tenant/RLS` (forma antiga: "consulta sem filtro de tenant
+  devolve vazio ou erro", **não decidível** contra o Data Contract V1.0, que não tem dimensão de cliente) e
+  passa a medir o que é medível no ambiente atual: **0 dimensão de cliente/tenant no schema**, **1 base de
+  aplicação na instância do alvo** e **1 base provisionada (`pg-*`) servindo o schema no host**. A barreira
+  do critério passa a ser de **provisionamento**, não de schema — declarado em
+  `docs/data/DATA_CONTRACT_V1.md` e em `docs/runbooks/suite-de-teste-do-banco.md` §4/§8. O medidor é
+  `scripts/db/teste_isolamento_clientes.sh` (novo, com `--prova-de-dente`); `scripts/db/teste_tenant_rls.sh`
+  fica **versionado como instrumento do V2** (não wired na suíte) para o dia em que houver multi-cliente no
+  mesmo banco. `scripts/verificar_estrutura.sh` passa a exigir o artefato novo (versionado e executável).
+
 ### Fixed
 
 - **`--faixas` se contradizia quando o limiar do contrato não era 0,95** (`TRE-W1-E04-T02-D02`, defeito medido
@@ -139,6 +184,50 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   inclusive numa cópia com o limiar em 0,90, onde tabela e linha de detalhe têm de se mover juntas; a suíte
   ganhou a sabotagem `detalhe` (`--sabotar detalhe` → `TESTE_FALHOU`, exit 1) para o item novo não nascer sem
   prova de que reprova.
+- **Suíte de banco: linha do `RESUMO` mentia sobre a etapa `ambiente`** (`TRE-W1-E05-T01` — defeito achado
+  pelo card de D01/`t_39838c5b`, que reproduziu a etapa reprovando com o resumo imprimindo
+  `ambiente ............. OK`) — a linha era **texto fixo** e não refletia o veredito contado: quem lesse só
+  o resumo (ou o resumo de um log grande) concluiria "ambiente OK" com a suíte falhando por causa daquela
+  etapa. A linha agora sai do que foi contado (`FALHOU (N itens)` quando há reprovação na etapa) e entrou uma
+  **guarda de consistência do próprio resumo** (o número de linhas `FALHOU` no resumo tem de cobrir as
+  etapas reprovadas; desvio reprova a suíte). A guarda tem prova negativa: com o registro da migration
+  divergido no alvo descartável, a suíte sai com exit 1, aponta a etapa e o resumo **não** pode dizer `OK` —
+  `SUITE_DENTE_OK (19 itens, 0 falhas)`.
+
+- **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
+  usuário) morria com diagnóstico vazio** (`TRE-W1-E01-T01-D02`, defeito `F1` achado na revisão
+  independente do `TRE-W1-E01-T01`; card `t_41d17c27`) — `/tmp` é `tmpfs` sticky (`1777`) e o host tem
+  `fs.protected_regular=2`: o `O_CREAT` de um arquivo regular **já existente e de outro dono** recebe
+  `EACCES`, inclusive para `root`. Cada execução deixava o arquivo no host e a seguinte falhava **antes de
+  aplicar**, imprimindo `FALHOU versao 0001 (…) falhou:` com a mensagem vazia (o `tail -3` lia um arquivo
+  que nunca pôde ser escrito); o caminho fixo também era compartilhado por execuções concorrentes. Não
+  houve aceite falso (fail-closed: 0 tabela, 0 linha de versão), o que faltava era robustez e diagnóstico.
+  Corrigido: o log vive em diretório **por execução** (`mktemp -d`, criado antes do `psql` e removido no
+  fim, inclusive em falha), o destino dentro do container também é único por execução (`$$`), e `TMPDIR`
+  não gravável ou log vazio agora **dizem a causa** em vez de imprimir nada. Prova em container
+  descartável próprio: `scripts/db/teste-log-migracao.sh` → `TESTE_OK (19 itens, 0 falhas)`, exit 0, com o
+  comparativo antes/depois (runner anterior no mesmo cenário: exit 1, diagnóstico vazio, fail-closed).
+
+- **Bit executável dos scripts de unit perdido no git → `tre-backup.service` morria com `203/EXEC`**
+  (`TRE-W1-E06-T01-D01`, defeito medido na rotina automática pelo card E06) — `scripts/backup/*.sh` estavam
+  `100644` no git; como o `ExecStart=` chama o script direto, qualquer sincronização da cópia operacional
+  (`/opt/tre/repo`) devolvia `644` e o systemd recusava o exec (`status=203/EXEC`, journal
+  "Failed at step EXEC ... Permission denied"). Corrigido onde o bit vive — no **git** (`100755`: **6 dos 7**
+  scripts existentes mudaram de `100644` para `100755`, `teste-backup-restore.sh` já era `100755` e o novo
+  verificador nasceu `100755`; commit `6a580ee`) — e na cópia operacional por `install -m 755` (conteúdo
+  provado por sha256, 8/8 arquivos idênticos ao repositório). Prevenção: `scripts/backup/verificar-modos-executaveis.sh` lê os
+  `ExecStart=` dos units e confere o modo no índice do git + o bit no disco (reprova o estado anterior:
+  `MODOS_FALHOU` exit 1; passa depois: `MODOS_OK` exit 0) e o `instalar-timers.sh` **aborta sem habilitar
+  timer** quando algum alvo está sem bit (teste negativo medido em harness isolado). Depois da correção os
+  dois units executam sob `tre-deploy`: `tre-backup.service` roda `backup-tre.sh todos` (exit 0) e
+  `tre-backup-verify.service` faz o restore real do último artefato (`RESTORE_OK`, 11 itens).
+  **O backup diário ainda não gera artefato** — isso é o defeito irmão `t_1b2ab418` (trio `TRE_PG_*` ausente
+  do `EnvironmentFile`), não o bit. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
+  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`,
+  publicações de teste do card `t_091cfea9`) — o bit no git e a guarda são duráveis, a cópia operacional
+  depende do caminho versionado de publicação (ACHADO ABERTO 3). Depois da publicação versionada de
+  20:12:35Z os dois critérios da cópia foram remedidos com horário (`test -x` exit 0; `systemctl start` →
+  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
@@ -156,6 +245,14 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   artefato fora do git — aceite falso. Corrigido movendo o resumo/exit para o FIM do arquivo e provado com
   dente: com um artefato removido do índice (`git rm --cached`) o verificador devolve `FALHOU nao versionado`,
   `RESULTADO: FALHOU (1)`, exit 1; re-adicionado, `PASS (0 falhas)`, exit 0.
+- **Roteiro de prova da suíte: restauração incompleta e regex errada** (`TRE-W1-E05-T01`, dois defeitos do
+  próprio roteiro, achados pela prova de dente rodando contra alvo descartável) — (i) desfazer
+  `DROP COLUMN cnpj` só recriava a coluna, não o índice `idx_organizations_cnpj`, que o Postgres derruba
+  junto com a coluna: a suíte continuava reprovando depois de "desfeita" a divergência (o roteiro é que
+  estava incompleto, o schema não); (ii) a checagem da guarda de `0 item` esperava a string `0 item`, que
+  **não** é prefixo de `0 itens` — a guarda funcionava e a prova dizia que não. Corrigidos: restauração
+  recria coluna **e** índice; a checagem passou a casar a mensagem real (`nao executou item nenhum`).
+  Segunda execução: `SUITE_DENTE_OK (14 itens, 0 falhas)`.
 
 ### Notas de estado
 
@@ -176,4 +273,43 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   contagem por tabela idêntica ao estado anterior depois da limpeza. `--detectar` no dev real: 0
   candidatos entre as duas organizações do fixture. Nada tocado em homol/prod: `docker ps -a` só tem
   `pg-sales-dev` e `/opt/tre/{prod,homolog}` seguem sem arquivo.
-
+- **Ciclo de backup/restore provado contra o dev** (`TRE-W1-E06-T01`): artefato
+  `tre_dev_20260930T193704Z` (12 tabelas, 30 índices, contagens batendo linha a linha), enviado ao bucket
+  `tre-backup` com manifesto `externo: enviado`; negativos reprovados (dump truncado, dump de 0 byte, dump
+  de outro banco, contagem mutada, destino externo inexistente).
+- **A rotina automática de backup NÃO está funcionando** — dois achados abertos medidos no mesmo card:
+  o unit `tre-backup.service` falha com `203/EXEC` (scripts de `scripts/backup/` estão `100644` no git) e,
+  mesmo executando, `backup-tre.sh todos` **pula os três ambientes** (procura `pg-dev`, o dev real é
+  `pg-sales-dev`) e sai `BACKUP_OK` sem gerar artefato. Detalhes em
+  `docs/runbooks/backup-restore-rollback.md` §8.
+- **Suíte do banco medida em dev (`TRE-W1-E05-T01`):** `suite_banco.sh dev` → `SUITE_FALHOU` (exit 1) com
+  **uma** reprovação e **um** critério não testável; `--somente-leitura` roda a mesma bateria sem escrever
+  no alvo (varredura `--detectar` no lugar do cenário). As etapas de contrato (37 itens), constraints/índices
+  (16 itens), dedup sintético (7 itens) e dedup no ambiente (21 itens) passaram; a etapa de tenant/RLS
+  fechou em `TENANT_RLS_NAO_TESTAVEL` (exit 3) — o critério homologado não é provável contra o contrato
+  V1.0 (0 coluna de cliente/tenant, RLS desabilitada nas 12 tabelas, 0 policy, papel `sales_ai` superuser e
+  `bypassrls`). Provas de dente: `SUITE_DENTE_OK (14 itens)` e `TENANT_RLS_DENTE_OK`. `prod` recusado
+  (ADR-005, exit 1); `homolog` sem container → exit 1 apontando alvo inexistente (falha visível).
+- **Divergência aberta pelo E05 (não corrigida neste card):** a etapa de ambiente da suíte acusa que a
+  migration **registrada** pelo runner em dev (`bc766a818943…`) diverge do arquivo do repo
+  (`0484a3701b8c…`) — o commit da decisão do trio canônico (opção 3) acrescentou um comentário ao arquivo
+  **depois** de ele ter sido aplicado. Só texto (nenhuma DDL muda), mas o runner trata migration aplicada
+  como imutável: `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_FALHOU` (exit 1). Registrado como
+  defeito no board, com o card do E05 esperando por ele.
+- **Suíte do banco re-medida em dev na forma reformulada do AC2 (`TRE-W1-E05-T01`, 30/09/2026, após a
+  decisão `A` do dono e o fechamento do D01):** `suite_banco.sh dev` → **`SUITE_OK (89 itens, 0 falhas)`,
+  exit 0** — as seis etapas verdes (ambiente 3 itens, contrato 37, constraints 16, dedup sintético 7, dedup
+  no ambiente 21, isolamento 5); `--somente-leitura` → `SUITE_OK (69 itens)`, exit 0, sem escrever no alvo;
+  `prod` → recusado (ADR-005, exit 1); `homolog` → exit 1 apontando o alvo inexistente. Etapa 5 nova:
+  `teste_isolamento_clientes.sh dev` → `ISOLAMENTO_OK (5 itens, 0 falhas)`, exit 0 (0 coluna de
+  cliente/tenant, 1 base de aplicação na instância, 1 base provisionada `pg-sales-dev`); com a medição de
+  provisionamento impossível → `ISOLAMENTO_NAO_TESTAVEL`, exit 3 (nunca verde). Provas de dente:
+  `SUITE_DENTE_OK (19 itens, 0 falhas)` (soma a guarda do resumo ao dente do AC1/AC3) e
+  `ISOLAMENTO_DENTE_OK (17 itens, 0 falhas)` (2 clientes na mesma base / segunda base na mesma instância /
+  segundo serviço `pg-*` no host → exit 1, cada mutação desfeita volta a aprovar). O instrumento do V2
+  (`teste_tenant_rls.sh dev`) segue em `TENANT_RLS_NAO_TESTAVEL`, exit 3, **fora da suíte**.
+- **D01 fechado e visível na suíte:** o registro do runner em dev foi realinhado ao sha do arquivo
+  (`0484a3701b8c…` nas três fontes) — `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_OK`, exit 0, e
+  a etapa `ambiente` da suíte saiu `OK` (antes reprovava por causa da divergência). Estado do dev antes ×
+  depois da bateria: `12 tabelas | 30 índices` nas duas pontas; `docker ps -a` só `pg-sales-dev`;
+  `/opt/tre/{prod,homolog}` com **0 arquivo**.

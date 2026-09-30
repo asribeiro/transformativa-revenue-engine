@@ -254,3 +254,71 @@ declaracoes:
       em desenvolvimento, sem producao e sem credencial de deploy.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_22c27625
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito aberto pela verificacao de backup/restore (E06) sobre a rotina de backup do
+      ambiente. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_091cfea9
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito aberto pela verificacao de backup/restore (E06) sobre a rotina de backup do
+      ambiente. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_e340c29b
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E05-T01-D02 — AC2 (tenant/RLS) não testável contra o Data Contract V1.0 — decidir r). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_39838c5b
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E05-T01-D01 — DEFEITO: migration 0001 registrada em dev diverge do arquivo do repo ). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_c9a44f85
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (VERIFICACAO INDEPENDENTE: publicacao versionada da copia operacional /opt/tre/repo (DEFEIT). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_5607e24d
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E01-T01-D02 — VERIFICACAO INDEPENDENTE: log da migracao por execucao (correcao do d). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_1b2ab418
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (DEFEITO: rotina diária de backup cobre zero ambientes (procura pg-dev; o dev real é pg-sal). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
