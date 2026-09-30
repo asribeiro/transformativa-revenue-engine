@@ -91,7 +91,7 @@ em produção" continua rodando antes e continua bloqueando.
 **Estado de execução:** a regra está **declarada** e **ainda não executada**. O roteador em vigor
 (`jev-router-v1.0`) não implementa o piso, e é isso que torna esta versão inerte: o roteador **recusa**
 política de versão que ele não implementa. Entrar em vigor exige a homologação do Anderson **e** a
-implementação do piso no roteador — o card que faz isso é o **`TRE-W0-E04-T07` (`t_d36c7d0f`)**, declarado
+implementação do piso no roteador — o card que faz isso é o **`TRE-W0-E04-T08` (`t_d36c7d0f`)**, declarado
 em `regra_de_lane_por_ambiente.execucao.card_de_implementacao` e verificado contra o board.
 
 ## 4. Limiares de confiança
@@ -193,7 +193,7 @@ cuja versão no YAML não seja a esperada nem divergência entre documento e arq
 O rito é o mesmo da v1.0: **documento + verificador + homologação do Anderson**. Homologar esta v1.1
 significa (1) a palavra dele registrada em `docs/operations/registro-de-aprovacoes.md`, (2) o campo
 `homologacao.registrada_em` preenchido no YAML, e (3) a implementação do piso por ambiente no roteador pelo
-card `TRE-W0-E04-T07` (`t_d36c7d0f`) — porque contrato declarado sem executor é pior que contrato ausente:
+card `TRE-W0-E04-T08` (`t_d36c7d0f`) — porque contrato declarado sem executor é pior que contrato ausente:
 dá sensação de guarda.
 
 O que depende desta política e vem depois: a implementação do piso por ambiente no roteador e a medição

@@ -111,7 +111,7 @@ medidas:
 
 Entrar em vigor exige, no mesmo movimento: (a) o registro do Anderson em `docs/operations/registro-de-aprovacoes.md`,
 (b) `homologacao.registrada_em` preenchido no YAML, (c) a implementação do piso no roteador pelo card
-`TRE-W0-E04-T07` (`t_d36c7d0f`, criado por este card e **blocked** de propósito) — que também abre o portão de
+`TRE-W0-E04-T08` (`t_d36c7d0f`, criado por este card e **blocked** de propósito) — que também abre o portão de
 versão. O verificador reprova o estado (b) **sem** o registro (a).
 
 O que a v1.1 traz pronto para esse dia: o vocabulário de ambiente declarado (`desenvolvimento`, `dev` ×
@@ -146,7 +146,7 @@ mutações no documento.
 
 Um item merece nota porque ele não é sobre o YAML: **o card citado existe no board** (lido do SQLite, em modo
 somente-leitura). Decisão que não viaja para o card seguinte se perde na primeira pressão — a v1.1 aponta
-nominalmente para `TRE-W0-E04-T07` (`t_d36c7d0f`, `status=blocked`, assignee `desenvolvedor`), e o verificador
+nominalmente para `TRE-W0-E04-T08` (`t_d36c7d0f`, `status=blocked`, assignee `desenvolvedor`), e o verificador
 confere que o id citado está lá.
 
 ## 7. Limites honestos desta entrega
