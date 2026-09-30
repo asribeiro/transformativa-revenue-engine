@@ -71,6 +71,16 @@ detectar() { # $1 = --conferir | --reparar  (watchdog instalado, rodando onde a 
 }
 
 echo "=== verificar-enforcement (destino isolado: $DEST)"
+# Fail-fast: publicar() recusa arvore suja (correto), mas um "FALHOU ... falhas=8" por arvore suja
+# parece defeito de enforcement. Melhor parar aqui com a razao clara.
+if command -v git >/dev/null 2>&1 && [ -d "$BASE_DIR/../.git" ] || [ -e "$BASE_DIR/../.git" ]; then
+  SUJO="$(git -C "$BASE_DIR/.." status --porcelain --untracked-files=no 2>/dev/null)"
+  if [ -n "$SUJO" ]; then
+    echo "VERIFICADOR_NAO_RODOU arvore suja: commite (ou faca stash) antes — a publicacao recusa arvore suja"
+    printf '%s\n' "$SUJO" | head -5
+    exit 3
+  fi
+fi
 echo "--- limpeza do destino de ensaio"
 SSH_R "chattr -R -i '$DEST' 2>/dev/null; rm -rf '$DEST' '$ARTEFATO' '$LOCK' '$ALERTA' '$DIV_LOG' '$LOG' 2>/dev/null; true"
 
