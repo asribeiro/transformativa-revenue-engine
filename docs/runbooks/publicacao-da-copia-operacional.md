@@ -87,6 +87,7 @@ PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
    publicado_de: <host do agente>
    arvore_suja: 0
    execstart_sem_bit: 0
+   divergencia_antes: 0
    concorrencia: (nenhuma)
    ```
 

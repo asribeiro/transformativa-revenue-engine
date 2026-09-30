@@ -323,6 +323,36 @@ if [ -n "$CARD_ANTES" ] && [ "$CARD_ANTES" != "$CARD" ] && [ "$COMMIT_ANTES" != 
   echo "AVISO concorrencia: $CONCORRENCIA — a publicacao deste card substitui a dele (registrado no log)."
 fi
 
+# A copia estava igual ao commit que ela dizia ser? `.publicado` sozinho nao responde: quem escreve por
+# fora do caminho unico (tar/rsync ad-hoc) NAO reescreve o registro, entao o .publicado continua
+# apontando para o commit antigo. O manifesto responde — e a diferenca vai para o registro e o log.
+DIVERGENCIA_ANTES="(nao conferido)"
+if [ -n "$MAN_ANTES" ]; then
+  MAN_ANTES_ESPERADO="$MAN_LOCAL"
+  if [ -n "$COMMIT_ANTES" ] && [ "$COMMIT_ANTES" != "$SHA" ]; then
+    if git rev-parse --verify "$COMMIT_ANTES^{commit}" >/dev/null 2>&1; then
+      TMPA="$(mktemp -d "${TMPDIR:-/tmp}/publicar-antes.XXXXXX")"
+      extrair_e_normalizar "$COMMIT_ANTES" "$TMPA"
+      MAN_ANTES_ESPERADO="$(manifesto_de "$TMPA/arvore")"
+      rm -rf "$TMPA"
+    else
+      MAN_ANTES_ESPERADO=""
+      echo "AVISO o commit registrado ($COMMIT_ANTES) nao existe neste repositorio — nao da para dizer se a copia estava integra"
+    fi
+  fi
+  if [ -n "$MAN_ANTES_ESPERADO" ]; then
+    DIVERGENCIA_ANTES="$(diff <(printf '%s\n' "$MAN_ANTES_ESPERADO") <(printf '%s\n' "$MAN_ANTES") | grep -c '^[<>]' || true)"
+    if [ "$DIVERGENCIA_ANTES" -eq 0 ]; then
+      echo "antes:    a copia estava IDENTICA ao commit que .publicado registrava (${COMMIT_ANTES:-$SHA})"
+    else
+      echo "AVISO divergencia: a copia NAO estava igual ao commit registrado (${COMMIT_ANTES:-$SHA}) —"
+      echo "                   $DIVERGENCIA_ANTES linha(s) do manifesto diferem: alguem escreveu por fora do"
+      echo "                   caminho unico (tar/rsync ad-hoc) ou outro card publicou durante a janela."
+      DIVERGENCIA_ANTES="$DIVERGENCIA_ANTES linha(s) do manifesto"
+    fi
+  fi
+fi
+
 if [ "$ENSAIO" -eq 1 ]; then
   echo "ENSAIO: nada escrito. Publicaria $SHA ($N_ARQ arquivos, digest $DIG_LOCAL)."
   echo "PUBLICACAO_ENSAIO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ"
@@ -367,6 +397,7 @@ publicado_de: $(hostname)
 arvore_suja: $SUJO
 nao_rastreado_no_checkout: $NAO_RASTREADO
 execstart_sem_bit: $FALTAS_MODOS
+divergencia_antes: $DIVERGENCIA_ANTES
 concorrencia: ${CONCORRENCIA:-(nenhuma)}
 TXT
 )"
@@ -383,7 +414,7 @@ if [ "$MAN_DEPOIS" != "$MAN_LOCAL" ]; then
   exit 6
 fi
 
-R "printf '%s\n' '$AGORA_ISO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ card=$CARD destino=$DESTINO digest_antes=$DIG_ANTES commit_antes=${COMMIT_ANTES:-nenhum}' >> '$LOG_REMOTO'"
+R "printf '%s\n' '$AGORA_ISO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ card=$CARD destino=$DESTINO digest_antes=$DIG_ANTES commit_antes=${COMMIT_ANTES:-nenhum} divergencia_antes=$DIVERGENCIA_ANTES' >> '$LOG_REMOTO'"
 
 liberar_lock; LOCK_PEGO=0
 
