@@ -228,12 +228,22 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_v11: str, doc_v11: str) -> 
               str(hom.get("registro") or ""))
     registrada_em = hom.get("registrada_em")
     registro_txt = REGISTRO_DE_APROVACOES.read_text(encoding="utf-8") if REGISTRO_DE_APROVACOES.is_file() else ""
-    registro_cita = VERSAO_V11 in registro_txt or "v1.1" in registro_txt
+    # Guarda do rito: nao basta a string "v1.1" aparecer em qualquer lugar do registro — tem de
+    # existir uma LINHA de aprovacao que nomeie a versao exata e quem aprovou. Na forma anterior
+    # (qualquer "v1.1" no texto) a checagem virou tautologia no dia em que a propria homologacao
+    # foi registrada: o registro passou a citar a politica por outros motivos e o item parou de medir.
+    linha_homologacao = re.search(
+        r"^\|(?=[^\n]*Anderson Ribeiro)(?=[^\n]*" + re.escape(VERSAO_V11) + r")[^\n]*$",
+        registro_txt, re.M)
+    registro_cita = linha_homologacao is not None
     # Ninguem marca o rascunho como homologado sem o registro do dono: e o item que
     # impede a politica de "entrar em vigor por edicao de arquivo".
     itens.add("v1.1: NAO se declara homologada sem registro do Anderson",
               registrada_em is None or registro_cita,
               f"registrada_em={registrada_em!r} registro_cita_a_versao={registro_cita}")
+    itens.add("v1.1: registrada_em preenchido exige `homologacao.estado` coerente (nao pendente)",
+              registrada_em is None or str(hom.get("estado") or "") != "pendente",
+              f"estado={hom.get('estado')!r} registrada_em={registrada_em!r}")
     itens.add("v1.1: com a homologacao pendente, `congelada_em` e nulo",
               registrada_em is not None or dado.get("congelada_em") in (None, ""),
               f"congelada_em={dado.get('congelada_em')!r}")
@@ -611,7 +621,7 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
         lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].pop("card_de_implementacao"), d)[1])
     mut("card de implementacao com id malformado (nao e id do board)",
         lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
-            "card_de_implementacao", "TRE-W0-E04-T07"), d)[1])
+            "card_de_implementacao", "TRE-W0-E04-T08"), d)[1])
     mut("card de implementacao fora da prosa de `entra_em_vigor_com`",
         lambda d: (d["regra_de_lane_por_ambiente"]["execucao"].__setitem__(
             "entra_em_vigor_com", "homologacao do Anderson + implementacao do piso"), d)[1])
@@ -624,8 +634,20 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
                 "card_de_implementacao", "t_deadbeef"), d)[1])
 
     # homologacao
-    mut("rascunho se declara homologado sem registro",
-        lambda d: (d["homologacao"].__setitem__("registrada_em", "2026-09-30"), d)[1])
+    # "Declarar-se homologado sem registro" so tem objeto enquanto NAO houver registro do dono. Com a
+    # homologacao ja registrada, manter esta mutacao daria verde por acidente — mesma regra da mutacao
+    # do card inexistente: o autoteste tem de ser honesto nos dois estados, nao verde por sorte.
+    _reg_real = (REGISTRO_DE_APROVACOES.read_text(encoding="utf-8")
+                 if REGISTRO_DE_APROVACOES.is_file() else "")
+    _tem_registro = re.search(
+        r"^\|(?=[^\n]*Anderson Ribeiro)(?=[^\n]*" + re.escape(VERSAO_V11) + r")[^\n]*$",
+        _reg_real, re.M)
+    if not _tem_registro:
+        mut("rascunho se declara homologado sem registro",
+            lambda d: (d["homologacao"].__setitem__("registrada_em", "2026-09-30"), d)[1])
+    mut("registrada_em preenchido com homologacao ainda pendente",
+        lambda d: (d["homologacao"].__setitem__("registrada_em", "2026-09-30"),
+                   d["homologacao"].__setitem__("estado", "pendente"), d)[1])
     mut("estado trocado para homologado sem registro",
         lambda d: (d["estado"].__str__() and d.__setitem__("estado", "homologado"), d)[1])
     mut("rascunho deixa de declarar o que substitui",
