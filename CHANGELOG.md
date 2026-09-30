@@ -135,6 +135,20 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Fixed
 
+- **Bit executável dos scripts de unit perdido no git → `tre-backup.service` morria com `203/EXEC`**
+  (`TRE-W1-E06-T01-D01`, defeito medido na rotina automática pelo card E06) — `scripts/backup/*.sh` estavam
+  `100644` no git; como o `ExecStart=` chama o script direto, qualquer sincronização da cópia operacional
+  (`/opt/tre/repo`) devolvia `644` e o systemd recusava o exec (`status=203/EXEC`, journal
+  "Failed at step EXEC ... Permission denied"). Corrigido onde o bit vive — no **git** (`100755` para os 7
+  scripts, commit `6a580ee`) — e na cópia operacional por `install -m 755` (conteúdo provado por sha256,
+  8/8 arquivos idênticos ao repositório). Prevenção: `scripts/backup/verificar-modos-executaveis.sh` lê os
+  `ExecStart=` dos units e confere o modo no índice do git + o bit no disco (reprova o estado anterior:
+  `MODOS_FALHOU` exit 1; passa depois: `MODOS_OK` exit 0) e o `instalar-timers.sh` **aborta sem habilitar
+  timer** quando algum alvo está sem bit (teste negativo medido em harness isolado). Depois da correção os
+  dois units executam sob `tre-deploy`: `tre-backup.service` roda `backup-tre.sh todos` (exit 0) e
+  `tre-backup-verify.service` faz o restore real do último artefato (`RESTORE_OK`, 11 itens).
+  **O backup diário ainda não gera artefato** — isso é o defeito irmão `t_1b2ab418` (trio `TRE_PG_*` ausente
+  do `EnvironmentFile`), não o bit.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra

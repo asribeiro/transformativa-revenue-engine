@@ -151,13 +151,43 @@ Comando: `set -a; . /etc/tre/backup.env; set +a; bash scripts/backup/teste-backu
 **Modo do driver:** `--ambiente dev|homolog` é o modo novo; sem argumento o comportamento é o do item 7
 (descartável), que nesta mesma rodada seguiu `TESTE_OK (12 itens, 0 falhas)`.
 
+## 7c. Evidência medida — 30/09/2026, correção do bit executável (`fix/TRE-W1-E06-T01-D01`)
+
+Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob `tre-deploy` (dono do unit).
+
+| Medida | Antes (commit `16c31f0`) | Depois (commit `6a580ee` + `install -m 755`) |
+|---|---|---|
+| `git ls-files -s scripts/backup/` | `100644` nos 7 scripts | `100755` nos 8 (`backup-tre.sh`, `restore-tre.sh`, `verificar-backup.sh`, `verificar-ultimo-backup.sh`, `configurar-destino-externo.sh`, `instalar-timers.sh`, `teste-backup-restore.sh`, `verificar-modos-executaveis.sh`) |
+| `verificar-modos-executaveis.sh` | `MODOS_FALHOU (4 itens, 2 falhas)`, exit 1 | `MODOS_OK (4 itens, 0 falhas)`, exit 0 |
+| `sudo -u tre-deploy test -x /opt/tre/repo/scripts/backup/backup-tre.sh` | exit 1 | **exit 0** |
+| `systemctl start tre-backup.service` | `START_EXIT=1`, `ExecMainStatus=203`, journal `Failed at step EXEC … Permission denied` | **`START_EXIT=0`**, `Result=success`, journal com o `backup-tre.sh` executando (`PULADO` nos três ambientes — motivo de negócio, ACHADO 2) |
+| `sha256` copia operacional × repositório | — | **8/8 idênticos** (dump do conteúdo em `/opt/tre/backup` intocado) |
+
+1. **`tre-backup.service` executa**: o journal de 20:03:37 UTC mostra `backup-tre.sh[182191]` imprimindo os
+   três blocos de ambiente e `RESULTADO: BACKUP_OK (todos)`, com `Deactivated successfully` — nenhum
+   `203/EXEC`.
+2. **`tre-backup-verify.service` também executa** e vai além: rodou o **restore real** do último artefato
+   (`tre_dev_20260930T193704Z`) sob `tre-deploy` — `RESTORE_OK (11 itens, 0 falhas)`, 12 tabelas, 30
+   índices, contagens batendo linha a linha, container descartável removido. É a primeira vez que o ciclo
+   do timer roda **como o usuário do unit** (o que o §8 dava como não exercitado).
+3. **Guarda nova com dente:** `instalar-timers.sh` chama `verificar-modos-executaveis.sh` antes de habilitar
+   os timers; em harness isolado (systemd/sudo dublados), com o alvo do `ExecStart=` em 644 o script
+   imprime `ABORTADO … timer NAO habilitado` e sai 1 **sem chamar `systemctl`**; com o alvo em 755 segue
+   até `RESULTADO: TIMERS_OK`.
+4. **Os timers seguem habilitados e ativos** (`tre-backup.timer` → próxima execução 01/10 02:33 -03).
+   **A geração do artefato diário continua pendente**: depende do ACHADO ABERTO 2.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
-- **ACHADO ABERTO 1 (alta) — o serviço do timer não executa.** `systemctl start tre-backup.service` →
-  `status=203/EXEC`, journal: `Unable to locate executable '/opt/tre/repo/scripts/backup/backup-tre.sh':
-  Permission denied`. Causa raiz: os scripts de `scripts/backup/` estão no git como **100644** (sem bit
-  executável), então toda sincronização a partir do repositório devolve a cópia operacional para 644 e o
-  `ExecStart` do unit falha. Medido no card `TRE-W1-E06-T01` (30/09/2026); o backup diário **não está rodando**.
+- **RESOLVIDO 30/09/2026 — o serviço do timer não executava (era ACHADO ABERTO 1, alta).**
+  `scripts/backup/*.sh` estavam no git como **100644** (sem bit executável); o `ExecStart=` chama o arquivo
+  direto, então toda sincronização a partir do repositório devolvia a cópia operacional para 644 e o unit
+  morria com `status=203/EXEC` (`Unable to locate executable …: Permission denied`). Corrigido no **git**
+  (`100755`, commit `6a580ee`, branch `fix/TRE-W1-E06-T01-D01`) e na cópia operacional por `install -m 755`;
+  adicionada a guarda `scripts/backup/verificar-modos-executaveis.sh` (reprova o estado anterior com
+  `MODOS_FALHOU` exit 1, aprova o corrigido com `MODOS_OK` exit 0), chamada pelo `instalar-timers.sh`, que
+  agora **aborta sem habilitar timer** se algum `ExecStart=` estiver sem bit. Evidência medida em §7c.
+  **A rotina diária ainda não produz artefato** — a causa que resta é o **ACHADO ABERTO 2** (abaixo).
 - **ACHADO ABERTO 2 (alta) — a rotina cobre zero ambientes e sai `BACKUP_OK`.** `backup-tre.sh` procura
   `pg-dev`/`pg-homolog`/`pg-prod`, mas o dev real é `pg-sales-dev` (usuário `sales_ai`), e
   `/etc/tre/backup.env` (o `EnvironmentFile` do unit) não declara `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB`
@@ -173,6 +203,8 @@ Comando: `set -a; . /etc/tre/backup.env; set +a; bash scripts/backup/teste-backu
   decisão 5); provou-se por partes que `tre-deploy` escreve em `/opt/tre/backup` (`test -w`) e usa a
   credencial do bucket (`rclone lsl --config /etc/tre/rclone.conf`). Rodar o ciclo inteiro como
   `tre-deploy` requer um canal de privilégio que o harness bloqueia hoje.
+  **Atualização 30/09/2026:** superado para os units — `tre-backup-verify.service` rodou o restore real sob
+  `tre-deploy` (§7c item 2); o backup com o trio real do ambiente continua pendente do ACHADO ABERTO 2.
 - **Destino externo (Object Storage) — ATIVO desde 29/09/2026.** Storage: Object Storage European
   Union, 250 GB (endpoint `https://eu2.contabostorage.com`); bucket `tre-backup`; credenciais em
   `/etc/tre/rclone.conf` (600, dono `tre-deploy`); `TRE_BACKUP_EXTERNO=contabo:tre-backup` em
