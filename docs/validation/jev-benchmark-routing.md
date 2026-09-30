@@ -642,3 +642,95 @@ ganho medido e o efeito é fazer a máquina decidir sobre a proposta mais fraca 
 - não move `custo_por_card_VERIFIED` nem latência de execução por lane (limites §7, inalterados);
 - não fecha a revisão **individual** dos 30 rótulos em bloco (§9, pendência do dono).
 
+---
+
+## 11. Adendo — o código comum `execucao_de_card` e a re-anotação do corpus (v1.5), card `TRE-W0-E04-T10`
+
+Este adendo fecha a **lacuna A1 do §10.7** pelo caminho que o card anterior declarou ser o único
+legítimo: **o dono nomeou o código** (Anderson Ribeiro, 30/09/2026 — execução genérica de card de
+**desenvolvimento**, escopo estreito: sem produção e sem credencial). O que mudou aqui: o catálogo do
+roteador e o corpus. **O rascunho da política v1.3 não está em vigor** — quem decide hoje continua sendo
+a v1.2.
+
+### 11.1 Hashes das rodadas (o resultado versionado carrega os três)
+
+| Rodada (arquivo em `hermes/jev/benchmarks/`) | política (sha256) | roteador (sha256) | corpus (sha256) |
+|---|---|---|---|
+| `resultado-benchmark-2026-09-30-jev-policy-v1.2-corpus-anotacao-v1.5.json` | `jev-policy-v1.2` `100702c6…` | `jev-router-v1.3` `95666e7c…` | `corpus-anotacao-v1.5` `fc35c600…` |
+| `resultado-benchmark-2026-09-30-jev-policy-v1.3-rascunho-corpus-anotacao-v1.5.json` | `jev-policy-v1.3` (rascunho) `5138f572…` | idem | idem |
+
+O `sha256` do roteador mudou em relação ao §10 (`6f44335d…`) porque este card **nomeou o código** nele:
+`ROUTER_VERSION` = `jev-router-v1.3`, `execucao_de_card` em `CODIGOS_DE_ACAO_COMUNS`, `jev-policy-v1.3`
+em `VERSOES_DE_POLITICA_SUPORTADAS`. **A lógica de decisão não mudou** — e o caminho padrão
+(`CAMINHO_POLITICA_PADRAO`) continua apontando para a **v1.2**, medido no código pela suíte da v1.3.
+
+### 11.2 A re-anotação (corpus v1.4 → v1.5)
+
+Ferramenta: `scripts/anotar_execucao_de_card_no_corpus.py` (mesmo rito do T03-D01: mapa declarado que
+tem de bater com a **derivação do próprio corpus**, prova profunda antes/depois, restauração em falha,
+espelho de catálogo conferido antes de escrever, provas negativas em cópia).
+
+| Medida | v1.4 | v1.5 |
+|---|---|---|
+| casos com `acao_codigo` declarado | 11/32 | **29/32** |
+| casos com `acao_codigo: null` | 21 | **3** (`borda-06`, `borda-07`, `borda-10`) |
+| casos com o código `execucao_de_card` | 0 | **18** |
+| `lane_esperada` alterado | — | **0** (C5/C6 do mapa: campo protegido) |
+| sha256 do corpus | `b66ecd36…` | **`fc35c600…`** |
+
+Os 18 são exatamente os que o §10.7 A1 mediu (rótulo `acao` = `execucao_de_card`, sem código no catálogo
+vigente) — o mapa declarado da ferramenta e a derivação do corpus batem nos dois sentidos, e o script
+**recusa** se não baterem. Os **11 que já declaravam código não foram tocados** (nem o `nota`), inclusive
+os 2 casos de DDL cujo rótulo `acao` é `execucao_de_card` mas que declaram `migracao_de_esquema` por sinais:
+**sobrescrever código declarado é decisão de política, não de anotação**. Os 3 que seguem `null` receberam
+só a marca de reavaliação e o motivo de continuarem fora do catálogo.
+
+### 11.3 Rodada sob a política EM VIGOR (v1.2) × corpus v1.5 — o código novo abstém
+
+Com o corpus re-anotado e a política **em vigor** no roteador, os **18 casos com `execucao_de_card`
+continuam NÃO executáveis**: a v1.2 não declara lane para esse código, e ausência de lane declarada é
+**abstinência**. É a versão medida do que a política declara em prosa — *declarar suporte a uma versão não
+é entrar em vigor* (item C9 da suíte da v1.3).
+
+### 11.4 Rodada sob o rascunho (v1.3) × corpus v1.5 — o que o código muda, e o que ele **não** afrouxa
+
+Modo `politica` (não circular), 32 casos:
+
+| Medida | v1.2 | v1.3 (rascunho) |
+|---|---|---|
+| casos que **executam** | 4/32 = 0,125 | **5/32 = 0,1562** |
+| taxa de escalação | 0,6875 | **0,6562** |
+| taxa de bloqueio | 0,2812 | 0,2812 |
+| accuracy de lane | 0,375 (12/32) | 0,375 (12/32) |
+| `falso_rebaixamento` (critical) | 8 | 8 (todos não executáveis) |
+
+O **único** caso dos 18 que passa a executar é **`real-t_1acf11f2`** (configurar TLS/reverse proxy, sem
+sinal sensível): sai de `ESCALATE` para `PASS` na lane `high`, que é a `lane_esperada` homologada. Os
+**outros 17 continuam escalando** — e o `motivo` gravado no resultado é o mesmo nas duas rodadas:
+*o código comum `execucao_de_card` não cobre o domínio sensível declarado* (produção e/ou credencial,
+sinais `producao`/`mexe_em_segredo` do próprio corpus). **O escopo estreito está medido em escala, caso a
+caso: 17 dos 18 não são barrados pela lane — são barrados pelo domínio.**
+
+### 11.5 Onde a leitura NÃO se move (e por quê)
+
+- a **accuracy crua não se move** (0,375 no modo `politica`; 0,4375 no `proposta-homologada`): dos 18, 17
+  já eram escalados por domínio (a lane registrada era `high` e continua `high`) e o caso que muda de
+  desfecho já acertava a lane pela conservadora. Accuracy parada **não** é ausência de efeito: o efeito
+  está nas taxas de execução/escalação e, principalmente, no **poder de medição**;
+- os **3 casos sem código** seguem `null` explícito: os rótulos deles (concessão de credencial, ajuste de
+  interface, resposta a cliente) **não** são o código nomeado, e atribuí-los seria inventar dado. Sequer
+  escala — é a lacuna remanescente, declarada;
+- o **poder de medição** da população com código comum segue 14/23 = **0,6087** — o número que o
+  T03-D01 criou para separar "abstenção com nome de acerto" de roteamento.
+
+### 11.6 O que este adendo **não** prova
+
+- **não** prova que a lane `high` é ótima para o código novo: é o **piso** que a medição do T03-D01
+  sustenta (o classificador empatava com a constante "sempre `high`"). O custo é declarado: o código novo
+  executável ganha lane mais cara que `small`/`medium`, e o que pode baixar o valor é **dado** de custo e
+  latência por lane — versão seguinte, nunca edição silenciosa;
+- **não** libera produção nem credencial por execução de card — §11.4 mede o contrário;
+- **não** está em vigor: enquanto o dono não homologar, quem decide é a v1.2 e o código novo abstém (§11.3);
+- **não** fecha a lacuna dos 3 casos restantes nem a revisão individual dos 30 rótulos em bloco (§9).
+
+

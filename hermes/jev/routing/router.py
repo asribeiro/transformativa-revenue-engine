@@ -114,20 +114,31 @@ except ModuleNotFoundError:  # pragma: no cover - depende do ambiente
 # executar), o nome do campo que identifica a politica e a rede de seguranca para
 # o caso em que NENHUMA politica pode ser lida.
 # ---------------------------------------------------------------------------
-ROUTER_VERSION = "jev-router-v1.2"
+ROUTER_VERSION = "jev-router-v1.3"
 # v1.2 (30/09/2026): `lane_por_codigo_de_acao` implementado — a lane e DECLARADA pela
 # politica, e o classificador de card sai do caminho de decisao (aposentado, card
 # TRE-W0-E04-T09). Declarar suporte NAO e entrar em vigor: a versao em vigor e a que o
 # roteador carrega por padrao (`CAMINHO_POLITICA_PADRAO`), e o portao so abre depois da
 # homologacao (mesma sequencia da v1.1).
+# v1.3 (30/09/2026): o dono nomeou UM codigo comum novo — `execucao_de_card` (execucao
+# generica de card de desenvolvimento, escopo estreito: dev, SEM producao e SEM credencial),
+# decisao do Anderson Ribeiro registrada no card TRE-W0-E04-T10. Nomear o codigo e mudanca
+# de CATALOGO, nao de regra de decisao: nenhum limiar, lane ou guardrail mudou, e a lane do
+# codigo so existe na versao de politica que a declarar (`lane_por_codigo_de_acao`). Sob a
+# politica EM VIGOR (v1.2) o codigo novo RESOLVE e ABSTEM — ausencia de lane declarada e
+# abstinencia, nunca permissao (o item de comportamento da suite da v1.2 prova isso).
 
 # Declaracao de compatibilidade: o roteador so executa politicas cujo schema ele
 # conhece. Versao fora deste conjunto = recusa (nao ha "tentar mesmo assim").
 # v1.1 entrou aqui em 30/09/2026 (card TRE-W0-E04-T08), DEPOIS de o piso de lane por
 # ambiente estar implementado: abrir o portao antes faria o roteador ignorar em
 # silencio uma regra declarada — a classe do defeito D08.
+# v1.3 (30/09/2026, card TRE-W0-E04-T10) entra aqui como RASCUNHO: o roteador sabe
+# executar o schema dela, mas quem esta EM VIGOR continua sendo a v1.2, que e a que
+# `CAMINHO_POLITICA_PADRAO` carrega. O portao de versao da v1.3 so abre com a homologacao
+# do dono — mesma sequencia da v1.1 e da v1.2.
 VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1",
-                                           "jev-policy-v1.2"})
+                                           "jev-policy-v1.2", "jev-policy-v1.3"})
 
 # Ultimo recurso, usado SOMENTE quando o arquivo de politica nao pode ser lido
 # (ausente/ilegivel): sem politica nao ha de onde ler a lane conservadora. A
@@ -325,6 +336,17 @@ CODIGOS_DE_ACAO_COMUNS = (
     # afrouxa o guardrail: quem decide o ambiente continua sendo o guardrail de DDL,
     # que so aciona com DDL/migration REAL no texto (defeito D08).
     "migracao_de_esquema",
+    # `execucao_de_card` — EXECUCAO GENERICA DE CARD DE DESENVOLVIMENTO, nomeada pelo dono
+    # (Anderson Ribeiro, decisao de 30/09/2026, card TRE-W0-E04-T10) com ESCOPO ESTREITO:
+    # ambiente de desenvolvimento, SEM producao e SEM credencial. Motivo medido no card
+    # TRE-W0-E04-T03-D01: 21 dos 32 casos do corpus nao tinham codigo no catalogo vigente e
+    # 18 deles sao `execucao_de_card` — a lacuna retinha o proprio card que consertava a
+    # classificacao. UM codigo so foi autorizado; nomear outros por conveniencia NAO foi.
+    # O codigo NAO afrouxa nada: a falha fechada do D07 continua igual (dominio sensivel que
+    # o codigo nao cobre — producao/release, credencial, dado de cliente, outbound — nao
+    # executa), e a LANE do codigo quem declara e a POLITICA (`lane_por_codigo_de_acao`),
+    # nunca este arquivo: sem lane declarada, a decisao abstem.
+    "execucao_de_card",
 )
 
 # Dominios sensiveis que a falha fechada exige que o codigo cubra. Sao os quatro
@@ -403,10 +425,12 @@ DIRECOES_DE_PISO_IMPLEMENTADAS = frozenset({"piso_so_eleva"})
 # ---------------------------------------------------------------------------
 # Caminhos padrao (identidade de arquivo, nao parametro de politica)
 #
-# A versao EM VIGOR e a v1.1: o roteador carrega `policy_v1_1.yaml` por padrao, e a
-# politica declara isso em `versao_em_vigor` (o verificador da v1.1 prova o casamento
-# entre a declaracao e ESTE caminho). A v1.0 (`policy_v1.yaml`) fica preservada para
-# auditoria: continua executavel pelo roteador quando apontada, e nao recebe mudanca.
+# A versao EM VIGOR e a v1.2: o roteador carrega `policy_v1_2.yaml` por padrao, e a
+# politica declara isso em `versao_em_vigor` (o verificador da v1.2 prova o casamento
+# entre a declaracao e ESTE caminho). As anteriores ficam preservadas para auditoria:
+# continuam executaveis pelo roteador quando apontadas (o recibo grava `policy_version`,
+# e uma decisao antiga tem de poder ser reconstruida com a politica que a tomou), e nao
+# recebem mudanca.
 # ---------------------------------------------------------------------------
 CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_2.yaml"
 # Portao de versao ABERTO em 30/09/2026: a jev-policy-v1.2 foi homologada pelo Anderson
@@ -415,6 +439,9 @@ CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_2.yaml"
 # (o recibo grava `policy_version`), mas nao e mais a versao que este roteador carrega
 # por padrao. Abrir o portao antes do executor existir faria o roteador ignorar em
 # silencio uma regra declarada — a classe do defeito D08.
+# NAO MUDAR ESTE CAMINHO POR CAUSA DA v1.3: `hermes/jev/policy_v1_3.yaml` e RASCUNHO do
+# card TRE-W0-E04-T10 (`estado: rascunho-nao-homologado`), e rascunho NAO e a versao em
+# vigor. O portao da v1.3 abre quando o dono homologar — mesma sequencia da v1.1 e da v1.2.
 CAMINHO_POLITICA_ANTERIOR = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"
 DIRETORIO_POLITICAS_DE_PAPEL = _RAIZ_DO_REPO / "hermes/policies"
 DIRETORIO_BOARDS_PADRAO = pathlib.Path(os.environ.get("JEV_BOARDS_DIR", "/opt/data/kanban/boards"))
@@ -2063,7 +2090,7 @@ def main(argv=None) -> int:
     parser.add_argument("--json-file", help="arquivo com a tarefa sintetica em JSON")
     parser.add_argument("--stdin", action="store_true", help="le a tarefa sintetica da entrada padrao")
     parser.add_argument("--politica", help="caminho da politica (padrao: a EM VIGOR, "
-                                           "hermes/jev/policy_v1_1.yaml)")
+                                           "hermes/jev/policy_v1_2.yaml)")
     parser.add_argument("--papeis", help="diretorio das politicas de papel (padrao: hermes/policies)")
     parser.add_argument("--catalogo", help="JSON com perfil->modelo (catalogo fica FORA da politica)")
     parser.add_argument("--saida", help="grava o recibo neste arquivo")

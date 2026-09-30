@@ -52,12 +52,19 @@ autoridade: contrato do encaixe no corpo do card TRE-W0-E04-T05
 
 # Codigos COMUNS conhecidos pelo roteador hoje (CODIGOS_DE_ACAO_COMUNS).
 # Esta lista e um ESPELHO para consulta humana; a fonte e o roteador, e a suite
-# do encaixe reprova se os dois divergirem.
+# do encaixe reprova se os dois divergirem (item S10).
+# `execucao_de_card` — execucao generica de card de DESENVOLVIMENTO, nomeada pelo dono
+# (Anderson Ribeiro, 30/09/2026, card TRE-W0-E04-T10; decisao no Telegram). Escopo
+# ESTREITO: ambiente de desenvolvimento, SEM producao e SEM credencial. Nomear o codigo
+# nao afrouxa o D07/D08: card que declare dominio sensivel que o codigo nao cobre continua
+# escalando, e a LANE do codigo e declarada pela POLITICA (rascunho jev-policy-v1.3,
+# pendente de homologacao) — sob a v1.2, em vigor, o codigo resolvido ABSTEM.
 codigos_validos:
   - ajuste_de_texto
   - consulta_interna
   - operacao_comercial
   - migracao_de_esquema
+  - execucao_de_card
 
 declaracoes:
   # TRE-W0-E04-T03-D01 (lacuna do corpus): anotar o codigo canonico de acao nos casos e re-medir

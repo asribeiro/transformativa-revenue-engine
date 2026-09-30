@@ -1,15 +1,15 @@
 {
-  "decision_id": "dec-1ce672812e2a38ca",
+  "decision_id": "dec-0c939956719cd392",
   "card_id": "t_exemplo",
-  "task_hash": "d18bd2f0869c50391bbe082cf0c3fae012bf7fd473e6552d48cea60f350064d5",
+  "task_hash": "bc5df3a58a4f409de35cb585020e872e81a35c555511adfd9798cc539c9c4386",
   "lane": "medium",
   "model_profile": "reasoning-padrao",
   "selected_model": null,
   "effort": "padrao",
   "confidence": 0.9,
   "policy_version": "jev-policy-v1.0",
-  "router_version": "jev-router-v1.2",
-  "timestamp": "2026-09-30T04:23:58+00:00",
+  "router_version": "jev-router-v1.3",
+  "timestamp": "2026-09-30T13:09:43+00:00",
   "override": null,
   "outcome": "PASS"
 }

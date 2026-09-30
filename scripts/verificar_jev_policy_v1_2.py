@@ -76,6 +76,16 @@ VERSAO_V12 = "jev-policy-v1.2"
 VERSAO_V11 = "jev-policy-v1.1"
 ROTEADOR_DA_V12 = "jev-router-v1.2"
 
+# O contrato DESTA versao e o de QUATRO codigos canonicos — o catalogo com que ela foi
+# homologada. DATADO em 30/09/2026 pelo card TRE-W0-E04-T10: o dono nomeou um codigo comum
+# novo (`execucao_de_card`), que e do contrato da versao SEGUINTE (v1.3). Manter aqui a
+# expectativa de "todos os codigos comuns do roteador" faria a suite desta versao reprovar
+# no dia em que o catalogo crescesse por decisao legitima — e o item que existe para pegar
+# buraco do CONTRATO DA v1.2 passaria a medir outra coisa.
+CODIGOS_CONTRATADOS_DA_V12 = ("ajuste_de_texto", "consulta_interna", "operacao_comercial",
+                              "migracao_de_esquema")
+CODIGO_NOMEADO_DEPOIS = "execucao_de_card"
+
 # Ramo da regra por ambiente -> (lane minima, aprovacao humana registrada). Herdado da v1.1.
 RAMOS_ESPERADOS = (
     ("novo_ou_dev", "high", False),
@@ -252,17 +262,29 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_txt: str, doc_txt: str, mod
               f"valores={sorted({str(v) for v in (mapa or {}).values()})} lanes={lanes}")
 
     def _cobertura_espelhada():
-        # Espelho medido no CODIGO, nas duas direcoes. Codigo comum sem lane = card que
-        # abstem em silencio; chave que nao e codigo comum = typo que abstem em silencio.
+        # DATADO em 30/09/2026 pelo card TRE-W0-E04-T10: o dono NOMEOU um codigo comum novo
+        # (`execucao_de_card`) e a versao SEGUINTE (v1.3, rascunho) e que responde pelo
+        # catalogo inteiro. O contrato DESTA versao e o de QUATRO codigos, e continua sendo
+        # conferido contra o codigo do roteador: os quatro seguem comuns, e chave que nao e
+        # codigo comum (typo/renomeacao silenciosa) continua reprovando. Nao se apaga o item
+        # nem se afrouxa o outro lado — o que muda e QUEM responde pelo codigo nomeado depois.
         if not isinstance(mapa, dict) or not comuns:
             return _texto(False, f"mapa={mapa!r} comuns={sorted(comuns)}")
-        sem_lane = sorted(c for c in comuns if c not in mapa)
+        sem_lane = sorted(c for c in CODIGOS_CONTRATADOS_DA_V12 if c not in mapa)
         desconhecidas = sorted(c for c in mapa if c not in comuns)
         return _texto(not sem_lane and not desconhecidas,
-                      f"sem lane={sem_lane} fora dos comuns={desconhecidas}")
+                      f"sem lane no contrato da v1.2={sem_lane} "
+                      f"chaves estranhas ao catalogo={desconhecidas}")
 
-    itens.checar("v1.2: o mapa cobre TODOS os codigos comuns do roteador (espelho no codigo, "
-                 "nas duas direcoes)", _cobertura_espelhada)
+    itens.checar("v1.2 (datado em 30/09/2026): o mapa cobre os QUATRO codigos do contrato desta "
+                 "versao e nenhuma chave e estranha ao catalogo do roteador",
+                 _cobertura_espelhada)
+
+    itens.add("v1.2 (datado em 30/09/2026): esta versao NAO declara lane para o codigo nomeado "
+              "depois (`execucao_de_card`) — e por isso ele abstem sob ela; quem responde por "
+              "ele e a versao seguinte",
+              isinstance(mapa, dict) and CODIGO_NOMEADO_DEPOIS not in mapa,
+              f"mapa={sorted((mapa or {}))!r}")
 
     def _mapa_conservador():
         conservadora = limiares.get("lane_conservadora")
@@ -350,11 +372,16 @@ def itens_do_contrato(itens: Itens, dado: dict, yaml_txt: str, doc_txt: str, mod
               f"desde={vig.get('desde')!r} roteador={vig.get('roteador')!r}")
 
     execucao = dado.get("execucao") or {}
-    itens.add("v1.2: o roteador declarado como executor e o roteador REAL (medido no codigo)",
+    itens.add("v1.2 (datado em 30/09/2026): o executor declarado e o roteador DESTA versao "
+              "(`jev-router-v1.2`) e o roteador vivo ainda a executa (suporte declarado) — "
+              "a igualdade com `ROUTER_VERSION` vivo deixou de ser exigivel quando a geracao "
+              "do roteador avancou por decisao legitima; o que se exige de versao preservada e "
+              "continuar EXECUTAVEL",
               execucao.get("roteador_que_a_executa") == ROTEADOR_DA_V12
-              and getattr(modulo, "ROUTER_VERSION", None) == ROTEADOR_DA_V12,
+              and VERSAO_V12 in set(getattr(modulo, "VERSOES_DE_POLITICA_SUPORTADAS", ())),
               f"declarado={execucao.get('roteador_que_a_executa')!r} "
-              f"roteador real={getattr(modulo, 'ROUTER_VERSION', None)!r}")
+              f"roteador vivo={getattr(modulo, 'ROUTER_VERSION', None)!r} "
+              f"suportadas={sorted(getattr(modulo, 'VERSOES_DE_POLITICA_SUPORTADAS', ()))}")
     itens.add("v1.2: o roteador declara SUPORTE a versao v1.2 (regra declarada = regra executavel)",
               VERSAO_V12 in set(getattr(modulo, "VERSOES_DE_POLITICA_SUPORTADAS", ())),
               f"suportadas={sorted(getattr(modulo, 'VERSOES_DE_POLITICA_SUPORTADAS', ()))}")
@@ -522,12 +549,16 @@ def itens_de_comportamento(itens: Itens, dado: dict, modulo) -> None:
 
     # ---- C6 o recibo -------------------------------------------------------
     def _recibo_honesto():
+        # DATADO em 30/09/2026 (card TRE-W0-E04-T10): o recibo tem de registrar a politica que
+        # decidiu (v1.2, datado) e o roteador que decidiu de FATO — que e o roteador VIVO, nao
+        # a geracao com que esta versao nasceu. Exigir aqui `router_version == jev-router-v1.2`
+        # faria o recibo ter de mentir sobre quem decidiu.
         campos = list(modulo.campos_do_recibo(politica))
         recibo = modulo.decidir(tarefa(TEXTO_DO_SMALL), politica=politica)["recibo"]
         return _texto(list(recibo.keys()) == campos
                       and recibo["confidence"] is None
                       and str(recibo.get("policy_version")) == VERSAO_V12
-                      and str(recibo.get("router_version")) == ROTEADOR_DA_V12,
+                      and str(recibo.get("router_version")) == getattr(modulo, "ROUTER_VERSION", None),
                       f"campos={len(recibo)} esperados={len(campos)} "
                       f"policy_version={recibo.get('policy_version')!r} "
                       f"router_version={recibo.get('router_version')!r}")

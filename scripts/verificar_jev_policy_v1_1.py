@@ -1028,11 +1028,14 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
     mut_roteador("caminho padrao do roteador revertido para a politica ANTIGA",
                  lambda c: c.replace('CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1_2.yaml"',
                                      'CAMINHO_POLITICA_PADRAO = _RAIZ_DO_REPO / "hermes/jev/policy_v1.yaml"'))
+    # As duas mutacoes abaixo alvo o TOKEN da versao (nao o literal inteiro do conjunto):
+    # datadas em 30/09/2026 pelo card TRE-W0-E04-T10, quando a v1.3 entrou no conjunto de
+    # suporte. O literal inteiro muda a cada versao nova — mutacao que casa o literal
+    # inteiro vira "nao aplicada" na versao seguinte e o autoteste perde o dente em silencio.
     mut_roteador("roteador deixa de aceitar a v1.1 (portao fechado de novo para ela)",
-                 lambda c: c.replace('VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.1",\n                                           "jev-policy-v1.2"})',
-                                     'VERSOES_DE_POLITICA_SUPORTADAS = frozenset({"jev-policy-v1.0", "jev-policy-v1.2"})'))
+                 lambda c: c.replace('"jev-policy-v1.1",', ''))
     mut_roteador("roteador deixa de aceitar a versao EM VIGOR (v1.2 fora do conjunto)",
-                 lambda c: c.replace('"jev-policy-v1.2"})', '})'))
+                 lambda c: c.replace('"jev-policy-v1.2", ', ''))
     mut_roteador("roteador deixa de recusar regra de operacao que nao implementa (ignora em silencio)",
                  lambda c: c.replace(
                      '    if operacao not in OPERACOES_COM_PISO_IMPLEMENTADO:\n'
