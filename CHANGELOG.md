@@ -191,7 +191,12 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `/opt/tre/.publicacao-divergencias.log` e, com `--reparar`, **restaura a cópia a partir do artefato** e
   rearma a trava (registrado em `.publicacoes.log` como `card=watchdog-reparo`);
   (iv) `deploy/instalar-watchdog-publicacao.sh` instala os **bytes da cópia publicada** em
-  `/usr/local/lib/tre` (sha256 conferido dos dois lados) — o watchdog sobrevive à cópia quebrada.
+  `/usr/local/lib/tre` (sha256 conferido dos dois lados) — o watchdog sobrevive à cópia quebrada;
+  (v) **guarda de produção:** o destino compartilhado é produção (alvo do `ExecStart=` dos timers), então
+  **substituir** o commit que está no ar exige `--producao` declarado (`TRE_PUBLICAR_PRODUCAO=1`) — sem
+  isso a publicação para com `PUBLICACAO_FALHOU` (exit 2) **antes de escrever qualquer coisa**; publicar o
+  mesmo commit (reparo) ou em destino de ensaio passa direto, e a declaração fica em `.publicado`
+  (`producao_declarado`).
   Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
   isolado).
 

@@ -149,6 +149,14 @@ fecham isso:
    (append-only) e, no reparo, **restaura** a cópia do artefato e rearma a trava. Não interfere em
    publicação em curso: se `/opt/tre/.publicacao.lock` existe, ele só reporta `PUBLICACAO_EM_ANDAMENTO`.
 
+4. **Guarda de produção na publicação.** O destino compartilhado é **produção** (é o alvo do
+   `ExecStart=` dos timers). Publicar o **mesmo** commit já registrado (reparo/conferência) ou publicar
+   em destino de ensaio passa direto; **substituir** o commit que está no ar exige declarar `--producao`
+   (`TRE_PUBLICAR_PRODUCAO=1`), senão a publicação para com `PUBLICACAO_FALHOU` (exit 2) **antes de
+   escrever qualquer coisa**, nomeando o commit que a produção executa hoje e o que se pretendia pôr.
+   A declaração fica registrada em `.publicado` (`producao_declarado`). É o antídoto para "publiquei a
+   minha branch ali só para testar" — a troca deixa de ser acidental.
+
 Saída do watchdog (uma linha, para automatizar):
 
 ```text
@@ -220,7 +228,8 @@ saídas em `docs/runbooks/backup-restore-rollback.md` §7d e
 - **Nada publica por `tar`/`scp`/`rsync` direto em `/opt/tre/repo`.** Um caminho só: `deploy/publicar.sh`.
   Desde a revisão 1.1 isso não depende mais de disciplina: a cópia publicada está **imutável** e escrita
   ad-hoc falha com `Operation not permitted`; se ainda assim algo escapar (um `chattr -i` na mão), o
-  watchdog de 2 minutos detecta, alerta e restaura.
+  watchdog de 2 minutos detecta, alerta e restaura. E **substituir** o commit que a produção executa
+  exige `--producao` declarado (senão a publicação para, exit 2, sem escrever nada).
 - **O destino compartilhado é PRODUÇÃO — bancada de teste é destino isolado.** Se você precisa de uma
   cópia com a sua árvore (para testar, medir, ensaiar), publique num destino seu e não toque no
   compartilhado:

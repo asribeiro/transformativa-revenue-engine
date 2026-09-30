@@ -45,6 +45,14 @@ LOCK_REMOTO="${TRE_PUBLICAR_LOCK:-/opt/tre/.publicacao.lock}"
 LOG_REMOTO="${TRE_PUBLICAR_LOG:-/opt/tre/.publicacoes.log}"
 ARTEFATO="${TRE_PUBLICAR_ARTEFATO:-/opt/tre/.publicacao-artefato}"
 TRAVA="${TRE_PUBLICAR_TRAVA:-1}"
+# O destino compartilhado e PRODUCAO (e o alvo do ExecStart dos timers). Substituir o commit que
+# esta no ar la exige declaracao explicita (--producao / TRE_PUBLICAR_PRODUCAO=1): foi assim, sem
+# querer, que a copia perdeu a correcao do backup (t_daca4bda). Destino de ensaio (TRE_PUBLICAR_DESTINO)
+# nao pede nada.
+ALVO_PRODUCAO="${TRE_PUBLICAR_ALVO_PRODUCAO:-/opt/tre/repo}"
+PRODUCAO=0
+[ "$DESTINO" = "$ALVO_PRODUCAO" ] && PRODUCAO=1
+PRODUCAO_OK="${TRE_PUBLICAR_PRODUCAO:-0}"
 LOCK_VALIDADE_S=1800
 
 COMMIT=""; REF=""; ACAO="publicar"; ENSAIO=0; PERMITIR_SUJA=0; EXIGIR_MODOS=0; FORCAR_LOCK=0
@@ -69,6 +77,8 @@ Opcoes:
   --dono <user:group>      dono final da copia (padrao: tre-deploy:tre-deploy)
   --chave <arquivo>        chave ssh (padrao: ~/.ssh/id_ed25519_ops)
   --card <id>              card que publica (padrao: $HERMES_KANBAN_TASK)
+  --producao               declara que a publicacao SUBSTITUI o commit que a producao executa
+                           (obrigatorio para trocar o commit do destino compartilhado)
   --sem-trava              nao arma a trava de imutabilidade nesta publicacao
   --ensaio                 mostra o que faria, sem escrever no destino
   --permitir-arvore-suja   publica mesmo com arquivo versionado modificado (conteudo continua
@@ -78,8 +88,11 @@ Opcoes:
   -h|--help                esta ajuda
 
 Variaveis: TRE_PUBLICAR_DESTINO (copia de teste/isolada), TRE_PUBLICAR_ARTEFATO,
-           TRE_PUBLICAR_TRAVA=0 (nao armar), TRE_SSH_CHAVE, TRE_PUBLICAR_LOG, TRE_PUBLICAR_LOCK.
-           Teste SEMPRE em destino isolado: o destino compartilhado e PRODUCAO.
+           TRE_PUBLICAR_TRAVA=0 (nao armar), TRE_PUBLICAR_PRODUCAO=1 (= --producao),
+           TRE_PUBLICAR_ALVO_PRODUCAO (destino considerado producao; padrao /opt/tre/repo),
+           TRE_SSH_CHAVE, TRE_PUBLICAR_LOG, TRE_PUBLICAR_LOCK.
+           Teste SEMPRE em destino isolado: o destino compartilhado e PRODUCAO e trocar o commit
+           dele exige --producao declarado (com a aprovacao registrada).
 
 Codigos de saida: 0 OK | 1 falha | 2 uso/precondicao | 3 lock ocupado | 4 modos | 5 divergencia | 6 transferencia
 TXT
@@ -100,6 +113,7 @@ while [ $# -gt 0 ]; do
     --manifesto)  ACAO="manifesto"; MANIFESTO_DIR="${2:-}"; shift 2;;
     --normalizar-modos) ACAO="normalizar-modos"; NORM_DIR="${2:-}"; NORM_MAPA="${3:-}"; shift 3;;
     --ensaio)     ENSAIO=1; shift;;
+    --producao)   PRODUCAO_OK=1; shift;;
     --permitir-arvore-suja) PERMITIR_SUJA=1; shift;;
     --exigir-modos) EXIGIR_MODOS=1; shift;;
     --forcar-lock) FORCAR_LOCK=1; shift;;
@@ -361,6 +375,22 @@ CARD_ANTES="$(printf '%s' "$PUBLICADO_ANTES" | sed -n 's/^publicado_por:[[:space
 echo "antes:    ${N_ANTES} arquivo(s), digest ${DIG_ANTES}${COMMIT_ANTES:+, .publicado diz commit $COMMIT_ANTES (card $CARD_ANTES)}"
 [ -n "$COMMIT_ANTES" ] || echo "antes:    sem .publicado — nao havia registro de qual commit estava publicado (o defeito)"
 
+# ---------------------------------------------------------------- guarda de PRODUCAO (substituicao)
+# Publicar o MESMO commit ja registrado (reparo/conferencia) ou publicar em destino de ensaio passa
+# sem cerimonia. Substituir o commit que a PRODUCAO executa por outro exige declaracao explicita —
+# a copia operacional e o alvo do ExecStart dos timers, e trocar a arvore dela "para testar" foi o
+# que reverteu a correcao do backup (t_daca4bda). Fail-closed, antes de escrever qualquer coisa.
+if [ "$ENSAIO" -eq 0 ] && [ "$PRODUCAO" -eq 1 ] && [ "$PRODUCAO_OK" -ne 1 ] \
+   && [ -n "$COMMIT_ANTES" ] && [ "$COMMIT_ANTES" != "$SHA" ]; then
+  echo "PUBLICACAO_FALHOU $ALVO:$DESTINO e o destino COMPARTILHADO de producao e ja executa" >&2
+  echo "                  $COMMIT_ANTES (card $CARD_ANTES); a publicacao pediria $SHA (card $CARD)." >&2
+  echo "                  Substituir o codigo que a producao executa exige --producao" >&2
+  echo "                  (TRE_PUBLICAR_PRODUCAO=1) com o card e a aprovacao registrados." >&2
+  echo "                  Para ensaiar com a sua arvore use destino isolado (TRE_PUBLICAR_DESTINO)." >&2
+  exit 2
+fi
+[ "$PRODUCAO" -eq 1 ] && [ "$PRODUCAO_OK" -eq 1 ] && echo "aviso:    publicacao em PRODUCAO declarada (--producao) — substitui o commit registrado em $DESTINO"
+
 CONCORRENCIA=""
 if [ -n "$CARD_ANTES" ] && [ "$CARD_ANTES" != "$CARD" ] && [ "$COMMIT_ANTES" != "$SHA" ]; then
   CONCORRENCIA="card $CARD_ANTES publicou $COMMIT_ANTES antes deste card ($CARD)"
@@ -464,6 +494,7 @@ publicado_de: $(hostname)
 arvore_suja: $SUJO
 nao_rastreado_no_checkout: $NAO_RASTREADO
 execstart_sem_bit: $FALTAS_MODOS
+producao_declarado: $PRODUCAO_OK
 divergencia_antes: $DIVERGENCIA_ANTES
 concorrencia: ${CONCORRENCIA:-(nenhuma)}
 TXT
