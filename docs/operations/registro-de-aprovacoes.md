@@ -81,3 +81,25 @@ corrigidas abaixo).
   `MIGRACAO_OK (--somente-checar; 0 aplicada(s), 1 pulada(s), 4 itens, 0 falhas)`, exit 0.
 - **Regra que passa a valer:** secao "Realinhamento de registro de migration" em
   `docs/runbooks/aplicar-migracoes.md`.
+
+## 30/09/2026 — HOMOLOGACAO DO LOTE W1 (Anderson Ribeiro, Telegram)
+
+- **Palavra do dono:** "pode aprovar e seguir com W1" (30/09/2026).
+- **Escopo:** entregas da W1 ja verificadas por perfil independente. Cada parecer de revisao
+  termina em "medicao, nao homologacao"; esta linha e a homologacao que faltava.
+
+| Codigo | Card | Status | Commits medidos (das proprias execucoes) |
+|---|---|---|---|
+| `E01` | `t_969affa7` | done | `ed89fd0`, `ed89fd0` |
+| `E02` | `t_d9cb5755` | done | `4924446` |
+| `E03` | `t_49e8e2e3` | done | `03dda75` |
+| `E04-T01` | `t_595dc9be` | done | `9df01a3`, `6eeeaf4` |
+| `E04-T02` | `t_430ba4cc` | done | `94136cb`, `f437072` |
+| `E05` | `t_c7281fce` | done | `58ec9fb` |
+| `E06` | `t_72672e48` | done | `9b9c3ad`, `adbfcf1` |
+
+- **Ressalvas que continuam abertas (nao bloqueiam a homologacao):** os defeitos residuais
+  da ressincronizacao da copia operacional, da publicacao intermitente e da precisao
+  documental do E05 — sao manutencao, nao fundacao.
+- **O que esta homologacao NAO faz:** nao promove ambiente. A saida de dev segue como
+  decisao propria (decisao 7 do desenho de aprovacao humana).
