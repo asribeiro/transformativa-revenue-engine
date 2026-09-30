@@ -10,7 +10,16 @@
 # Uso:
 #   deploy/publicar.sh --commit <sha|ref>      publica o commit na copia operacional
 #   deploy/publicar.sh --conferir              confere a copia contra o commit registrado
+#   deploy/publicar.sh --travar|--destravar    arma/desarma a trava de imutabilidade (chattr +i)
 #   deploy/publicar.sh --manifesto <dir>       (interno) imprime o manifesto de um diretorio
+#
+# Enforcement (card t_daca4bda, recorrencia do defeito t_091cfea9): o caminho unico so vale se
+# escrita ad-hoc FALHAR. Este script (a) deixa o commit publicado em artifact root-only FORA da
+# copia ($ARTEFATO) — com isso o watchdog da VPS restaura a copia sem git; (b) arma `chattr +i`
+# na copia publicada, entao `tar -xz`/`rsync` ad-hoc de outro card da EPERM em vez de reverter a
+# copia em silencio; (c) desarma so durante a troca. O watchdog (`deploy/watchdog-publicacao.sh`,
+# timer de 2 min na VPS) confere, alerta e repara. `--sem-trava` (ou TRE_PUBLICAR_TRAVA=0)
+# publica sem armar a trava.
 #
 # Saida final (uma linha, para automatizar):
 #   PUBLICACAO_OK commit=<sha> digest=<sha256> arquivos=<n>   -> a copia E o commit
@@ -34,6 +43,8 @@ OPCOES_CHAVE=()
 CARD="${HERMES_KANBAN_TASK:-desconhecido}"
 LOCK_REMOTO="${TRE_PUBLICAR_LOCK:-/opt/tre/.publicacao.lock}"
 LOG_REMOTO="${TRE_PUBLICAR_LOG:-/opt/tre/.publicacoes.log}"
+ARTEFATO="${TRE_PUBLICAR_ARTEFATO:-/opt/tre/.publicacao-artefato}"
+TRAVA="${TRE_PUBLICAR_TRAVA:-1}"
 LOCK_VALIDADE_S=1800
 
 COMMIT=""; REF=""; ACAO="publicar"; ENSAIO=0; PERMITIR_SUJA=0; EXIGIR_MODOS=0; FORCAR_LOCK=0
@@ -46,6 +57,8 @@ Publicacao versionada da copia operacional do TRE (unico caminho de publicacao).
 Uso:
   deploy/publicar.sh --commit <sha|ref> [opcoes]    publica um commit
   deploy/publicar.sh --conferir [opcoes]            confere a copia contra .publicado
+  deploy/publicar.sh --travar [opcoes]              arma chattr +i na copia (escrita ad-hoc falha)
+  deploy/publicar.sh --destravar [opcoes]           desarma chattr +i na copia
   deploy/publicar.sh --manifesto <dir>              (interno) manifesto de um diretorio
   deploy/publicar.sh --normalizar-modos <dir> <mapa> (interno) aplica o modo do git em <dir>
 
@@ -56,12 +69,17 @@ Opcoes:
   --dono <user:group>      dono final da copia (padrao: tre-deploy:tre-deploy)
   --chave <arquivo>        chave ssh (padrao: ~/.ssh/id_ed25519_ops)
   --card <id>              card que publica (padrao: $HERMES_KANBAN_TASK)
+  --sem-trava              nao arma a trava de imutabilidade nesta publicacao
   --ensaio                 mostra o que faria, sem escrever no destino
   --permitir-arvore-suja   publica mesmo com arquivo versionado modificado (conteudo continua
                            vindo do git; o desvio fica registrado em .publicado)
   --exigir-modos           falha (exit 4) se um ExecStart de unit nao for executavel no commit
   --forcar-lock            derruba lock obsoleto de outra publicacao
   -h|--help                esta ajuda
+
+Variaveis: TRE_PUBLICAR_DESTINO (copia de teste/isolada), TRE_PUBLICAR_ARTEFATO,
+           TRE_PUBLICAR_TRAVA=0 (nao armar), TRE_SSH_CHAVE, TRE_PUBLICAR_LOG, TRE_PUBLICAR_LOCK.
+           Teste SEMPRE em destino isolado: o destino compartilhado e PRODUCAO.
 
 Codigos de saida: 0 OK | 1 falha | 2 uso/precondicao | 3 lock ocupado | 4 modos | 5 divergencia | 6 transferencia
 TXT
@@ -76,6 +94,9 @@ while [ $# -gt 0 ]; do
     --chave)      CHAVE="${2:-}"; shift 2;;
     --card)       CARD="${2:-}"; shift 2;;
     --conferir)   ACAO="conferir"; shift;;
+    --travar)     ACAO="travar"; shift;;
+    --destravar)  ACAO="destravar"; shift;;
+    --sem-trava)  TRAVA=0; shift;;
     --manifesto)  ACAO="manifesto"; MANIFESTO_DIR="${2:-}"; shift 2;;
     --normalizar-modos) ACAO="normalizar-modos"; NORM_DIR="${2:-}"; NORM_MAPA="${3:-}"; shift 3;;
     --ensaio)     ENSAIO=1; shift;;
@@ -141,6 +162,29 @@ manifesto_remoto() {
   R bash -s -- --manifesto "$dir" < "$AUTO"
 }
 
+# ---------------------------------------------------------------- trava de imutabilidade
+# Escrita ad-hoc na copia publicada (tar/rsync/cp de outro card, o defeito t_daca4bda) passa a
+# FALHAR com EPERM em vez de reverter a copia em silencio. Fugir da trava exige `chattr -i`
+# explicito — o erro deixa de ser silencioso, que era o problema.
+travar_remoto()    { R "chattr -R +i '$DESTINO' 2>/dev/null || true"; }
+destravar_remoto() { R "chattr -R -i '$DESTINO' 2>/dev/null || true"; }
+trava_estado() { # le a trava do diretorio raiz (somente leitura)
+  R "lsattr -d '$DESTINO' 2>/dev/null | awk '{print \$1}' | grep -q i && echo travada || echo ausente"
+}
+if [ "$ACAO" = "travar" ] || [ "$ACAO" = "destravar" ]; then
+  if [ "$ACAO" = "travar" ]; then
+    travar_remoto
+    # prova funcional: a trava so vale se criar arquivo novo for RECUSADO
+    ESTADO="$(R "if ( : > '$DESTINO/.trava-probe' ) 2>/dev/null; then rm -f '$DESTINO/.trava-probe'; echo gravavel; else echo travada; fi")"
+    [ "$ESTADO" = "travada" ] || { echo "PUBLICACAO_FALHOU a trava nao pegou em $ALVO:$DESTINO (a copia continua gravavel)" >&2; exit 6; }
+    echo "PUBLICACAO_TRAVADA destino=$DESTINO em=$(date -u +%Y-%m-%dT%H:%M:%SZ) (escrita ad-hoc falha com EPERM)"
+    exit 0
+  fi
+  destravar_remoto
+  echo "PUBLICACAO_DESTRAVADA destino=$DESTINO em=$(date -u +%Y-%m-%dT%H:%M:%SZ) (copia gravavel ate nova publicacao)"
+  exit 0
+fi
+
 # ---------------------------------------------------------------- pre-condicoes locais
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
   echo "FALHOU nao estou num repositorio git (a publicacao sai do git, nunca da arvore de trabalho)" >&2; exit 2; }
@@ -185,7 +229,7 @@ if [ "$ACAO" = "conferir" ]; then
     DIG_ATUAL="$(printf '%s\n' "$MAN_ATUAL" | digest_de)"
     echo "digest agora: $DIG_ATUAL"
     [ "$DIG_ATUAL" = "$DIG_REG" ] || echo "AVISO o digest registrado em .publicado ($DIG_REG) difere do medido agora ($DIG_ATUAL)"
-    echo "PUBLICACAO_OK commit=$SHA_REG digest=$DIG_ATUAL arquivos=$(printf '%s\n' "$MAN_ATUAL" | grep -c . || true) conferido_em=$ALVO:$DESTINO"
+    echo "PUBLICACAO_OK commit=$SHA_REG digest=$DIG_ATUAL arquivos=$(printf '%s\n' "$MAN_ATUAL" | grep -c . || true) conferido_em=$ALVO:$DESTINO trava=$(trava_estado)"
     exit 0
   fi
   echo "--- diferencas (esperado pelo commit $SHA_REG  x  encontrado na copia):" >&2
@@ -362,6 +406,11 @@ fi
 # ---------------------------------------------------------------- transferencia (staging fora do destino)
 STG="/opt/tre/.publicacao-staging"
 MAPA_REMOTO="/opt/tre/.publicacao-modos"
+# A copia publicada fica imutavel (chattr +i): destrava SO aqui, durante a troca, e rearma no fim.
+if [ "$TRAVA" -eq 1 ]; then
+  destravar_remoto
+  echo "trava:    desarmada em $ALVO:$DESTINO (so durante a troca)"
+fi
 R "rm -rf '$STG' && install -d -m 755 '$STG' && tar -xpf - -C '$STG'" < "$TMP/commit.tar"
 R "cat > '$MAPA_REMOTO'" < "$TMP/modos.txt"
 R "bash -s -- --normalizar-modos '$STG' '$MAPA_REMOTO'" < "$AUTO"
@@ -374,6 +423,24 @@ if [ "$MAN_STG" != "$MAN_LOCAL" ]; then
   exit 6
 fi
 echo "transferencia: OK (digest identico na origem e no staging)"
+
+# ---------------------------------------------------------------- artefato do commit (para o watchdog)
+# Guarda o commit publicado (tar com o modo do git, mapa de modos e manifesto) FORA da copia,
+# em root-only. E com isso que o watchdog da VPS restaura a copia sem git e sem este repositorio
+# (defeito t_daca4bda). Fail-closed: sem artefato gravado, NADA e trocado no destino.
+R "install -d -m 700 '$ARTEFATO'"
+R "cat > '$ARTEFATO/commit.tar'" < "$TMP/commit.tar"
+R "cat > '$ARTEFATO/modos.txt'" < "$TMP/modos.txt"
+printf '%s\n' "$MAN_LOCAL" | R "cat > '$ARTEFATO/manifesto'"
+printf '%s\n' "$SHA"       | R "cat > '$ARTEFATO/commit'"
+printf '%s\n' "$DIG_LOCAL" | R "cat > '$ARTEFATO/digest'"
+R "chmod 600 '$ARTEFATO'/* 2>/dev/null || true"
+ART_SHA="$(R "sha256sum '$ARTEFATO/manifesto' | cut -d' ' -f1")"
+[ "$ART_SHA" = "$DIG_LOCAL" ] || {
+  echo "PUBLICACAO_FALHOU o artefato gravado em $ALVO:$ARTEFATO nao confere com o commit ($ART_SHA != $DIG_LOCAL) — nada foi trocado" >&2
+  R "rm -rf '$STG' '$MAPA_REMOTO'" >/dev/null 2>&1 || true
+  exit 6; }
+echo "artefato:  $ALVO:$ARTEFATO (tar + manifesto do commit, para o watchdog restaurar)"
 
 # ---------------------------------------------------------------- troca no destino (espelho do commit)
 # O `--normalizar-modos` depois do rsync e o que garante o modo do git tambem quando o rsync pula um
@@ -416,9 +483,22 @@ fi
 
 R "printf '%s\n' '$AGORA_ISO commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ card=$CARD destino=$DESTINO digest_antes=$DIG_ANTES commit_antes=${COMMIT_ANTES:-nenhum} divergencia_antes=$DIVERGENCIA_ANTES' >> '$LOG_REMOTO'"
 
+# ---------------------------------------------------------------- trava de volta (copia imutavel)
+TRAVA_ESTADO="ausente"
+if [ "$TRAVA" -eq 1 ]; then
+  travar_remoto
+  TRAVA_ESTADO="$(R "if ( : > '$DESTINO/.trava-probe' ) 2>/dev/null; then rm -f '$DESTINO/.trava-probe'; echo gravavel; else echo travada; fi")"
+  if [ "$TRAVA_ESTADO" != "travada" ]; then
+    echo "AVISO a trava de imutabilidade nao pegou em $DESTINO — a copia esta correta, mas escrita" >&2
+    echo "      ad-hoc nao vai falhar (o watchdog segue detectando). Verifique chattr no destino." >&2
+    TRAVA_ESTADO="nao-pegou"
+  fi
+  echo "trava:    armada em $DESTINO (escrita ad-hoc falha com EPERM)"
+fi
+
 liberar_lock; LOCK_PEGO=0
 
 if [ "$DIG_ANTES" = "$DIG_LOCAL" ]; then
   echo "idempotente: a copia ja estava neste commit — mesmo digest antes e depois ($DIG_LOCAL)"
 fi
-echo "PUBLICACAO_OK commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ digest_antes=$DIG_ANTES"
+echo "PUBLICACAO_OK commit=$SHA digest=$DIG_LOCAL arquivos=$N_ARQ digest_antes=$DIG_ANTES trava=$TRAVA_ESTADO"

@@ -1,0 +1,15 @@
+[Unit]
+Description=Watchdog da publicacao versionada da copia operacional do TRE (detecta escrita ad-hoc e repara)
+Documentation=file:/opt/tre/repo/docs/runbooks/publicacao-da-copia-operacional.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+# Roda FORA da copia que vigia (/usr/local/lib/tre, instalado por
+# deploy/instalar-watchdog-publicacao.sh a partir dos bytes publicados): o watchdog
+# tem de sobreviver justamente a copia quebrada. Nao depende de git nem do repositorio.
+ExecStart=/usr/local/lib/tre/watchdog-publicacao.sh --reparar
+Nice=10
+IOSchedulingClass=idle
