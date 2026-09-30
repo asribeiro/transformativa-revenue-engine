@@ -1,0 +1,88 @@
+# Runbook — aplicar as migrations do Data Contract nos ambientes
+
+**Card que criou isto:** `TRE-W1-E01-T01` (W1 · E01) · **Ambiente aplicado até agora:** `dev`.
+**Regra que manda:** ADR-005 — nenhuma DDL nasce em produção. Ordem obrigatória: **dev → homologação → produção**,
+esta última só com aprovação humana registrada (`docs/operations/registro-de-aprovacoes.md`).
+
+## 1. Onde roda
+
+O runner roda **na VPS do ambiente** (ADR-0008): o Hermes não tem rota de rede até o banco do TRE nem
+cliente `psql`; ele orquestra por SSH e o trabalho acontece via `docker exec` no container do ambiente.
+
+```bash
+# da VPS do TRE (usuário tre-deploy)
+bash /opt/tre/repo/scripts/db/aplicar_migracoes.sh dev
+```
+
+O par **ambiente → container/usuário/banco** é versionado e não-secreto em
+`deploy/environments/<ambiente>.env`. Variável de ambiente do operador **vence** o arquivo versionado:
+
+```bash
+TRE_PG_SERVICO=outro-container TRE_PG_USER=outro TRE_PG_DB=outro_banco \
+  bash scripts/db/aplicar_migracoes.sh dev
+```
+
+## 2. O que o runner faz
+
+1. Lista `db/migrations/*.sql` em ordem lexicográfica e recusa arquivo sem prefixo de versão de 4 dígitos.
+2. Confere que o container existe e que o PostgreSQL responde **duas vezes** (`SELECT 1` com intervalo) —
+   a imagem oficial sobe um servidor temporário durante a inicialização e `pg_isready` mente nesse momento.
+3. Cria/atualiza a tabela de controle `public.tre_schema_migrations`
+   (`versao`, `arquivo`, `sha256`, `aplicada_em`, `aplicada_por`) — controle operacional, **fora** do schema
+   do contrato.
+4. Para cada migration:
+   - já aplicada com o **mesmo sha256** → `PULADO` (idempotente);
+   - já aplicada com **sha256 diferente** → `FALHOU` e para: migration aplicada é imutável (`BRANCHING.md`);
+   - pendente → aplica (`docker cp` + `psql -f`, sem depender de stdin) e registra.
+5. Fecha com `RESULTADO: MIGRACAO_OK …` (exit 0) ou `RESULTADO: MIGRACAO_FALHOU …` (exit 1).
+
+`--somente-checar` mostra o que seria aplicado sem executar DDL.
+
+## 3. Guardrail de produção (fail-closed)
+
+`aplicar_migracoes.sh prod` **recusa** por padrão. Só passa com as três condições, verificadas antes de
+qualquer comando no ambiente:
+
+1. `TRE_APROVACAO_HUMANA=<arquivo do registro de aprovacao>` existente e não-vazio;
+2. container de homologação (`pg-homolog`, ou `TRE_PG_SERVICO_HOMOLOG`) existente;
+3. **toda** versão pendente já registrada no ambiente de homologação (sequência imposta pelo script,
+   não por combinado verbal).
+
+Sem isso: mensagem explícita e `RESULTADO: MIGRACAO_FALHOU`, com produção intocada.
+
+## 4. Como saber como está o ambiente (read-only)
+
+```bash
+bash scripts/db/estado_do_ambiente.sh dev
+```
+
+Imprime: contagem de tabelas e índices do schema `sales_intelligence`, o `psql \dt`
+(`search_path=sales_intelligence`) e o conteúdo de `public.tre_schema_migrations`.
+
+## 5. Rollback
+
+Dev (o plano do card `TRE-W1-E01-T01`, já exercitado de verdade):
+
+```bash
+docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence -v ON_ERROR_STOP=1 \
+  -c 'DROP SCHEMA IF EXISTS sales_intelligence CASCADE' \
+  -c "DELETE FROM public.tre_schema_migrations WHERE versao='0001'"
+bash /opt/tre/repo/scripts/db/aplicar_migracoes.sh dev    # reaplica do zero
+```
+
+Ambientes superiores não são tocados por esse rollback. Rollback de backup/restore está em
+`docs/runbooks/backup-restore-rollback.md`.
+
+## 6. Evidência de aceite (TRE-W1-E01-T01)
+
+- `scripts/db/estado_do_ambiente.sh dev` → **12 tabelas | 30 índices** e o `\dt` com as 12 tabelas;
+- `python3 scripts/verificar_contrato_dados.py --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'`
+  → **PASS (37 itens)** — 26 itens dos artefatos do repo + 11 itens contra o **banco do ambiente**;
+- `aplicar_migracoes.sh prod` → recusa por ADR-005 (exit 1) e produção sem nenhum arquivo/container.
+
+## 7. Divergência aberta (não resolvida por este runbook)
+
+O Data Contract V1.0 declara o banco de inteligência como `transformativa_ai`; o ambiente **dev** foi
+provisionado com banco `sales_intelligence` (container `pg-sales-dev`, usuário `sales_ai`), e os scripts de
+backup já assumem `sales_intelligence` como padrão. O runner aplica no par que está em
+`deploy/environments/dev.env`. Alinhar nome (contrato ou ambiente) é decisão do dono — registrada no card.

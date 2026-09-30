@@ -10,7 +10,8 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Data Contract V1.0 congelado** (`TRE-W0-E03-T01`) — schema `sales_intelligence` com 12 tabelas, IDs
   canônicos, ownership (source of truth), envelope de eventos, vocabulários fechados e score model:
   - `db/migrations/0001_sales_intelligence_v1.sql` — DDL das 12 tabelas + 16 índices mínimos (especificação
-    congelada; **não aplicada** em nenhum ambiente);
+    congelada; **não aplicada** em nenhum ambiente naquele momento — aplicada em **dev** em 30/09/2026,
+    ver a seção W1);
   - `docs/data/DATA_CONTRACT_V1.md` — contrato legível, com ER, deduplicação, compliance e governança da
     mudança;
   - `docs/data/data_contract_v1.json` — contrato legível por máquina;
@@ -40,3 +41,41 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **W0 não está concluído:** faltam `TRE-W0-E01-T03` (backup/rollback testável — bloqueado até o
   provisionamento da VPS Contabo) e os quatro cards de JEV (`TRE-W0-E04-*`).
 - Nada foi aplicado em produção; nenhuma DDL nasce em produção (ADR-005).
+
+## [W1 — PostgreSQL] — 30/09/2026
+
+### Added
+
+- **Schema `sales_intelligence` aplicado no ambiente dev** (`TRE-W1-E01-T01`) — primeira aplicação real do
+  Data Contract V1.0, na VPS do TRE (Contabo), container `pg-sales-dev`, banco `sales_intelligence`:
+  - `scripts/db/aplicar_migracoes.sh` — runner de migrations versionado: ordem lexicográfica,
+    idempotente por sha256, migration aplicada é imutável, rastro em `public.tre_schema_migrations`,
+    aplicação por `docker cp` + `psql -f` (não depende de stdin) e **recusa de produção** (ADR-005:
+    exige `TRE_APROVACAO_HUMANA` e homologação com as versões registradas);
+  - `scripts/db/estado_do_ambiente.sh` — relatório read-only (tabelas, índices, `psql \dt`, controle);
+  - `deploy/environments/dev.env` — par ambiente→container/usuário/banco, **sem segredo**; variável de
+    ambiente do operador tem precedência sobre o arquivo;
+  - `docs/runbooks/aplicar-migracoes.md` — runbook de aplicação, guardrail de produção e rollback.
+- **Modo `--banco` no verificador do contrato** (`TRE-W1-E01-T01`) — `scripts/verificar_contrato_dados.py`
+  passa a conferir também o **schema real do ambiente** (schema, tabelas, colunas/tipos/NOT NULL, PK, FK,
+  vínculos lógicos sem FK e os 30 índices), por leitura em `information_schema`/`pg_indexes`; o modo atual
+  (arquivos do repo) continua idêntico e passando.
+
+### Fixed
+
+- **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
+  — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
+  orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
+  no container por `docker cp`; ambiente dev reparado pelo próprio plano de rollback (drop + reaplicação).
+
+### Notas de estado
+
+- **Evidência medida (dev):** `12 tabelas | 30 índices`, `psql \dt` com as 12 tabelas do contrato e
+  `verificar_contrato_dados.py --banco …` → `PASS (37 itens)`, exit 0; idempotência comprovada
+  (`PULADO`); provas negativas em container descartável (tabela removida, coluna inventada, índice
+  removido, migration editada depois de aplicada) reprovam com exit 1.
+- **Produção não foi tocada:** o runner recusa `prod`; `docker ps -a` na VPS só tem `pg-sales-dev` e as
+  árvores `/opt/tre/{prod,homolog}` seguem sem arquivo.
+- **Divergência registrada (decisão do dono):** o Data Contract V1.0 declara o banco de inteligência como
+  `transformativa_ai`; o ambiente dev provisionado usa banco `sales_intelligence` (container
+  `pg-sales-dev`, usuário `sales_ai`) — nome que os scripts de backup já assumem como padrão.
