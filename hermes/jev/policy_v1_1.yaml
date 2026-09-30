@@ -1,0 +1,258 @@
+# =====================================================================================
+# jev-policy-v1.1 — política de decisão do JEV (System-1 Decision Layer)
+#
+# ESTADO: RASCUNHO, NÃO HOMOLOGADO. Esta versão NÃO está em vigor.
+#   * a versão em vigor continua sendo a jev-policy-v1.0 (`hermes/jev/policy_v1.yaml`);
+#   * o roteador em vigor (jev-router-v1.0) RECUSA esta versão de propósito — executar
+#     uma política cuja regra nova ele não implementa seria pior que recusar;
+#   * homologação é do Anderson (rito da v1.0: documento + verificador + registro em
+#     docs/operations/registro-de-aprovacoes.md). Sem esse registro, `homologacao.registrada_em`
+#     é `null` e o verificador reprova quem tentar preencher esse campo sem a prova.
+#
+# Autoridade: docs/architecture/jev-decision-policy-v1.1.md (este arquivo é a forma
+# legível por máquina; os dois têm de dizer a mesma coisa, e o verificador prova isso).
+# =====================================================================================
+versao: jev-policy-v1.1
+estado: rascunho-nao-homologado
+substitui: jev-policy-v1.0
+congelada_em: null          # congelamento é consequência da homologação, não deste rascunho
+autoridade: docs/architecture/jev-decision-policy-v1.1.md
+origem_no_baseline: "docs 13 e 14 do baseline V1.1.0"
+motivo_da_versao:
+  - "chave explícita `limiares.lane_conservadora` — na v1.0 a lane conservadora era lida da prosa (fallback.acao e o parêntese de limiares.empate); prosa não é contrato"
+  - "convenção de lane por ambiente (Anderson, 2026-09-29): DDL em ambiente novo/dev = high; DDL em ambiente vivo = critical com aprovação humana registrada"
+  - "instrumentação das métricas declaradas em `metricas` (custo e latência por lane), que na v1.0 estavam declaradas e não medidas"
+  - "`custo_por_lane` entra em `metricas.acompanhar`: o objetivo da v1.0 é custo por card VERIFIED, que ainda não é medível; custo por lane é o que hoje se pode medir"
+homologacao:
+  estado: pendente
+  registrada_em: null                     # data do registro do Anderson; preenchida só com a prova no registro de aprovações
+  registrada_por: null
+  registro: docs/operations/registro-de-aprovacoes.md
+  o_que_falta: "palavra do Anderson + card de implementação (o roteador em vigor não executa a regra por ambiente desta versão)"
+
+# ---------------------------------------------------------------------------------
+# PRECEDÊNCIA — quem decide primeiro. Nenhuma camada abaixo contraria a de cima.
+# ---------------------------------------------------------------------------------
+precedencia:
+  - security                     # guardrails determinísticos: barreira dura, não sugestão
+  - human_approval               # o que exige humano nunca é delegado a classificador
+  - prioridade_e_dependencias    # ordem do board: card bloqueado não inicia; pai pendente trava
+  - jev                          # classificação/roteamento tipado e finito
+  - llm                          # reasoning, geração, síntese, debugging e design
+
+# ---------------------------------------------------------------------------------
+# LIMIARES de confiança do JEV
+# ---------------------------------------------------------------------------------
+limiares:
+  aceitar: 0.85          # confiança >= 0.85: aceita a classificação do JEV
+  conservador: 0.65      # 0.65 <= confiança < 0.85: aceita, mas pela lane MAIS CONSERVADORA
+  abster: 0.65           # confiança < 0.65: abstém e escala (nunca chuta)
+  # NOVO na v1.1 — a lane conservadora deixa de ser lida da prosa: este campo é a
+  # fonte, e as duas formas em prosa (fallback.acao e o parêntese de `empate`) passam
+  # a ser CONFERÊNCIA. Divergência entre as três = política inconsistente = recusa.
+  lane_conservadora: high
+  empate: "lane mais conservadora (high) + registro explícito de abstenção"
+
+# ---------------------------------------------------------------------------------
+# LANES — quanto de raciocínio (e de custo) a tarefa merece
+# ---------------------------------------------------------------------------------
+lanes:
+  small:
+    escopo: "mecânico e isolado, sem decisão de arquitetura"
+    risco: baixo
+    perfil: worker-barato
+    revisao: "testes automatizados"
+    exemplos: "ajuste de texto, formatação, renomeação, consulta simples"
+  medium:
+    escopo: "engenharia comum, um módulo por vez"
+    risco: medio
+    perfil: reasoning-padrao
+    revisao: "testes automatizados + revisão de diff"
+    exemplos: "função nova com testes, correção de defeito localizado, script de operação"
+  high:
+    escopo: "reasoning complexo ou multi-sistema"
+    risco: alto
+    perfil: reasoning-forte
+    revisao: "revisão dedicada + verificação de regressão"
+    exemplos: "integração entre serviços, migração de dados, diagnóstico de falha intermitente"
+  critical:
+    escopo: "produção, segurança, dados, arquitetura ou regressão persistente"
+    risco: critico
+    perfil: critical-frontier-reviewer
+    revisao: "revisão dedicada + aprovação humana registrada"
+    exemplos: "deploy em produção, DDL, credencial, decisão de arquitetura, incidente"
+
+# ---------------------------------------------------------------------------------
+# REGRA DE LANE POR AMBIENTE — NOVO na v1.1 (convenção do dono, 2026-09-29)
+#
+# Problema que ela resolve: `DDL` estava na lista de exemplos da lane `critical` e
+# isso, lido ao pé da letra, tornaria todo DDL crítico — a régua perderia poder de
+# separação e o W1 inteiro dependeria de aprovação card a card. O que separa DDL
+# comum de DDL crítico é o AMBIENTE que ela encosta, nunca a palavra DDL.
+#
+# Direção: a regra é PISO de lane — só ELEVA, nunca rebaixa lane já decidida (mesma
+# postura do `override` humano). Ela não substitui a camada Security: o guardrail
+# "DDL não nasce em produção" continua rodando antes e continua bloqueando.
+#
+# Vocabulário do ambiente: exatamente o que o guardrail de DDL do roteador já usa
+# (`ambiente_alvo`/`ambiente` da tarefa; `desenvolvimento` e `dev` são lado permitido,
+# qualquer outro valor declarado — ou ausente — é lado vivo). O verificador prova
+# essa correspondência valor a valor contra o roteador, não por leitura.
+# ---------------------------------------------------------------------------------
+regra_de_lane_por_ambiente:
+  operacao: ddl_ou_migration
+  origem: "decisão do Anderson em 2026-09-29, ao homologar os cards 3 e 4 do corpus de anotação (corpus-anotacao-v1.3)"
+  ambientes:
+    - ambiente: novo_ou_dev
+      valores: ["desenvolvimento", "dev"]
+      lane_minima: high
+      aprovacao_humana_registrada: false
+      exemplo_no_corpus: real-t_969affa7
+    - ambiente: vivo_ou_producao
+      valores: ["vivo", "producao"]
+      lane_minima: critical
+      aprovacao_humana_registrada: true
+      exemplo_no_corpus: borda-02
+  ambiente_nao_declarado: "cai no ramo mais conservador (vivo_ou_producao): ausência de declaração é abstinência, nunca permissão"
+  direcao: piso_so_eleva
+  execucao:
+    # Contrato declarado ≠ contrato executado. Enquanto `roteador_que_a_executa` for
+    # null, o verificador PROVA (por comportamento) que o roteador em vigor ainda não
+    # eleva lane nenhuma por causa desta regra — ninguém pode afirmar que ela está ativa.
+    roteador_que_a_executa: null
+    entra_em_vigor_com: "homologação do Anderson + card de implementação do piso no roteador (o portão de versão do roteador é o que impede a v1.1 de rodar antes disso)"
+
+# ---------------------------------------------------------------------------------
+# PERFIS DE MODELO — o catálogo é configuração versionada, nunca hard-coded no prompt.
+# Nomes e preços NÃO ficam aqui: se confirmam no provedor no momento da configuração
+# (regra do doc 14 do baseline). Preço dentro do arquivo vira mentira em poucas semanas.
+# ---------------------------------------------------------------------------------
+perfis_modelo:
+  worker-barato:            {papel: "execução mecânica", classe: "modelo barato e rápido", custo: baixo, esforco: minimo}
+  reasoning-padrao:         {papel: "engenharia comum", classe: "modelo intermediário", custo: medio, esforco: padrao}
+  reasoning-forte:          {papel: "raciocínio complexo", classe: "modelo forte de reasoning", custo: alto, esforco: alto}
+  critical-frontier-reviewer: {papel: "revisão crítica e adversarial", classe: "modelo de fronteira", custo: alto, esforco: maximo}
+regra_catalogo:
+  - "modelo e preço se confirmam no provedor no momento da configuração"
+  - "nenhum preço ou nome de modelo específico é fixado nesta política"
+  - "troca de modelo não muda política: muda catálogo, e o recibo registra qual foi usado"
+  - "a classe de custo (`baixo`/`medio`/`alto`) é o que a métrica de custo por lane lê — trocar a classe muda a métrica, trocar o modelo não"
+
+# ---------------------------------------------------------------------------------
+# DECISÕES QUE O JEV PODE TOMAR (tipadas e finitas, antes e depois da LLM)
+# ---------------------------------------------------------------------------------
+decisoes_antes_da_llm:
+  - complexidade        # small | medium | high | critical
+  - lane
+  - perfil_modelo
+  - esforco
+  - risco
+  - exige_revisao       # sim | nao
+  - exige_escalacao     # sim | nao
+decisoes_depois_do_ciclo:
+  - resultado           # PASS | RETRY | ESCALATE | BLOCK
+
+# ---------------------------------------------------------------------------------
+# NUNCA DECIDIDO POR MÁQUINA — ação que classificador nenhum decide, em nenhum limiar
+# ---------------------------------------------------------------------------------
+nunca_decidido_por_maquina:
+  - aprovacao_de_producao            # promover release para produção
+  - primeiro_contato_outbound        # e-mail/LinkedIn/WhatsApp para empresa nova
+  - envio_de_proposta_comercial
+  - mudanca_estrutural_de_arquitetura  # exige ADR + aprovação
+  - rollback_em_producao
+  - exclusao_de_dado_de_cliente      # ou de registro de auditoria
+  - rotacao_ou_revogacao_de_credencial
+  - publicacao_em_nome_da_transformativa
+
+# ---------------------------------------------------------------------------------
+# GUARDRAILS DETERMINÍSTICOS (camada `security`: roda ANTES de qualquer classificador)
+# ---------------------------------------------------------------------------------
+guardrails:
+  - regra: "segredo nunca entra em prompt, log, recibo ou mensagem"
+    verifica: "scan de segredo antes de montar o contexto"
+  - regra: "empresa com do_not_contact ou opt_out não é contatada"
+    verifica: "consulta à base antes de qualquer outbound"
+  - regra: "DDL não nasce em produção"
+    verifica: "ambiente alvo declarado no card/migração"
+  - regra: "Sales AI não tem credencial de deploy nem altera código"
+    verifica: "matriz Dev × Sales (docs/architecture/hermes-dev-x-sales.md)"
+  - regra: "falha de guardrail bloqueia, não libera"
+    verifica: "fail-closed: dúvida na avaliação = BLOCK, nunca prosseguir"
+
+# ---------------------------------------------------------------------------------
+# FALLBACK / MODO DEGRADADO
+# ---------------------------------------------------------------------------------
+fallback:
+  gatilho: "JEV indisponível, timeout, saída fora do contrato ou versão de política desconhecida"
+  acao:
+    - "aplicar guardrails determinísticos primeiro"
+    - "seguir pela lane conservadora configurada: high"
+    - "registrar modo degradado no recibo (degraded_mode: true)"
+    - "nunca contornar Human Approval"
+  proibido: "inferir confiança quando o JEV não respondeu — ausência de resposta é abstinência"
+
+# ---------------------------------------------------------------------------------
+# RECIBO DE DECISÃO — o que fica gravado em cada decisão do JEV
+# ---------------------------------------------------------------------------------
+recibo:
+  campos:
+    - decision_id
+    - card_id
+    - task_hash
+    - lane
+    - model_profile
+    - selected_model
+    - effort
+    - confidence
+    - policy_version
+    - router_version
+    - timestamp
+    - override
+    - outcome
+  retencao: "mesmo prazo dos registros de auditoria do projeto"
+  segredo: "nunca"
+  # O que o recibo NÃO carrega é decisão de contrato, não esquecimento: o verificador
+  # da v1.1 reprova campo novo aqui (o contrato tem 13 campos, e o roteador só grava
+  # o que sabe preencher). Por isso `latencia_por_lane` é medida na camada de decisão
+  # e não no recibo.
+  campos_fora_do_contrato:
+    - "latencia (medida na camada de decisão pelo instrumento, não gravada no recibo)"
+    - "custo (derivado da lane → perfil → classe da própria política)"
+
+# ---------------------------------------------------------------------------------
+# MÉTRICAS — o que é sucesso
+# ---------------------------------------------------------------------------------
+metricas:
+  objetivo: "minimizar custo total por card VERIFIED"
+  nao_objetivo: "minimizar tokens isoladamente"
+  acompanhar:
+    - custo_por_card_verified
+    - custo_por_lane          # NOVO na v1.1: é o que se pode medir hoje (o por card VERIFIED não é)
+    - taxa_de_abstencao
+    - taxa_de_escalacao
+    - falso_rebaixamento      # critical tratado como lane mais barata
+    - latencia_por_lane
+    - regressao_ou_retrabalho
+  criterio_de_aceite: "custo por card VERIFIED cai SEM aumento de regressão, retrabalho ou incidente"
+  # ---------------------------------------------------------------------------------
+  # INSTRUMENTAÇÃO — NOVO na v1.1. A v1.0 declarava as métricas e não as media.
+  # O instrumento lê o que é medível e DECLARA o que não é, com o motivo — métrica
+  # declarada e silenciosamente não medida é pior que métrica ausente.
+  # ---------------------------------------------------------------------------------
+  instrumentacao:
+    instrumento: scripts/medir_metricas_por_lane.py
+    unidade_de_custo: "relativa declarada (baixo=1, medio=2, alto=3) pela classe `custo` do perfil da lane"
+    fonte_do_custo: "perfis_modelo.<perfil>.custo da própria política + a lane registrada no recibo"
+    fonte_da_latencia: "execução do roteador sobre o corpus anotado (camada de decisão)"
+    fonte_das_decisoes: "hermes/jev/receipts/*.json (decisões reais do encanamento)"
+    medivel: [custo_por_lane, latencia_por_lane, taxa_de_abstencao, taxa_de_escalacao, falso_rebaixamento]
+    nao_medivel:
+      custo_por_card_verified: "nenhum card do corpus foi executado até VERIFIED; o recibo não carrega custo"
+      regressao_ou_retrabalho: "exige histórico de execução de card (retrabalho medido em execução), que o encanamento ainda não registra"
+      latencia_de_execucao_por_lane: "depende do modelo do catálogo no momento da configuração, que a política proíbe fixar"
+    limites:
+      - "a classe de custo de `high` e de `critical` é a MESMA (`alto`): o custo por lane NÃO enxerga rebaixamento critical→high; quem enxerga é `falso_rebaixamento`"
+      - "custo é unidade relativa declarada, NUNCA dinheiro (a política proíbe fixar preço)"
+      - "latência por lane é a da camada de decisão, não a da execução do modelo"
+      - "lane sem decisão no período reporta null, nunca zero: 'não medi' e 'medi zero' são coisas diferentes"

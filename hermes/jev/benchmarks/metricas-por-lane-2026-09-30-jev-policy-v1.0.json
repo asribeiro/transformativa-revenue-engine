@@ -1,0 +1,229 @@
+{
+  "instrumento": "metricas-por-lane-v1",
+  "card": "TRE-W0-E04-T06",
+  "gerado_em": "2026-09-30T00:54:45+00:00",
+  "politica": {
+    "caminho": "hermes/jev/policy_v1.yaml",
+    "versao": "jev-policy-v1.0",
+    "sha256": "0058db6edf1b5b46ac5051091a8792d6cd6955ce56e6a5c5608a5c7d2f35740f",
+    "limiares": {
+      "aceitar": 0.85,
+      "conservador": 0.65,
+      "abster": 0.65,
+      "empate": "lane mais conservadora (high) + registro explícito de abstenção"
+    },
+    "lane_conservadora": "high",
+    "classe_de_custo_de_cada_lane": {
+      "small": "baixo",
+      "medium": "medio",
+      "high": "alto",
+      "critical": "alto"
+    },
+    "peso_de_custo_de_cada_lane": {
+      "small": 1,
+      "medium": 2,
+      "high": 3,
+      "critical": 3
+    },
+    "metricas_declaradas": [
+      "custo_por_card_verified",
+      "taxa_de_abstencao",
+      "taxa_de_escalacao",
+      "falso_rebaixamento",
+      "latencia_por_lane",
+      "regressao_ou_retrabalho"
+    ],
+    "limites_declarados_na_politica": []
+  },
+  "roteador": {
+    "caminho": "hermes/jev/routing/router.py",
+    "versao": "jev-router-v1.0",
+    "sha256": "2cb72ab41172e644fc68252d20f26de423ce029786ddc4e48f5952ac4cab1e3a"
+  },
+  "corpus": {
+    "caminho": "hermes/jev/benchmarks/corpus-anotacao.yaml",
+    "sha256": "c5ced4fc2a678018cbebd3cc56b4ab627a2b15f515ccc145cd7d3d7a92155b8c",
+    "casos": 32
+  },
+  "convencao_de_entrada": {
+    "fonte_da_convencao": "scripts/benchmark_roteamento.py",
+    "modo": "proposta-homologada",
+    "confianca_usada": 0.95,
+    "repeticoes_de_latencia_por_caso": 15
+  },
+  "metricas": {
+    "ordem_das_lanes": [
+      "small",
+      "medium",
+      "high",
+      "critical"
+    ],
+    "total_de_casos": 32,
+    "por_lane": {
+      "small": {
+        "perfil_de_modelo": "worker-barato",
+        "classe_de_custo": "baixo",
+        "decisoes": 2,
+        "custo_relativo_da_lane": 2,
+        "peso_unitario_de_custo": 1,
+        "latencia_ms_da_decisao": {
+          "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
+          "mediana": 1.3839,
+          "p95": 1.3952,
+          "max": 1.3952,
+          "amostras": 2
+        },
+        "outcomes": {
+          "PASS": 2
+        },
+        "perfis_registrados_no_recibo": {
+          "worker-barato": 2
+        }
+      },
+      "medium": {
+        "perfil_de_modelo": "reasoning-padrao",
+        "classe_de_custo": "medio",
+        "decisoes": 0,
+        "custo_relativo_da_lane": null,
+        "peso_unitario_de_custo": 2,
+        "latencia_ms_da_decisao": {
+          "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
+          "mediana": null,
+          "p95": null,
+          "max": null,
+          "amostras": 0
+        },
+        "outcomes": {},
+        "perfis_registrados_no_recibo": {}
+      },
+      "high": {
+        "perfil_de_modelo": "reasoning-forte",
+        "classe_de_custo": "alto",
+        "decisoes": 30,
+        "custo_relativo_da_lane": 90,
+        "peso_unitario_de_custo": 3,
+        "latencia_ms_da_decisao": {
+          "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
+          "mediana": 1.484,
+          "p95": 1.7288,
+          "max": 1.8588,
+          "amostras": 30
+        },
+        "outcomes": {
+          "ESCALATE": 21,
+          "BLOCK": 9
+        },
+        "perfis_registrados_no_recibo": {
+          "None": 30
+        }
+      },
+      "critical": {
+        "perfil_de_modelo": "critical-frontier-reviewer",
+        "classe_de_custo": "alto",
+        "decisoes": 0,
+        "custo_relativo_da_lane": null,
+        "peso_unitario_de_custo": 3,
+        "latencia_ms_da_decisao": {
+          "definicao": "relogio de `decidir()` (mediana de 15 repeticoes por caso) — camada de decisao, nao execucao por lane",
+          "mediana": null,
+          "p95": null,
+          "max": null,
+          "amostras": 0
+        },
+        "outcomes": {},
+        "perfis_registrados_no_recibo": {}
+      }
+    },
+    "custo_relativo_total": 92,
+    "taxa_de_abstencao": 0.6562,
+    "taxa_de_escalacao": 0.75,
+    "falso_rebaixamento": {
+      "total": 9,
+      "taxa": 0.2812
+    },
+    "blindagem_de_custo": {
+      "definicao": "`high` e `critical` compartilham a mesma classe de custo, entao o custo por lane NAO enxerga rebaixamento critical->high",
+      "classes_medidas": {
+        "small": "baixo",
+        "medium": "medio",
+        "high": "alto",
+        "critical": "alto"
+      },
+      "high_e_critical_mesma_classe": true,
+      "quem_enxerga_rebaixamento": "falso_rebaixamento"
+    }
+  },
+  "metricas_declaradas": {
+    "custo_por_card_verified": {
+      "medida": false,
+      "motivo": "nenhum card do corpus foi executado ate VERIFIED e o recibo nao carrega custo",
+      "motivo_declarado_na_politica": false
+    },
+    "taxa_de_abstencao": {
+      "medida": true,
+      "valor": 0.6562
+    },
+    "taxa_de_escalacao": {
+      "medida": true,
+      "valor": 0.75
+    },
+    "falso_rebaixamento": {
+      "medida": true,
+      "valor": {
+        "total": 9,
+        "taxa": 0.2812
+      }
+    },
+    "latencia_por_lane": {
+      "medida": true,
+      "valor": {
+        "small": 1.3839,
+        "medium": null,
+        "high": 1.484,
+        "critical": null
+      }
+    },
+    "regressao_ou_retrabalho": {
+      "medida": false,
+      "motivo": "exige historico de execucao de card (retrabalho medido em execucao), que o encanamento ainda nao registra",
+      "motivo_declarado_na_politica": false
+    },
+    "custo_por_lane": {
+      "medida": true,
+      "valor": {
+        "small": 2,
+        "medium": null,
+        "high": 90,
+        "critical": null
+      },
+      "declarada_na_politica": false,
+      "nota": "medida e nao declarada em metricas.acompanhar desta versao"
+    }
+  },
+  "decisoes_reais": {
+    "disponivel": true,
+    "caminho": "hermes/jev/receipts",
+    "arquivos_no_diretorio": 2,
+    "recibos_lidos": 2,
+    "arquivos_ignorados": 0,
+    "decisoes_por_lane": {
+      "medium": 1,
+      "high": 1
+    },
+    "custo_relativo_por_lane": {
+      "medium": 2,
+      "high": 3
+    },
+    "latencia": "NAO MEDIDA: o contrato do recibo tem 13 campos e nenhum deles carrega latencia; medir latencia exige executar a camada de decisao (fonte: corpus)",
+    "achados": []
+  },
+  "limitacoes": [
+    "latencia medida e a da camada de decisao (roteador local), NAO a de execucao do card por lane;",
+    "custo em unidade relativa declarada, NUNCA em dinheiro: a politica proibe fixar preco;",
+    "custo por card VERIFIED (o objetivo declarado) NAO e medido: nenhum card do corpus foi executado ate VERIFIED;",
+    "as decisoes reais vem dos recibos, que nao carregam latencia nem custo — custo por lane e derivado de lane -> perfil -> classe;",
+    "lane sem decisao no periodo reporta null, nunca zero: 'nao medi' e 'medi zero' sao coisas diferentes;",
+    "o corpus nao carrega codigo canonico de acao em 28 dos 32 casos (achado do TRE-W0-E04-T03): a lane medida e a do encanamento de bloqueio/escalacao, nao a de execucao;"
+  ],
+  "duracao_da_rodada_s": 0.724
+}

@@ -48,8 +48,14 @@ PADRAO_MODELO = re.compile(r"(?i)\b(gpt-|claude-|gemini-|llama|deepseek-|o1-|son
 PADRAO_PRECO = re.compile(r"(?i)(\$\s?\d|US\$|R\$\s?\d|€\s?\d|\d+[.,]\d+\s*(usd|eur|brl)|por\s+1m\s+de\s+tokens)")
 
 
-def verificar(yaml_txt: str, doc: str) -> list[tuple[str, bool, str]]:
-    """Devolve [(item, ok, detalhe)]. Roda igual nos arquivos reais e nas mutacoes."""
+def verificar(yaml_txt: str, doc: str, versao_esperada: str = VERSAO_ESPERADA) -> list[tuple[str, bool, str]]:
+    """Devolve [(item, ok, detalhe)]. Roda igual nos arquivos reais e nas mutacoes.
+
+    `versao_esperada` existe para o verificador da v1.1 (card TRE-W0-E04-T06) reusar
+    ESTA bateria, item por item, sobre o documento e o YAML da versao nova — mesmo
+    rito, mesma prova, sem copiar 42 itens. O default preserva o comportamento da
+    v1.0, que segue sendo a versao em vigor.
+    """
     itens: list[tuple[str, bool, str]] = []
 
     def add(nome, ok, detalhe=""):
@@ -65,12 +71,12 @@ def verificar(yaml_txt: str, doc: str) -> list[tuple[str, bool, str]]:
         return itens
 
     # versao e autoridade
-    add("versao da politica", d.get("versao") == VERSAO_ESPERADA,
-        f"versao={d.get('versao')} esperada={VERSAO_ESPERADA}")
+    add("versao da politica", d.get("versao") == versao_esperada,
+        f"versao={d.get('versao')} esperada={versao_esperada}")
     autoridade = d.get("autoridade", "")
     add("autoridade aponta para documento existente", (RAIZ / autoridade).is_file() if autoridade else False,
         f"autoridade={autoridade!r}")
-    add("documento cita a versao", VERSAO_ESPERADA in doc or "v1.0" in doc)
+    add("documento cita a versao", versao_esperada in doc)
 
     # lanes
     lanes = d.get("lanes") or {}
@@ -178,7 +184,7 @@ def imprimir(itens):
     return falhas
 
 
-def autoteste(yaml_txt, doc):
+def autoteste(yaml_txt, doc, versao_esperada: str = VERSAO_ESPERADA):
     """Cada mutacao TEM de ser detectada. Verificador que aceita tudo nao vale nada."""
     print("\n=== AUTOTESTE: mutacoes que o verificador precisa reprovar ===")
     base = yaml.safe_load(yaml_txt)
@@ -222,7 +228,7 @@ def autoteste(yaml_txt, doc):
 
     detectadas = 0
     for nome, y, dd in mutacoes:
-        itens = verificar(y, dd)
+        itens = verificar(y, dd, versao_esperada)
         falhas = sum(1 for _, ok, _ in itens if not ok)
         if falhas > 0:
             detectadas += 1
