@@ -21,7 +21,7 @@
   },
   "databases": {
     "operational": { "name": "odoo", "responsibility": "operacao comercial" },
-    "intelligence": { "name": "transformativa_ai", "schema": "sales_intelligence", "responsibility": "inteligencia, historico e auditoria" }
+    "intelligence": { "name": "sales_intelligence", "schema": "sales_intelligence", "responsibility": "inteligencia, historico e auditoria" }
   },
   "source_of_truth": {
     "empresa pesquisada": "PostgreSQL",

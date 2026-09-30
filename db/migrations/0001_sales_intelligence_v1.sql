@@ -321,3 +321,10 @@ CREATE INDEX idx_outbox_events_status_created ON sales_intelligence.outbox_event
 --   recommendations.opportunity_id -> oportunidade canônica (ver data contract, §IDs canônicos)
 --   interactions.campaign_id       -> entidade de campanha ainda não definida no baseline
 -- =====================================================================================
+
+-- ---------------------------------------------------------------- MUDANCA REGISTRADA 2026-09-30
+-- Decisao do dono (opcao 3): o trio canonico passa a ser container `pg-<amb>`, banco
+-- `sales_intelligence`, usuario dedicado por ambiente (`sales_ai` em dev) e schema
+-- `sales_intelligence`. Este cabecalho citava a base `transformativa_ai` antes da mudanca;
+-- o nome foi corrigido no contrato (docs/data/) e nesta nota. Nenhuma DDL muda: apenas o nome
+-- da base no texto. Ambientes de homolog/producao seguem o mesmo trio.

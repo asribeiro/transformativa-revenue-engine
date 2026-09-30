@@ -26,7 +26,7 @@ os eventos entre eles e os vocabulários/scores que os governam.
 | Base | Papel |
 |---|---|
 | `odoo` | operação comercial (estado corrente do funil) |
-| `transformativa_ai` / schema `sales_intelligence` | inteligência, histórico e auditoria |
+| `sales_intelligence` / schema `sales_intelligence` | inteligência, histórico e auditoria |
 
 ## 2. Source of truth
 
