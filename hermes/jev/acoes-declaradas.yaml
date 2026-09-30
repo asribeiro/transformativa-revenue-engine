@@ -73,4 +73,25 @@ declaracoes:
       `lane_esperada` homologada; divergencia vira achado. Producao: nao. Credencial: nao.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
-
+  # TRE-W0-E04-T09 e T10: mudanca no proprio repo (roteador / rascunho de politica / suites / corpus),
+  # sem producao e sem credencial -> codigo comum `ajuste_de_texto`. Autorizados pelo Anderson em
+  # 30/09/2026 no Telegram ("seguir com T09 e T10").
+  - card_id: t_b4b11995
+    acao_codigo: ajuste_de_texto
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      TRE-W0-E04-T09: aposentar o classificador de lane no roteador, ajustar as suites e re-medir. Repo-only,
+      sem producao, sem credencial. Mudanca de politica, se houver, entra como rascunho e depende de
+      homologacao do dono.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_e09a95bf
+    acao_codigo: ajuste_de_texto
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      TRE-W0-E04-T10: nomear o codigo comum `execucao_de_card` no roteador + espelho no catalogo, rascunho de
+      politica e re-anotacao/re-medicao do corpus. Repo-only, sem producao, sem credencial.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
