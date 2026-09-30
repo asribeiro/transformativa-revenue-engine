@@ -1,0 +1,62 @@
+# =====================================================================================
+# acoes-declaradas.yaml — CODIGO CANONICO de acao por card (contrato do encaixe JEV)
+# Card de origem: TRE-W0-E04-T05. Roteador: hermes/jev/routing/router.py
+#
+# POR QUE ISTO EXISTE
+#   O gate JEV (hermes/jev/gate/gate_jev.py) roda ANTES de o board reivindicar ou
+#   despachar um card. Ele passa para o roteador o CODIGO CANONICO da acao — nunca
+#   prosa. Casar acao por texto livre falhou tres vezes (defeitos D04, D06 e D07):
+#   cada rodada tapava as frases testadas e deixava passar as nao testadas.
+#
+# REGRA (postura estrita homologada pelo Anderson em 29/09/2026, Telegram)
+#   Card SEM declaracao aqui NAO EXECUTA: o roteador escala e o board recusa o
+#   claim/dispatch, gravando o recibo e o evento `jev_gate_rejected`.
+#   Isso e fail-closed de proposito, nao defeito. NAO afrouxar o D07 para "fazer
+#   o encaixe funcionar"; o caminho e declarar o codigo, como abaixo.
+#
+# COMO LIBERAR UM CARD (1 linha)
+#   1. escolha o codigo canonico (lista em `codigos_validos`, abaixo);
+#   2. acrescente uma entrada em `declaracoes`:
+#
+#        declaracoes:
+#          - card_id: t_abc12345
+#            acao_codigo: ajuste_de_texto        # obrigatorio
+#            declarado_por: Anderson Ribeiro     # quem autoriza (auditoria)
+#            declarado_em: '2026-09-29'          # quando
+#            motivo: 'ajuste de texto no runbook'  # por que (auditoria)
+#            # opcionais, vocabulario do roteador:
+#            sinais: {producao: false, credencial: false}
+#            ambiente_alvo: desenvolvimento
+#
+#   3. o proximo tick do despachante ja reavalia o card (nao precisa re-promover).
+#
+# COMO REVERTER
+#   Apagar a entrada do card devolve o card ao estado fail-closed. Remover o
+#   encaixe inteiro: `bash scripts/remover_gate_jev.sh` (o board volta a despachar
+#   sem o JEV — e a prova negativa da suite em scripts/verificar_gate_jev.py).
+#
+# CODIGOS PROIBIDOS (nunca decididos por maquina, politica jev-policy-v1.0)
+#   Declarar um destes NAO libera nada: o recibo sai BLOCK com
+#   exige_aprovacao_humana: true. Se um card precisa de um codigo que NAO existe,
+#   o caminho e NOMEAR o codigo comum novo no roteador (auditavel e reversivel) —
+#   nunca declarar um codigo proibido nem voltar a casar prosa.
+#     aprovacao_de_producao, primeiro_contato_outbound, envio_de_proposta_comercial,
+#     mudanca_estrutural_de_arquitetura, rollback_em_producao,
+#     exclusao_de_dado_de_cliente, rotacao_ou_revogacao_de_credencial,
+#     publicacao_em_nome_da_transformativa
+# =====================================================================================
+versao: acoes-declaradas-v1
+criado_em: '2026-09-29'
+origem: card TRE-W0-E04-T05 (ligar o roteador JEV ao dispatch do board)
+autoridade: contrato do encaixe no corpo do card TRE-W0-E04-T05
+
+# Codigos COMUNS conhecidos pelo roteador hoje (CODIGOS_DE_ACAO_COMUNS).
+# Esta lista e um ESPELHO para consulta humana; a fonte e o roteador, e a suite
+# do encaixe reprova se os dois divergirem.
+codigos_validos:
+  - ajuste_de_texto
+  - consulta_interna
+  - operacao_comercial
+  - migracao_de_esquema
+
+declaracoes: []
