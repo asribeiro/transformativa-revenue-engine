@@ -17,6 +17,11 @@ Artefatos versionados por este card:
 Toda evidência abaixo é saída bruta de comando com `exit code`. Nenhum número foi estimado,
 arredondado para melhorar ou copiado de outra rodada.
 
+> **Adendo 30/09/2026 (card TRE-W0-E04-T03-D01):** o corpus foi anotado com o **código canônico de
+> ação** (v1.4, `b66ecd36…`) e o benchmark foi re-medido com instrumento estendido. O estado
+> **atual** do corpus/instrumento e as provas estão na **§10** (no fim do documento). O corpo
+> principal é a medição da v1.3 e segue valendo como linha de base (números idênticos, ver §10.4).
+
 `<ws>` nas linhas de comando abaixo é o workspace do card:
 `/opt/data/kanban/boards/transformativa-revenue-engine/workspaces/t_d8bc83b3` — onde ficam os
 utilitários de prova (`montar_fixtures_negativos.py`, `comparar_rodadas.py`, `dump_casos.py`,
@@ -421,3 +426,219 @@ resultado e aqui, para não passar como se cada caso tivesse sido lido um a um.
 **Recomendação de sequência:** rodar este mesmo benchmark **depois** do T05 (códigos declarados) e
 **depois** da política v1.1 (T06), mantendo corpus e rótulos: a diferença entre as duas rodadas é a
 medida do efeito do encaixe, com a mesma régua.
+
+---
+
+## 10. Adendo — código canônico de ação no corpus (card TRE-W0-E04-T03-D01, 30/09/2026)
+
+Fecha a lacuna A1 (§6.1). **Corpus v1.4** (`b66ecd36bd80`), política `jev-policy-v1.1`
+(`4fe3357c1a9c`), roteador `jev-router-v1.1` (`6f44335de494`). Ferramenta da anotação:
+`scripts/anotar_codigos_de_acao_no_corpus.py` (ensaio + real, com guardas de recusa).
+**Nada de rótulo foi tocado** (§10.2, C5/C6).
+
+### 10.1 O que foi entregue, por critério do card
+
+| Exigência do card | Entrega | Evidência |
+|---|---|---|
+| (1) código canônico por caso, com proveniência, ou registro de "não executável por desenho" | 11 casos com código (5 comuns, 6 proibidos) + 21 com `acao_codigo: null` explícito e o motivo na `nota` | §10.2 C1–C4; `dump_anotacao.py` |
+| (2) re-medição com o MESMO instrumento, resultado versionado, com sha256 dos três insumos | `scripts/benchmark_roteamento.py` (estendido) + `resultado-benchmark-2026-09-30-jev-policy-v1.1-corpus-anotacao-v1.4.json` | §10.4; §10.5 |
+| (3) decisão declarada sobre o classificador, com a medição | **manter** — e **não** ajustar o estimador (ganho medido zero) | §10.6 |
+
+**Fechamento dos 28 casos do card:** dos 28 que a medição de 30/09 registrou sem código resolvido,
+**7** ganharam código canônico declarado — `real-t_969affa7` e `real-t_d9cb5755` →
+`migracao_de_esquema`; `borda-02` → `migracao_de_esquema`; `borda-04` →
+`rotacao_ou_revogacao_de_credencial`; `borda-05` → `publicacao_em_nome_da_transformativa`;
+`borda-08` → `exclusao_de_dado_de_cliente`; `borda-12` → `mudanca_estrutural_de_arquitetura` — e
+**21** ficaram com `acao_codigo: null` explícito + motivo no `nota` ("não executável por desenho",
+falha fechada D07). Os 4 casos que **já** resolviam por código em v1.3 (`borda-01`, `borda-11`,
+`borda-03`, `borda-09`) passaram a **declarar** o campo: 32/32 anotados = 11 com código + 21 `null`.
+
+### 10.2 Critério → teste → evidência (verificação independente, fora do script que anotou)
+
+`<ws2>` = `/opt/data/kanban/boards/transformativa-revenue-engine/workspaces/t_dfcfc4d4`.
+
+```
+$ /opt/hermes/.venv/bin/python <ws2>/verificar_anotacao.py    # exit 0
+RESULTADO: PASS (0 falha(s), 6 achado(s))
+```
+
+| # | Checagem | Resultado |
+|---|---|---|
+| C1 | 32/32 casos declaram `acao_codigo` (presente, mesmo que `null`) | PASS (`sem campo: []`) |
+| C2 | todo código declarado é do catálogo vigente (4 comuns ∪ 8 proibidos) | PASS (`fora: []`) |
+| C3 | proveniência da anotação na `nota` dos 32 casos | PASS (`sem proveniência: []`) |
+| C4 | caso sem código registra "NAO EXECUTAVEL por lacuna de catalogo" | PASS (21 casos, 0 sem registro) |
+| C5 | nenhum `lane_esperada` homologado alterado (v1.3 → v1.4) | PASS (`alterados: []`) |
+| C6 | nenhum campo além de `acao_codigo`/`nota` mudou caso a caso | PASS (`campos mexidos: {}`) |
+| C6b/c | nenhuma seção nova/removida; versão subiu para v1.4 | PASS |
+| C7 | ação **proibida** nunca executa (decisão humana) | PASS (`violações: []`) |
+| C7b | caso **sem código** nunca executa (falha fechada D07) | PASS (`violações: []`) |
+| C8a | a anotação **não mudou a lane de nenhum caso** (v1.3 → v1.4) | PASS (`mudanças: {}`) |
+| C8b | nenhuma divergência de lane foi introduzida pela anotação | PASS (`novas: []`) |
+| C8c | divergências pré-existentes registradas como achado, sem corrigir rótulo | PASS (6 casos, §10.7 A7) |
+| C9 | o `acao_codigo` declarado chega ao roteador como `codigo_canonico` | PASS (11/11) |
+| C10 | a `nota_da_versao` cita o movimento **medido** (4→11, 2→4), não número de memória | PASS |
+
+Caminho proibido reprovando (transcrições reais; a ferramenta nunca escreve quando recusa):
+
+```
+$ .../python scripts/anotar_codigos_de_acao_no_corpus.py --corpus <baseline v1.3> --mapa <mapa> --ensaio
+mapa    : 11 caso(s) com codigo + 21 caso(s) sem codigo no catalogo = 32 casos
+ENSAIO: 32 casos seriam anotados; texto montado parseia (32 casos, versao corpus-anotacao-v1.4); arquivo NAO escrito (sha256 intacto=c5ced4fc2a67)
+
+$ .../python scripts/anotar_codigos_de_acao_no_corpus.py            # exit 0
+  escrito: 32/32 casos com o campo; versao=corpus-anotacao-v1.4 (b66ecd36bd80)
+
+$ .../python scripts/anotar_codigos_de_acao_no_corpus.py            # exit 1
+NADA A FAZER: os 32 casos ja declaram `acao_codigo` (versao=corpus-anotacao-v1.4). Arquivo NAO foi tocado.
+sha256=b66ecd36bd80...                                              # inalterado
+
+$ .../python scripts/anotar_corpus_benchmark.py                     # exit 1
+NADA A FAZER: nenhum caso com lane_esperada vazio — o corpus ja esta anotado (versao=corpus-anotacao-v1.4).
+
+$ .../python <ws2>/provas_negativas_anotacao.py                     # exit 0
+baseline pre-anotacao (git HEAD): versao=corpus-anotacao-v1.3 casos=32 com_codigo=0
+  - codigo inventado fora do catalogo ....... RECUSOU=sim ARQUIVO_INTOCADO=sim
+  - caso sem anotacao declarada ............. RECUSOU=sim ARQUIVO_INTOCADO=sim
+  - caso declarado nas duas listas .......... RECUSOU=sim ARQUIVO_INTOCADO=sim
+  - codigo sem proveniencia ................. RECUSOU=sim ARQUIVO_INTOCADO=sim
+PROVA NEGATIVA: 4/4 testes recusaram sem tocar o arquivo
+
+$ .../python <ws2>/provar_guarda_duplicidade.py                     # exit 0
+RECUSADO (anotacao): caso borda-01 ja declara `acao_codigo` — anotacao duplicada recusada
+RESULTADO: PASS — a guarda de duplicidade por caso reprova o caminho proibido
+```
+
+**Nota de método (defeito do próprio harness, encontrado e corrigido):** a primeira versão das
+provas negativas copiava o corpus de **trabalho** para o fixture. Depois da anotação, essa cópia já
+vinha anotada, a guarda de arquivo disparava primeiro e as quatro recusas específicas **nunca eram
+exercidas** — o harness reportava `0/4` (falha) e a evidência não provava o que dizia provar. Agora o
+baseline é regenerado de `git show HEAD:...` (v1.3, `com_codigo=0`) com auto-checagem que **falha se
+o baseline já tiver código**. Lição aplicada: prova negativa que depende do estado do arquivo de
+trabalho deixa de provar quando o arquivo muda.
+
+**Nota de método 2 (falha real da ferramenta, encontrada pela prova):** a primeira versão de
+`scripts/anotar_codigos_de_acao_no_corpus.py` escreveu um YAML **inválido** (indentação do campo
+`nota`) e o corpus ficou quebrado até a leitura de prova reprovar. A ferramenta passou a (a) **parsear
+o texto montado antes de escrever** — versão, número de casos e presença do campo em 32/32 têm de
+conferir, senão `RECUSADO` e nada é escrito — e (b) **restaurar o texto original** se qualquer
+verificação posterior à escrita falhar (`caminho.write_text(texto_antes)`). Ou seja: a escrita não
+pode deixar o corpus pior do que estava, e o ensaio acima já é essa checagem.
+
+### 10.3 As duas populações (o que o card exigia: medir abstenção **em separado**)
+
+Publicado em `populacoes` no resultado, derivado do **desfecho** do roteador (nunca de rótulo
+escrito à mão), partição exata dos 32 (C-item "os 32 casos aparecem exatamente uma vez"):
+
+| População | Casos | Leitura |
+|---|---|---|
+| **EXECUTÁVEL** (código comum aceito) | **4** — `real-t_969affa7`, `real-t_d9cb5755`, `borda-01`, `borda-11` | accuracy de lane **1,0** |
+| NÃO EXECUTÁVEL — ação proibida (decisão humana) | 6 (`borda-03/04/05/08/09/12`) | 6 BLOCK, 3 escalam |
+| NÃO EXECUTÁVEL — sem código no catálogo | 21 (18 `execucao_de_card` + `borda-06/07/10`) | 19 escalam, 2 BLOCK |
+| NÃO EXECUTÁVEL — bloqueio por regra, **com** código comum | 1 (`borda-02`, DDL em produção) | 1 BLOCK |
+
+**Poder de medição:** com código comum (executável + bloqueio por regra = 5 casos) a accuracy de lane
+é **1,0 (5/5)**; o número cru sobre os 32 é **0,4375**. A diferença entre os dois **é** a abstenção
+causada pela lacuna de código — agora visível em campo próprio, em vez de diluída no número cru.
+
+### 10.4 Movimento (mesmo instrumento, corpus v1.3 → v1.4)
+
+R1 = linha de base versionada (instrumento anterior) · R2 = corpus v1.3 **regenerado do git** e rodado
+com o instrumento novo (controle do instrumento) · R3 = corpus v1.4 anotado.
+
+| Métrica (modo `proposta-homologada`) | R1 (v1.3) | R2 (v1.3, instrumento novo) | R3 (v1.4) |
+|---|---|---|---|
+| accuracy de lane | 0,4375 (14/32) | 0,4375 | 0,4375 |
+| accuracy do modo `classificador` | 0,375 (12/32) | 0,375 | 0,375 |
+| `falso_rebaixamento` | 8 | 8 | 8 |
+| `taxa_de_escalacao` | 0,75 | 0,75 | **0,6875** |
+| `taxa_de_bloqueio` | 0,2812 | 0,2812 | 0,2812 |
+| `taxa_de_execucao` | 0,0625 | 0,0625 | **0,125** |
+| casos com `codigo_de_acao` resolvido | 4/32 | 4/32 | **11/32** |
+| casos que **executam** | 2/32 | 2/32 | **4/32** |
+| sha256 corpus / política / roteador | `c5ced4fc…`/`4fe3357c…`/`6f44335d…` | idem | **`b66ecd36…`**/`4fe3357c…`/`6f44335d…` |
+
+Leitura honesta: a **accuracy crua não se move** (0,4375). O que se move é o poder de medição — os
+casos que o roteador **roteia** passam de 2 para 4 (e 5 com código comum, todos corretos), a escalação
+cai de 0,75 para 0,6875 e o `falso_rebaixamento` fica **igual** (8, todos não executáveis) porque a
+anotação não afrouxou nada: nenhum caso crítico passou a executar. R2 = R1 prova que **nada disso veio
+da mudança do instrumento** (`[OK] R2 == R1 nas métricas`).
+
+Diff por caso (controle v1.3 → v1.4, `diff_rodadas.py`), com o número exato de cada movimento:
+
+| Campo | Mudanças | Casos |
+|---|---|---|
+| `lane` | **0** | — (nenhuma lane mudou: §10.2 C8a) |
+| `exige_escalacao` / `outcome` | **2** | `real-t_969affa7`, `real-t_d9cb5755`: `ESCALATE` → `PASS` (24/32 → 22/32) |
+| `pode_executar` | **2** | os mesmos dois passam a executar (2/32 → 4/32) |
+| `codigo_de_acao` | **7** | `real-t_969affa7`, `real-t_d9cb5755` → `migracao_de_esquema`; `borda-02` → `migracao_de_esquema`; `borda-04/05/08/12` → código **proibido** (BLOQUEIAM igual a antes) |
+
+Os 4 casos que já resolviam por código em v1.3 (`borda-01`, `borda-11` pelo código comum do próprio
+rótulo `acao`; `borda-03`, `borda-09` pelo texto canonicalizado) não mudaram de valor: a anotação
+apenas **declara** o que já era resolvido — por isso `codigo_de_acao` passa de 4/32 para **11/32**.
+
+
+Autoteste do instrumento: `23/23 itens OK, 0 falhas` (exit 0) na rodada real. Na rodada do corpus
+v1.3 **não anotado** o autoteste reprova **exatamente 1 item**, o novo: `FALHOU corpus: os 32 casos
+declaram acao_codigo` — a prova de que o item novo tem dentes (detecta a lacuna que este card fecha).
+
+### 10.5 O que impede a anotação de "afrouxar o D07"
+
+1. A ferramenta só **declara** o código; quem decide continua sendo o roteador (C7/C7b: proibida e
+   sem-código nunca executam, 0 violações).
+2. O critério de atribuição é **fechado e declarado** no cabeçalho da ferramenta: o código vem da
+   própria declaração do caso (o rótulo `acao` **é** o código, ou os sinais + a regra declarada da
+   política identificam a operação) — **nunca** da prosa da justificativa. Onde não há código no
+   catálogo, o campo é `null` explícito com o motivo; nomear código novo é decisão do dono.
+3. `lane_esperada` intocada (C5/C6) e a suíte do gate segue **30/30** (inclui o item que confere o
+   espelho `codigos_validos` × `CODIGOS_DE_ACAO_COMUNS`).
+
+### 10.6 O classificador empatado com a constante — decisão declarada (exigência 3)
+
+Medido no campo `classificador` do resultado:
+
+| Medida | Valor |
+|---|---|
+| lane do modo `classificador` × constante estrutural (mesmo pipeline **sem** classificação) | **32/32 idênticas** (divergências: `[]`) |
+| confiança máxima observada × limiar de aceite da política | **0,74 < 0,85** → **0 caso** atinge o limiar |
+| acerto da **proposta** (antes dos limiares) | 6/32 = **0,1875** — pior que a constante (12/32 = 0,375) |
+| contrafactual declarado (estimador aceitando, mutação **em memória**) | accuracy **0,375**, delta **0,0**; muda a lane de 2 casos (`borda-01`, `borda-11`) |
+
+**Decisão: MANTER — e explicitamente NÃO ajustar o estimador.** O motivo é medido, não opinativo:
+aceitar a proposta do classificador **não move a accuracy** (delta 0,0) e, hoje, o estimador
+**não pode** atingir o limiar por construção (`0,5 + 0,12·k`, máximo 0,74 com 2 sinais casados). Pior:
+a proposta crua (0,1875) é **pior** que a constante (0,375). Aposentar seria decidir sobre um
+componente que este corpus **não alimenta** — o caso do corpus não traz o corpo do card nem os sinais
+que o classificador usa; portanto a avaliação de aposentadoria exige um corpus com entrada real, e
+isso é card novo, não este. **Não fazer:** baixar o limiar de aceite ou subir `CONFIANCA_BASE` — não há
+ganho medido e o efeito é fazer a máquina decidir sobre a proposta mais fraca que a própria constante.
+
+### 10.7 Achados (registrados; nenhum rótulo corrigido aqui)
+
+- **A7 (pré-existente, agora atribuído):** os 6 casos com código **proibido** têm `lane_esperada`
+  = `critical` e o roteador registra `high` (desfecho BLOCK) — a divergência **já existia em v1.3**
+  (C8a: nenhuma lane mudou). Ela não é um erro de rótulo que este card possa corrigir: é a lane
+  conservadora registrada para um caso que a máquina **não decide**. Leitura correta = desfecho
+  (BLOCK/decisão humana), não a lane — por isso a população separada (§10.3). **Fica para o dono**
+  decidir se o rótulo homologado de um caso proibido deve ser `critical` (lane) ou expressar
+  "não decidível por máquina".
+- **A1 (fechada em parte):** os 21 casos restantes **não têm** código no catálogo vigente — 18 são
+  `execucao_de_card` (execução genérica de card de desenvolvimento). A lacuna de vocabulário
+  permanece aberta **por desenho**: nomear códigos novos (ex.: `execucao_de_card_dev`) é decisão do
+  dono sobre o catálogo, não deste card. Consequência medida: 19 deles escalam (falha fechada).
+- **A2 (confirmada com o instrumento novo):** o classificador do roteador devolve a constante nos 32
+  casos; agora com a **causa** medida e o contrafactual (§10.6).
+- **A8 (achado de honestidade do caso `real-t_0248a568`):** o caso é entrega de engenharia com consulta
+  agregada, mas o código `consulta_interna` **não foi atribuído**: o rótulo `acao` do caso é
+  `execucao_de_card` e nada na declaração do caso aponta a consulta interna — atribuir seria inferir
+  da prosa da justificativa, o que o critério de atribuição proíbe. Fica `null` com o motivo escrito.
+
+### 10.8 O que este adendo **não** prova
+
+- não prova que os 11 códigos atribuídos são a **única** leitura possível caso a caso: prova que a
+  atribuição segue o critério declarado e que nenhuma delas veio da prosa da justificativa;
+- não prova qualidade do classificador em geral (o corpus não lhe dá a entrada que ele usa):
+  prova-o **inerte neste corpus**, com a causa;
+- não move `custo_por_card_VERIFIED` nem latência de execução por lane (limites §7, inalterados);
+- não fecha a revisão **individual** dos 30 rótulos em bloco (§9, pendência do dono).
+

@@ -52,6 +52,16 @@ T04):
   * o campo `acao` do caso e o texto da acao. So vira CODIGO CANONICO quando o
     proprio roteador o resolve assim — o benchmark NAO inventa codigo para card que
     nao tem (fazer isso fabricaria o resultado que se quer medir);
+  * o corpus PODE declarar `acao_codigo` (campo CANONICO, anotado caso a caso pelo card
+    TRE-W0-E04-T03-D01, com a proveniencia de cada caso no `nota`). Quando declara, o
+    benchmark REPASSA o campo ao roteador — e a via PRINCIPAL do contrato, a mesma que o
+    despachante usa. `acao_codigo: null` (explicito, nunca ausente) = o caso NAO tem
+    codigo no catalogo vigente: mede a falha fechada do D07. O benchmark segue sem
+    inventar codigo: ele repassa o que o corpus declarou, e codigo fora do catalogo nao
+    resolve (nao executa);
+  * por isso o resultado publica as POPULACOES separadas (`populacoes`): a lane de um caso
+    SEM codigo canonico e a lane conservadora de AUDITORIA, nao uma decisao de roteamento.
+    Misturar as duas populacoes era medir abstencao com nome de acerto (achado do T03).
   * a confianca do modo `proposta-homologada` (0,95) e constante declarada e e
     conferida contra `limiares.aceitar` lido do YAML: se a politica mudar de forma
     que 0,95 deixe de aceitar a proposta, o script FALHA em vez de medir outra coisa.
@@ -75,7 +85,16 @@ METRICAS (definicoes exatas, para nao virar numero de enfeite):
     (`regra_catalogo`), entao qualquer cifra em reais aqui seria invencao;
   * latencia = tempo de relogio da CAMADA DE DECISAO (mediana e p95 de R repeticoes
     por caso, em ms). Latencia de execucao por lane (modelo) NAO e medida: depende
-    do modelo do catalogo no momento da configuracao, que a politica nao fixa.
+    do modelo do catalogo no momento da configuracao, que a politica nao fixa;
+  * `populacoes` = a leitura SEPARADA exigida pelo card TRE-W0-E04-T03-D01:
+    EXECUTAVEL (o roteador aceitou executar) x NAO EXECUTAVEL (acao proibida, sem
+    codigo no catalogo, ou bloqueio por guardrail/dominio). A accuracy de lane so e
+    leitura de qualidade de roteamento na populacao que o roteador ROTEIA (codigo
+    comum); nas outras a lane registrada e a de auditoria;
+  * `classificador` = a leitura do classificador automatico contra a CONSTANTE
+    ESTRUTURAL (o mesmo pipeline sem classificacao nenhuma). As duas lanes saem lado a
+    lado porque a igualdade entre elas e o que decide manter/ajustar/aposentar o
+    classificador — decisao do dono, medida aqui, nao "achismo".
 
 LIMITES HONESTOS (vao impressos e gravados no resultado):
   * a latencia medida e a do roteador local (microssegundos), nao a de execucao do
@@ -84,7 +103,15 @@ LIMITES HONESTOS (vao impressos e gravados no resultado):
     cards do corpus nao foram executados ate VERIFIED;
   * o rotulo de 30 dos 32 casos foi homologado EM BLOCO a partir da proposta do
     Hermes; portanto este corpus mede REGRESSAO contra uma linha de base acordada,
-    nao a concordancia com julgamento humano independente caso a caso.
+    nao a concordancia com julgamento humano independente caso a caso;
+  * a lane de um caso SEM codigo canonico de acao (ou com acao PROIBIDA) e a lane
+    conservadora de AUDITORIA, nao uma decisao de roteamento: contar esses casos na
+    accuracy mistura abstencao com acerto. Por isso o resultado publica as populacoes
+    separadas — e a accuracy crua continua saindo ao lado, nunca no lugar;
+  * o classificador automatico do roteador e INERTE neste corpus, e isso e MEDIDO: a lane
+    do modo `classificador` e igual a da constante estrutural (mesmo pipeline sem
+    classificacao nenhuma) nos 32 casos, e nenhum caso atinge o limiar de aceite da
+    politica com a confianca que o estimador do roteador produz.
 """
 from __future__ import annotations
 
@@ -115,6 +142,16 @@ MAPA_DE_SINAIS = {"producao": "producao", "mexe_em_segredo": "credencial",
 # resultado, e NUNCA injetados (nome desconhecido = BLOCK, o que seria sujar a
 # medicao com um bloqueio que o caso nao pede).
 SINAIS_SEM_EQUIVALENTE = ("ddl_ou_migration", "aprova_humana_exigida")
+
+# Campo do codigo canonico de acao no CONTRATO do roteador (via principal). Aqui e so o
+# nome: o valor declarado por caso vem do corpus, e o autoteste prova que este nome e o
+# mesmo que `CAMPO_DO_CODIGO_DE_ACAO` declara do lado do roteador.
+CAMPO_DO_CODIGO_DE_ACAO = "acao_codigo"
+
+# Modo de referencia das POPULACOES: o modo homologado (a proposta do corpus com a
+# confianca declarada). E o modo em que a lane proposta e preservada quando o roteador
+# consegue rotear, entao e nele que "a lane registrada" diz algo sobre o roteamento.
+MODO_DE_REFERENCIA = "proposta-homologada"
 
 # Confianca do modo `proposta-homologada` (constante declarada, conferida no YAML).
 CONFIANCA_DECLARADA = 0.95
@@ -164,20 +201,31 @@ def revisao_do_caso(caso: dict) -> str:
     return "individual" if str(caso.get("homologacao") or "").strip() else "em_bloco"
 
 
-def tarefa_do_caso(caso: dict, modo: str, confianca: float = CONFIANCA_DECLARADA) -> dict:
-    """Caso do corpus -> entrada do roteador. Convencao declarada no cabecalho."""
+def tarefa_do_caso(caso: dict, modo: str, confianca: float = CONFIANCA_DECLARADA,
+                   sem_descricao: bool = False) -> dict:
+    """Caso do corpus -> entrada do roteador. Convencao declarada no cabecalho.
+
+    `sem_descricao=True` monta a MESMA entrada sem declarar descricao: com isso o
+    caminho do classificador automatico nao roda (o proprio roteador so o aciona quando
+    ha descricao) e a lane cai na abstencao + lane conservadora da politica. Essa e a
+    CONSTANTE ESTRUTURAL contra a qual o classificador e medido — nao e um modo de
+    decisao, e o piso de comparacao.
+    """
     sinais = caso.get("sinais") or {}
     tarefa = {
         "card_id": caso["id"],
         "titulo": caso.get("titulo") or "",
-        # O corpus carrega so o titulo do caso: o mesmo texto vai como descricao
-        # para o caminho do classificador automatico poder ser exercitado.
-        "descricao": caso.get("titulo") or "",
+        "descricao": None if sem_descricao else (caso.get("titulo") or ""),
         "acao": caso.get("acao") or "",
         "sinais": {MAPA_DE_SINAIS[k]: True for k, v in sinais.items()
                    if v and k in MAPA_DE_SINAIS},
         "ambiente_alvo": "producao" if sinais.get("producao") else "desenvolvimento",
     }
+    # Codigo canonico DECLARADO PELO CORPUS: repassado como a via principal do contrato
+    # (o despachante faz o mesmo com o `acao_codigo` do card). `null`/ausente nao vira
+    # campo: o caso simplesmente nao tem codigo, e o roteador escalou por isso.
+    if caso.get(CAMPO_DO_CODIGO_DE_ACAO):
+        tarefa[CAMPO_DO_CODIGO_DE_ACAO] = str(caso[CAMPO_DO_CODIGO_DE_ACAO])
     if modo == "proposta-homologada":
         tarefa["lane_proposta"] = caso.get("lane_proposta_hermes")
         tarefa["confianca"] = confianca
@@ -189,8 +237,9 @@ def tarefa_do_caso(caso: dict, modo: str, confianca: float = CONFIANCA_DECLARADA
 # ---------------------------------------------------------------------------
 def roda_caso(modulo, politica: dict, caso: dict, modo: str,
               repeticoes: int = REPETICOES_DE_LATENCIA,
-              confianca: float = CONFIANCA_DECLARADA) -> dict:
-    tarefa = tarefa_do_caso(caso, modo, confianca)
+              confianca: float = CONFIANCA_DECLARADA,
+              sem_descricao: bool = False) -> dict:
+    tarefa = tarefa_do_caso(caso, modo, confianca, sem_descricao=sem_descricao)
     tempos = []
     resultado = None
     for _ in range(max(1, repeticoes)):
@@ -212,12 +261,26 @@ def classe_de_custo_da_politica(politica: dict, perfil) -> str:
     return str(((politica.get("perfis_modelo") or {}).get(str(perfil)) or {}).get("custo") or "")
 
 
+def classe_do_codigo(codigo, comuns: set, proibidos: set) -> str:
+    """'comum' | 'proibida' | '' — de que lado do catalogo veio o codigo resolvido."""
+    if not codigo:
+        return ""
+    if codigo in proibidos:
+        return "proibida"
+    if codigo in comuns:
+        return "comum"
+    return ""
+
+
 def executar(modulo, politica: dict, casos: list, repeticoes: int = REPETICOES_DE_LATENCIA,
              confianca: float = CONFIANCA_DECLARADA) -> dict:
     """Roda todos os casos nos dois modos e calcula as metricas. Funcao pura."""
     ordem = modulo.ordem_lanes(politica)
     indice = {lane: i for i, lane in enumerate(ordem)}
     perfis = {lane: modulo.perfil_da_lane(politica, lane) for lane in ordem}
+    # catalogo canonico lido EM TEMPO DE EXECUCAO (nenhuma lista literal no benchmark)
+    comuns = set(modulo.CODIGOS_DE_ACAO_COMUNS)
+    proibidos = set(modulo.acoes_nunca_decididas_por_maquina(politica))
     # peso de custo por LANE, derivado do perfil declarado na politica
     peso_da_lane = {lane: PESO_CUSTO_RELATIVO.get(classe_de_custo_da_politica(politica, perfis[lane]), 0)
                     for lane in ordem}
@@ -225,6 +288,7 @@ def executar(modulo, politica: dict, casos: list, repeticoes: int = REPETICOES_D
     linhas = []
     for caso in casos:
         linha = {"id": caso["id"], "acao": caso.get("acao"), "titulo": caso.get("titulo"),
+                 "acao_codigo_declarado": caso.get(CAMPO_DO_CODIGO_DE_ACAO),
                  "lane_esperada": caso.get("lane_esperada"),
                  "lane_proposta": caso.get("lane_proposta_hermes"),
                  "revisao": revisao_do_caso(caso), "modos": {}}
@@ -244,12 +308,31 @@ def executar(modulo, politica: dict, casos: list, repeticoes: int = REPETICOES_D
                 "exige_aprovacao_humana": bool(decisao["exige_aprovacao_humana"]),
                 "codigo_de_acao": decisao.get("codigo_de_acao"),
                 "origem_do_codigo_de_acao": decisao.get("origem_do_codigo_de_acao"),
+                "codigo_classe": classe_do_codigo(decisao.get("codigo_de_acao"), comuns, proibidos),
+                "guardrails_acionados": list(decisao.get("guardrails_acionados") or []),
                 "acerta_lane": lane == esperada,
                 "rebaixa": indice.get(lane, -1) < indice.get(esperada, -1),
                 "desvio_conservador": indice.get(lane, -1) > indice.get(esperada, -1),
                 "latencia_ms": saida["latencia_ms"],
                 "motivo": (decisao.get("motivos") or [""])[0],
             }
+        # CONSTANTE ESTRUTURAL: o mesmo pipeline do modo `classificador` sem classificacao
+        # nenhuma (sem descricao). Uma leitura por caso basta: aqui se compara LANE e
+        # DESFECHO, nao latencia.
+        base = roda_caso(modulo, politica, caso, "classificador", repeticoes=1,
+                         sem_descricao=True)
+        decisao_base = base["decisao"]
+        linha["constante_estrutural"] = {
+            "lane": decisao_base["lane"], "outcome": decisao_base["outcome"],
+            "decidido": decisao_base["decidido"],
+            "pode_executar": bool(decisao_base["pode_executar"]),
+            "exige_escalacao": bool(decisao_base["exige_escalacao"]),
+            "codigo_de_acao": decisao_base.get("codigo_de_acao"),
+            "lane_igual_ao_modo_classificador": (
+                decisao_base["lane"] == linha["modos"]["classificador"]["lane"]),
+            "desfecho_igual_ao_modo_classificador": (
+                decisao_base["outcome"] == linha["modos"]["classificador"]["outcome"]),
+        }
         linhas.append(linha)
 
     modos = {}
@@ -366,8 +449,228 @@ def metricas_do_modo(linhas: list, modo: str, ordem: list, peso_da_lane: dict) -
 
 
 # ---------------------------------------------------------------------------
-# Resultado
+# Populacoes — a leitura separada exigida pelo card TRE-W0-E04-T03-D01
+#
+# O PROBLEMA (medido no T03): com a postura estrita homologada (D07), caso sem codigo
+# canonico de acao NAO EXECUTA — escala e a lane registrada e a conservadora de AUDITORIA.
+# Medir accuracy sobre esses casos mede abstencao com nome de acerto. A leitura separada
+# torna o numero interpretavel: quem o roteador ROTEIA (codigo comum declarado) x quem ele
+# NAO PODE executar, com o motivo.
 # ---------------------------------------------------------------------------
+BALDES = ("executavel", "bloqueado_por_regra_com_codigo_comum",
+          "acao_proibida_decisao_humana", "sem_codigo_no_catalogo")
+
+
+def balde_do_caso(linha: dict, modo: str = MODO_DE_REFERENCIA) -> str:
+    """Balde do caso: um so, derivado do DESFECHO do roteador (nao de rotulo escrito a mao)."""
+    dado = linha["modos"][modo]
+    if dado.get("pode_executar"):
+        return "executavel"
+    if dado.get("codigo_classe") == "proibida":
+        return "acao_proibida_decisao_humana"
+    if not dado.get("codigo_de_acao"):
+        return "sem_codigo_no_catalogo"
+    return "bloqueado_por_regra_com_codigo_comum"
+
+
+def _resumo_do_balde(linhas: list, modo: str) -> dict:
+    acertos = sum(1 for l in linhas if l["modos"][modo].get("acerta_lane"))
+    falsos = sum(1 for l in linhas if str(l["lane_esperada"]) == "critical"
+                 and l["modos"][modo]["lane"] != "critical")
+    return {
+        "total": len(linhas),
+        "casos": [l["id"] for l in linhas],
+        "acertos_de_lane": acertos,
+        "accuracy_de_lane": round(acertos / len(linhas), 4) if linhas else None,
+        "falso_rebaixamento": falsos,
+        "executaveis": sum(1 for l in linhas if l["modos"][modo]["pode_executar"]),
+        "escalados": sum(1 for l in linhas if l["modos"][modo]["exige_escalacao"]),
+        "bloqueados": sum(1 for l in linhas if l["modos"][modo]["outcome"] == "BLOCK"),
+        "casos_com_codigo_declarado_no_corpus": sum(
+            1 for l in linhas if l.get("acao_codigo_declarado")),
+    }
+
+
+def populacoes(casos: list, brutos: dict, modo: str = MODO_DE_REFERENCIA) -> dict:
+    """EXECUTAVEL x NAO EXECUTAVEL, com o motivo, e o PODER DE MEDICAO de cada leitura."""
+    por_id = {l["id"]: l for l in brutos["casos"]}
+    baldes = {b: [] for b in BALDES}
+    for caso in casos:
+        linha = por_id[str(caso["id"])]
+        baldes[balde_do_caso(linha, modo)].append(linha)
+
+    crua = brutos["modos"][modo]
+    com_codigo_comum = baldes["executavel"] + baldes["bloqueado_por_regra_com_codigo_comum"]
+    resumo_comum = _resumo_do_balde(com_codigo_comum, modo)
+
+    # checagens de desenho: as afirmacoes que a separacao FAZ tem de bater com o desfecho
+    proibidos_executando = [l["id"] for l in baldes["acao_proibida_decisao_humana"]
+                            if l["modos"][modo]["pode_executar"]]
+    sem_codigo_executando = [l["id"] for l in baldes["sem_codigo_no_catalogo"]
+                             if l["modos"][modo]["pode_executar"]]
+    executavel_sem_codigo_comum = [l["id"] for l in baldes["executavel"]
+                                   if l["modos"][modo].get("codigo_classe") != "comum"]
+    com_codigo_declarado = [l for l in brutos["casos"] if l.get("acao_codigo_declarado")]
+    resolvidos_por_codigo = [l["id"] for l in com_codigo_declarado
+                             if l["modos"][modo].get("origem_do_codigo_de_acao") == "codigo_canonico"]
+    return {
+        "definicao": (
+            "separacao exigida pelo card TRE-W0-E04-T03-D01: EXECUTAVEL e quem o roteador "
+            "aceitou executar; NAO EXECUTAVEL e quem ele nao pode executar, com o MOTIVO. "
+            "O balde e derivado do desfecho do roteador (nunca de rotulo escrito a mao), e "
+            "a lane de um caso NAO executavel e a conservadora de auditoria — nao uma "
+            "decisao de roteamento"),
+        "modo_de_referencia": modo,
+        "executavel": _resumo_do_balde(baldes["executavel"], modo),
+        "nao_executavel": {
+            "total": sum(len(baldes[b]) for b in BALDES if b != "executavel"),
+            "por_motivo": {
+                "acao_proibida_decisao_humana": _resumo_do_balde(
+                    baldes["acao_proibida_decisao_humana"], modo),
+                "sem_codigo_no_catalogo": _resumo_do_balde(
+                    baldes["sem_codigo_no_catalogo"], modo),
+                "bloqueado_por_regra_com_codigo_comum": _resumo_do_balde(
+                    baldes["bloqueado_por_regra_com_codigo_comum"], modo),
+            },
+        },
+        "poder_de_medicao": {
+            "definicao": (
+                "a accuracy de lane so e leitura de qualidade de roteamento na populacao "
+                "com codigo COMUM (o roteador decide a lane); nos demais baldes a lane e a "
+                "de auditoria e o que se mede e o DESFECHO (bloquear/escalar), nao a lane"),
+            "com_codigo_comum": resumo_comum,
+            "accuracy_crua_sobre_os_32": {
+                "accuracy_de_lane": crua["accuracy_de_lane"], "acertos": crua["acertos"],
+                "casos": crua["casos"]},
+            "leitura": (
+                f"sobre os {crua['casos']} a accuracy crua e {crua['accuracy_de_lane']}; "
+                f"sobre os {resumo_comum['total']} casos com codigo comum o roteador acerta "
+                f"{resumo_comum['accuracy_de_lane']} — a diferenca entre os dois numeros e "
+                "exatamente a abstencao causada pela lacuna de codigo de acao"),
+        },
+        "checagem_de_desenho": {
+            "acao_proibida_nunca_executa": {
+                "casos": len(baldes["acao_proibida_decisao_humana"]),
+                "violacoes": proibidos_executando, "ok": not proibidos_executando},
+            "sem_codigo_nunca_executa": {
+                "casos": len(baldes["sem_codigo_no_catalogo"]),
+                "violacoes": sem_codigo_executando, "ok": not sem_codigo_executando},
+            "executavel_tem_codigo_comum": {
+                "casos": len(baldes["executavel"]),
+                "violacoes": executavel_sem_codigo_comum, "ok": not executavel_sem_codigo_comum},
+            "codigo_declarado_no_corpus_chega_ao_roteador": {
+                "casos_com_codigo_declarado": len(com_codigo_declarado),
+                "resolvidos_por_codigo_canonico": len(resolvidos_por_codigo),
+                "ok": len(resolvidos_por_codigo) == len(com_codigo_declarado)},
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Leitura do classificador contra a CONSTANTE ESTRUTURAL (card T03-D01, item 3)
+# ---------------------------------------------------------------------------
+def leitura_do_classificador(modulo, politica: dict, casos: list, brutos: dict) -> dict:
+    """Mede o classificador automatico e a constante 'nenhuma classificacao'.
+
+    Responde a pergunta do card com numero, nao com opiniao:
+      (a) o classificador DECIDE alguma lane? (lane dele x lane da constante estrutural);
+      (b) por que nao decide? (confianca maxima x limiar de aceite da politica);
+      (c) a proposta dele, SE fosse aceita, teria qualidade? (acerto da proposta antes
+          dos limiares) — e o numero que separa "ajustar o estimador" de "aposentar".
+    """
+    linhas = brutos["casos"]
+    modo = "classificador"
+    classif = brutos["modos"][modo]
+    iguais = [l["id"] for l in linhas if l["constante_estrutural"]["lane_igual_ao_modo_classificador"]]
+    desfecho_iguais = [l["id"] for l in linhas
+                       if l["constante_estrutural"]["desfecho_igual_ao_modo_classificador"]]
+    acertos_base = sum(1 for l in linhas
+                       if l["constante_estrutural"]["lane"] == str(l["lane_esperada"]))
+    lim = modulo.limiares(politica)
+    limiar = lim.get("aceitar")
+    propostas, confiancas, aceitam = [], [], []
+    for caso in casos:
+        cls = modulo.classificar_card(tarefa_do_caso(caso, modo), politica)
+        propostas.append(cls.get("lane_proposta"))
+        confianca = cls.get("confianca")
+        confiancas.append(confianca)
+        if confianca is not None and limiar is not None and confianca >= limiar:
+            aceitam.append(str(caso["id"]))
+    acertos_proposta = sum(1 for caso, proposta in zip(casos, propostas)
+                           if proposta == str(caso.get("lane_esperada")))
+    com_proposta = [str(caso["id"]) for caso, proposta in zip(casos, propostas)
+                    if proposta is not None]
+
+    # Contrafactual DECLARADO (mutacao em memoria, nada escrito no repo): se o estimador de
+    # confianca entregasse >= limiar de aceite, a proposta do classificador passaria a decidir
+    # a lane. E o numero que separa "ajustar o estimador" de "aposentar o classificador":
+    # se a proposta nao supera a constante estrutural, aceita-la nao melhora a metrica.
+    base_original = modulo.CONFIANCA_BASE
+    try:
+        if limiar is not None:
+            modulo.CONFIANCA_BASE = limiar
+        contra = executar(modulo, politica, casos, repeticoes=1)
+    finally:
+        modulo.CONFIANCA_BASE = base_original
+    contra_acertos = sum(1 for l in contra["casos"]
+                         if l["modos"][modo]["lane"] == str(l["lane_esperada"]))
+    mudaram = sorted(l["id"] for l in contra["casos"]
+                     if l["modos"][modo]["lane"] != l["constante_estrutural"]["lane"])
+    acc_constante = round(acertos_base / len(linhas), 4) if linhas else None
+    acc_contra = round(contra_acertos / len(contra["casos"]), 4) if contra["casos"] else None
+    return {
+        "modo_medido": modo,
+        "accuracy_de_lane": classif["accuracy_de_lane"],
+        "matriz_de_confusao": classif["matriz_de_confusao"],
+        "constante_estrutural": {
+            "definicao": (
+                "mesmo pipeline do modo `classificador` SEM classificacao nenhuma (o "
+                "chamador nao declara descricao, e o roteador so aciona o classificador "
+                "quando ha descricao): a lane cai na abstencao + lane conservadora da "
+                "politica, com o piso por ambiente. E a constante 'a lane conservadora'"),
+            "accuracy_de_lane": round(acertos_base / len(linhas), 4) if linhas else None,
+            "acertos": acertos_base, "casos": len(linhas),
+            "casos_com_lane_igual": len(iguais),
+            "lane_igual_em_todos_os_casos": len(iguais) == len(linhas),
+            "casos_com_desfecho_igual": len(desfecho_iguais),
+            "divergencias_de_lane": sorted(set(l["id"] for l in linhas) - set(iguais)),
+        },
+        "proposta_do_classificador": {
+            "definicao": (
+                "lane proposta por `classificar_card` ANTES dos limiares (probe com a "
+                "mesma entrada do modo `classificador`) — e a qualidade da proposta, "
+                "independente de o limiar aceita-la ou nao"),
+            "acertos": acertos_proposta, "total": len(casos),
+            "accuracy": round(acertos_proposta / len(casos), 4) if casos else None,
+            "confianca_maxima_observada": max([c for c in confiancas if c is not None], default=None),
+            "confianca_minima_observada": min([c for c in confiancas if c is not None], default=None),
+            "limiar_de_aceite_da_politica": limiar,
+            "casos_que_atingem_o_limiar_de_aceite": aceitam,
+            "casos_com_proposta_nao_nula": com_proposta,
+        },
+        "se_o_estimador_aceitasse": {
+            "definicao": (
+                "contrafactual declarado: `CONFIANCA_BASE` do roteador elevada NA MEMORIA do "
+                "processo ate o limiar de aceite da politica (nada escrito no repo), re-medindo "
+                "o modo `classificador` — mede o que muda se o estimador deixar de barrar a "
+                "proposta dele"),
+            "accuracy_de_lane": acc_contra, "acertos": contra_acertos,
+            "casos": len(contra["casos"]),
+            "accuracy_da_constante_estrutural": acc_constante,
+            "delta_contra_a_constante": (None if acc_contra is None or acc_constante is None
+                                         else round(acc_contra - acc_constante, 4)),
+            "casos_que_mudam_de_lane": mudaram,
+            "leitura": (
+                f"aceitar a proposta muda a lane de {len(mudaram)} caso(s) e leva a accuracy de "
+                f"{acc_constante} (constante estrutural) para {acc_contra}: "
+                + ("a proposta SUPERA a constante — ajustar o estimador tem ganho medido"
+                   if (acc_contra or 0) > (acc_constante or 0) else
+                   "a proposta NAO supera a constante — aceita-la nao melhora a metrica; o ganho "
+                   "nao esta em afrouxar o estimador, e sim em dar ao classificador entrada que "
+                   "ele hoje nao recebe (descricao/sinais) ou em aposenta-lo")),
+        },
+    }
+
 def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_em: str,
                      caminho_politica=None, confianca_usada: float = CONFIANCA_DECLARADA,
                      aviso_confianca: str = "") -> dict:
@@ -385,6 +688,16 @@ def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_e
             "casos": len(casos),
             "por_lane_esperada": dict(por_lane),
             "revisao_dos_rotulos": dict(revisao),
+            "acao_codigo_anotado": {
+                "definicao": ("campo canonico `acao_codigo` do corpus (anotacao do card "
+                              "TRE-W0-E04-T03-D01, proveniencia caso a caso no `nota`): "
+                              "codigo declarado x `null` explicito"),
+                "com_codigo": sum(1 for c in casos if c.get(CAMPO_DO_CODIGO_DE_ACAO)),
+                "sem_codigo_declarado": sum(1 for c in casos if CAMPO_DO_CODIGO_DE_ACAO in c
+                                            and not c.get(CAMPO_DO_CODIGO_DE_ACAO)),
+                "sem_o_campo": [str(c.get("id")) for c in casos
+                                if CAMPO_DO_CODIGO_DE_ACAO not in c],
+            },
         },
         "roteador": {"caminho": caminho_relativo(ROTEADOR),
                      "router_version": modulo.ROUTER_VERSION,
@@ -405,6 +718,9 @@ def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_e
             "confianca_usada_nesta_rodada": confianca_usada,
             "aviso_de_confianca": aviso_confianca,
             "acao": "texto do campo `acao` do caso; vira codigo canonico so quando o roteador resolve",
+            "acao_codigo": (f"campo `{CAMPO_DO_CODIGO_DE_ACAO}` do caso, quando declarado, e "
+                            "repassado ao roteador como a via principal do contrato; o "
+                            "benchmark nunca inventa codigo"),
         },
         "visualizacao_de_gates": {
             "rotulos_pendentes": rotulos_pendentes(casos),
@@ -417,6 +733,8 @@ def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_e
                        "encanamento contra a propria proposta. Vale como controle de regressao."),
         },
         "metricas": brutos["modos"],
+        "populacoes": populacoes(casos, brutos),
+        "classificador": leitura_do_classificador(modulo, politica, casos, brutos),
         "casos": brutos["casos"],
         "limitacoes": [
             "latencia medida e a da camada de decisao local, nao a de execucao por lane;",
@@ -429,8 +747,18 @@ def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_e
             "roteador e nao foram injetados (lacuna de vocabulario, reportada como achado);",
             "a classe de custo do YAML e igual para `high` e `critical` (ambas `alto`): o custo "
             "relativo nao enxerga rebaixamento critical->high; quem enxerga e `falso_rebaixamento`;",
-            "o corpus nao carrega o corpo do card nem codigo canonico de acao: 20 dos 32 casos "
-            "usam `acao: execucao_de_card`, que nao e codigo do catalogo do roteador.",
+            (f"o corpus declara codigo canonico de acao em "
+             f"{sum(1 for c in casos if c.get(CAMPO_DO_CODIGO_DE_ACAO))} de {len(casos)} casos "
+             f"(anotacao do card T03-D01); nos "
+             f"{sum(1 for c in casos if not c.get(CAMPO_DO_CODIGO_DE_ACAO))} restantes a acao NAO "
+             "tem codigo no catalogo vigente e a lane medida neles e a conservadora de auditoria, "
+             "nao uma decisao de roteamento — por isso o resultado publica as populacoes "
+             "separadas (`populacoes`);"),
+            "o corpus nao carrega o corpo do card: o caso tem titulo, sinais e acao, e a decisao "
+            "medida e a da camada de decisao, nao a do trabalho executado;",
+            "o classificador automatico do roteador e INERTE neste corpus: lane identica a da "
+            "constante estrutural em todos os casos, e nenhum caso atinge o limiar de aceite "
+            "(medido no campo `classificador`);",
         ],
     }
 
@@ -438,7 +766,8 @@ def montar_resultado(modulo, politica: dict, casos: list, brutos: dict, gerado_e
 # ---------------------------------------------------------------------------
 # Autoteste (prova que a metrica e sensivel e que os gates reprovam)
 # ---------------------------------------------------------------------------
-def autoteste(modulo, politica: dict, casos: list, brutos: dict) -> int:
+def autoteste(modulo, politica: dict, casos: list, brutos: dict,
+              caminho_corpus: pathlib.Path = CORPUS) -> int:
     falhas = []
     itens = []
 
@@ -513,7 +842,10 @@ def autoteste(modulo, politica: dict, casos: list, brutos: dict) -> int:
          f"{novo['accuracy_de_lane']} < {base['accuracy_de_lane']}")
 
     # 5. o benchmark nao muta o corpus nem a politica
-    item("benchmark e read-only no corpus", sha256_de(CORPUS) == SHA_DO_CORPUS_NO_INICIO)
+    # O item confere o corpus REALMENTE lido nesta rodada (caminho_corpus), nao o corpus
+    # padrao: com `--corpus <fixture>` a checagem antiga comparava outro arquivo e acusava
+    # escrita que nao houve (falso positivo latente, corrigido aqui).
+    item("benchmark e read-only no corpus", sha256_de(caminho_corpus) == SHA_DO_CORPUS_NO_INICIO)
 
     # 6. o roteador nao faz rede/LLM: a decisao tem de ser barata e local
     item("decisao local e barata (mediana < 50 ms)",
@@ -529,6 +861,88 @@ def autoteste(modulo, politica: dict, casos: list, brutos: dict) -> int:
     # 8. coercao: politica degradada NAO passa no gate (prova o exit 3)
     item("gate: politica ausente e recusada", modulo.PoliticaInvalida is not None
          and politica is not None)
+
+    # ---------------- anotacao de codigo canonico de acao (TRE-W0-E04-T03-D01) --------
+    # 9. o corpus declara o campo em TODOS os casos (presente, mesmo que `null`): campo
+    #    ausente e "nao anotado" e nao pode se confundir com "nao tem codigo".
+    sem_o_campo = [str(c.get("id")) for c in casos if CAMPO_DO_CODIGO_DE_ACAO not in c]
+    item("corpus: os 32 casos declaram `acao_codigo` (mesmo que null)",
+         not sem_o_campo, f"sem o campo: {sem_o_campo}")
+
+    # 10. nenhum codigo inventado: todo codigo declarado consta do catalogo vigente lido
+    #     do proprio roteador/politica em tempo de execucao.
+    comuns = set(modulo.CODIGOS_DE_ACAO_COMUNS)
+    proibidos = set(modulo.acoes_nunca_decididas_por_maquina(politica))
+    declarados = {str(c.get(CAMPO_DO_CODIGO_DE_ACAO)) for c in casos
+                  if c.get(CAMPO_DO_CODIGO_DE_ACAO)}
+    fora_do_catalogo = sorted(declarados - comuns - proibidos)
+    item("corpus: todo codigo declarado e do catalogo vigente (nada inventado)",
+         not fora_do_catalogo, f"fora do catalogo: {fora_do_catalogo}")
+
+    # 11. o campo do corpus CHEGA ao roteador (via principal do contrato). Se o repasse
+    #     quebrar, o roteador volta a resolver por prosa/falhar e este item cai.
+    com_codigo = [l for l in brutos["casos"] if l.get("acao_codigo_declarado")]
+    resolvidos = [l["id"] for l in com_codigo
+                  if l["modos"][MODO_DE_REFERENCIA].get("origem_do_codigo_de_acao") == "codigo_canonico"]
+    item("medicao: o `acao_codigo` do corpus chega ao roteador como codigo canonico",
+         len(resolvidos) == len(com_codigo),
+         f"{len(resolvidos)}/{len(com_codigo)} resolvidos por `codigo_canonico`")
+
+    # 12. a postura estrita continua valendo: acao PROIBIDA e acao SEM codigo nunca executam.
+    pop = populacoes(casos, brutos)
+    proibido_executou = pop["checagem_de_desenho"]["acao_proibida_nunca_executa"]["violacoes"]
+    sem_codigo_executou = pop["checagem_de_desenho"]["sem_codigo_nunca_executa"]["violacoes"]
+    item("populacoes: acao PROIBIDA nunca executa (decisao humana)",
+         not proibido_executou, f"violacoes: {proibido_executou}")
+    item("populacoes: caso SEM codigo no catalogo nunca executa (falha fechada D07)",
+         not sem_codigo_executou, f"violacoes: {sem_codigo_executou}")
+
+    # 13. a separacao e uma PARTICAO: cada caso em um balde e so um (nem sobra, nem dobra).
+    baldes = [b for b in BALDES]
+    contagem = {b: 0 for b in baldes}
+    for linha in brutos["casos"]:
+        contagem[balde_do_caso(linha)] += 1
+    item("populacoes: os 32 casos aparecem exatamente uma vez (particao)",
+         sum(contagem.values()) == len(casos),
+         f"{contagem} = {sum(contagem.values())} de {len(casos)}")
+    item("populacoes: todo caso EXECUTAVEL tem codigo COMUM declarado",
+         pop["checagem_de_desenho"]["executavel_tem_codigo_comum"]["ok"],
+         f"violacoes: {pop['checagem_de_desenho']['executavel_tem_codigo_comum']['violacoes']}")
+
+    # 14. o campo do codigo no benchmark e o MESMO nome que o contrato do roteador declara.
+    item("contrato: nome do campo do codigo == CAMPO_DO_CODIGO_DE_ACAO do roteador",
+         CAMPO_DO_CODIGO_DE_ACAO == modulo.CAMPO_DO_CODIGO_DE_ACAO,
+         f"{CAMPO_DO_CODIGO_DE_ACAO!r} vs {modulo.CAMPO_DO_CODIGO_DE_ACAO!r}")
+
+    # 15. o CLASSIFICADOR e INERTE: a lane dele e a da constante estrutural em todos os
+    #     casos, e nenhum caso atinge o limiar de aceite (a causa do empate).
+    leitura = leitura_do_classificador(modulo, politica, casos, brutos)
+    constante = leitura["constante_estrutural"]
+    proposta = leitura["proposta_do_classificador"]
+    item("classificador: lane do classificador == constante estrutural em TODOS os casos",
+         constante["lane_igual_em_todos_os_casos"],
+         f"{constante['casos_com_lane_igual']}/{constante['casos']} iguais; "
+         f"divergencias={constante['divergencias_de_lane']}")
+    item("classificador: nenhum caso atinge o limiar de aceite (causa medida do empate)",
+         not proposta["casos_que_atingem_o_limiar_de_aceite"],
+         f"confianca maxima observada={proposta['confianca_maxima_observada']} < "
+         f"limiar de aceite={proposta['limiar_de_aceite_da_politica']}; "
+         f"aceitam={proposta['casos_que_atingem_o_limiar_de_aceite']}")
+
+    # 16. SENSIBILIDADE do item 15: elevando o estimador de confianca (mutacao EM MEMORIA,
+    #     nada escrito no repo) o classificador DEIXA de ser inerte. Prova que a inercia
+    #     vem do limiar e que o item 15 mede algo real — nao que "nao ha o que comparar".
+    base_original = modulo.CONFIANCA_BASE
+    try:
+        modulo.CONFIANCA_BASE = 0.90
+        mutado = executar(modulo, politica, casos, repeticoes=1)
+        mudaram = [l["id"] for l in mutado["casos"]
+                   if l["modos"]["classificador"]["lane"] != l["constante_estrutural"]["lane"]]
+    finally:
+        modulo.CONFIANCA_BASE = base_original
+    item("sensibilidade da inercia: com o estimador aceitando (base 0,90) a lane MUDA",
+         bool(mudaram),
+         f"{len(mudaram)} caso(s) deixam de cair na constante: {sorted(mudaram)}")
 
     print("AUTOTESTE do benchmark (itens OK/FALHOU):")
     for nome, ok, detalhe in itens:
@@ -673,17 +1087,60 @@ def main(argv=None) -> int:
     for linha in resultado["casos"]:
         if not linha["modos"]["proposta-homologada"]["codigo_de_acao"]:
             achado["acao sem codigo canonico"] += 1
+    anot = resultado["corpus"]["acao_codigo_anotado"]
     print(f"\nACHADO de vocabulario: {achado.get('acao sem codigo canonico', 0)} "
           f"de {len(casos)} casos nao resolvem para codigo canonico de acao")
+    print(f"anotacao de codigo no corpus: {anot['com_codigo']} caso(s) com codigo declarado, "
+          f"{anot['sem_codigo_declarado']} com `null` explicito (sem codigo no catalogo)")
     print(f"rotulos: {resultado['corpus']['revisao_dos_rotulos']}")
 
+    # ---- populacoes e classificador (leitura separada) ---------------------
+    pop = resultado["populacoes"]
+    print(f"\n--- POPULACOES (modo {pop['modo_de_referencia']})")
+    print(f"  EXECUTAVEL : {pop['executavel']['total']} caso(s) "
+          f"accuracy_de_lane={pop['executavel']['accuracy_de_lane']} "
+          f"casos={pop['executavel']['casos']}")
+    for motivo, resumo in pop["nao_executavel"]["por_motivo"].items():
+        print(f"  NAO EXECUTAVEL ({motivo}): {resumo['total']} caso(s) "
+              f"bloqueados={resumo['bloqueados']} escalados={resumo['escalados']} "
+              f"executaveis={resumo['executaveis']}")
+    pm = pop["poder_de_medicao"]
+    print(f"  poder de medicao: com codigo comum = {pm['com_codigo_comum']['accuracy_de_lane']} "
+          f"({pm['com_codigo_comum']['acertos_de_lane']}/{pm['com_codigo_comum']['total']}) x "
+          f"accuracy crua sobre os 32 = {pm['accuracy_crua_sobre_os_32']['accuracy_de_lane']}")
+
+    cls = resultado["classificador"]
+    print("\n--- CLASSIFICADOR x CONSTANTE ESTRUTURAL")
+    print(f"  modo classificador          : accuracy_de_lane={cls['accuracy_de_lane']} "
+          f"matriz={cls['matriz_de_confusao']}")
+    print(f"  constante estrutural        : accuracy_de_lane="
+          f"{cls['constante_estrutural']['accuracy_de_lane']} "
+          f"lane igual em {cls['constante_estrutural']['casos_com_lane_igual']}/"
+          f"{cls['constante_estrutural']['casos']} casos")
+    prop = cls["proposta_do_classificador"]
+    print(f"  proposta antes dos limiares : accuracy={prop['accuracy']} "
+          f"({prop['acertos']}/{prop['total']}) confianca maxima="
+          f"{prop['confianca_maxima_observada']} limiar de aceite="
+          f"{prop['limiar_de_aceite_da_politica']} "
+          f"aceitam={len(prop['casos_que_atingem_o_limiar_de_aceite'])}")
+    contra = cls["se_o_estimador_aceitasse"]
+    print(f"  se o estimador aceitasse    : accuracy={contra['accuracy_de_lane']} "
+          f"({contra['acertos']}/{contra['casos']}) "
+          f"delta_contra_a_constante={contra['delta_contra_a_constante']} "
+          f"casos_que_mudam={contra['casos_que_mudam_de_lane']}")
+
     # ---- saida ------------------------------------------------------------
+    # O nome do arquivo carrega a versao da POLITICA **e** a do CORPUS: os dois entram no
+    # que foi medido (e os dois vao gravados com sha256). Sem a versao do corpus, a rodada
+    # seguinte do mesmo dia sobrescreveria a linha de base — foi o que quase aconteceu
+    # nesta propria frente (a rodada do corpus v1.4 colidiria com o arquivo do v1.3).
     if args.saida:
         destino = pathlib.Path(args.saida)
     else:
         data = gerado_em[:10]
         destino = (RAIZ / "hermes/jev/benchmarks"
-                   / f"resultado-benchmark-{data}-{resultado['politica']['versao']}.json")
+                   / (f"resultado-benchmark-{data}-{resultado['politica']['versao']}"
+                      f"-{resultado['corpus']['versao']}.json"))
     destino.parent.mkdir(parents=True, exist_ok=True)
     destino.write_text(json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\nresultado gravado em {destino} (sha256={sha256_de(destino)[:12]})")
@@ -691,7 +1148,7 @@ def main(argv=None) -> int:
         print(json.dumps(resultado, ensure_ascii=False, indent=2))
 
     if args.autoteste:
-        codigo = autoteste(modulo, politica, casos, brutos)
+        codigo = autoteste(modulo, politica, casos, brutos, caminho_corpus)
         if codigo:
             print("benchmark: AUTOTESTE FALHOU")
             return codigo
