@@ -114,6 +114,35 @@ Três provas que respondem direto ao critério de aceitação do card:
 - **"remover o hook faz o card voltar a executar"** → S5 (config desligada: o **mesmo** card despacha) e
   S6 (com o encaixe ligado, kernel sem a edição: despacha). As duas direções da prova.
 
+### Execução real contra o board de verdade (fora da suite)
+
+Além da suite, o hook foi rodado contra o board real, escrevendo o recibo no diretório de produção:
+
+```
+$ /opt/hermes/.venv/bin/python hermes/jev/gate/gate_jev.py \
+      --card t_6d326367 --board transformativa-revenue-engine
+{"gate": "jev-gate-v1", ..., "allow": false, "outcome": "ESCALATE",
+ "decidido": "escalar_acao_nao_classificada", "lane": "high",
+ "motivo": "acao nao classificada com seguranca: a acao nao resolve para nenhum
+            codigo canonico conhecido: faltou o codigo canonico da acao e o texto
+            livre nao e via executavel",
+ "exige_aprovacao_humana": true, "codigo_de_acao": null,
+ "origem_do_codigo_de_acao": "nao_classificada",
+ "receipt_path": ".../hermes/jev/receipts/t_6d326367--dec-d575aa9bdf74c62f.json"}
+exit = 2 (ESCALATE)
+
+$ recibo gravado: hermes/jev/receipts/t_6d326367--dec-d575aa9bdf74c62f.json
+  13 campos, identicos ao contrato de `recibo.campos` da politica
+```
+
+Dois fatos que essa execução fixa:
+
+- o encaixe é **fail-closed no card real**: o próprio card do T05, sem código canônico declarado, **não
+  passaria** pelo gate (é o comportamento homologado — o encaixe não se auto-libera);
+- o recibo do encaixe **não corrompe o payload do roteador**: os campos de decisão (`outcome`, `lane`,
+  `model_profile`, `selected_model`, `effort`, `confidence`) são idênticos aos da saída direta de
+  `hermes/jev/routing/router.py` para o mesmo card (conferido, 6/6 OK).
+
 ## 6. Limitações honestas
 
 1. **A metade que precisa de root ainda não está aplicada.** `/opt/hermes` é do root e o agente não tem
@@ -144,6 +173,14 @@ Três provas que respondem direto ao critério de aceitação do card:
 6. **Um subprocesso por consulta** (por card `ready` por tick). Cards retidos são reavaliados a cada tick;
    sem código declarado o custo é o mesmo subprocesso repetido. Se virar problema de volume, o caminho é
    cachear por `task_hash` + mtime das declarações.
+7. **Julgamento explícito sobre ADR:** não abri ADR. A política
+   (`hermes/policies/human-approval.yaml`) exige ADR para "alteração estrutural de arquitetura"; aqui não
+   houve escolha de arquitetura nova — o JEV já era a camada de decisão antes da execução
+   (`docs/architecture/jev-decision-policy-v1.md`) e o que faltava era o **encaixe** dessa camada no
+   caminho de execução do board, com o contrato registrado no corpo do card e a postura homologada por
+   escrito. O encaixe é **inerte sem configuração** e **reversível em um comando**, o que o mantém fora do
+   que o ADR protege (decisão estrutural difícil de desfazer). Se o dono entender que a ativação em
+   produção merece ADR de qualquer forma, ele é curto: o insumo todo está neste documento e no card.
 
 ## 7. Como operar (resumo; runbook em `docs/runbooks/gate-jev-do-dispatch.md`)
 
