@@ -31,27 +31,43 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
 
 - Artefatos: `/opt/tre/backup/tre_<ambiente>_<YYYYmmddTHHMMSSZ>/` (permissão 700).
 - Retenção: **14 dias** (`TRE_BACKUP_RETENCAO_DIAS`), aplicada só ao prefixo do próprio ambiente.
-- Configuração: `/etc/tre/backup.env` (caminhos e destino — **sem segredo**).
+- Configuração: `/etc/tre/backup.env` (caminhos, `TRE_ENV_DIR` e destino — **sem segredo**).
 - **Cópia operacional (`/opt/tre/repo`):** instalada **somente** por `deploy/publicar.sh` (um commit por
   vez, com `.publicado` gravando o commit em uso). Nada de `tar`/`scp`/`rsync` direto — runbook
   `publicacao-da-copia-operacional.md`.
-- Ambiente ainda não provisionado é **pulado**, não falha: um timer cobre os três desde já.
-- Ambiente provisionado **sem** backup é **falha** na verificação, assim como backup com
-  **mais de 48h** (é o sinal de que a rotina parou).
+- **O trio (container, usuário, banco) é resolvido POR AMBIENTE**, nesta ordem:
+  1. `TRE_PG_SERVICO_<AMBIENTE>` / `TRE_PG_USER_<AMBIENTE>` / `TRE_PG_DB_<AMBIENTE>` (ex.: `TRE_PG_SERVICO_DEV`);
+  2. `$TRE_ENV_DIR/<ambiente>.env` — par não-secreto versionado (hoje `deploy/environments/dev.env` =
+     `pg-sales-dev` / `sales_ai` / `sales_intelligence`; `TRE_ENV_DIR` aponta para
+     `/opt/tre/repo/deploy/environments`);
+  3. `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB` globais — **só em chamada de UM ambiente**;
+  4. convenção `pg-<ambiente>` / `tre` / `sales_intelligence`.
+  A regra vive em `scripts/backup/lib-ambiente.sh` e é a mesma para a rotina e para a verificação.
+  **Uma variável global não atravessa `todos`**: um único `TRE_PG_SERVICO` valendo para os três ambientes
+  copiaria o banco do dev três vezes, rotulado dev/homolog/prod (a rotina avisa em `NOTA` quando ignora).
+- Ambiente **não** declarado e sem container é **pulado**, não falha: um timer cobre os três desde já.
+- Ambiente **declarado** (arquivo do ambiente ou variável por ambiente) cujo container não existe é
+  **falha** — nunca `BACKUP_OK`. Ambiente provisionado **sem** backup é **falha** na verificação, assim
+  como backup com **mais de 48h** (é o sinal de que a rotina parou).
+- Zero ambientes cobertos ⇒ `RESULTADO: BACKUP_SEM_AMBIENTE` (nunca `BACKUP_OK` com exit 0).
 
 ## 3. BACKUP — manual
 
 ```bash
-# um ambiente
-TRE_PG_SERVICO=pg-dev scripts/backup/backup-tre.sh dev
+# um ambiente (o trio vem de $TRE_ENV_DIR/<ambiente>.env; na VPS: /opt/tre/repo/deploy/environments)
+scripts/backup/backup-tre.sh dev
 
 # os tres (o que o timer roda)
 scripts/backup/backup-tre.sh todos
+
+# apontando outro container/usuario (variavel POR AMBIENTE — nunca uma global para os tres)
+TRE_PG_SERVICO_DEV=pg-sales-dev TRE_PG_USER_DEV=sales_ai scripts/backup/backup-tre.sh dev
 ```
 
-O script não confia em nada: confere que o serviço responde, gera o dump, exporta globais,
-extrai as contagens por tabela, grava `sha256` e o manifesto. Falha em qualquer item ⇒
-`RESULTADO: BACKUP_FALHOU` e saída diferente de zero (o timer registra no journal).
+O script não confia em nada: resolve o trio do ambiente, confere que o serviço responde, gera o dump,
+exporta globais, extrai as contagens por tabela, grava `sha256` e o manifesto. Falha em qualquer item —
+inclusive ambiente declarado cujo container não existe — ⇒ `RESULTADO: BACKUP_FALHOU` e saída diferente
+de zero (o timer registra no journal).
 
 **Schema ausente é falha declarada**, não sucesso silencioso: um dump sem `sales_intelligence`
 não tem o que restaurar.
@@ -276,6 +292,68 @@ Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `d
     divergencia_antes`) — é o histórico que permite rollback do *código* publicado e a fonte da cronologia
     de §7d.
 
+## 7f. Evidência medida — 30/09/2026, resolução do trio **por ambiente** (`fix/TRE-W1-E06-T01-F2`, card `t_1b2ab418`)
+
+Correção do **ACHADO ABERTO 2** (§8). Commit da correção: **`9b464ed`** (branch `fix/TRE-W1-E06-T01-F2`,
+base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5e076`).
+
+1. **publicação versionada** (`deploy/publicar.sh --commit 9b464ed --card t_1b2ab418 --exigir-modos`):
+   `PUBLICACAO_OK commit=9b464ed… digest=119f7401… arquivos=310`, `divergencia_antes: 0`, exit 0;
+   `.publicado` grava `commit: 9b464ed…`, `ref: fix/TRE-W1-E06-T01-F2`, `publicado_por: t_1b2ab418`,
+   `arvore_suja: 0`. (O código é o deste commit `9b464ed`; esta evidência em `docs/` viaja no commit de
+   documentação imediatamente seguinte da mesma branch — o `/opt/tre/repo/.publicado` da cópia operacional
+   registra o **tip publicado**, que é o que importa para rollback.) Os quatro alvos (`backup-tre.sh`, `verificar-ultimo-backup.sh`, `lib-ambiente.sh`,
+   `teste-rotina-ambiente.sh`) chegaram em `/opt/tre/repo/scripts/backup/` com `sha256` **idêntico ao blob
+   do commit** (`3f0bebd9…`, `ad0ad002…`, `e582b484…`, `72ce8ecb…`) e modo **`755 tre-deploy`**.
+   **Qualificação honesta:** a *primeira* execução desta mesma publicação falhou com exit 6 —
+   `PUBLICACAO_FALHOU a copia transferida nao confere com o commit 9b464ed`, com ~280 linhas
+   `sha256sum: <arquivo>: No such file or directory` ao montar o manifesto do staging, enquanto o destino
+   **não** foi tocado (medido: `.publicado` ainda `3bf5e076`, `backup-tre.sh` ainda `1a430637…`). A segunda
+   execução, idêntica, passou limpa (0 erros de hash) e o replay manual dos mesmos passos (tar → staging →
+   normalizar modos → manifesto) também passa. É intermitente e ficou registrado como defeito próprio
+   (card de defeito aberto contra a publicação), não escondido aqui.
+2. **AC1 — a rotina, com a configuração real do timer** (`set -a; . /etc/tre/backup.env; set +a;
+   backup-tre.sh todos`): `RESULTADO: BACKUP_OK (todos; 1 ambiente(s) coberto(s), 2 pulado(s))`, exit 0;
+   artefato `/opt/tre/backup/tre_dev_20260930T212904Z` com manifesto
+   `servico: pg-sales-dev` / `usuario: sales_ai` / `banco: sales_intelligence` /
+   `config: arquivo /opt/tre/repo/deploy/environments/dev.env`, `tabelas: 12`, `externo: enviado
+   (contabo:tre-backup)`; `sha256sum -c` do dump → OK.
+3. **AC2 — verificação (restore REAL)** com o mesmo trio, `verificar-ultimo-backup.sh todos`:
+   `OK origem do artefato confere (container 'pg-sales-dev')` → artefato mais recente
+   `tre_dev_20260930T212904Z` (o que a rotina acabou de produzir), container descartável
+   `postgres:16`, 11 itens OK (`tabelas: 12`, `indices: 30`, contagens linha a linha, órfãs) →
+   `RESULTADO: RESTORE_OK` + `RESULTADO: VERIFICACAO_OK (2 itens)`, exit 0.
+4. **caminho REAL do timer (systemd, usuário `tre-deploy`)** — não só chamada manual:
+   `systemctl start tre-backup.service` → `START_EXIT=0`, `Result=success`, `ExecMainStatus=0`,
+   `User=tre-deploy`, `pid=353726`, journal com `OK postgres responde`, `OK dump: 36K`, `OK sha256 gravado`,
+   `OK copiado para o destino externo (contabo:tre-backup)`, `RESULTADO: BACKUP_OK (todos; 1 coberto,
+   2 pulados)`, `Deactivated successfully` — **nenhum `203/EXEC`**;
+   `systemctl start tre-backup-verify.service` → `START_EXIT=0`, `Result=success`, `ExecMainStatus=0`,
+   `RESULTADO: RESTORE_OK (11 itens, 0 falhas)` e `VERIFICACAO_OK (2 itens)` sobre o artefato
+   `tre_dev_20260930T213013Z` (0h de idade) — o verificador **não** mais aprova sem backup.
+5. **negativos (o que a correção não deixa passar)** — todos medidos na VPS:
+   (a) ambiente **declarado** em `$TRE_ENV_DIR/homolog.env` com container inexistente →
+   `FALHOU ambiente 'homolog' esta DECLARADO … nao existe — ambiente provisionado sem backup e FALHA,
+   nao 'pulado'`, `RESULTADO: BACKUP_FALHOU`, **exit 1**, zero artefato de homolog;
+   (b) `TRE_PG_SERVICO_DEV=pg-nao-existe` → mesma falha nomeando a variável por ambiente, **exit 1**;
+   (c) **a armadilha do card**: `TRE_PG_SERVICO=pg-sales-dev` global + `todos` → `NOTA TRE_PG_SERVICO global
+   ignorado para 'dev'…`, `RESULTADO: BACKUP_SEM_AMBIENTE`, **exit 0 sem artefato nenhum** — antes, o mesmo
+   comando copiava o banco do dev rotulado de homolog/prod.
+6. **teste hermético na cópia operacional** (dublê de `docker`, nenhum container real tocado):
+   `RESULTADO: TESTE_OK (55 itens, 0 falhas)`, exit 0 — incluindo a seção **10. REGRESSÃO (antes × depois)**
+   contra os scripts **anteriores** (`backup-tre.sh` `1a430637…`, `verificar-ultimo-backup.sh` `94b84aeb…`,
+   publicados como `.antigo.sh` no `/tmp` da VPS): `ANTES: imprimia BACKUP_OK` com **0 artefatos** e
+   `ANTES: verificador dizia VERIFICACAO_OK com zero backup`; `DEPOIS: artefatos criados (1)`.
+7. **efeitos colaterais verificados (nada de dados tocados):** `pg-sales-dev` com o **mesmo**
+   `Id=396ace56…`/`StartedAt=2026-09-30T17:05:15Z` do início da rodada e o **mesmo** `md5` das contagens por
+   tabela (`20b6a472…`); nenhum container de verificação deixado para trás (`docker ps -a` = `pg-sales-dev`
+   + o `pg-teste-d01-suite` de outro card); `/opt/tre/backup` com 3 artefatos de dev (1 manual de 19:37Z,
+   1 da chamada manual e 1 do timer), todos `tre-deploy`, nada removido pela retenção de 14 dias.
+8. **configuração aplicada no host:** `/etc/tre/backup.env` ganhou `TRE_ENV_DIR=/opt/tre/repo/deploy/environments`
+   (cópia do estado anterior em `/etc/tre/backup.env.f2-antes`; `diff` = só essa linha + comentário) — sem
+   `TRE_PG_SERVICO` global, que é justamente o que não escala para três ambientes. Timers seguem habilitados:
+   `tre-backup.timer` próxima execução **01/10/2026 02:34 -03**, `tre-backup-verify.timer` **04/10/2026 04:00 -03**.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
 - **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
@@ -298,14 +376,23 @@ Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `d
   ao repositório — §7d. O que fica **resolvido de forma durável** é o bit no git e a guarda; o que fica
   **dependente de processo** é a cópia operacional não ser sobrescrita por publicação anterior.
   **A rotina diária ainda não produz artefato** — a causa que resta é o **ACHADO ABERTO 2** (abaixo).
-- **ACHADO ABERTO 2 (alta) — a rotina cobre zero ambientes e sai `BACKUP_OK`.** `backup-tre.sh` procura
+- **RESOLVIDO 30/09/2026 (`fix/TRE-W1-E06-T01-F2`, commit `9b464ed`, card `t_1b2ab418`; evidência em §7f) —
+  era ACHADO ABERTO 2 (alta): a rotina cobria zero ambientes e saía `BACKUP_OK`.** `backup-tre.sh` procurava
   `pg-dev`/`pg-homolog`/`pg-prod`, mas o dev real é `pg-sales-dev` (usuário `sales_ai`), e
-  `/etc/tre/backup.env` (o `EnvironmentFile` do unit) não declara `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB`
-  — o trio real está em `deploy/environments/dev.env`, que nenhum timer lê. Resultado medido:
-  `PULADO` nos três ambientes, exit 0, **nenhum artefato novo**. O `tre-backup-verify.timer` também não
-  acusa, porque procura o mesmo prefixo `tre_dev_*` que a rotina nunca produz.
-  Alinhar (ou congelar) o nome do container é **decisão do dono** — o card pode declarar o trio no
-  `backup.env` (caminho mínimo, sem renomear container nem mover dado).
+  `/etc/tre/backup.env` (o `EnvironmentFile` do unit) não declarava `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB`
+  — o trio real estava em `deploy/environments/dev.env`, que nenhum timer lia. Resultado medido no defeito:
+  `PULADO` nos três ambientes, exit 0, **nenhum artefato novo**; o `tre-backup-verify.timer` também não
+  acusava, porque procurava o mesmo prefixo `tre_dev_*` que a rotina nunca produzia.
+  **Decisão tomada — o caminho mínimo que o próprio card declarou (declarar o trio por ambiente, sem
+  renomear container nem mover dado):** o trio passa a ser resolvido
+  **por ambiente** em `scripts/backup/lib-ambiente.sh` (variável por ambiente → `$TRE_ENV_DIR/<ambiente>.env`
+  → variável global **só** em chamada de um ambiente → convenção), com `TRE_ENV_DIR` declarado no
+  `/etc/tre/backup.env` apontando para a cópia operacional versionada (`/opt/tre/repo/deploy/environments`);
+  o par não-secreto do ambiente versionado no git é a fonte. Ambiente **declarado** cujo container não
+  existe agora **falha** (exit 1), `todos` sem nenhum ambiente coberto devolve `BACKUP_SEM_AMBIENTE`, e a
+  verificação não aprova mais sem backup. Medido depois da correção, **sob o usuário do timer**, com
+  `systemctl start tre-backup.service` → `BACKUP_OK` + artefato `tre_dev_*`, e
+  `tre-backup-verify.service` → `RESTORE_OK`/`VERIFICACAO_OK` (§7f itens 2–4).
 - **RESOLVIDO 30/09/2026 — a cópia operacional era reescrita por qualquer card (era ACHADO ABERTO 3,
   média).** Cada card publicava o seu pedaço com `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'`: durante
   a rodada do `TRE-W1-E06-T01`, um `tar` de outro worker reverteu o driver recém-instalado (sha
@@ -334,7 +421,9 @@ Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `d
   credencial do bucket (`rclone lsl --config /etc/tre/rclone.conf`). Rodar o ciclo inteiro como
   `tre-deploy` requer um canal de privilégio que o harness bloqueia hoje.
   **Atualização 30/09/2026:** superado para os units — `tre-backup-verify.service` rodou o restore real sob
-  `tre-deploy` (§7c item 2); o backup com o trio real do ambiente continua pendente do ACHADO ABERTO 2.
+  `tre-deploy` (§7c item 2), e desde a correção do ACHADO ABERTO 2 os **dois** units rodaram inteiros sob
+  `tre-deploy` com o trio real do ambiente (`tre-backup.service` → `BACKUP_OK` + artefato `tre_dev_*`;
+  `tre-backup-verify.service` → `RESTORE_OK`) — §7f item 4.
 - **Destino externo (Object Storage) — ATIVO desde 29/09/2026.** Storage: Object Storage European
   Union, 250 GB (endpoint `https://eu2.contabostorage.com`); bucket `tre-backup`; credenciais em
   `/etc/tre/rclone.conf` (600, dono `tre-deploy`); `TRE_BACKUP_EXTERNO=contabo:tre-backup` em
