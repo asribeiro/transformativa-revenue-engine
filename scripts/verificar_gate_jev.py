@@ -467,17 +467,47 @@ def executar_suite(raiz: pathlib.Path) -> Itens:
                  f"log={c8.linhas_de_spawn()}")
 
     # ---- S9: recibo — sempre, 13 campos, sem segredo -----------------------
-    contrato_ok, sem_segredo, verificados, faltando_recibo = True, True, 0, []
-    obrigatorios = [
+    # A EXPECTATIVA DESTE BLOCO NAO E UM NUMERO FIXO: ela e derivada da propria
+    # enumeracao abaixo. Cenario obrigatorio de SUCESSO do encaixe (o gate tomou
+    # decisao) TEM de deixar o SEU recibo de decisao com os 13 campos do contrato
+    # da politica; cenario de FALHA do encaixe (o gate nao decidiu nada) TEM de
+    # deixar registro explicito `FALHA-DO-GATE.json` marcado com
+    # `nao_e_recibo_de_decisao`. Um numero fixo aqui envelhece na primeira
+    # mudanca de cenario — foi o defeito TRE-W0-E04-T05-D01: o item exigia
+    # `verificados >= 6` sobre uma enumeracao que so pode produzir 5 recibos de
+    # decisao (8 cenarios, 3 deles de falha do encaixe). Cada cenario de sucesso
+    # sem o seu recibo continua reprovando o item: nada foi afrouxado.
+    #
+    # Cuidado MEDIDO (sonda em 30/09/2026, nao suposto): o numero de ARQUIVOS por
+    # cenario NAO e estavel. `decision_id` embute timestamp com resolucao de
+    # SEGUNDO e o caminho liberado passa pelos DOIS pontos de estrangulamento
+    # (dispatch e o claim interno), entao um MESMO card deixa 2 recibos quando a
+    # virada do segundo cai entre as duas consultas (medido: 2 arquivos com
+    # timestamps 1s apartado e 2 eventos `jev_gate_allowed`); e card retido em
+    # `ready` deixa 1 recibo POR TICK. Por isso o item nao confere CONTAGEM de
+    # arquivos — o que ele confere e que cada cenario de SUCESSO obrigatorio tem
+    # o SEU recibo e que todo recibo encontrado tem os 13 campos do contrato.
+    CENARIOS_COM_RECIBO = (
         ("S1 dispatch recusa", c), ("S2 claim manual recusa", c2), ("S3 dispatch libera", c3),
         ("S3b claim manual libera", c3b), ("S4 codigo proibido", c4),
+    )
+    CENARIOS_DE_FALHA_DO_ENCAIXE = (
         ("S7 gate indisponivel", c7), ("S7b saida fora do contrato", c7b),
         ("S7c timeout", c7c),
-    ]
+    )
+    obrigatorios = CENARIOS_COM_RECIBO + CENARIOS_DE_FALHA_DO_ENCAIXE
+    esperados = len(CENARIOS_COM_RECIBO)
+    com_recibo = {rotulo for rotulo, _ in CENARIOS_COM_RECIBO}
+
+    contrato_ok, sem_segredo = True, True
+    verificados = 0
+    faltando_registro: list = []
+    sem_recibo_de_decisao: list = []
     for rotulo, cenario in obrigatorios:
         arquivos = recibos_em(cenario.recibos)
         if not arquivos:
-            faltando_recibo.append(rotulo)
+            faltando_registro.append(rotulo)
+        recebeu_decisao = 0
         for arquivo in arquivos:
             texto = arquivo.read_text(encoding="utf-8")
             dados = json.loads(texto)
@@ -486,7 +516,18 @@ def executar_suite(raiz: pathlib.Path) -> Itens:
                 if "nao_e_recibo_de_decisao" not in texto:
                     contrato_ok = False
                     print(f"      registro de falha sem a marca de que nao e recibo: {arquivo.name}")
+                elif rotulo in com_recibo:
+                    # cenario de sucesso que so deixou falha do encaixe: a decisao
+                    # que deveria ter sido tomada (e registrada) nao foi
+                    contrato_ok = False
+                    print(f"      cenario de sucesso so deixou falha do encaixe: {rotulo} -> {arquivo.name}")
                 continue
+            # recibo de DECISAO: so cenario de sucesso pode ter — e tem de ter
+            if rotulo not in com_recibo:
+                contrato_ok = False
+                print(f"      cenario de falha do encaixe deixou recibo de decisao: {rotulo} -> {arquivo.name}")
+                continue
+            recebeu_decisao += 1
             verificados += 1
             if sorted(dados) != sorted(campos):
                 contrato_ok = False
@@ -494,12 +535,18 @@ def executar_suite(raiz: pathlib.Path) -> Itens:
             if any(padrao in texto.lower()
                    for padrao in ("api_key", "ghp_", "password", "secret", "token=")):
                 sem_segredo = False
-    itens.checar("S9 recibo: consulta ao gate SEMPRE deixa registro (recibo de 13 campos "
-                 "ou registro explicito de falha do encaixe), em todos os 8 cenarios",
-                 not faltando_recibo, f"sem registro em: {faltando_recibo}")
-    itens.checar(f"S9 recibo: {verificados} recibos, todos com os 13 campos exatos do "
-                 "contrato da politica (nenhum campo a mais, nenhum a menos)",
-                 contrato_ok and verificados >= 6, f"verificados={verificados}")
+        if rotulo in com_recibo and recebeu_decisao == 0:
+            sem_recibo_de_decisao.append(rotulo)
+    itens.checar(f"S9 recibo: consulta ao gate SEMPRE deixa registro (recibo de 13 campos "
+                 f"ou registro explicito de falha do encaixe), nos {len(obrigatorios)} cenarios",
+                 not faltando_registro, f"sem registro em: {faltando_registro}")
+    itens.checar(f"S9 recibo: os {esperados} cenarios obrigatorios de SUCESSO deixam, cada um, "
+                 f"o seu recibo com os 13 campos exatos do contrato da politica "
+                 f"(nenhum campo a mais, nenhum a menos)",
+                 contrato_ok and not sem_recibo_de_decisao,
+                 f"com recibo de decisao={esperados - len(sem_recibo_de_decisao)}/{esperados}, "
+                 f"arquivos conferidos={verificados}, contrato_ok={contrato_ok}, "
+                 f"sem recibo em: {sem_recibo_de_decisao}")
     itens.checar("S9 recibo: nenhum segredo no recibo", sem_segredo)
 
     # ---- S10: espelhos (adaptador instalado x versionado; codigos) ---------

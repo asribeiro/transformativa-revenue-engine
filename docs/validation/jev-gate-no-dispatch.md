@@ -103,6 +103,21 @@ PULADO    S10 adaptador instalado em /opt/hermes == versionado no repo  [ainda n
 PASS  28  S10 `codigos_validos` do acoes-declaradas.yaml == CODIGOS_DE_ACAO_COMUNS do roteador
 ```
 
+> **Correção — card `TRE-W0-E04-T05-D01` (`t_fa85fa52`, 30/09/2026).** O item 26 acima
+> (`verificados >= 6`) era expectativa **fixa** sobre uma enumeração que a própria suite percorre:
+> são 8 cenários obrigatórios, **3 de falha do encaixe** (que deixam `FALHA-DO-GATE.json`, não
+> recibo de decisão) — logo no máximo **5 recibos de decisão** por execução, e `5 >= 6` é falso
+> por construção. Pior: a contagem de **arquivos** não é estável (medido em sonda, 30/09/2026) —
+> `decision_id` embute timestamp com resolução de **segundo** e o caminho liberado consulta o
+> gate nos **dois** pontos de estrangulamento, então um mesmo card deixa **2 recibos** quando a
+> virada do segundo cai entre as duas consultas (medido: 2 arquivos com timestamps 1 s apartados
+> e 2 eventos `jev_gate_allowed`); card retido em `ready` deixa 1 recibo **por tick**. O
+> `PASS 26 ... 6 recibos` registrado acima é consistente com uma execução em que isso aconteceu —
+> o item passava por sorte da contagem, não por medir o critério. O item passou a derivar o
+> esperado da enumeração (`CENARIOS_COM_RECIBO` × `CENARIOS_DE_FALHA_DO_ENCAIXE`) e a exigir, por
+> cenário de sucesso, o **seu** recibo de 13 campos; a prova de sensibilidade (remover o recibo de
+> um cenário de sucesso **reprova** o item) está registrada no card `t_fa85fa52`.
+
 Três provas que respondem direto ao critério de aceitação do card:
 
 - **"card que o roteador bloqueia não executa por nenhum caminho"** → S1 (dispatch: nenhum spawn),
