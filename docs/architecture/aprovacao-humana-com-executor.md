@@ -101,5 +101,8 @@ Três peças, todas versionadas no repositório:
   para todas as tentativas ate vencer e **cai sozinha** se o card for editado depois.
   Efeito declarado: editar o texto de um card aprovado (inclusive correcao do agente)
   invalida a aprovacao e exige nova palavra dele — fecha o atalho usado no T11.
-- Decisão 3 — validade: **pendente**.
+- **Decisão 3 — validade: 7 DIAS CORRIDOS DA DATA DA APROVACAO (opção A)**, escolhida por
+  Anderson Ribeiro em 30/09/2026. Vencida, o card volta a escalar e o agente pede nova
+  palavra. Registrado o racional: com o vinculo por hash (decisao 2), o prazo e higiene,
+  nao seguranca — nao ha troca possivel de texto dentro do prazo.
 - Decisão 4 — primeira aprovação e sequência: **pendente**.
