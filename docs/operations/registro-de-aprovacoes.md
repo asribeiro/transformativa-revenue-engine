@@ -56,3 +56,14 @@ corrigidas abaixo).
   migrado, nenhum ambiente é reprovisionado.
 - **Vale para:** W1/W2 seguintes, `TRE-W1-E05-T01` (suíte de banco), `TRE-W1-E06-T01`
   (backup/restore) e o provisionamento de homolog/produção.
+
+## 30/09/2026 — DECISAO DO DONO: isolamento entre clientes (card `t_e340c29b`, AC2 do E05)
+
+- **Aprovador:** Anderson Ribeiro, palavra no Telegram em 30/09/2026 ("A").
+- **Decisao:** opcao A — isolamento fisico, um banco por cliente. O AC2 deixa de ser
+  "consulta sem filtro de tenant nao devolve dado de outro cliente" e passa a ser
+  "nao existem dois clientes no mesmo banco", que e testavel com o ambiente atual.
+- **Canal:** telegram (card de documentacao de contrato em dev; nao toca ambiente vivo, credencial
+  nem dado de cliente).
+- **Efeito:** contrato atualizado (`docs/data/DATA_CONTRACT_V1.md`), card de decisao fechado e
+  `TRE-W1-E05-T01` (t_c7281fce) liberado para fechar o AC2 na forma nova.
