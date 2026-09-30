@@ -503,8 +503,9 @@ def montar_evidencia(avaliacao: dict, sobrevivente: str, duplicado: str, executa
         f"{CAMPO_CONFIANCA}_faixa": faixa,
         f"{CAMPO_CONFIANCA}_modelo": VERSAO_MODELO_CONFIANCA,
         f"{CAMPO_CONFIANCA}_faixas": faixas_confianca(),
-        CAMPO_CONFIANCA_LEGADO: avaliacao["confianca"],  # alias do E04-T01 (mesmo valor) — mesma chave de `confianca`
-        "confianca": avaliacao["confianca"],
+        # nome do E04-T01 (CAMPO_CONFIANCA_LEGADO), no MESMO registro e com o MESMO valor:
+        # compatibilidade com os verificadores e registros que ja leem `confianca`
+        CAMPO_CONFIANCA_LEGADO: avaliacao["confianca"],
         "decisao": avaliacao["decisao"],
         "motivo": avaliacao["motivo"],
         "limiar_vigente": avaliacao["limiar_vigente"],
