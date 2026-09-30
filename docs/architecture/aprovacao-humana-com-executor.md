@@ -83,3 +83,19 @@ Três peças, todas versionadas no repositório:
 3. Confirma que a primeira aprovação de teste será o card TRE-W1-E01-T01 (criar
    database/schema) — lembrando que ele ainda depende de um PostgreSQL dev existindo na
    Contabo (passo de operador).
+
+## 6. Decisões de homologação (registro incremental)
+
+- **Decisão 1 — quem registra a aprovação: HÍBRIDA (opção C)**, escolhida por Anderson
+  Ribeiro em 30/09/2026. Regra única, por `canal` da entrada:
+  - `canal: telegram` — vale para escopo SÓ de desenvolvimento; as duas entradas
+    (aprovacoes-humanas.yaml e registro-de-aprovacoes.md) são escritas pelo agente a partir
+    da palavra dele, e **toda aprovação passa por revisão independente do `tester`**;
+  - `canal: commit-do-aprovador` — obrigatório quando o escopo tocar **ambiente vivo,
+    credencial ou dado de cliente**: só vale com commit do próprio Anderson (GitHub web).
+  - a suíte tem de **reprovar** entrada com `canal: telegram` cujo escopo toque ambiente
+    vivo, credencial ou dado de cliente.
+
+- Decisão 2 — escopo e vínculo da aprovação: **pendente**.
+- Decisão 3 — validade: **pendente**.
+- Decisão 4 — primeira aprovação e sequência: **pendente**.
