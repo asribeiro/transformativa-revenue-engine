@@ -119,7 +119,7 @@ alerta() { # $1 = motivo curto, $2 = detalhe multilinha
   } > "$ARQ_ALERTA" 2>/dev/null || true
   { echo "=== $(tsp) destino=$DESTINO motivo=$motivo"
     printf '%s\n' "$detalhe"; } >> "$LOG_DIV" 2>/dev/null || true
-  printf '%s\n' "$detalhe" >&2
+  printf 'ALERTA: %s — detalhe no journal e em %s (alerta: %s)\n' "$motivo" "$LOG_DIV" "$ARQ_ALERTA" >&2
 }
 
 limpar_alerta() {
@@ -150,20 +150,20 @@ atribuir() { # $1 = manifesto de referencia, $2 = manifesto atual, $3 = epoch da
     if [ -z "${R_MODO[$caminho]:-}" ]; then
       MTIME["$caminho"]="$(stat -c %Y "$DESTINO/$caminho" 2>/dev/null || echo 0)"
       n_plan=$((n_plan+1))
-      [ "$mostrados" -lt 25 ] && printf '  PLANTADO (%s) %s\n' "$(date -u -d "@${MTIME[$caminho]}" +%H:%M:%SZ)" "$caminho" >&2
+      [ "$mostrados" -lt 25 ] && printf '  PLANTADO (%s, nao existe no commit) %s\n' "$(date -u -d "@${MTIME[$caminho]}" +%H:%M:%SZ)" "$caminho"
       [ "$mostrados" -lt 25 ] && mostrados=$((mostrados+1))
     elif [ -z "${A_MODO[$caminho]:-}" ]; then
       n_rem=$((n_rem+1))
-      [ "$mostrados" -lt 25 ] && printf '  REMOVIDO %s\n' "$caminho" >&2
+      [ "$mostrados" -lt 25 ] && printf '  REMOVIDO %s\n' "$caminho"
       [ "$mostrados" -lt 25 ] && mostrados=$((mostrados+1))
     elif [ "${R_SHA[$caminho]}" != "${A_SHA[$caminho]}" ] || [ "${R_MODO[$caminho]}" != "${A_MODO[$caminho]}" ]; then
       MTIME["$caminho"]="$(stat -c %Y "$DESTINO/$caminho" 2>/dev/null || echo 0)"
       n_alt=$((n_alt+1))
       if [ "$mostrados" -lt 25 ]; then
-        printf '  ALTERADO (%s%s) %s %s -> %s %s\n' \
+        printf '  ALTERADO (%s%s) %s  %s %s -> %s %s\n' \
           "$(date -u -d "@${MTIME[$caminho]}" +%H:%M:%SZ)" \
           "$( [ "${MTIME[$caminho]}" -gt "$pub_epoch" ] && echo ', depois da publicacao' )" \
-          "${R_MODO[$caminho]}" "${R_SHA[$caminho]}" "${A_MODO[$caminho]}" "${A_SHA[$caminho]}" >&2
+          "$caminho" "${R_MODO[$caminho]}" "${R_SHA[$caminho]}" "${A_MODO[$caminho]}" "${A_SHA[$caminho]}"
         mostrados=$((mostrados+1))
       fi
     fi
@@ -293,7 +293,7 @@ fi
 
 # Divergente: mede, atribui, alerta (e repara, se pedido).
 log "--- divergencia medida $(tsp)"
-DETALHE="$(atribuir "$MAN_REF" "$MAN_ATUAL" "$PUB_EPOCH" 2>&1)"
+DETALHE="$(atribuir "$MAN_REF" "$MAN_ATUAL" "$PUB_EPOCH")"
 log "$DETALHE"
 log "--- fim da divergencia"
 alerta "copia operacional divergente do commit registrado" "  $DETALHE
