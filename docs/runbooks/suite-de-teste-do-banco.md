@@ -165,9 +165,12 @@ própria etapa). A etapa 5 é **somente leitura** no alvo (catálogo, `pg_databa
   de dente provam (`tenant_id`, `tenant_uuid`, `conta_Cliente`). Coluna de cliente com **outra grafia**
   (ex. `customer_id`, `conta_id`) fica **fora** desta superfície e **não** é pega pelo item 3; quem a pega é a
   **etapa 1** (`contrato`), que exige das colunas do banco exatamente as do contrato e aponta
-  `sobram=[...]` — foi o que a revisão independente mediu (com `organizations.tenant_uuid` a suíte reprova
-  pela etapa 1, mesmo quando o item 3 não casa o nome). Defesa em profundidade declarada; a etapa 5 **não** é
-  o único controle.
+  `sobram=[...]`. **Medido** (30/09/2026, card `t_8253ad1f`; container descartável `postgres:16` com a
+  migration congelada aplicada + `ALTER TABLE sales_intelligence.organizations ADD COLUMN customer_id text`):
+  `suite_banco.sh dev` → `FALHOU as colunas do banco sao exatamente as do contrato (nem sobra, nem falta)  ->
+  faltam=[] sobram=['organizations.customer_id']`, `RESULTADO: SUITE_FALHOU (88 itens, 1 falha(s))`, **exit 1**
+  — quem reprova é a **etapa 1**; no **mesmo** alvo mutado o item 3 saiu `ISOLAMENTO_OK (5 itens, 0 falhas)`,
+  **exit 0**. Defesa em profundidade declarada; a etapa 5 **não** é o único controle.
 - **O item 5 mede por convenção de nome (`pg-*`):** o controle de provisionamento é o padrão
   `pg-<cliente>-<amb>`; um container de pé **fora** da convenção que sirva o schema **não** conta como base
   provisionada — a própria saída imprime quantos desses existem (informativo, nunca escondido). Um

@@ -287,9 +287,21 @@ por `--prefixo`):
 1. **fail-closed na leitura:** `leitura()` passou a devolver `exit != 0` quando a consulta falha e o item 3
    exige **número** (`numero()`); leitura vazia/erro → `NAO_TESTAVEL` (exit 3, **nunca verde**) com a causa
    impressa. O item 4 ganhou o mesmo cuidado (leitura que falha → **reprovação**, não "0 bases").
-   *Vocabulário declarado:* leitura impossível é **não medível** (exit 3, mesma família do "docker ausente"),
-   **não** "critério violado" (exit 1) — reprovar sem ter medido seria afirmar violação que não foi observada;
-   os dois são não-verdes e o dente prova o exit 3.
+   *Vocabulário declarado (**por item**, não como regra geral):* a leitura impossível **do item 3** é
+   **não medível** (exit 3, mesma família do "docker ausente"), **não** "critério violado" (exit 1) — reprovar
+   sem ter medido seria afirmar violação que não foi observada; o dente prova o exit 3. A leitura impossível
+   **do item 4** (bases de aplicação na instância) sai **exit 1 de propósito**: o critério não pode ser dado
+   como cumprido sem medição, então ali a leitura que falha **reprova**, não vira "0 bases". O par, medido com
+   envelopes no **mesmo** artefato publicado (`teste_isolamento_clientes.sh a69e08d1…`) — é o par da guarda
+   **(e)** do dente:
+
+   | envelope (só a leitura indicada falha) | item 3 | item 4 |
+   |---|---|---|
+   | catálogo de colunas mudo (`information_schema.columns`) | `NAO_TESTAVEL nao consegui medir a dimensao de cliente no schema …` — veredito da etapa `ISOLAMENTO_NAO_TESTAVEL (5 itens, 0 reprovações, 1 item não medido)` **exit 3** | não afetado (o veredito sai com **0 reprovações**) |
+   | `pg_database` mudo | `OK` (`0 coluna`) | `FALHOU nao consegui medir as bases de aplicacao da instancia (leitura do catalogo falhou) — sem medicao o criterio nao pode ser dado como cumprido` → `RESULTADO: ISOLAMENTO_FALHOU (5 itens, 1 falha(s))` **exit 1** |
+
+   A ponta do item 4 foi medida com o envelope `psql_bases_mudo.sh` (respondia todo o resto pelo dev real e
+   falhava só a consulta a `pg_database`) e re-executada em §10.7; a do item 3 é o caso de dente novo (§10.2.3).
 2. **superfície do detector:** regex passou a `(^|_)(tenant|tenants|cliente|clientes|client|clients)(_|$)`
    aplicada com **`~*`** (case-insensitive, token em qualquer posição) — pega `tenant_id`, `tenant_uuid`,
    `conta_cliente`, `conta_Cliente`. Não há falso positivo no contrato: **0** colunas casam na base dev
@@ -298,8 +310,10 @@ por `--prefixo`):
    **catálogo ilegível** → exit 3. Cada mutação desfeita volta a `ISOLAMENTO_OK`.
 4. **superfície declarada (o que fica fora):** coluna de cliente com **outra grafia** (ex. `customer_id`) não
    é pega pelo item 3 — quem a pega é a **etapa 1** (`contrato`), que exige as colunas exatamente como no
-   contrato e aponta `sobram=[...]` (foi o que a própria revisão mediu). Declarado no runbook §8; a etapa 5
-   não é o único controle.
+   contrato e aponta `sobram=[...]`. **Medido** (§10.7, follow-up `t_8253ad1f`): alvo mutado com
+   `organizations.customer_id` → `FALHOU as colunas do banco sao exatamente as do contrato … sobram=['organizations.customer_id']`,
+   `SUITE_FALHOU (88 itens, 1 falha(s))` **exit 1**; no mesmo alvo o item 3 saiu `ISOLAMENTO_OK (5 itens, 0 falhas)`
+   **exit 0**. Declarado no runbook §8; a etapa 5 não é o único controle.
 5. `scripts/db/teste_tenant_rls.sh` (instrumento do V2, fora da suíte) passou a usar **a mesma** regex/`~*`,
    para não haver duas definições de "coluna de cliente" no repo; comportamento preservado:
    `TENANT_RLS_NAO_TESTAVEL` (exit 3) no dev e `TENANT_RLS_DENTE_OK (18 itens)` no dente.
@@ -362,6 +376,41 @@ dedup no ambiente 21 itens (`CENARIO_OK`, estado restaurado) · isolamento 5 ite
   TEST PLAN pede dev **e** homolog — o segundo ambiente é provisionamento do dono, não deste card.
 - **Homologação humana (estágio 7) é do Anderson** — eu não homologo o meu próprio trabalho.
 - **`shellcheck`** não existe no ambiente: a checagem foi `bash -n` nos scripts alterados.
-- **Duas escolhas declaradas, não escondidas:** (a) leitura de catálogo que falha vira **não medível**
-  (exit 3) e não "critério violado" (exit 1) — §10.2.1; (b) coluna de cliente com grafia fora da superfície
-  do item 3 é pega pela **etapa 1**, não pela etapa 5 — §10.2.4.
+- **Duas escolhas declaradas, não escondidas:** (a) a leitura **do item 3** (catálogo de colunas) que falha
+  vira **não medível** (exit 3) e não "critério violado" (exit 1), enquanto a leitura **do item 4**
+  (`pg_database`) que falha **reprova** (exit 1, nunca "0 bases") — §10.2.1; (b) coluna de cliente com grafia
+  fora da superfície do item 3 é pega pela **etapa 1**, não pela etapa 5 — §10.2.4.
+
+### 10.7 Follow-up pós-revisão (`t_8253ad1f`, docs-only): as medições que faltavam no registro
+
+A revisão da rodada 3 aprovou o E05 e deixou 3 imprecisões de documento × medição (card `t_8253ad1f`).
+**Nenhum byte de script mudou:** os `sha256` sob teste continuam os do veredito (`suite_banco.sh 5fb644a2…`,
+`teste_isolamento_clientes.sh a69e08d1…`, `teste_tenant_rls.sh d4ade211…`) e o diff deste commit toca só
+`.md`. Artefato medido: destino publicado `/opt/tre/.teste-publicacao-t_c7281fce`, commit `58ec9fb`
+(`digest 36ed9261…`, 307 arquivos).
+
+**(1) item 4 fail-closed — a medição que só existia no fio de comentários** (§10.2.1) foi re-executada em
+30/09/2026 23:24Z contra o artefato publicado, com o mesmo envelope (`psql_bases_mudo.sh be0cec01…`):
+`bash scripts/db/teste_isolamento_clientes.sh dev --prefixo "bash /tmp/e05r3b/psql_bases_mudo.sh"` →
+`FALHOU nao consegui medir as bases de aplicacao da instancia (leitura do catalogo falhou)` ·
+`RESULTADO: ISOLAMENTO_FALHOU (5 itens, 1 falha(s))`, **exit 1**. Log bruto `a_item4_envelope.log`.
+
+**(2) grafia fora da superfície do item 3 (`customer_id`) — quem reprova é a etapa 1:** medido em alvo
+descartável próprio (`e05r4-probe`, `postgres:16`, migration congelada aplicada), com os controles do
+roteiro no mesmo container:
+
+| passo | comando | resultado medido | exit |
+|---|---|---|---|
+| alvo íntegro (antes da mutação) | `TRE_PG_SERVICO=e05r4-probe TRE_PG_USER=tre TRE_PG_DB=sales_intelligence bash scripts/db/suite_banco.sh dev` | `SUITE_OK (88 itens, 0 falhas)` | **0** |
+| mutação `ALTER TABLE sales_intelligence.organizations ADD COLUMN customer_id text` | idem | `FALHOU as colunas do banco sao exatamente as do contrato (nem sobra, nem falta)  -> faltam=[] sobram=['organizations.customer_id']` · `FALHOU contrato: RESULTADO: FALHOU (1 de 37 itens) (exit 1)` · `SUITE_FALHOU (88 itens, 1 falha(s), 0 nao testavel(is))` | **1** |
+| item 3 no **mesmo** alvo mutado | `bash scripts/db/teste_isolamento_clientes.sh dev --prefixo "docker exec e05r4-probe psql -U tre -d sales_intelligence"` | `ISOLAMENTO_OK (5 itens, 0 falhas)` | **0** |
+| mutação desfeita | `bash scripts/db/suite_banco.sh dev` (alvo descartável) | `SUITE_OK (88 itens, 0 falhas)` | **0** |
+
+O alvo **dev real não foi mutado em momento nenhum**: a mutação vive só no container descartável (removido
+pelo próprio roteiro) e a medição do item 4 é read-only no dev. Logs brutos: `b0_integro.log`,
+`b2_suite_customer_id.log`, `b3_isolamento_customer_id.log`, `b4_volta_verde.log` — anexos do card
+`t_8253ad1f`.
+
+**(3) o exemplo do runbook §8** (`organizations.tenant_uuid`) citava uma grafia que, com a regex nova, o
+**item 3 casa** — deixou de ilustrar "fora da superfície"; passou a usar `customer_id` com a medição acima
+citada (runbook §8, bullet "Superfície do detector de coluna de cliente").
