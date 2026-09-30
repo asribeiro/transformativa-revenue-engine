@@ -44,3 +44,20 @@ identificador da máquina. Segredos nunca aparecem aqui.
   (bibliotecas GL, tipicamente dependencia de navegador headless) e `linux-image-virtual`
   (metapacote que hoje aponta para o kernel ja instalado — bump cosmetico). Subir exige
   `apt-get dist-upgrade` (mudanca de dependencias), nao executado.
+
+## 2026-09-30 — licoes de engenharia desta rodada (commit, recibo, git com worker)
+
+1. **Contrato do recibo e fechado em 13 campos** (`hermes/jev/policy_v1_2.yaml`): rastro novo
+   NUNCA vira campo novo no recibo — entra DENTRO de `override` (que existe para registrar
+   excecao com razao). O motivo de uma aprovacao NAO aplicavel viaja na **resposta** do gate
+   (que o board grava), nao no recibo.
+2. **Nao commitar com suite vermelha** — inclusive a suite que "nao tem a ver" com a mudanca.
+   Nesta rodada a suite nova passou (18 itens) e o `verificar_gate_jev.py` ficou vermelho por
+   causa da mudanca; o commit saiu antes de ver. Regra: mudanca no gate roda, no minimo,
+   `verificar_gate_jev.py` + `verificar_aprovacao_humana.py` ANTES do commit.
+3. **Repo com worker rodando troca de branch sozinho**: o worker do card cria e faz checkout de
+   `feature/<codigo-do-card>` no MESMO diretorio. Commit feito nesse momento cai na branch do
+   worker, e `git push origin develop` vira no-op silencioso (`origin/develop` nao anda e o
+   `git log` local engana). Procedimento correto: conferir `git branch --show-current` antes de
+   commitar e **empurrar pelo SHA** (`git push origin <sha>:develop`), sem `checkout` — trocar
+   de branch com worker em execucao atropela o worker.
