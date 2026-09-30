@@ -196,7 +196,16 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **substituir** o commit que está no ar exige `--producao` declarado (`TRE_PUBLICAR_PRODUCAO=1`) — sem
   isso a publicação para com `PUBLICACAO_FALHOU` (exit 2) **antes de escrever qualquer coisa**; publicar o
   mesmo commit (reparo) ou em destino de ensaio passa direto, e a declaração fica em `.publicado`
-  (`producao_declarado`).
+  (`producao_declarado`);
+  (vi) **publicação com UMA conexão SSH** (`ControlMaster`, `ControlPersist=30` em `R()`): a publicação
+  faz ~25 chamadas remotas e, com uma conexão TCP por chamada, a rodada de publicações de 22:2x–22:4xZ
+  fez a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro** (todos os cards)
+  por ~12 min, com o host de pé e **sem reboot** — assinatura de penalidade por fonte
+  (`PerSourcePenalties`)/`fail2ban`, agravada pelas retentativas;
+  (vii) **idade do lock deixou de ser inventada:** com o `stat -c %Y` ilegível, `AGORA - 0` virava
+  "~56 anos" (`idade 1790808317s`, medido pelo card `t_c7281fce`) e a publicação **derrubava o lock vivo**
+  de outra (fail-open). Agora a idade sai do mtime e, se não for medível, do `inicio` que o próprio lock
+  grava; **sem idade confiável não derruba o lock** (`PUBLICACAO_FALHOU`, exit 3, nada escrito).
   Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
   isolado).
 

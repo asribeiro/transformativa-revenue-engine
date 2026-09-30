@@ -127,7 +127,7 @@ O caminho único **sozinho não bastou**. Em 30/09/2026 (recorrência do mesmo d
 um card em execução ressincronizou `/opt/tre/repo` por `tar` ad-hoc, com mtime preservado, e a cópia
 voltou para uma árvore **pré-correção**: o `.publicado` continuava dizendo o commit consertado, o
 `tre-backup.service` imprimia `BACKUP_OK` cobrindo **zero** ambientes e ninguém rodava o `--conferir`
-para ver. Caminho único que só *detecta* quando alguém lembra de rodar não é caminho único. Três peças
+para ver. Caminho único que só *detecta* quando alguém lembra de rodar não é caminho único. Quatro peças
 fecham isso:
 
 1. **Trava de imutabilidade (`chattr +i`).** Toda publicação deixa a cópia **imutável**. Escrita ad-hoc
@@ -156,6 +156,21 @@ fecham isso:
    escrever qualquer coisa**, nomeando o commit que a produção executa hoje e o que se pretendia pôr.
    A declaração fica registrada em `.publicado` (`producao_declarado`). É o antídoto para "publiquei a
    minha branch ali só para testar" — a troca deixa de ser acidental.
+
+5. **Não derrubar a própria porta de acesso (achado medido em 30/09).** `publicar.sh` faz ~25 chamadas
+   remotas por publicação; com uma conexão TCP por chamada, a rodada de publicações de 22:2x–22:4xZ fez
+   a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro** (todos os cards)
+   por ~12 min, com o host de pé (ping 0% de perda) e **sem reboot** (`up 6:10`) — assinatura de
+   penalidade por fonte (OpenSSH `PerSourcePenalties`) ou `fail2ban`, agravada pelas retentativas.
+   Agora `R()` usa **ControlMaster** (`ControlPersist=30`): a publicação inteira gasta **uma** conexão.
+   Regra de operação: se o SSH recusar, **não** insistir em laço — a penalidade se renova; espere expirar
+   (medido: ~12 min) e confira `ping`/`uptime` antes de culpar o `sshd`.
+6. **O lock não é derrubado por idade inventada.** O cálculo antigo fazia `AGORA - stat -c %Y` e, com o
+   `stat` vazio, a idade virava ~56 anos: uma publicação **derrubava o lock vivo** de outra (medido pelo
+   card `t_c7281fce`: `idade 1790808317s`). Agora a idade sai do mtime e, se ele não for legível, do
+   `inicio` que o próprio lock grava; **sem idade confiável a publicação não derruba o lock** —
+   `PUBLICACAO_FALHOU`, exit 3, nada escrito. `--forcar-lock` continua sendo o caminho explícito para
+   quem tem certeza.
 
 Saída do watchdog (uma linha, para automatizar):
 

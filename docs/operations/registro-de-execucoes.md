@@ -261,4 +261,17 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
 - **Pos-deploy com dado real (caminho do timer, apos a publicacao):** `systemctl start tre-backup.service` -> `START_EXIT=0`, `Result=success`, `ExecMainStatus=0`, `User=tre-deploy`, artefato NOVO `tre_dev_20260930T223906Z` e `RESULTADO: BACKUP_OK (todos; 1 ambiente(s) coberto(s), 2 pulado(s))`; `systemctl start tre-backup-verify.service` -> `VERIFY_EXIT=0`, `RESULTADO: VERIFICACAO_OK (2 itens)`; `sha256sum /opt/tre/repo/scripts/backup/backup-tre.sh` -> `3f0bebd9…` (a correcao F2, intacta).
 - **Instrumento corrigido por medicao (nao escondido):** o manifesto do watchdog custava **15,4s** no VPS (um processo por arquivo); reescrito em dois passes (`find -printf %m` + **um** `sha256sum` para todos) -> **0,09s**, com a saida comprovada **byte a byte** igual a do `publicar.sh --manifesto` (`cmp` identico; digest `7571f9ee…` igual ao publicado). O ciclo de 2 min deixou de gastar ~15s de CPU.
 - **Limites declarados (nao disfarcados):** (i) a trava e obstaculo contra o erro, nao barreira contra `root` — quem tem `root` pode `chattr -i` e escrever (foi o que eu fiz para injetar a prova), mas deixa de ser silencioso e o watchdog pega no ciclo seguinte; (ii) o watchdog compara conteudo/modo com o manifesto do artefato, nao assina nada; (iii) o reparo usa o artefato da ultima publicacao; (iv) um card que publica em destino isolado **usa o lock padrao**, e o watchdog trata isso como `PUBLICACAO_EM_ANDAMENTO` (conservador: nao confere naquele ciclo); (v) `--producao` e uma declaracao do dono da publicacao, nao uma aprovacao — a aprovacao humana do card e o que a sustenta.
+- **Duas correções que nasceram de medicao de terceiros (ambas no destino real/isolado):** (i) **lock:**
+  o calculo antigo fazia `AGORA - stat -c %Y`; com o `stat` ilegivel a idade virava **~56 anos** e a
+  publicacao **derrubava o lock vivo** de outra (`t_c7281fce` mediu `idade 1790808317s`). Agora a idade
+  sai do mtime e, se ele nao for medivel, do `inicio` do proprio lock; **sem idade confiavel nao derruba**
+  (`PUBLICACAO_FALHOU`, exit 3). Medido na VPS em destino isolado, os 3 casos: lock vivo com mtime
+  ilegivel -> `idade 4s`, recusa (exit 3, nada escrito); lock obsoleto de 45 min -> `idade 2580s`, derruba
+  e publica (`PUBLICACAO_OK`); lock sem `inicio` -> `idade NAO MEDIVEL`, recusa (exit 3). (ii) **SSH:**
+  a publicacao abria **uma conexao TCP por chamada remota** (~25 por publicacao) e a rodada de
+  22:2x-22:4xZ fez a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro**
+  (todos os cards) por **~12 min** (22:48Z -> 23:00:03Z), com o host de pe (ping 0% de perda) e **sem
+  reboot** (`up 6:10`) — penalidade por fonte (`PerSourcePenalties`)/`fail2ban`, agravada pelas
+  retentativas. Mitigado: `R()` agora usa **ControlMaster** (`ControlPersist=30`) — uma conexao por
+  publicacao; nao insistir em laco quando o SSH recusar (a penalidade se renova).
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.
