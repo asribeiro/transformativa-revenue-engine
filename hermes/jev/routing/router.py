@@ -283,6 +283,33 @@ CONCEITOS_DE_ACAO = {
                            "anunciar", "comunicado", "conteudo"),
 }
 
+# ---------------------------------------------------------------------------
+# Vocabulario PROPRIO da inferencia de dominio sensivel (correcao de 30/09/2026).
+#
+# Por que existe: a inferencia de dominio herdava `CONCEITOS_DE_ACAO`, cujo casamento
+# tolera PREFIXO de 4 caracteres. Com isso, prosa legitima de card nascia escalada:
+# "implementador" ~ "implantacao", "versionado" ~ "versao", "entrar" ~ "entrega",
+# "entrega" (de projeto) ~ release e "registro" (de artefatos) ~ dado de cliente.
+#
+# Aqui o casamento e EXATO (token inteiro normalizado), com vocabulario declarado.
+# `CONCEITOS_DE_ACAO` e `REGRAS_DE_ACAO_HUMANA` NAO mudam: acao exclusiva continua
+# exigindo humano — a suite prova que "exclusao de registro de auditoria" segue
+# escalando (ali "registro" e dado sensivel de verdade, na regra de acao humana).
+# ---------------------------------------------------------------------------
+TERMOS_DE_DOMINIO_SENSIVEL = {
+    "producao_ou_release": ("producao", "release", "deploy", "implantacao", "lancamento",
+                            "versao", "publicacao", "publicar", "rollback", "promocao",
+                            "promover"),
+    "credencial": ("credencial", "senha", "token", "segredo", "chave", "secret"),
+    "dado_de_cliente": ("cliente", "titular", "cadastro", "auditoria", "lgpd", "cpf",
+                        "cnpj", "pessoais"),
+    "outbound_a_terceiro": ("contato", "contact", "empresa", "lead", "prospect",
+                            "perspectiva", "proposta", "orcamento", "oferta"),
+}
+# Termos de ENVIO: outbound exige envio COM alvo explicito (o resto continua no
+# guardrail de do_not_contact, como antes).
+TERMOS_DE_ENVIO = ("envio", "enviar", "mandar", "remeter", "apresentar")
+
 # Regra: (codigo canonico da politica, grupos de conceitos). A regra aciona quando
 # TODOS os grupos tem pelo menos um conceito presente na acao. O codigo devolvido e
 # exatamente o nome declarado em `nunca_decidido_por_maquina` (a suite prova o
@@ -1382,25 +1409,37 @@ def resolver_codigo_de_acao(tarefa, politica) -> dict:
     return _resolucao_vazia()
 
 
-def _dominios_sensiveis_do_texto(texto) -> set:
-    """Dominios sensiveis INFERIDOS do texto da acao (por conceito, sem sinonimo novo).
+def _termos_presentes(texto, termos) -> set:
+    """Termos presentes no texto por casamento EXATO de token normalizado (sem prefixo)."""
+    tokens = set(_tokens(texto))
+    return {t for t in termos if t in tokens}
 
-    * producao/release    -> conceito `producao` ou `release`;
-    * credencial          -> conceito `credencial`;
-    * dado de cliente     -> conceito `dado_sensivel`;
-    * outbound a terceiro -> acao de `envio` COM alvo (`alvo_outbound`, `dado_sensivel`
-      ou `proposta`). Sem alvo, "enviar e-mail pelo Titan" nao vira outbound: quem
-      decide esse caso continua sendo o guardrail de do_not_contact.
+
+def _dominios_sensiveis_do_texto(texto) -> set:
+    """Dominios sensiveis INFERIDOS do texto (vocabulario PROPRIO, casamento exato).
+
+    NAO herda o casamento por prefixo de 4 caracteres de `CONCEITOS_DE_ACAO`: com ele,
+    prosa legitima de card declarava dominio sensivel sem querer —
+    "implementador" casava "implantacao", "versionado" casava "versao", "entrar" casava
+    "entrega", "entrega" (de projeto) virava release e "registro" (de artefatos) virava
+    dado de cliente. Aqui o casamento e exato, com vocabulario declarado abaixo.
+
+    `CONCEITOS_DE_ACAO` e `REGRAS_DE_ACAO_HUMANA` NAO mudam: acao exclusiva continua
+    exigindo humano (a suite prova "exclusao de registro de auditoria" segue escalando).
+
+    * producao/release    -> termo de TERMOS_DE_DOMINIO_SENSIVEL["producao_ou_release"];
+    * credencial          -> idem para "credencial";
+    * dado de cliente     -> idem para "dado_de_cliente";
+    * outbound a terceiro -> termo de envio COM alvo explicito (como antes).
     """
-    presentes = _conceitos_presentes(texto)
     dominios = set()
-    if presentes & {"producao", "release"}:
-        dominios.add("producao_ou_release")
-    if "credencial" in presentes:
-        dominios.add("credencial")
-    if "dado_sensivel" in presentes:
-        dominios.add("dado_de_cliente")
-    if "envio" in presentes and presentes & {"alvo_outbound", "dado_sensivel", "proposta"}:
+    for dominio, termos in TERMOS_DE_DOMINIO_SENSIVEL.items():
+        if dominio == "outbound_a_terceiro":
+            continue
+        if _termos_presentes(texto, termos):
+            dominios.add(dominio)
+    if _termos_presentes(texto, TERMOS_DE_ENVIO) and _termos_presentes(
+            texto, TERMOS_DE_DOMINIO_SENSIVEL["outbound_a_terceiro"]):
         dominios.add("outbound_a_terceiro")
     return dominios
 
