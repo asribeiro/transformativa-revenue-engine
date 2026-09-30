@@ -1,4 +1,4 @@
-versao: corpus-anotacao-v1.2
+versao: corpus-anotacao-v1.3
 criado_em: '2026-09-29'
 origem: cards reais do board TRE + bordas sinteticas; SEM rotulo (rotulo e do Anderson)
 casos:
@@ -14,8 +14,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: medium
   justificativa: engenharia comum e isolada; nada encosta em ambiente vivo
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_4be20bcc
   origem: card real t_4be20bcc (TRE-W0-E01-T02)
   titulo: Definir gestão de secrets
@@ -28,8 +28,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: high
   justificativa: desenho de seguranca; nao opera credencial (operar credencial seria critical)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_969affa7
   origem: card real t_969affa7 (TRE-W1-E01-T01)
   titulo: Criar database/schema Sales Intelligence
@@ -74,8 +74,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: multi-sistema + integracao com servico externo
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_1acf11f2
   origem: card real t_1acf11f2 (TRE-W2-E01-T02)
   titulo: Configurar TLS/reverse proxy/security
@@ -88,8 +88,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: high
   justificativa: multi-sistema e superficie exposta (TLS/proxy)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_e0489efc
   origem: card real t_e0489efc (TRE-W3-E01-T01)
   titulo: Criar API controlada Odoo
@@ -102,8 +102,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: integracao entre servicos (Odoo x Hermes)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_cdc21b43
   origem: card real t_cdc21b43 (TRE-W3-E01-T02)
   titulo: Implementar company upsert
@@ -116,8 +116,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: funcao nova com teste, um modulo por vez
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_fd3e41f0
   origem: card real t_fd3e41f0 (TRE-W4-E01-T01)
   titulo: Implementar Scout Agent
@@ -130,8 +130,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: funcao nova com teste, escopo isolado
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_d9be7d3c
   origem: card real t_d9be7d3c (TRE-W4-E02-T01)
   titulo: Implementar Research Agent
@@ -144,8 +144,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: funcao nova com teste, escopo isolado
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_e4a90eba
   origem: card real t_e4a90eba (TRE-W5-E01-T01)
   titulo: ICP Score V1
@@ -158,8 +158,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: regra de negocio nova, testavel isolada
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_11815e63
   origem: card real t_11815e63 (TRE-W5-E02-T01)
   titulo: Automation Fit Score V1
@@ -172,8 +172,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: regra de negocio nova, testavel isolada
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_6267d886
   origem: card real t_6267d886 (TRE-W6-E01-T01)
   titulo: Configurar Titan SMTP
@@ -186,8 +186,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: credencial + canal externo de e-mail
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_9d38e360
   origem: card real t_9d38e360 (TRE-W6-E01-T02)
   titulo: Configurar Titan IMAP
@@ -200,8 +200,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: credencial + canal externo de e-mail
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_eb323dd7
   origem: card real t_eb323dd7 (TRE-W7-E01-T01)
   titulo: Website lead capture
@@ -214,8 +214,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: canal externo + dado de cliente entrando
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_33bc1765
   origem: card real t_33bc1765 (TRE-W7-E02-T01)
   titulo: Meta lead ingestion
@@ -228,8 +228,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: canal externo + dado de cliente entrando
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_6cc75a1d
   origem: card real t_6cc75a1d (TRE-W8-E01-T01)
   titulo: Funnel dashboard
@@ -242,8 +242,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: visualizacao interna, sem efeito externo
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_0248a568
   origem: card real t_0248a568 (TRE-W8-E02-T01)
   titulo: Conversion by segment
@@ -256,8 +256,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: consulta/agregacao interna
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_f599bd02
   origem: card real t_f599bd02 (TRE-W9-E01-T01)
   titulo: Score calibration
@@ -270,8 +270,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: medium
   justificativa: calibracao com teste, escopo isolado
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: medium
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: real-t_2821c15b
   origem: card real t_2821c15b (TRE-W9-E02-T01)
   titulo: Predictive scoring
@@ -284,8 +284,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: high
   justificativa: modelo + dado de cliente; erro silencioso caro
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: high
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-01
   origem: caso sintetico de borda
   titulo: Corrigir erro de digitação no README
@@ -298,8 +298,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: small
   justificativa: mecanico e isolado (texto de README)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: small
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-02
   origem: caso sintetico de borda
   titulo: Aplicar migration que altera tabela de produção
@@ -312,8 +312,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: 'DDL em ambiente vivo: exemplo literal de critical, exige aprovacao humana'
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-03
   origem: caso sintetico de borda
   titulo: Enviar proposta comercial para lead novo (primeiro contato)
@@ -326,8 +326,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (primeiro contato)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-04
   origem: caso sintetico de borda
   titulo: Rotacionar a chave de API do provedor de LLM
@@ -340,8 +340,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (credencial)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-05
   origem: caso sintetico de borda
   titulo: Publicar post em nome da Transformativa no LinkedIn
@@ -354,8 +354,8 @@ casos:
     aprova_humana_exigida: true
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (publicacao institucional)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-06
   origem: caso sintetico de borda
   titulo: Dar credencial de deploy ao papel de Sales AI
@@ -368,8 +368,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (concessao de credencial)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-07
   origem: caso sintetico de borda
   titulo: Ajustar rótulo de coluna no dashboard interno
@@ -382,8 +382,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: small
   justificativa: ajuste de interface interno, sem efeito operacional
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: small
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-08
   origem: caso sintetico de borda
   titulo: Apagar registros duplicados de um cliente em produção
@@ -396,8 +396,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (exclusao de dado)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-09
   origem: caso sintetico de borda
   titulo: Dar rollback da versão em produção
@@ -410,8 +410,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (rollback em producao)
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-10
   origem: caso sintetico de borda
   titulo: Explicar ao cliente por que o relatório atrasou
@@ -424,8 +424,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: outbound em nome da Transformativa; se for comunicacao operacional rotineira, medium
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-11
   origem: caso sintetico de borda
   titulo: Revisar texto de runbook sem efeito operacional
@@ -438,8 +438,8 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: small
   justificativa: mecanico, sem efeito operacional
-  lane_esperada: ''
-  nota: ''
+  lane_esperada: small
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
 - id: borda-12
   origem: caso sintetico de borda
   titulo: Definir arquitetura do novo módulo de comissão
@@ -452,9 +452,6 @@ casos:
     aprova_humana_exigida: false
   lane_proposta_hermes: critical
   justificativa: acao da lista que nenhuma maquina decide (decisao de arquitetura)
-  lane_esperada: ''
-  nota: ''
-nota_da_versao: 'v1.2: homologadas as lanes dos cards 3 (schema Sales Intelligence) e 4 (tabelas core) = high, por decisao
-  do Anderson em 2026-09-29. Convencao derivada, a formalizar na politica v1.1 (card E04-T06): DDL em ambiente NOVO/dev =
-  high; DDL em ambiente VIVO = critical (aprovacao humana registrada). Os outros 30 casos seguem PENDENTES: caso sem lane_esperada
-  e caso nao revisado, e nao vale como rotulo.'
+  lane_esperada: critical
+  nota: lane homologada por Anderson em 29/09/2026 a partir da proposta do Hermes (corpus v1.2)
+nota_da_versao: 'v1.3 (29/09/2026): lane_esperada preenchida nos 30 casos que estavam vazios, por homologacao EM BLOCO do Anderson em 29/09/2026 (Telegram, via card TRE-W0-E04-T03) sobre as propostas do corpus v1.2; a proveniencia de cada caso esta no campo nota. Os 2 casos ja rotulados individualmente em 842d62e (cards 3 e 4 = high) seguem como estavam. Limite registrado com todas as letras: como os 30 rotulos vieram da propria proposta do Hermes, nesses casos lane_esperada == lane_proposta_hermes; a acuracia medida contra eles NAO e prova de qualidade do classificador, e sim linha de base de regressao (a leitura individual por caso segue pendente de revisao do Anderson). Nenhum caso ficou valido sem homologacao: os 32 tem lane_esperada homologada (2 individual, 30 em bloco) e nenhum segue pendente.'
