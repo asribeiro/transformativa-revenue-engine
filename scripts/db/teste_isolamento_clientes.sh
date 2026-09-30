@@ -16,27 +16,46 @@
 # O QUE ESTE TESTE PROVA — e por que assim:
 #   O isolamento deixa de ser barreira de SCHEMA (o V1 nao tem dimensao de cliente) e passa
 #   a ser regra de PROVISIONAMENTO, por decisao do dono. O teste mede, no alvo real, os
-#   quatro lugares onde "dois clientes no mesmo banco" apareceria:
-#     1. o alvo responde e tem o schema                (sem alvo nao ha veredito: fail-closed)
-#     2. dimensao de cliente no schema do alvo         (base que PODE co-locar 2 clientes)
-#     3. bases de aplicacao na instancia do alvo       (2 bases = 2 clientes no mesmo servidor)
-#     4. bases provisionadas no host (`pg-*`)          (o provisionamento nao co-loca clientes)
+#   lugares onde "dois clientes no mesmo banco" apareceria:
+#     1. o alvo responde                               (sem alvo nao ha veredito: fail-closed)
+#     2. o schema existe no alvo                       (alvo errado nao da veredito)
+#     3. dimensao de cliente no schema do alvo          (base que PODE co-locar 2 clientes)
+#     4. bases de aplicacao na instancia do alvo        (2 bases = 2 clientes no mesmo servidor)
+#     5. base provisionada no host servindo o schema    (medido POR CONVENCAO DE NOME `pg-*`:
+#        o que for provisionado fora da convencao NAO e medido por este item — limite
+#        declarado no runbook 8, e o que fica fora da convencao e impresso como informativo)
 #   Nada disso e prosa: cada item sai de consulta ao catalogo/`pg_database`/`docker ps`.
+#
+# LEITURA QUE FALHA NAO E "0 COLUNA" (fail-closed): leitura vazia/erro e distinguida de
+# leitura que respondeu zero. Item 3 com leitura vazia/falha -> NAO_TESTAVEL (exit 3, nunca
+# verde); item 4 com leitura vazia/falha -> reprovacao. Foi o defeito medido na revisao
+# independente: sem checar o rc da leitura, catalogo mudo virava "0 coluna" (verde falso).
+#
+# SUPERFICIE DO DETECTOR (item 3): coluna cujo nome contenha o token
+# `tenant|tenants|cliente|clientes|client|clients` no inicio, no fim ou entre `_`,
+# CASE-INSENSITIVE (`~*`): pega `tenant_id`, `tenant_uuid`, `conta_cliente`, `conta_Cliente`.
+# Coluna de cliente com OUTRA grafia (ex. `customer_id`, `conta_id`) fica fora desta
+# superficie e e reprovada pela ETAPA 1 da suite (as colunas do banco tem de ser exatamente
+# as do contrato — `sobram=[...]`): defesa em profundidade, declarada no runbook 8, com caso
+# de dente provando o comportamento que o runbook afirma.
 #
 # VEREDITO DE TRES VALORES (nunca verde por engano):
 #   0 = ISOLAMENTO_OK ............... um cliente por base, medido em TODOS os itens
 #   1 = ISOLAMENTO_FALHOU ........... dois clientes no mesmo banco / base co-locada /
 #                                     dimensao de cliente sem a decisao do V2
-#   3 = ISOLAMENTO_NAO_TESTAVEL ..... item que nao pode ser medido no ambiente (ex.: docker
-#                                     ausente) — NAO e verde
+#   3 = ISOLAMENTO_NAO_TESTAVEL ..... item que nao pode ser medido no ambiente (docker
+#                                     ausente, catalogo ilegivel) — NAO e verde
 #   2 = uso incorreto
 #
 # `--prova-de-dente` prova, em containers DESCARTÁVEIS, que a MESMA medicao REPROVA as
 # formas reais de co-locacao e volta a APROVAR quando a mutacao e desfeita:
-#   a) dimensao de cliente no schema com linhas de 2 clientes  -> exit 1
-#   b) segunda base de aplicacao na mesma instancia            -> exit 1
-#   c) segundo servico de base (`pg-*`) com o schema no host   -> exit 1
-#   d) medicao impossivel (docker ausente)                     -> exit 3 (nunca verde)
+#   a)  dimensao de cliente com linhas de 2 clientes, grafia `tenant_id`  -> exit 1
+#   a2) a MESMA co-locacao com a grafia `tenant_uuid`                     -> exit 1
+#   a3) a MESMA co-locacao com grafia mista `conta_Cliente` (maiuscula)   -> exit 1
+#   b)  segunda base de aplicacao na mesma instancia                      -> exit 1
+#   c)  segundo servico de base (`pg-*`) com o schema no host             -> exit 1
+#   d)  medicao impossivel (docker ausente)                               -> exit 3 (nunca verde)
+#   e)  catalogo ilegivel (alvo responde, a leitura do catalogo falha)    -> exit 3 (nunca verde)
 # Sem isso o teste poderia estar passando por construcao.
 #
 # REGRA DE AMBIENTE (ADR-005/0008): roda na VPS do ambiente, por `docker exec`, SO LEITURA
@@ -54,8 +73,10 @@ IMAGEM="${TRE_FIXTURE_IMAGEM:-postgres:16}"
 MIGRATION="$RAIZ/db/migrations/0001_sales_intelligence_v1.sql"
 CONTROLE="public.tre_schema_migrations"
 SCHEMA="sales_intelligence"
-# mesmo regex do instrumento do V2: coluna de cliente/tenant e o marcador de co-locacao
-REGEX_CLIENTE="(^|_)(tenant|cliente|client)(_id)?$"
+# Coluna de cliente/tenant e o marcador de co-locacao. Mesmo regex do instrumento do V2
+# (teste_tenant_rls.sh): token `tenant|cliente|client` (e plurais) no inicio, no fim ou entre
+# `_`, CASE-INSENSITIVE — aplicado com `~*`. A superficie coberta e a declarada no runbook 8.
+REGEX_CLIENTE="(^|_)(tenant|tenants|cliente|clientes|client|clients)(_|$)"
 
 AMB="dev"
 MODO="medir"
@@ -103,7 +124,15 @@ read -r -a PREFIXO <<< "$PREFIXO_TXT"
 SERVICO_ALVO="$(printf '%s' "$PREFIXO_TXT" | sed -nE 's/^docker exec ([^ ]+).*/\1/p')"
 BANCO_ALVO="${PREFIXO[${#PREFIXO[@]}-1]}"
 psql_alvo() { "${PREFIXO[@]}" -q "$@" 2>&1; }
-leitura() { "${PREFIXO[@]}" -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
+# leitura: valor do alvo sem espacos. Exit != 0 = a LEITURA FALHOU (fail-closed: quem chama
+# NAO pode tratar falha/vazio como zero — foi assim que a revisao independente mediu um verde falso).
+leitura() {
+  local saida
+  saida="$("${PREFIXO[@]}" -tAc "$1" 2>/dev/null)" || return 1
+  printf '%s' "$saida" | tr -d '[:space:]'
+}
+# numero valido (inteiro nao negativo) — distingue "respondeu 0" de "nao respondeu numero"
+numero() { printf '%s' "$1" | grep -qE '^[0-9]+$'; }
 
 # =====================================================================================
 # MODO `--prova-de-dente`: containers descartaveis
@@ -171,9 +200,11 @@ prova_de_dente() {
   fi
 
   alvo_psql() { docker exec "$ALVO_DESCART" psql -U tre -d "$SCHEMA" -q -v ON_ERROR_STOP=1 "$@" 2>&1; }
-  rodar_prova() {  # <log> [<env extra>...] — roda a MEDICAO contra o alvo descartavel
+  rodar_prova() {  # <log> [--prefixo <texto>] [<env extra>...] — roda a MEDICAO contra o alvo descartavel
     local log="$1"; shift
-    env "$@" bash "$0" "$AMB" --prefixo "docker exec $ALVO_DESCART psql -U tre -d $SCHEMA" >"$log" 2>&1
+    local pref="docker exec $ALVO_DESCART psql -U tre -d $SCHEMA"
+    if [ "${1:-}" = "--prefixo" ]; then pref="${2:-}"; shift 2; fi
+    env "$@" bash "$0" "$AMB" --prefixo "$pref" >"$log" 2>&1
     echo $?
   }
   prova() {  # <n> <rotulo> <mutacao|-> <restauracao|-> <exit esperado> <regex da saida>
@@ -215,6 +246,23 @@ prova_de_dente() {
     1 "dimensao de cliente"
   prova 2b "co-locacao (a) desfeita: a medicao volta a APROVAR" - - 0 "ISOLAMENTO_OK"
 
+  # (a2) AC2: a MESMA co-locacao com a grafia `tenant_uuid` — coluna de cliente que NAO termina em
+  #      `_id` tem de ser pega. Caso medido na revisao independente: a regex antiga
+  #      (`(^|_)(tenant|cliente|client)(_id)?$`, case-sensitive) nao via `tenant_uuid` e a medicao
+  #      saia VERDE com a coluna presente (verde falso).
+  prova 2c "co-locacao (grafia 'tenant_uuid'): a coluna de cliente tem de ser REPROVADA" \
+    "ALTER TABLE $SCHEMA.organizations ADD COLUMN tenant_uuid uuid; INSERT INTO $SCHEMA.organizations (id, legal_name, tenant_uuid, status) VALUES ('ee000003-0000-4000-8000-000000000003','CLIENTE_A Alfa Ltda','aa000001-0000-4000-8000-00000000000a','DISCOVERED'), ('ee000004-0000-4000-8000-000000000004','CLIENTE_B Gama Ltda','bb000002-0000-4000-8000-00000000000b','DISCOVERED')" \
+    "ALTER TABLE $SCHEMA.organizations DROP COLUMN tenant_uuid" \
+    1 "dimensao de cliente"
+  prova 2d "co-locacao (a2) desfeita: a medicao volta a APROVAR" - - 0 "ISOLAMENTO_OK"
+
+  # (a3) AC2: grafia MISTA e token no MEIO do nome (`conta_Cliente`) — o detector e case-insensitive
+  prova 2e "co-locacao (grafia mista 'conta_Cliente'): a coluna de cliente tem de ser REPROVADA" \
+    "ALTER TABLE $SCHEMA.contacts ADD COLUMN \"conta_Cliente\" uuid" \
+    "ALTER TABLE $SCHEMA.contacts DROP COLUMN \"conta_Cliente\"" \
+    1 "dimensao de cliente"
+  prova 2f "co-locacao (a3) desfeita: a medicao volta a APROVAR" - - 0 "ISOLAMENTO_OK"
+
   # (b) AC2: segunda base de aplicacao na MESMA instancia -> REPROVA
   prova 3 "co-locacao: segunda base de aplicacao na mesma instancia" \
     "CREATE DATABASE cliente_b" "DROP DATABASE cliente_b" 1 "bases de aplicacao"
@@ -254,6 +302,33 @@ prova_de_dente() {
     ok "guarda anti-verde: medicao impossivel (docker ausente) NAO vira verde (exit 3)"
   else
     ko "guarda anti-verde: docker ausente virou exit $rc_g — medicao impossivel nao pode virar verde"
+  fi
+
+  # (e) guarda anti-verde: catalogo ILEGIVEL — o alvo responde, mas a leitura do catalogo falha ->
+  #     NAO_TESTAVEL (exit 3), nunca verde. E o defeito medido na revisao independente: sem checar
+  #     o rc da leitura, um catalogo mudo virava "0 coluna" e a medicao saia VERDE (verde falso).
+  #     O prefixo e um wrapper de prova (nao um trapaca do script): responde o resto e falha so a
+  #     consulta a `information_schema.columns`.
+  local log_e rc_e pref_mudo
+  cat >"$TMP_DESCART/psql_catalogo_mudo.sh" <<EOF
+#!/usr/bin/env bash
+# prova de dente (TRE-W1-E05-T01): o alvo responde, mas a leitura do catalogo falha
+if printf '%s\n' "\$*" | grep -q 'information_schema.columns'; then
+  echo "ERRO: catalogo indisponivel (prova de dente)" >&2
+  exit 1
+fi
+exec docker exec $ALVO_DESCART psql -U tre -d $SCHEMA "\$@"
+EOF
+  chmod +x "$TMP_DESCART/psql_catalogo_mudo.sh"
+  pref_mudo="bash $TMP_DESCART/psql_catalogo_mudo.sh"
+  log_e="$TMP_DESCART/medicao_catalogo_mudo.log"
+  rc_e="$(rodar_prova "$log_e" --prefixo "$pref_mudo")"
+  echo "-- guarda: catalogo ilegivel (leitura do item 3 falha) -> exit $rc_e"
+  grep -E '^RESULTADO:|^NAO_TESTAVEL |^FALHOU ' "$log_e" | sed 's/^/        /'
+  if [ "$rc_e" -eq 3 ] && grep -qE 'NAO_TESTAVEL' "$log_e"; then
+    ok "guarda anti-verde: leitura de catalogo que falha NAO vira verde (exit 3) — leitura vazia nao e '0 coluna'"
+  else
+    ko "guarda anti-verde: catalogo ilegivel virou exit $rc_e — leitura vazia nao pode virar verde"
   fi
 
   echo
@@ -299,39 +374,48 @@ else
 fi
 
 # (3) NAO existe dimensao de cliente no schema: com ela, a base PODE co-locar dois clientes
-QTD_COLUNAS_CLIENTE="$(leitura "SELECT count(*) FROM information_schema.columns WHERE table_schema='$SCHEMA' AND column_name ~ '$REGEX_CLIENTE'")"
-COLUNAS_CLIENTE="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='$SCHEMA' AND column_name ~ '$REGEX_CLIENTE'" 2>/dev/null | tr -s '[:space:]' ' ')"
-echo "-- dimensao de cliente/tenant no schema: $QTD_COLUNAS_CLIENTE ($COLUNAS_CLIENTE)"
-if [ "${QTD_COLUNAS_CLIENTE:-0}" -eq 0 ]; then
-  ok "sem dimensao de cliente no schema (0 coluna) — a base nao pode co-locar dois clientes em linhas"
+# Superficie do detector: token tenant|cliente|client (+ plurais) no inicio/fim/entre `_`,
+# case-insensitive. FAIL-CLOSED: leitura vazia/erro NAO e "0 coluna" (ver o cabecalho).
+CONSULTA_COLUNAS="SELECT count(*) FROM information_schema.columns WHERE table_schema='$SCHEMA' AND column_name ~* '$REGEX_CLIENTE'"
+QTD_COLUNAS_CLIENTE="$(leitura "$CONSULTA_COLUNAS")"; RC_COLUNAS=$?
+if [ "$RC_COLUNAS" -ne 0 ] || ! numero "$QTD_COLUNAS_CLIENTE"; then
+  echo "-- dimensao de cliente/tenant no schema: NAO MEDIDO (leitura do catalogo falhou ou nao devolveu numero: '${QTD_COLUNAS_CLIENTE:-}')"
+  echo "-- causa declarada pelo alvo:"
+  psql_alvo -tAc "$CONSULTA_COLUNAS" 2>&1 | tail -2 | sed 's/^/        /'
+  nt "nao consegui medir a dimensao de cliente no schema (leitura vazia/erro NAO e '0 coluna') — sem medicao nao ha verde"
 else
-  ko "dimensao de cliente no schema: $QTD_COLUNAS_CLIENTE coluna(s) de cliente/tenant ($COLUNAS_CLIENTE) — base multi-cliente sem a decisao do V2; o criterio 'nao existem dois clientes no mesmo banco' foi violado"
+  COLUNAS_CLIENTE="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='$SCHEMA' AND column_name ~* '$REGEX_CLIENTE'" 2>/dev/null | tr -s '[:space:]' ' ')"
+  echo "-- dimensao de cliente/tenant no schema: $QTD_COLUNAS_CLIENTE ($COLUNAS_CLIENTE)"
+  if [ "$QTD_COLUNAS_CLIENTE" -eq 0 ]; then
+    ok "sem dimensao de cliente no schema (0 coluna) — a base nao pode co-locar dois clientes em linhas"
+  else
+    ko "dimensao de cliente no schema: $QTD_COLUNAS_CLIENTE coluna(s) de cliente/tenant ($COLUNAS_CLIENTE) — base multi-cliente sem a decisao do V2; o criterio 'nao existem dois clientes no mesmo banco' foi violado"
+  fi
 fi
 QTD_RLS="$(leitura "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='$SCHEMA' AND c.relkind='r' AND c.relrowsecurity")"
 QTD_POLICIES="$(leitura "SELECT count(*) FROM pg_policies WHERE schemaname='$SCHEMA'")"
 echo "-- informativo: RLS habilitada em ${QTD_RLS:-?} tabela(s); ${QTD_POLICIES:-?} policy(ies). Sob a opcao A (um banco por cliente) a barreira NAO e de RLS: e de provisionamento."
 
 # (4) UMA base de aplicacao na instancia do alvo (duas = dois clientes no mesmo servidor)
-BASES_INSTANCIA="$(psql_alvo -tAc "SELECT string_agg(datname, ',' ORDER BY datname) FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres')" 2>/dev/null | tr -d '[:space:]')"
+CONSULTA_INSTANCIA="SELECT string_agg(datname, ',' ORDER BY datname) FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres')"
+BASES_INSTANCIA="$(leitura "$CONSULTA_INSTANCIA")"; RC_INSTANCIA=$?
 QTD_BASES_INSTANCIA="$(printf '%s' "${BASES_INSTANCIA:-}" | tr ',' '\n' | grep -c . || true)"
 echo "-- bases de aplicacao na instancia: $QTD_BASES_INSTANCIA (${BASES_INSTANCIA:-nenhuma})"
-if [ "${QTD_BASES_INSTANCIA:-0}" -eq 1 ]; then
+if [ "$RC_INSTANCIA" -ne 0 ]; then
+  ko "nao consegui medir as bases de aplicacao da instancia (leitura do catalogo falhou) — sem medicao o criterio nao pode ser dado como cumprido"
+elif [ "${QTD_BASES_INSTANCIA:-0}" -eq 1 ]; then
   ok "uma base de aplicacao na instancia ($BASES_INSTANCIA) — nenhum segundo cliente co-locado na mesma instancia"
 else
   ko "bases de aplicacao na mesma instancia: ${QTD_BASES_INSTANCIA:-0} (${BASES_INSTANCIA:-nenhuma}) — isolamento fisico exige UMA base por cliente, no servidor proprio"
 fi
 
-# (5) UM servico de base provisionado no host (`pg-<cliente>-<amb>`) servindo o schema
-if ! docker_disponivel; then
-  if [ -n "${TRE_ISOLAMENTO_SEM_DOCKER:-}" ]; then
-    nt "medicao do provisionamento no host nao executavel (docker fingido ausente) — sem medicao nao ha verde"
-  else
-    nt "medicao do provisionamento no host nao executavel (docker ausente no ambiente) — sem medicao nao ha verde"
-  fi
-else
-  SERVICOS_PG="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^pg-' | sort | tr '\n' ' ')"
-  BASES_HOST=""
-  for c in $SERVICOS_PG; do
+# (5) UM servico de base provisionado no host pela CONVENCAO DE NOME `pg-<cliente>-<amb>` servindo o
+#     schema. LIMITE DECLARADO (runbook 8): a medicao deste item e POR CONVENCAO de nome — base
+#     provisionada fora da convencao nao conta como base provisionada (e sai como informativo,
+#     nunca escondida). Nada de prosa: o veredito sai de `docker ps` + consulta ao schema.
+servem_o_schema() {  # <container>... -> imprime os que servem o schema (nada se nenhum)
+  local c d u achou
+  for c in "$@"; do
     achou=""
     for d in "$BANCO_ALVO" "$SCHEMA" postgres; do
       for u in tre sales_ai postgres; do
@@ -341,13 +425,26 @@ else
       done
       [ -n "$achou" ] && break
     done
-    [ -n "$achou" ] && BASES_HOST="$BASES_HOST $c"
+    [ -n "$achou" ] && printf '%s ' "$c"
   done
+}
+if ! docker_disponivel; then
+  if [ -n "${TRE_ISOLAMENTO_SEM_DOCKER:-}" ]; then
+    nt "medicao do provisionamento no host nao executavel (docker fingido ausente) — sem medicao nao ha verde"
+  else
+    nt "medicao do provisionamento no host nao executavel (docker ausente no ambiente) — sem medicao nao ha verde"
+  fi
+else
+  SERVICOS_PG="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^pg-' | sort | tr '\n' ' ')"
+  SERVICOS_FORA="$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vE '^pg-' | sort | tr '\n' ' ')"
+  BASES_HOST="$(servem_o_schema $SERVICOS_PG)"
+  FORA_CONVENCAO="$(servem_o_schema $SERVICOS_FORA)"
   QTD_BASES_HOST="$(printf '%s' "$BASES_HOST" | wc -w | tr -d ' ')"
   echo "-- servicos 'pg-*' de pe no host: ${SERVICOS_PG:-nenhum}"
   echo "-- destes, servindo o schema $SCHEMA: ${BASES_HOST:-nenhum}"
+  echo "-- informativo (limite deste item, runbook 8): containers de pe FORA da convencao 'pg-*' servindo o schema: ${FORA_CONVENCAO:-nenhum} — nao contam como base provisionada; a convencao de nome e o que este item mede"
   if [ "$QTD_BASES_HOST" -eq 1 ]; then
-    ok "uma base provisionada no host servindo o schema ($(printf '%s' "$BASES_HOST" | tr -d ' ')) — o provisionamento nao co-loca clientes"
+    ok "uma base provisionada pela convencao de nome 'pg-*' serve o schema ($(printf '%s' "$BASES_HOST" | tr -d ' ')) — nenhuma SEGUNDA base provisionada; provisionamento fora da convencao nao e medido por este item"
   elif [ "$QTD_BASES_HOST" -eq 0 ]; then
     nt "nenhuma base 'pg-*' do host servindo o schema $SCHEMA — provisionamento nao medido (nunca verde sem medicao)"
   else

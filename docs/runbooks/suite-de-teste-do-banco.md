@@ -89,25 +89,36 @@ papel `superuser`+`bypassrls`): não há o que filtrar. O dono decidiu que a bar
 O veredito sai de medição, não de prosa (`db/teste_isolamento_clientes.sh`):
 
 1. **alvo responde e tem o schema** — sem alvo não há veredito (fail-closed, exit 1);
-2. **dimensão de cliente no schema** — colunas casando `(^|_)(tenant|cliente|client)(_id)?$`. Uma coluna
-   dessas significa base que **pode** co-locar dois clientes: reprova (o V2 exige decisão nova);
+2. **dimensão de cliente no schema** — coluna cujo nome tenha o token `tenant|cliente|client` (e plurais)
+   no início, no fim ou entre `_`, **case-insensitive** (`tenant_id`, `tenant_uuid`, `conta_cliente`,
+   `conta_Cliente`). Uma coluna dessas significa base que **pode** co-locar dois clientes: reprova (o V2
+   exige decisão nova). **Leitura do catálogo que falha/vem vazia não vale como "0 coluna"**: sai
+   `NAO_TESTAVEL` (exit 3, nunca verde) — foi o defeito medido na revisão independente, com caso de dente
+   próprio (item e, abaixo);
 3. **bases de aplicação na instância do alvo** — `pg_database` sem templates: duas bases = dois clientes no
-   mesmo servidor → reprova;
-4. **bases provisionadas no host** — containers `pg-<cliente>-<amb>` de pé que servem o schema: mais de uma
+   mesmo servidor → reprova; leitura que falha → reprovação (sem medição não há cumprimento);
+4. **base provisionada no host** — containers `pg-<cliente>-<amb>` de pé que servem o schema: mais de uma
    → reprova; nenhuma → **não medido** (exit 3, nunca verde); sem docker no host → exit 3, nunca verde.
+   **Limite declarado (§8):** a medição deste item é **por convenção de nome `pg-*`**; container de pé fora
+   da convenção que sirva o schema **não** conta como base provisionada — ele é impresso como
+   *informativo* na saída, nunca escondido.
 
 Estado medido em **dev** (`pg-sales-dev`, 30/09/2026): 0 coluna de cliente/tenant em 12 tabelas, 1 base de
 aplicação na instância, 1 base provisionada (`pg-sales-dev`) → `ISOLAMENTO_OK (5 itens, 0 falhas)`, exit 0.
 
 `teste_isolamento_clientes.sh --prova-de-dente` prova que a medição **tem dente**, em containers
-descartáveis: base íntegra → exit 0; **dimensão de cliente com linhas de 2 clientes** → exit 1;
-**segunda base na mesma instância** → exit 1; **segundo serviço `pg-*` servindo o schema no host** → exit 1;
-**docker ausente** → exit 3 (nunca verde); cada mutação desfeita volta a aprovar.
+descartáveis: base íntegra → exit 0; **dimensão de cliente com linhas de 2 clientes** (`tenant_id`) → exit 1;
+**a mesma co-locação na grafia `tenant_uuid`** → exit 1; **a mesma co-locação na grafia mista
+`conta_Cliente`** → exit 1; **segunda base na mesma instância** → exit 1; **segundo serviço `pg-*` servindo o
+schema no host** → exit 1; **docker ausente** → exit 3 e **catálogo ilegível** (o alvo responde, a leitura do
+catálogo falha) → exit 3 (nenhum dos dois vira verde); cada mutação desfeita volta a aprovar.
 
 > **Instrumento do V2 (não wired na suíte):** `db/teste_tenant_rls.sh` mede a **forma antiga** do critério
 > (tenant/RLS de primeira classe) e continua versionado para o dia em que houver multi-cliente no mesmo
 > banco — nesse cenário ele é o teste que prova o fail-closed. Enquanto o V2 não for decidido, o critério
-> vigente é o da etapa 5.
+> vigente é o da etapa 5. Ele usa a **mesma superfície de detector** do teste vigente (token
+> `tenant|cliente|client` em qualquer posição, `~*`), para não haver dois critérios de "coluna de cliente"
+> no repo.
 
 ## 5. Prova de dente da própria suíte (AC1 e AC3)
 
@@ -145,10 +156,23 @@ própria etapa). A etapa 5 é **somente leitura** no alvo (catálogo, `pg_databa
   e **não** finge provar o que não é distinguível: em um schema sem dimensão de cliente, material de um
   segundo cliente seria indistinguível do primeiro (não há rótulo a comparar). Quem "esquecer o filtro" não
   é o risco nesta opção; o risco é co-locar dois clientes no mesmo banco, e é isso que os itens 2–4 medem.
-- **Medição impossível nunca vira verde:** sem docker no host, ou sem nenhuma base `pg-*` servindo o schema,
-  a etapa 5 sai em **exit 3** (`ISOLAMENTO_NAO_TESTAVEL`) — e a suíte, com ela, em `SUITE_NAO_TESTAVEL`.
-- Se algum dia aparecer **coluna de cliente/tenant** no schema sem a decisão do V2 registrada, a etapa 5
-  **reprova** (exit 1) — é a porta de entrada da co-locação por linhas.
+- **Medição impossível nunca vira verde:** sem docker no host, sem nenhuma base `pg-*` servindo o schema, ou
+  com o **catálogo ilegível** (a leitura do item 3 falha/vem vazia), a etapa 5 sai em **exit 3**
+  (`ISOLAMENTO_NAO_TESTAVEL`) — e a suíte, com ela, em `SUITE_NAO_TESTAVEL`.
+- **Superfície do detector de coluna de cliente (o que a etapa 5 pega — e o que ela não pega):** a etapa 5
+  reprova (exit 1) coluna cujo nome tenha o token `tenant|cliente|client` (ou plural) no início, no fim ou
+  entre `_`, **case-insensitive**: `tenant_id`, `tenant_uuid`, `conta_cliente`, `conta_Cliente` — três casos
+  de dente provam (`tenant_id`, `tenant_uuid`, `conta_Cliente`). Coluna de cliente com **outra grafia**
+  (ex. `customer_id`, `conta_id`) fica **fora** desta superfície e **não** é pega pelo item 3; quem a pega é a
+  **etapa 1** (`contrato`), que exige das colunas do banco exatamente as do contrato e aponta
+  `sobram=[...]` — foi o que a revisão independente mediu (com `organizations.tenant_uuid` a suíte reprova
+  pela etapa 1, mesmo quando o item 3 não casa o nome). Defesa em profundidade declarada; a etapa 5 **não** é
+  o único controle.
+- **O item 5 mede por convenção de nome (`pg-*`):** o controle de provisionamento é o padrão
+  `pg-<cliente>-<amb>`; um container de pé **fora** da convenção que sirva o schema **não** conta como base
+  provisionada — a própria saída imprime quantos desses existem (informativo, nunca escondido). Um
+  provisionamento feito fora da convenção **não é medido** por esta suíte (o critério do AC2 é de
+  provisionamento, decidido pelo dono). Limite declarado, não verde implícito.
 - Homologação **não está provisionada** (não existe container `pg-homolog`): `suite_banco.sh homolog` sai
   com exit 1 e aponta o alvo inexistente — falha visível, nunca silenciosa.
 - A etapa 0 acusa quando a migration registrada pelo runner **diverge** do arquivo do repo, e o `RESUMO`

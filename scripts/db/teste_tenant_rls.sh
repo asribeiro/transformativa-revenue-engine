@@ -50,7 +50,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAIZ="${TRE_RAIZ:-$(cd "$DIR/../.." && pwd)}"
 IMAGEM="${TRE_FIXTURE_IMAGEM:-postgres:16}"
 MIGRATION="$RAIZ/db/migrations/0001_sales_intelligence_v1.sql"
-REGEX_TENANT="(^|_)(tenant|cliente|client)(_id)?$"
+REGEX_TENANT="(^|_)(tenant|tenants|cliente|clientes|client|clients)(_|$)"
+# mesmo regex do teste do criterio vigente (teste_isolamento_clientes.sh), aplicado com `~*`:
+# token tenant|cliente|client (+ plurais) em qualquer posicao, case-insensitive.
 
 AMB="dev"
 MODO="medir"
@@ -286,8 +288,8 @@ echo "-- usuario da conexao: $CONEXAO | papel da aplicacao sob teste: $PAPEL"
 
 leitura() { psql_alvo -tAc "$1" | tr -d '[:space:]'; }
 TABELAS="$(leitura "SELECT count(*) FROM information_schema.tables WHERE table_schema='sales_intelligence' AND table_type='BASE TABLE'")"
-QTD_COLUNAS_TENANT="$(leitura "SELECT count(*) FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~ '$REGEX_TENANT'")"
-COLUNAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~ '$REGEX_TENANT'")"
+QTD_COLUNAS_TENANT="$(leitura "SELECT count(*) FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~* '$REGEX_TENANT'")"
+COLUNAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~* '$REGEX_TENANT'")"
 QTD_TABELAS_RLS="$(leitura "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='sales_intelligence' AND c.relkind='r' AND c.relrowsecurity")"
 TABELAS_RLS_NOMES="$(psql_alvo -tAc "SELECT coalesce(string_agg(c.relname, ' ' ORDER BY c.relname), '') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='sales_intelligence' AND c.relkind='r' AND c.relrowsecurity")"
 QTD_POLICIES="$(leitura "SELECT count(*) FROM pg_policies WHERE schemaname='sales_intelligence'")"
@@ -345,7 +347,7 @@ else
   ok "papel da aplicacao '$PAPEL' NAO contorna RLS (nao e superuser, nao tem BYPASSRLS, nao e dono de tabela com RLS sem FORCE)"
 fi
 
-TABELAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(col.table_name||'|'||col.column_name, ' ' ORDER BY col.table_name), '') FROM information_schema.columns col WHERE col.table_schema='sales_intelligence' AND col.column_name ~ '$REGEX_TENANT'")"
+TABELAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(col.table_name||'|'||col.column_name, ' ' ORDER BY col.table_name), '') FROM information_schema.columns col WHERE col.table_schema='sales_intelligence' AND col.column_name ~* '$REGEX_TENANT'")"
 if [ -z "$TABELAS_TENANT" ]; then
   nt "nenhuma tabela tem coluna de cliente/tenant — o isolamento nao e por cliente (criterio nao expressavel)"
   echo "RESULTADO: TENANT_RLS_NAO_TESTAVEL ($ITENS itens, 0 reprovacoes, $NAO_TESTAVEIS criterio(s) nao testavel(is))"
