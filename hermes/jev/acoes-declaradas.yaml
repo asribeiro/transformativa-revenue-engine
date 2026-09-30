@@ -137,9 +137,10 @@ declaracoes:
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-09-30'
     motivo: >-
-      Revisao do TRE-W0-E04-T09 (perfil tester): conferir o verificador da v1.2 e as baterias herdadas,
-      reproduzir o teste de aceitacao e a cobertura do mapa, e comparar o commit 1227310 com o que foi
-      medido. Leitura no repo e comentario no board — nao altera codigo, nao toca producao, nao usa credencial.
+      Criar o database e o schema da Sales Intelligence no ambiente de DESENVOLVIMENTO
+      (DDL em dev, conforme ADR-005). O texto do card menciona DDL, e por isso a lane sobe
+      para high e o roteador se abstem por confianca — nao por dominio sensivel: nao ha
+      credencial, nao ha dado de cliente e nao ha ato em producao neste card.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_d9cb5755
