@@ -254,3 +254,21 @@ declaracoes:
       em desenvolvimento, sem producao e sem credencial de deploy.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_22c27625
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito aberto pela verificacao de backup/restore (E06) sobre a rotina de backup do
+      ambiente. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_091cfea9
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Defeito aberto pela verificacao de backup/restore (E06) sobre a rotina de backup do
+      ambiente. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
