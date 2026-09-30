@@ -138,3 +138,22 @@ a primeira implementacao criou campos novos (`origem`, `aprovador`, `canal`, `va
 excecao com razao. Nenhum campo novo no recibo; a trilha continua auditavel no arquivo. O
 motivo de uma aprovacao NAO aplicavel viaja na resposta do gate (que o board grava), nunca no
 recibo.
+
+## 9. Decisão 6 — escala das aprovações (onda x item a item)
+
+- **Decisão 6 — HIBRIDA: onda para desenvolvimento, item a item para o resto (opção C)**,
+  escolhida por Anderson Ribeiro em 30/09/2026. Motivo declarado: 65 cards em `todo` (W1→W9)
+  e o pedido individual por card (todas as travas que hoje existem) viraria gargalo do dono —
+  e gargalo de aprovacao termina em aprovacao no automatico, que e pior que nao ter controle.
+  - a ONDA cobre somente escopo estritamente de **desenvolvimento** e grava, no ato da
+    aprovacao, a **lista de cards + o hash do texto de cada um** (card editado depois sai da
+    onda: o hash deixa de bater);
+  - qualquer card cuja declaracao toque **ambiente vivo, credencial ou dado de cliente** fica
+    FORA da onda e exige aprovacao individual, com `canal: commit-do-aprovador` (decisao 1/4);
+  - a onda e entrada do mesmo registro declarado (`aprovacoes-humanas.yaml`), com dupla
+    entrada no `registro-de-aprovacoes.md`, validade de 7 dias (decisao 3) e revisao
+    independente do `tester` antes de valer;
+  - nada aqui afrouxa o fail-closed: sem aprovacao (individual ou de onda) valida, o gate
+    escala exatamente como hoje.
+- Pendente de implementacao: a onda como entrada do registro (lista + hash por card) e a
+  suite que reprova card de onda cujo escopo toque ambiente vivo, credencial ou dado.
