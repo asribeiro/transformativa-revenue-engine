@@ -251,8 +251,20 @@ fi
 # ---------------------------------------------------------------- conferir / reparar
 AGORA="$(tsp)"
 if [ -e "$LOCK" ]; then
-  log "PUBLICACAO_EM_ANDAMENTO lock=$LOCK (publicacao em curso; o watchdog nao interfere)"
-  exit 0
+  # O lock so bloqueia a conferencia se for uma publicacao PARA ESTE destino. Um card que publica em
+  # destino isolado usando o lock padrao nao pode cegar a conferencia da producao (medido em 30/09:
+  # o card t_0f74266d ficou 2 ciclos com o lock padrao e a copia real seguiu divergente).
+  LOCK_QUEM="$(cat "$LOCK/quem" 2>/dev/null || true)"
+  LOCK_DESTINO="$(printf '%s' "$LOCK_QUEM" | sed -n 's/.*destino=\([^ ]*\).*/\1/p')"
+  LOCK_MTIME="$(stat -c %Y "$LOCK" 2>/dev/null || echo 0)"
+  case "$LOCK_MTIME" in (*[!0-9]*|"") LOCK_MTIME=0;; esac
+  LOCK_IDADE=-1
+  [ "$LOCK_MTIME" -gt 1 ] && LOCK_IDADE=$(( $(date +%s) - LOCK_MTIME ))
+  if [ -z "$LOCK_DESTINO" ] || { [ "$LOCK_DESTINO" = "$DESTINO" ] && [ "$LOCK_IDADE" -ge 0 ] && [ "$LOCK_IDADE" -le "${TRE_WATCHDOG_LOCK_VALIDADE_S:-1800}" ]; }; then
+    log "PUBLICACAO_EM_ANDAMENTO lock=$LOCK destino=${LOCK_DESTINO:-desconhecido} idade=${LOCK_IDADE}s (publicacao em curso; o watchdog nao interfere)"
+    exit 0
+  fi
+  log "AVISO lock de OUTRA publicacao (destino=$LOCK_DESTINO, idade=${LOCK_IDADE}s): sigo conferindo $DESTINO"
 fi
 
 if [ ! -f "$DESTINO/.publicado" ] || [ ! -f "$DESTINO/.publicado.manifest" ]; then
@@ -294,6 +306,17 @@ if [ "$MAN_ATUAL" = "$MAN_REF" ]; then
   log "digest agora: $DIG_ATUAL"
   [ -z "$DIG_REG" ] || [ "$DIG_ATUAL" = "$DIG_REG" ] || log "AVISO digest registrado ($DIG_REG) difere do medido agora ($DIG_ATUAL)"
   limpar_alerta
+  # Copia certa porem SEM trava e janela aberta: publicacao antiga (publicar.sh sem `--travar`) ou
+  # alguem que destravou na mao. Rearma aqui — a trava e o que faz a escrita ad-hoc falhar.
+  TRAVA_EST=armada
+  if ! ( : > "$DESTINO/.trava-probe" ) 2>/dev/null; then TRAVA_EST=armada
+  else rm -f "$DESTINO/.trava-probe"; TRAVA_EST=ausente; fi
+  if [ "$ACAO" = reparar ] && [ "$TRAVA_EST" = ausente ]; then
+    chattr -R +i "$DESTINO" 2>/dev/null || true
+    log "AVISO copia era o commit registrado mas estava SEM trava — rearmada"
+    echo "PUBLICACAO_OK commit=${COMMIT_REG:-?} digest=$DIG_ATUAL arquivos=$(printf '%s\n' "$MAN_ATUAL" | grep -c . || true) em=$(tsp) trava=rearmada"
+    exit 0
+  fi
   echo "PUBLICACAO_OK commit=${COMMIT_REG:-?} digest=$DIG_ATUAL arquivos=$(printf '%s\n' "$MAN_ATUAL" | grep -c . || true) em=$(tsp)"
   exit 0
 fi

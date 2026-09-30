@@ -210,7 +210,12 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   destino isolado e **exige que falhe** (4 caminhos recusados, conteúdo intacto, sabotagem reprovada pelo
   detector com exit 5, reparo restaurando e rearmando) e **reprova quando o guard está desligado**
   (`TRE_ENF_SEM_TRAVA=1` -> `VERIFICADOR_ENFORCEMENT_FALHOU … falhas=7`, exit 1) — verificador que passa
-  por construção não vale (D04 do TRE-W0-E04-T01).
+  por construção não vale (D04 do TRE-W0-E04-T01);
+  (ix) **lock registra `destino=`** e o watchdog só se cala para lock de publicação **para o destino que
+  ele vigia** — antes, um card publicando em destino isolado com o lock padrão cegava a conferência da
+  produção (medido: 2 ciclos com a cópia real divergente);
+  (x) **cópia correta e destravada é rearmada no ciclo** (`trava=rearmada`) — publicação por versão antiga
+  do `publicar.sh` deixava a janela aberta para o ad-hoc.
   Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
   isolado).
 

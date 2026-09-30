@@ -306,4 +306,16 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   referencia deu `PUBLICACAO_OK` com o mesmo digest em **T1 23:26:00Z** e **T2 23:30:21Z** (4m21s de
   intervalo, com o atacante rodando). Bruto: `ev/concorrencia-real.log` e `ev/ataque-concorrente.log` no
   workspace do card.
+- **Dois furos achados durante o proprio ensaio (medidos, nao supostos):** (i) o watchdog tratava
+  **qualquer** lock como "publicacao em curso": as 23:38:56Z o card `t_0f74266d` segurava o lock
+  **padrao** para publicar em destino isolado e a copia real (divergida as 23:36:50Z pelo meu proprio
+  ensaio) ficou **2 ciclos sem ser conferida** — `PUBLICACAO_EM_ANDAMENTO` as 23:38:56Z e reparo so as
+  23:41:12Z, depois do lock sair. Agora o lock registra `destino=` e o watchdog so se cala quando o lock
+  e de publicacao **para o destino que ele vigia** (ou sem `destino=`, conservador). (ii) a copia pode
+  estar **correta e SEM trava** (publicacao feita por versao antiga do `publicar.sh`, sem `--travar`):
+  janela em que o ad-hoc passa. O ciclo `--reparar` agora **rearma** e reporta `trava=rearmada`. Corrigido
+  tambem o meu proprio script de negativos, que destravava a copia real e **nao restaurava** (foi o que
+  deixou a janela): agora tem `trap ... EXIT` com restauracao obrigatoria (`watchdog --reparar` + checagem
+  da trava) e termina em **exit 7** se a producao nao voltar armada — ensaio destrutivo so vale com
+  restauracao garantida.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.
