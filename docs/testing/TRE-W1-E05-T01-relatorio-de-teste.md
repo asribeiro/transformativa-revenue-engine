@@ -1,5 +1,8 @@
 # Relatorio de teste — TRE-W1-E05-T01 (suite de teste do banco)
 
+> **RODADA 3 (30/09/2026) — leia o §10: é o estado vigente.** Ele responde item a item à revisão
+> independente (que reprovou 3 itens em rodada própria, com a bateria AC1/AC2/AC3 já PASS e dente
+> reproduzido por ela) e traz a medição nova com a prova de que o verde falso medido por ela foi fechado.
 > **RODADA 2 (30/09/2026) — leia o §9 antes do §1.** O §1 mede o AC2 na **forma antiga** do critério
 > ("consulta sem filtro de tenant"), que o dono **reformulou** em 30/09/2026 (opção A: isolamento físico, um
 > banco por cliente — card `t_e340c29b`) e o §1 fechou em `NAO_TESTAVEL`. A **forma vigente** do critério é
@@ -240,3 +243,125 @@ O instrumento do V2 (`teste_tenant_rls.sh`) segue no repo, fora da suíte, sem m
   está declarado no runbook §8 e no contrato.
 - **`shellcheck`** não existe no ambiente (nem no dev, nem na VPS): a checagem de sintaxe foi `bash -n` nos
   quatro scripts alterados.
+
+---
+
+## 10. RODADA 3 (30/09/2026) — os 3 itens da revisão independente, corrigidos e medidos
+
+A revisão independente (`revisor`, rodada 1) **reproduziu** `SUITE_OK (89)`, `ISOLAMENTO_OK (5)`, os dois
+dentes e a guarda ADR-005 na VPS do dev, deu **AC1/AC2/AC3 = PASS** — e **reprovou 3 itens** que não eram de
+medição, e sim de **texto × medição**. Esta rodada fecha os três e prova, com o mesmo instrumento, que o
+verde falso que ela mediu deixou de existir.
+
+Artefato desta rodada: commit **`21ed325`** (origin/develop).
+`sha256` dos scripts sob teste (destino de ensaio publicado, iguais ao commit):
+`teste_isolamento_clientes.sh a69e08d1…` · `teste_tenant_rls.sh d4ade211…` · `suite_banco.sh 5fb644a2…`
+(não alterado nesta rodada) · `estado_do_ambiente.sh 7f9a12a5…` · `aplicar_migracoes.sh d0baf1e1…`.
+
+### 10.1 Item 1 — a régua de aceite continuava com o AC2 antigo
+
+- **O que a revisão mediu:** `docs/kanban/criterios-de-aceitacao.md` (linha 141) ainda trazia "consulta sem
+  filtro de tenant devolve vazio ou erro", **sem nota** da reformulação; o cabeçalho do próprio arquivo diz
+  *"card cujo critério não bater não fecha"*. O entregue media a forma nova e a régua, a antiga.
+- **Correção:** **nota datada (30/09/2026)** na seção `TRE-W1-E05-T01` da régua, registrando a decisão do dono
+  (opção A, card `t_e340c29b`, `docs/operations/registro-de-aprovacoes.md`), **com o texto novo** — "não
+  existem dois clientes no mesmo banco" —, e declarando que a forma antiga foi medida e devolvida ao
+  requisito (`NAO_TESTAVEL`) por não ser decidível contra o V1. A régua e o entregue não se contradizem mais.
+  A medição que prova a forma nova é a do §10.4 (item 5 e item 10).
+
+### 10.2 Item 2 — o item 3 falhava ABERTO e a superfície do detector era estreita
+
+**O defeito, medido pela revisão e reproduzido por mim nos dois artefatos** (container descartável
+`postgres:16`, migration congelada aplicada, mutação `ALTER TABLE … ADD COLUMN tenant_uuid uuid`, medição
+por `--prefixo`):
+
+| medição (mesmo alvo mutado) | artefato da RODADA 2 (`f3586c10…`) | artefato desta rodada (`a69e08d1…`) |
+|---|---|---|
+| `organizations.tenant_uuid` presente | `-- dimensao de cliente/tenant no schema: 0 ((nenhuma))` → `OK` → `ISOLAMENTO_OK (5 itens)` **exit 0** (verde falso) | `FALHOU dimensao de cliente no schema: 1 coluna(s) … (organizations.tenant_uuid )` → `ISOLAMENTO_FALHOU` **exit 1** |
+| `contacts."conta_Cliente"` (grafia mista, token no meio) | `ISOLAMENTO_OK (5 itens)` **exit 0** (verde falso) | `FALHOU … (contacts.conta_Cliente )` **exit 1** |
+| catálogo ilegível (o alvo responde; a leitura de `information_schema.columns` falha) | `ISOLAMENTO_OK (5 itens)` **exit 0** (verde falso) | `NAO_TESTAVEL nao consegui medir a dimensao de cliente no schema (leitura vazia/erro NAO e '0 coluna')` → `ISOLAMENTO_NAO_TESTAVEL (5 itens, 1 item não medido)` **exit 3** |
+| dente do próprio teste | `ISOLAMENTO_DENTE_OK (17 itens)` — **nenhum** caso cobria essas grafias/catálogo mudo | `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)` com os casos novos |
+
+**Correções:**
+
+1. **fail-closed na leitura:** `leitura()` passou a devolver `exit != 0` quando a consulta falha e o item 3
+   exige **número** (`numero()`); leitura vazia/erro → `NAO_TESTAVEL` (exit 3, **nunca verde**) com a causa
+   impressa. O item 4 ganhou o mesmo cuidado (leitura que falha → **reprovação**, não "0 bases").
+   *Vocabulário declarado:* leitura impossível é **não medível** (exit 3, mesma família do "docker ausente"),
+   **não** "critério violado" (exit 1) — reprovar sem ter medido seria afirmar violação que não foi observada;
+   os dois são não-verdes e o dente prova o exit 3.
+2. **superfície do detector:** regex passou a `(^|_)(tenant|tenants|cliente|clientes|client|clients)(_|$)`
+   aplicada com **`~*`** (case-insensitive, token em qualquer posição) — pega `tenant_id`, `tenant_uuid`,
+   `conta_cliente`, `conta_Cliente`. Não há falso positivo no contrato: **0** colunas casam na base dev
+   (mesmo resultado da regex antiga), e as 203 colunas do schema foram conferidas.
+3. **casos de dente novos (3):** `tenant_uuid` → exit 1; `conta_Cliente` (maiúscula, token no meio) → exit 1;
+   **catálogo ilegível** → exit 3. Cada mutação desfeita volta a `ISOLAMENTO_OK`.
+4. **superfície declarada (o que fica fora):** coluna de cliente com **outra grafia** (ex. `customer_id`) não
+   é pega pelo item 3 — quem a pega é a **etapa 1** (`contrato`), que exige as colunas exatamente como no
+   contrato e aponta `sobram=[...]` (foi o que a própria revisão mediu). Declarado no runbook §8; a etapa 5
+   não é o único controle.
+5. `scripts/db/teste_tenant_rls.sh` (instrumento do V2, fora da suíte) passou a usar **a mesma** regex/`~*`,
+   para não haver duas definições de "coluna de cliente" no repo; comportamento preservado:
+   `TENANT_RLS_NAO_TESTAVEL` (exit 3) no dev e `TENANT_RLS_DENTE_OK (18 itens)` no dente.
+
+### 10.3 Item 3 — provisionamento: o texto dizia mais do que a medição cobria
+
+- **O que a revisão mediu:** o item 5 mede `docker ps | grep '^pg-'` — **convenção de nome**; e o texto
+  afirmava "o provisionamento nao co-loca clientes". O item 4 só enxerga a instância do alvo.
+- **Correção:** o texto do veredito passou a dizer **exatamente** o que é medido ("uma base provisionada pela
+  convenção de nome `pg-*` serve o schema … nenhuma SEGUNDA base provisionada; provisionamento fora da
+  convenção não é medido por este item") e a saída ganhou a linha **informativa** com os containers de pé
+  **fora** da convenção que servem o schema — nunca escondidos, nunca contados. Medido: no dente, o container
+  `e05r3-probe` (fora da convenção, servindo o schema) aparece no informativo e o item permanece `OK`; no dev,
+  o informativo saiu `nenhum`. O runbook §8 ganhou o bullet do limite.
+
+### 10.4 Bateria na VPS do dev contra o artefato publicado (11 itens)
+
+Destino de ensaio isolado `/opt/tre/.teste-publicacao-t_c7281fce`, publicado pelo caminho versionado
+(`deploy/publicar.sh --commit 21ed325 --card t_c7281fce` → `PUBLICACAO_OK … digest=c35ecba3… arquivos=307`).
+A cópia operacional `/opt/tre/repo` **não** foi escrita nesta rodada.
+
+| # | comando (no destino publicado) | resultado medido | exit |
+|---|---|---|---|
+| 1 | `bash scripts/db/suite_banco.sh dev` | `SUITE_OK (89 itens, 0 falhas)` | **0** |
+| 2 | `... suite_banco.sh dev --somente-leitura` | `SUITE_OK (69 itens, 0 falhas)` | **0** |
+| 3 | `... suite_banco.sh prod` | `FALHOU ADR-005` (recusado antes de tocar no alvo) | **1** |
+| 4 | `... suite_banco.sh homolog` | `FALHOU ambiente` (`pg-homolog` não existe) | **1** |
+| 5 | `teste_isolamento_clientes.sh dev` | `ISOLAMENTO_OK (5 itens, 0 falhas)` | **0** |
+| 6 | `env TRE_ISOLAMENTO_SEM_DOCKER=1 teste_isolamento_clientes.sh dev` | `ISOLAMENTO_NAO_TESTAVEL (5 itens, 1 não medido)` | **3** |
+| 7 | `teste_tenant_rls.sh dev` (instrumento do V2) | `TENANT_RLS_NAO_TESTAVEL (2 itens)` | **3** |
+| 8 | `aplicar_migracoes.sh dev --somente-checar` | `MIGRACAO_OK (4 itens, 0 falhas)` | **0** |
+| 9 | `suite_banco.sh --prova-de-dente` | `SUITE_DENTE_OK (19 itens, 0 falhas)` | **0** |
+| 10 | `teste_isolamento_clientes.sh --prova-de-dente` | `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)` | **0** |
+| 11 | `teste_tenant_rls.sh --prova-de-dente` | `TENANT_RLS_DENTE_OK (18 itens, 0 falhas)` | **0** |
+
+Etapas do item 1: ambiente `OK` · contrato 37 itens · constraints 16 itens · dedup sintético (48 itens) ·
+dedup no ambiente 21 itens (`CENARIO_OK`, estado restaurado) · isolamento 5 itens.
+
+### 10.5 Proveniência, estado do ambiente e uma diferença explicada
+
+- **Estado do dev antes × depois:** `12 tabelas | 30 índices`; contagens `organizations=2 / contacts=1 /
+  interactions=1`; registro da migration `0484a370…` == arquivo do repo; `pg-sales-dev` de pé e dev intacto.
+- **ADR-005:** `/opt/tre/{prod,homolog}` com **0 arquivo**; `prod` recusado antes de tocar no alvo.
+- **Sobra de outro card (registrada, não é minha):** no fim da bateria, `docker ps -a` mostrou
+  `tre-restore-637931-27223` (teste de backup/restore, card de E06 rodando em paralelo) ao lado de
+  `pg-sales-dev`; ela estava fora da convenção `pg-*` e já havia sido removida quando fui inspecioná-la — é o
+  caso concreto do limite declarado no §10.3. Meus containers descartáveis (`tre-isolamento-*`) foram todos
+  removidos pelos próprios testes.
+- **Diferença explicada (47 → 48 itens no dedup sintético, em relação à rodada 2):** não é mudança deste
+  card — `git diff e74ec02 21ed325 -- scripts/` mostra que o motor de dedup
+  (`scripts/dedup/deduplicar_organizacoes.py`) e `teste_entity_match_confidence.sh` foram alterados pelo card
+  **TRE-W1-E04-T02** (commit `7a6a270`, defeito D02), que entrou em `develop` entre as rodadas. O
+  commit desta rodada toca **4 arquivos**: os dois scripts de teste e dois documentos.
+- **Evidência bruta:** `EVIDENCIA_t_c7281fce_rodada3.txt`, `e05r3_bateria_final.log` (11 itens, com
+  `### EXIT=` por comando) e `e05r3_prova_dente.log` (antigo × novo, lado a lado) — anexos do card.
+
+### 10.6 O que esta rodada NÃO fecha (declarado)
+
+- **Homologação** segue não provisionada (`suite_banco.sh homolog` → exit 1 apontando o alvo inexistente); o
+  TEST PLAN pede dev **e** homolog — o segundo ambiente é provisionamento do dono, não deste card.
+- **Homologação humana (estágio 7) é do Anderson** — eu não homologo o meu próprio trabalho.
+- **`shellcheck`** não existe no ambiente: a checagem foi `bash -n` nos scripts alterados.
+- **Duas escolhas declaradas, não escondidas:** (a) leitura de catálogo que falha vira **não medível**
+  (exit 3) e não "critério violado" (exit 1) — §10.2.1; (b) coluna de cliente com grafia fora da superfície
+  do item 3 é pega pela **etapa 1**, não pela etapa 5 — §10.2.4.

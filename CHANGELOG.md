@@ -171,9 +171,40 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `scripts/db/teste_isolamento_clientes.sh` (novo, com `--prova-de-dente`); `scripts/db/teste_tenant_rls.sh`
   fica **versionado como instrumento do V2** (não wired na suíte) para o dia em que houver multi-cliente no
   mesmo banco. `scripts/verificar_estrutura.sh` passa a exigir o artefato novo (versionado e executável).
+- **Régua de aceite do E05 passou a registrar a reformulação do AC2** (`TRE-W1-E05-T01`, 30/09/2026) — a
+  revisão independente mostrou que `docs/kanban/criterios-de-aceitacao.md` continuava com a forma antiga do
+  2º critério ("consulta sem filtro de tenant"), **sem nota**, enquanto o entregue media a forma nova: pelo
+  documento que governa o fechamento (*"card cujo critério não bater não fecha"*), o entregue não batia com o
+  critério homologado. A seção `TRE-W1-E05-T01` da régua ganhou **nota datada** com a decisão do dono (opção
+  A, card `t_e340c29b`, `docs/operations/registro-de-aprovacoes.md`) e o **texto vigente** — "não existem
+  dois clientes no mesmo banco" —, declarando ainda que a forma antiga foi medida e devolvida ao requisito
+  (`NAO_TESTAVEL`, exit 3). Junto: `scripts/db/teste_tenant_rls.sh` (instrumento do V2) passou a usar a
+  **mesma superfície de detector** do teste vigente (`~*`, token `tenant|cliente|client` em qualquer
+  posição), para não haver duas definições de "coluna de cliente" no repo.
 
 ### Fixed
 
+- **Teste de isolamento entre clientes: catálogo mudo virava "0 coluna" (verde falso) e o detector só via
+  nomes terminando em `tenant|cliente|client`** (`TRE-W1-E05-T01`, os 2 itens de medição da revisão
+  independente) — medido por ela em alvo descartável e **reproduzido aqui nos dois artefatos, lado a lado**:
+  com `organizations.tenant_uuid` presente, o artefato anterior imprimia `dimensao de cliente/tenant no
+  schema: 0` e fechava `ISOLAMENTO_OK (5 itens)`, **exit 0**; com a leitura do catálogo falhando, **exit 0**
+  também (verde falso). Correções: `leitura()` passou a devolver falha (exit != 0) e o item 3 exige **número**
+   — leitura vazia/erro vira `NAO_TESTAVEL` (exit 3, nunca verde) com a causa impressa (no item 4, leitura que
+  falha **reprova**); o detector passou a cobrir o token em qualquer posição, **case-insensitive**
+  (`tenant_uuid`, `conta_Cliente`), e a superfície que fica **fora** dele (outra grafia, ex. `customer_id`)
+  está declarada no runbook §8 — quem a pega é a **etapa 1** (contrato, `sobram=[...]`). O dente do AC2 ganhou
+  3 casos novos (2 grafias de co-locação + catálogo ilegível): `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)`,
+  exit 0, contra `17 itens` antes. Sem falso positivo no contrato: **0** colunas casam na base dev (as 203
+  colunas do schema foram conferidas).
+- **Veredito do item 5 (provisionamento) dizia mais do que a medição cobria** (`TRE-W1-E05-T01`, 3º item da
+  revisão independente) — o item mede `docker ps` filtrando a **convenção de nome `pg-*`**, mas o texto
+  afirmava "o provisionamento nao co-loca clientes". O texto passou a declarar exatamente o que é medido
+  (uma base pela convenção, nenhuma **segunda** base provisionada; provisionamento fora da convenção **não é
+  medido** por este item) e a saída ganhou linha **informativa** com os containers de pé fora da convenção que
+  servem o schema — nunca escondidos, nunca contados. Medido no dente: um container fora da convenção
+  (`e05r3-probe`) servindo o schema aparece no informativo e o item permanece `OK`. Limite documentado no
+  runbook §8.
 - **`--faixas` se contradizia quando o limiar do contrato não era 0,95** (`TRE-W1-E04-T02-D02`, defeito medido
   na revisão independente do T02) — a linha de detalhe do comando tinha os **nomes das faixas fixos no código**
   enquanto as decisões eram calculadas: com o contrato em 0,90 o próprio comando imprimia
@@ -321,3 +352,16 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   republicação às 21:52:24Z. A rodada 2 passou a publicar o commit pelo caminho versionado em **destino
   isolado de ensaio** (`TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao-<card> deploy/publicar.sh --commit …`)
   e o runbook da suíte ganhou a seção 1.1 declarando o `tar` para a cópia como proibido.
+- **Rodada 3 da suíte do banco (`TRE-W1-E05-T01`, 30/09/2026, commit `21ed325`) — os 3 itens da revisão
+  independente fechados, medidos na VPS do dev contra o commit publicado em destino isolado de ensaio**
+  (`deploy/publicar.sh --commit 21ed325` → `PUBLICACAO_OK … digest=c35ecba3… arquivos=307`; a cópia
+  operacional `/opt/tre/repo` **não** foi escrita): `suite_banco.sh dev` → `SUITE_OK (89 itens, 0 falhas)`,
+  exit 0; `--somente-leitura` → `SUITE_OK (69 itens)`, exit 0; `prod` → exit 1 (ADR-005, recusado antes de
+  tocar no alvo); `homolog` → exit 1 (alvo inexistente); `teste_isolamento_clientes.sh dev` →
+  `ISOLAMENTO_OK (5 itens)`, exit 0; `TRE_ISOLAMENTO_SEM_DOCKER=1` → exit 3; `teste_tenant_rls.sh dev` →
+  exit 3 (instrumento do V2); `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_OK`, exit 0; dentes:
+  `SUITE_DENTE_OK (19 itens)`, `ISOLAMENTO_DENTE_OK (26 itens)`, `TENANT_RLS_DENTE_OK (18 itens)`. Dev antes
+  × depois: `12 tabelas | 30 índices`, contagens `2 / 1 / 1`, registro da migration `0484a370…` == arquivo;
+  `/opt/tre/{prod,homolog}` com **0 arquivo**. O dedup sintético passou de 47 para 48 itens **por mudança de
+  outro card** (`7a6a270`, TRE-W1-E04-T02/D02) que entrou em `develop` entre as rodadas — o commit desta
+  rodada toca 4 arquivos (2 scripts de teste + régua + runbook).
