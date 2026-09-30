@@ -106,3 +106,20 @@ Três peças, todas versionadas no repositório:
   palavra. Registrado o racional: com o vinculo por hash (decisao 2), o prazo e higiene,
   nao seguranca — nao ha troca possivel de texto dentro do prazo.
 - Decisão 4 — primeira aprovação e sequência: **pendente**.
+
+## 7. Decisão de acesso operacional (acesso do agente às máquinas)
+
+- **Decisão 5 — acesso às duas máquinas (opção B)**, escolhida por Anderson Ribeiro em
+  30/09/2026: chave dedicada do agente (`~/.ssh/id_ed25519_ops`, sem passphrase, 600)
+  autorizada na VPS do TRE (Contabo `169.58.24.102`) e no host do Hermes
+  (Hostinger `187.127.56.17`), usuário root nas duas.
+- Limites que o agente mantém por conta própria (declarados, não pedidos):
+  1. **o agente não aprova nada** — aprovação humana é ato do dono (decisões 1 a 4);
+  2. **nada destrutivo** (remover container/volume/imagem, apagar dado, derrubar serviço)
+     sem comando explícito do dono;
+  3. **ambiente vivo e credencial** seguem exigindo `canal: commit-do-aprovador`
+     (decisão 1/4), mesmo com acesso;
+  4. **toda execução nas máquinas entra no registro** com comando e saída, para a auditoria
+     não depender da narrativa do agente.
+- Risco declarado e aceito: docker equivale a root; a chave dá a máquina inteira; não existe
+  escopo pequeno. Mitigação é o registro e os limites acima, não a cerca.
