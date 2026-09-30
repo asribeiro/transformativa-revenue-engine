@@ -23,6 +23,12 @@
 set -uo pipefail
 AUTO="$(cd "$(dirname "${BASH_SOURCE[0]:-verificar-enforcement.sh}")" && pwd)/$(basename "${BASH_SOURCE[0]:-verificar-enforcement.sh}")"
 BASE_DIR="$(dirname "$AUTO")"
+# A publicacao sai do git: rode sempre a partir da raiz do repositorio (nao do cwd de quem chama).
+REPO_DIR="$(cd "$BASE_DIR/.." && pwd)"
+cd "$REPO_DIR" || { echo "VERIFICADOR_NAO_RODOU nao consegui entrar em $REPO_DIR"; exit 3; }
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "VERIFICADOR_NAO_RODOU $REPO_DIR nao e um repositorio git (a publicacao sai do git)"; exit 3
+fi
 
 CHAVE="${TRE_SSH_CHAVE:-}"
 if [ -z "$CHAVE" ]; then
@@ -73,13 +79,11 @@ detectar() { # $1 = --conferir | --reparar  (watchdog instalado, rodando onde a 
 echo "=== verificar-enforcement (destino isolado: $DEST)"
 # Fail-fast: publicar() recusa arvore suja (correto), mas um "FALHOU ... falhas=8" por arvore suja
 # parece defeito de enforcement. Melhor parar aqui com a razao clara.
-if command -v git >/dev/null 2>&1 && [ -d "$BASE_DIR/../.git" ] || [ -e "$BASE_DIR/../.git" ]; then
-  SUJO="$(git -C "$BASE_DIR/.." status --porcelain --untracked-files=no 2>/dev/null)"
-  if [ -n "$SUJO" ]; then
-    echo "VERIFICADOR_NAO_RODOU arvore suja: commite (ou faca stash) antes — a publicacao recusa arvore suja"
-    printf '%s\n' "$SUJO" | head -5
-    exit 3
-  fi
+SUJO="$(git -C "$REPO_DIR" status --porcelain --untracked-files=no 2>/dev/null)"
+if [ -n "$SUJO" ]; then
+  echo "VERIFICADOR_NAO_RODOU arvore suja: commite (ou faca stash) antes — a publicacao recusa arvore suja"
+  printf '%s\n' "$SUJO" | head -5
+  exit 3
 fi
 echo "--- limpeza do destino de ensaio"
 SSH_R "chattr -R -i '$DEST' 2>/dev/null; rm -rf '$DEST' '$ARTEFATO' '$LOCK' '$ALERTA' '$DIV_LOG' '$LOG' 2>/dev/null; true"
@@ -100,7 +104,7 @@ else
 fi
 SHA="$(printf '%s' "$SAIDA" | sed -n 's/.*\bcommit=\([0-9a-f]\{40\}\).*/\1/p' | tail -1)"
 DIG="$(printf '%s' "$SAIDA" | sed -n 's/.*\bdigest=\([0-9a-f]\{64\}\).*/\1/p' | tail -1)"
-[ -n "$SHA" ] && [ -n "$DIG" ] || falha "nao consegui ler commit/digest da publicacao"
+{ [ -n "$SHA" ] && [ -n "$DIG" ]; } || falha "nao consegui ler commit/digest da publicacao"
 TRAVA_ANTES="$(SSH_R "lsattr -d '$DEST' 2>/dev/null | awk '{print \$1}'" | tr -d '\n')"
 case "$TRAVA_ANTES" in (*i*) ok "trava armada no destino isolado ($TRAVA_ANTES)";;
                       (*)   falha "trava NAO armada no destino isolado ($TRAVA_ANTES)";; esac
@@ -126,7 +130,14 @@ recusou "tar -xz de arvore alheia"   "d=\$(mktemp -d); mkdir -p \$d/scripts/back
 # ---------------------------------------------------------------- 3. conteudo intacto
 echo "--- 3. conteudo da copia intacto depois das tentativas"
 SHA_DEP="$(SSH_R "sha256sum '$DEST/scripts/backup/backup-tre.sh' 2>/dev/null | cut -d' ' -f1")"
-[ "$SHA_ALVO" = "$SHA_DEP" ] && ok "backup-tre.sh inalterado ($SHA_DEP)" || falha "backup-tre.sh MUDOU ($SHA_ALVO -> $SHA_DEP)"
+# Hash vazio nao pode passar por "inalterado" (verificador que passa por construcao nao vale).
+if [ -z "$SHA_ALVO" ] || [ -z "$SHA_DEP" ]; then
+  falha "nao consegui medir o sha256 do arquivo alvo (alvo='$SHA_ALVO' depois='$SHA_DEP')"
+elif [ "$SHA_ALVO" = "$SHA_DEP" ]; then
+  ok "backup-tre.sh inalterado ($SHA_DEP)"
+else
+  falha "backup-tre.sh MUDOU ($SHA_ALVO -> $SHA_DEP)"
+fi
 DET="$(publicar conferir 2>&1 | tail -1)"
 printf '%s' "$DET" | grep -q '^PUBLICACAO_OK' && ok "conferencia do destino isolado segue PUBLICACAO_OK" \
   || falha "conferencia do destino isolado nao esta OK: $DET"
