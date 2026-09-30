@@ -158,6 +158,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   e `bypassrls=true`): a suíte fecha em `SUITE_NAO_TESTAVEL` para esse critério e ele volta ao Analista de
   Requisitos — nenhum verde foi declarado sem essa prova.
 
+- **Publicação versionada da cópia operacional** (`t_091cfea9`, DEFEITO F3 do `TRE-W1-E06-T01`) —
+  `deploy/publicar.sh` passa a ser o **único** caminho de escrita em `/opt/tre/repo`: publica um
+  **commit** (nunca a árvore de trabalho) por `git archive` → staging → `rsync -a --delete`, com o modo
+  vindo do índice do git; grava o commit em uso em `/opt/tre/repo/.publicado` (+ `.publicado.manifest`
+  com modo/sha256 de cada arquivo), recusa árvore suja (só passa com `--permitir-arvore-suja`, que
+  registra o desvio), aceita **uma publicação por vez** (`/opt/tre/.publicacao.lock`), avisa quando outro
+  card publicou antes, mantém o histórico em `/opt/tre/.publicacoes.log` e confere depois do `rsync` que
+  o `digest` da cópia é o do commit (senão falha com exit 6). Antes de publicar, confere os `ExecStart=`
+  dos units contra o modo do commit e **conta/registra** os alvos sem bit (`AVISO modo`; `--exigir-modos`
+  vira exit 4) — a publicação deixa de recriar o `203/EXEC` por acidente. `deploy/publicar.sh
+  --conferir` compara a cópia com o commit registrado arquivo a arquivo **e modo a modo**, devolvendo
+  `PUBLICACAO_DIVERGENTE` (exit 5) com o diff quando alguém reescreveu a cópia por fora do caminho único;
+  `docs/runbooks/publicacao-da-copia-operacional.md` é o runbook (comando, guardas, rollback do código
+  publicado e o que o caminho não faz).
+
 ### Fixed
 
 - **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
@@ -189,11 +204,14 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `tre-backup-verify.service` faz o restore real do último artefato (`RESTORE_OK`, 11 itens).
   **O backup diário ainda não gera artefato** — isso é o defeito irmão `t_1b2ab418` (trio `TRE_PG_*` ausente
   do `EnvironmentFile`), não o bit. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
-  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`,
-  publicações de teste do card `t_091cfea9`) — o bit no git e a guarda são duráveis, a cópia operacional
+  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`)
+  — o bit no git e a guarda são duráveis, a cópia operacional
   depende do caminho versionado de publicação (ACHADO ABERTO 3). Depois da publicação versionada de
   20:12:35Z os dois critérios da cópia foram remedidos com horário (`test -x` exit 0; `systemctl start` →
-  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8.
+  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8. **Correção de atribuição (medida pelo card
+  `t_091cfea9`):** as publicações de ensaio de 20:03:59Z/20:06:19Z foram para o destino **isolado**
+  `/opt/tre/.teste-publicacao`, não para `/opt/tre/repo` (o campo `destino=` só passou a ser gravado no log
+  depois delas) — o revert da cópia operacional medido ali é de sincronização por `tar` ad-hoc, não delas.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
@@ -219,6 +237,16 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **não** é prefixo de `0 itens` — a guarda funcionava e a prova dizia que não. Corrigidos: restauração
   recria coluna **e** índice; a checagem passou a casar a mensagem real (`nao executou item nenhum`).
   Segunda execução: `SUITE_DENTE_OK (14 itens, 0 falhas)`.
+- **Cópia operacional `/opt/tre/repo` reescrita por qualquer card — sem dono, sem modo e sem registro**
+  (`t_091cfea9`, o achado F3 do card `TRE-W1-E06-T01`) — cada card publicava o seu pedaço com
+  `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'`: quem sincronizava por último mandava (o driver recém
+  instalado voltou de `sha256 d29c9c97…` para `9f24572a…` no meio de uma rodada), o modo vinha do
+  *checkout* e não do git (foi o que devolveu `644` para `scripts/backup/*.sh` e produziu o `203/EXEC`) e
+  a cópia não tinha `.git` nem registro — na medição de 30/09 ela tinha **122 arquivos** de **300**
+  versionados, sem ninguém saber qual commit estava no ar. Corrigido com **um caminho único de
+  publicação** (`deploy/publicar.sh`, ver o `Added` acima): commit explícito, modo do índice do git,
+  `.publicado` com o commit em uso, `--conferir` que reprova a cópia divergente e histórico em
+  `/opt/tre/.publicacoes.log`. Evidência medida em `docs/runbooks/backup-restore-rollback.md` §7e.
 
 ### Notas de estado
 
