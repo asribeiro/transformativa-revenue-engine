@@ -1,6 +1,7 @@
 # Runbook — Publicação da cópia operacional (`/opt/tre/repo`)
 
 **Card:** `t_091cfea9` (DEFEITO F3 do `TRE-W1-E06-T01`) · **Revisão 1.1 (enforcement):** `t_daca4bda`
+· **Revisão 1.2 (staging único por publicação e falha que nomeia a fase):** `t_0f74266d`
 **Status:** vigente desde 30/09/2026 · **Máquina:** VPS Contabo `vmi3619453` (`169.58.24.102`) · destino `tre-deploy:tre-deploy`
 **Scripts:** `deploy/publicar.sh` (único caminho de escrita) · `deploy/watchdog-publicacao.sh` +
 `deploy/systemd/tre-publicacao-watchdog.{service,timer}` (vigilância de 2 min na VPS) ·
@@ -103,6 +104,18 @@ PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
    publicação avisa e grava `concorrencia:` no registro e no log.
 6. **Log append-only:** `/opt/tre/.publicacoes.log` guarda `quando, commit, digest, arquivos, card,
    destino, digest_antes, commit_antes` de cada publicação. É o histórico que permite rollback do *código*.
+   Desde a revisão 1.2 a publicação que **aborta** também deixa rastro ali
+   (`PUBLICACAO_ABORTADA fase=<fase> motivo=<motivo> commit=… card=… destino=…`): a falha intermitente do
+   `t_0f74266d` abortava antes de gravar e a auditoria do evento se perdia.
+7. **Staging único por publicação (revisão 1.2).** A transferência monta o staging com `mktemp -d` no
+   diretório **pai do destino** — um por destino e por execução — e o remove no fim, inclusive quando a
+   publicação aborta. Antes era o caminho **fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda
+   publicação de todo card: duas publicações simultâneas se misturavam (o `find` de uma listava o que o
+   `rm -rf`/`tar -x` da outra apagava, ~280 linhas de `sha256sum: … No such file or directory`), a falha
+   era **intermitente** e a mensagem culpava "a cópia transferida" — o manifesto incompleto era o do
+   staging. O mapa de modos deixou de ser o fixo `/opt/tre/.publicacao-modos` e virou irmão do staging.
+   A linha `staging:  <alvo>:<dir> (unico desta publicacao)` da saída diz qual foi; ela **nunca** aparece
+   depois do fim da publicação (o trap limpa).
 
 ## 4. Conferir (é isto que vale como prova pós-deploy)
 
@@ -223,6 +236,51 @@ A segunda linha é o que separa verificador de decoração: com o guard desligad
 aceitas, conteúdo mudou, conferência divergente). Verificador que passa por construção não vale
 (defeito D04 do TRE-W0-E04-T01).
 
+### 5.2 Falha que nomeia a FASE, manifesto incompleto e as guardas de caminho fixo (revisão 1.2)
+
+Defeito `t_0f74266d` (recorrência medida no card `t_1b2ab418`, reproduzida pelo `tester` no `t_c9a44f85`):
+instrumento que **falha fechado ainda pode mentir sobre por que falhou**. Duas correções de diagnóstico:
+
+1. **Manifesto incompleto não é divergência.** O manifesto é montado com `find` + `stat`/`sha256sum`; se
+   um arquivo listado desaparece ou fica ilegível nesse intervalo (escrita/limpeza concorrente), a comparação
+   acusava divergência de **conteúdo** e a mensagem apontava o lado errado. Agora a linha vira
+   `ILEGIVEL <caminho>` e o manifesto inteiro é reprovado com exit 7 — **contar linhas não bastava**: o
+   defeito real mantinha a contagem e zerava o campo do hash. Quem chama decide mensagem e exit code, e
+   nunca compara manifesto quebrado. Cada falha nomeia a fase (`ARVORE LOCAL`, `STAGING`, `COPIA
+   OPERACIONAL ANTES DA TROCA`, `COPIA OPERACIONAL JA TROCADA`, `COPIA OPERACIONAL`), o arquivo e a causa,
+   e diz se o destino foi tocado. `--conferir` ganhou `PUBLICACAO_INDETERMINADA` (exit 5) para o caso em
+   que **não dá para afirmar** divergência.
+2. **Diff sem truncar.** O diff do manifesto era cortado em `head -30`/`head -60` e o operador via um lado
+   só. Agora o `diff -u` completo é gravado em `$TRE_PUBLICAR_DIFF_DIR/publicacao-diff-<fase>-<carimbo>.txt`
+   (padrão `$TMPDIR`), o caminho aparece na tela e as primeiras 200 linhas vão para stderr.
+
+Duas guardas novas, da mesma família ("artefato compartilhado em caminho fixo"), ambas **fail-closed**
+antes de qualquer escrita:
+
+- **Lock isolado exige destino isolado.** `TRE_PUBLICAR_LOCK` diferente do padrão com o destino
+  compartilhado é **recusado** (exit 2): isolar só o lock tira a exclusão mútua sem tirar o alvo — foi
+  exatamente assim que a colisão do `tester` aconteceu.
+- **Destino isolado exige artefato isolado.** `$ARTEFATO` é a fonte de verdade do **watchdog da cópia
+  compartilhada**: publicar em destino isolado deixando o artefato padrão faria o watchdog de
+  `/opt/tre/repo` **reparar a produção para o commit do ensaio**. Recusado (exit 2) até você isolar
+  (`TRE_PUBLICAR_ARTEFATO=<destino>-artefato`).
+
+`PRODUCAO` passou a ser recalculada **depois** do parse dos argumentos: com `--destino` para um ensaio, o
+cálculo antigo (feito antes do parse) fazia o destino isolado passar por produção e a publicação pedia
+`--producao`.
+
+Teste (local e sem tocar a VPS nem o destino compartilhado — o `ssh` é substituído por um shim que
+executa o comando num sandbox, mapeando `/opt/tre` → sandbox):
+
+```bash
+bash deploy/teste-staging-unico.sh          # 39 verificações, 0 falhas
+```
+
+Ele roda o `publicar.sh` **real** e prova os dois lados: reproduz o defeito na versão de `3bf5e07`
+(exit 6 culpando "a cópia transferida"; duas publicações simultâneas falhando no staging fixo) e prova o
+conserto (as mesmas duas passam, com stagings **diferentes**), além das guardas (E/G), do `--destino` por
+CLI (H) e do caminho bom com `--conferir` (F).
+
 ## 6. Rollback do código publicado
 
 A cópia é código, não dado — restaurar dado é o runbook `backup-restore-rollback.md`. Para voltar a cópia
@@ -279,8 +337,30 @@ saídas em `docs/runbooks/backup-restore-rollback.md` §7d e
   Foi usar o destino compartilhado como bancada que produziu o `t_091cfea9`, o `203/EXEC` e a recorrência
   do `t_daca4bda`. Se o seu comando em `/opt/tre/repo` falhar com `Operation not permitted`, **não force
   `chattr -i`**: mudou de lugar o seu ensaio, não a trava.
+  Desde a revisão 1.2 as três variáveis andam **juntas**: isolar só o lock (destino compartilhado) é
+  **recusado** (exit 2), e destino isolado com o artefato padrão também — este segundo caso faria o
+  watchdog da cópia compartilhada **reparar a produção** para o commit do ensaio.
 - Para a cópia refletir trabalho ainda não integrado, publique o **commit da sua branch** (fica
   registrado com o seu card em `.publicado`) e **republicie o `develop`** depois do merge — assim o
   registro nunca mente sobre o que está no ar.
 - Se a publicação reclamar de `ExecStart` sem bit executável, o conserto é **no git**
   (`chmod +x` + commit), nunca um `chmod` na mão na cópia: na próxima publicação ele se perde.
+
+## 10. Evidência medida da revisão 1.2 (card `t_0f74266d`, 30/09/2026)
+
+Commit `44e0d13` (`fix/t_0f74266d-staging`), medido na VPS `vmi3619453` **sempre em destino isolado**
+(`/opt/tre/.teste-t_0f74266d`), lock padrão e artefato isolado (`…-artefato`), `--sem-trava`:
+
+- `PUBLICACAO_OK commit=44e0d13… digest=5d61ef32… arquivos=316` (exit 0), com a linha
+  `staging:  root@169.58.24.102:/opt/tre/.publicacao-staging.iYZ1Zy (unico desta publicacao)`;
+- `--conferir` no mesmo destino: `PUBLICACAO_OK … digest=5d61ef32… arquivos=316` (exit 0);
+- negativos medidos (nada escrito em nenhum dos dois): destino isolado com o artefato **padrão** →
+  `PUBLICACAO_FALHOU destino isolado … com o artefato PADRAO do watchdog` (exit 2); lock **isolado** com o
+  destino **compartilhado** → `PUBLICACAO_FALHOU lock isolado …` (exit 2);
+- **a produção não mudou:** antes e depois `/opt/tre/repo/.publicado` no commit `373ff42f` (digest
+  `1421673b`), `sha256 scripts/verificar_estrutura.sh` = `7ecaade3…` e o digest do artefato padrão do
+  watchdog = `1421673b…` (o mesmo); nenhum `/opt/tre/.publicacao-staging*` ou `.publicacao-modos*` sobrou;
+- local, sem VPS: `deploy/teste-staging-unico.sh` → `PASS=39 FALHAS=0` em duas execuções (reproduz o
+  defeito na versão de `3bf5e07` e prova o conserto). O digest que o código novo calcula para o commit
+  `719a628` (`d2215645…`, 315 arquivos) é **idêntico** ao que a versão antiga publicou — a semântica do
+  manifesto não mudou com o conserto.

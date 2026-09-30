@@ -373,3 +373,23 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **depois** de ele ter sido aplicado. Só texto (nenhuma DDL muda), mas o runner trata migration aplicada
   como imutável: `aplicar_migracoes.sh dev --somente-checar` → `MIGRACAO_FALHOU` (exit 1). Registrado como
   defeito no board, com o card do E05 esperando por ele.
+- **A publicação versionada falhava de forma intermitente no manifesto do staging e culpava o lado errado**
+  (`t_0f74266d`, defeito registrado pelo card `t_1b2ab418` e reproduzido pelo `tester` no `t_c9a44f85`): o
+  staging era o **caminho fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda publicação de todo
+  card — duas publicações simultâneas se misturavam (o `find` de uma listava o que o `rm -rf`/`tar -x` da
+  outra apagava, ~280 linhas de `sha256sum: … No such file or directory`), a falha era intermitente e a
+  mensagem culpava "a cópia transferida" quando o manifesto incompleto era o do **staging** (o diff ainda
+  saía truncado em `head -30` e a falha não deixava linha no log). Corrigido em `deploy/publicar.sh`
+  (`44e0d13`): staging **único por publicação** (`mktemp -d` no diretório pai do destino, removido no fim e
+  no trap), mapa de modos irmão do staging (era o fixo `/opt/tre/.publicacao-modos`, que ficava para trás no
+  `exit 6`), manifesto **reprovado como INCOMPLETO antes de comparar** (exit 7 — contar linhas não bastava:
+  o defeito real mantinha a contagem e zerava o campo do hash), cada falha nomeando a **fase** e o
+  **arquivo** (staging/local/antes/depois/conferência) com `PUBLICACAO_INDETERMINADA` para o caso em que não
+  dá para afirmar divergência, diff **sem truncar** (arquivo completo em `TRE_PUBLICAR_DIFF_DIR` + `head
+  -200`), `PUBLICACAO_ABORTADA` no log append-only e duas guardas fail-closed da mesma família ("artefato
+  compartilhado em caminho fixo"): lock isolado com destino compartilhado é **recusado** (exit 2) e destino
+  isolado com o artefato padrão do watchdog é **recusado** (o watchdog repararia a produção para o commit do
+  ensaio). `PRODUCAO` passou a ser recalculado **depois** do parse dos argumentos (com `--destino` para um
+  ensaio, o cálculo antigo fazia o destino isolado passar por produção e pedia `--producao`). Teste local sem
+  VPS: `deploy/teste-staging-unico.sh` (39 verificações, 0 falhas em duas execuções — roda o `publicar.sh`
+  real contra um `ssh` de mentira e reproduz o defeito na versão de `3bf5e07` antes de provar o conserto).

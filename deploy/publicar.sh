@@ -114,7 +114,9 @@ Variaveis: TRE_PUBLICAR_DESTINO (copia de teste/isolada), TRE_PUBLICAR_ARTEFATO,
            Teste SEMPRE em destino isolado: o destino compartilhado e PRODUCAO e trocar o commit
            dele exige --producao declarado (com a aprovacao registrada). Isolar SO o lock
            (TRE_PUBLICAR_LOCK) mantendo o destino compartilhado e recusado: sem o lock padrao as
-           duas publicacoes escreveriam no mesmo destino (defeito t_0f74266d).
+           duas publicacoes escreveriam no mesmo destino (defeito t_0f74266d). Destino isolado
+           exige TAMBEM artefato isolado: o artefato padrao e a referencia do watchdog da copia
+           compartilhada, que repararia a PRODUCAO para o commit do ensaio.
 
 Codigos de saida: 0 OK | 1 falha | 2 uso/precondicao | 3 lock ocupado | 4 modos | 5 divergencia | 6 transferencia | 7 manifesto incompleto (--manifesto, interno)
 TXT

@@ -246,6 +246,50 @@ sustenta 16 containers. Nada foi executado.
 - **Verificacao independente:** a correcao **nao** e homologada por quem a produziu — fica pendente de verificacao independente, com o log bruto (`saida-publicacao2.txt`, `ev-ac1.log`, `ev-ac2.log`, `ev-final.log`), o commit `9b464ed` e os scripts anteriores (`/tmp/f2-antigos/*.antigo.sh`) para o comparativo antes/depois.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente e o socket local do container; `deploy/environments/dev.env` e o par **nao-secreto** do ambiente (container/usuario/banco), e nenhum arquivo de backup carrega senha.
 
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — `t_0f74266d`: staging único por publicação e falha que nomeia a fase
+
+Defeito registrado pelo card `t_1b2ab418` e reproduzido de forma independente pelo `tester` (`t_c9a44f85`):
+a publicação versionada falhava de forma **intermitente** no manifesto do **staging** (exit 6, ~280 linhas
+`sha256sum: … No such file or directory`) e a mensagem final culpava "a cópia transferida". Fato medido: o
+staging era o caminho **fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda publicação de todo card
+— duas execuções simultâneas se misturavam (cada uma via o `tar` da outra). Conserto no commit `44e0d13`
+(`fix/t_0f74266d-staging`) + teste local; nada foi publicado no destino compartilhado.
+
+- **Publicação no VPS em destino ISOLADO** (`TRE_PUBLICAR_DESTINO=/opt/tre/.teste-t_0f74266d`,
+  `TRE_PUBLICAR_ARTEFATO=…-artefato`, `TRE_PUBLICAR_LOG=/opt/tre/.teste-t_0f74266d.log`, lock padrão,
+  `--sem-trava`): `PUBLICACAO_OK commit=44e0d131fa4c9a6d0baaf834abfa713dc2a63eb9
+  digest=5d61ef32634fdb9b10b4759c8430f1f5ae54892301618096edf6ff66bf93d133 arquivos=316` **exit 0**, com
+  `staging:  root@169.58.24.102:/opt/tre/.publicacao-staging.iYZ1Zy (unico desta publicacao)`; em seguida
+  `--conferir` com as mesmas variáveis → `PUBLICACAO_OK commit=44e0d13… digest=5d61ef32… arquivos=316
+  conferido_em=root@169.58.24.102:/opt/tre/.teste-t_0f74266d trava=ausente` **exit 0**.
+- **Negativos medidos (nada escrito em nenhum dos dois):** destino isolado deixando o artefato **padrão** →
+  `PUBLICACAO_FALHOU destino isolado (/opt/tre/.teste-t_0f74266d) com o artefato PADRAO do watchdog …`,
+  **exit 2**; lock **isolado** (`TRE_PUBLICAR_LOCK=/opt/tre/.teste-lock-t_0f74266d`) com o destino
+  **compartilhado** → `PUBLICACAO_FALHOU lock isolado (…) com o destino COMPARTILHADO (/opt/tre/repo) …`,
+  **exit 2** — é exatamente o movimento que produziu a colisão do `tester`.
+- **A produção não mudou (medido antes e depois, no destino real):** `/opt/tre/repo/.publicado` no commit
+  `373ff42f8202c542dd32b9b8449b717a542dad93` (`digest 1421673b3ba12e1a410a3c96d5d845e162723617ea3d13e940470ab7ec4c0cd5`,
+  `publicado_por t_daca4bda`, `publicado_em 2026-09-30T23:31:47Z`); `sha256 scripts/verificar_estrutura.sh` =
+  `7ecaade3e3a783361fe8fa2672253517f6b3313e56e3a735c006599778d24e65`; digest do artefato padrão do watchdog =
+  `1421673b…` (o **mesmo**). Nenhum `/opt/tre/.publicacao-staging*` nem `.publicacao-modos*` sobrou; o
+  destino e o artefato de teste foram removidos depois e o log ficou como evidência
+  (`/opt/tre/.teste-t_0f74266d.log`).
+- **Teste local, sem VPS:** `bash deploy/teste-staging-unico.sh` → `PASS=39 FALHAS=0` em **duas** execuções
+  consecutivas. O `ssh` é substituído por um shim que executa o comando num sandbox (`/opt/tre` → sandbox) e
+  roda o `publicar.sh` **real**: reproduz o defeito na versão de `3bf5e07` (exit 6 culpando "a cópia
+  transferida"; duas publicações simultâneas falhando no staging fixo) e prova o conserto (as mesmas duas
+  passam, com stagings **diferentes** e sem sobra), além das guardas, do `--destino` por CLI e do caminho bom
+  com `--conferir`. O digest que o código novo calcula para o commit `719a628` (`d2215645…`, 315 arquivos) é
+  **idêntico** ao que a versão antiga publicou — a semântica do manifesto não mudou.
+- **Limites declarados (não disfarçados):** (i) a colisão do staging exigia concorrência, e o teste a torna
+  determinística **alargando a janela de propósito** (o shim atrasa o manifesto do staging); (ii) o teste é um
+  sandbox local — a prova de ponta a ponta é a publicação isolada na VPS acima; (iii) a validação no destino
+  **compartilhado** não foi feita aqui de propósito: ele é produção e está com o card `t_daca4bda` em voo;
+  (iv) a guarda do artefato nasceu de um achado desta rodada (o artefato é a referência do watchdog da cópia
+  compartilhada) e **muda comportamento** para quem publica em destino isolado sem isolar o artefato: agora é
+  recusado com mensagem que diz o que fazer.
+- Segredos: nenhum valor nesta entrada; a conexão usa a chave do agente (`~/.ssh/id_ed25519_ops`).
+
 ## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — `t_daca4bda`: enforcement do caminho unico da copia operacional
 
 Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** ressincronizou `/opt/tre/repo` por fora do caminho unico (`tar` ad-hoc, mtime preservado) e a copia voltou a uma arvore PRE-correcao, com o `.publicado` continuando a dizer o commit consertado — o `tre-backup.service` voltou a imprimir `BACKUP_OK` cobrindo **zero** ambientes. Causa raiz medida: o caminho unico **detectava** (`deploy/publicar.sh --conferir`, exit 5) mas nao impedia nem vigiava. Correcao em quatro camadas, todas medidas no destino REAL.
