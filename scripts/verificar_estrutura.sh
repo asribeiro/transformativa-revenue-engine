@@ -112,16 +112,20 @@ if grep -qiE '(passwd|password|senha)[[:space:]]*=[[:space:]]*[^[:space:]#]' dep
 else
   echo "OK    par do Odoo sem valor de senha"
 fi
-# Artefatos do modulo Odoo (TRE-W2-E03-T01) existem E estao versionados: o modulo
-# (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o aceite do card pode
+# Artefatos do modulo Odoo (TRE-W2-E03-T01 e TRE-W2-E05-T01) existem E estao versionados: o
+# modulo (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o aceite do card pode
 # passar na VPS por arquivo que nunca entrou no repo.
 for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/__init__.py \
          odoo/addons/transformativa_sales_ai/README.md \
+         odoo/addons/transformativa_sales_ai/models/__init__.py \
+         odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py \
          odoo/addons/transformativa_sales_ai/tests/__init__.py \
          odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
+         odoo/addons/transformativa_sales_ai/tests/test_oportunidade_canonica.py \
          scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
-         scripts/odoo/desinstalar_modulo.py docs/runbooks/odoo-modulo-sales-ai.md; do
+         scripts/odoo/desinstalar_modulo.py docs/runbooks/odoo-modulo-sales-ai.md \
+         docs/runbooks/odoo-oportunidade-canonica.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi

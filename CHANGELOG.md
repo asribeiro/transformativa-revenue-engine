@@ -404,6 +404,33 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `version` mutada para `18.0.1.0.0` → `MODULO_ODOO_FALHOU (19 itens, 3 falhas)`, exit 1; teste
   plantado que falha → `MODULO_ODOO_FALHOU (36 itens, 2 falhas)` com `odoo --test-enable exit 1`,
   exit 1.
+- **Oportunidade canônica do lado Odoo — `tf.process.opportunity` (`TRE-W2-E05-T01`)** — primeiro
+  conteúdo do módulo `transformativa_sales_ai`: `models/tf_process_opportunity.py` com a identidade
+  canônica (`tf_uuid`: UUID obrigatório, único e imutável — Data Contract V1.0 §3, com o UUID do
+  produtor preservado e UUID v4 gerado quando ausente), o vínculo obrigatório a `res.partner`
+  (`ondelete='restrict'`) e os fatos que o contrato §2 dá ao Odoo (`stage_id`
+  (`crm.stage` — que carrega o won/lost do funil via `is_won`), `expected_revenue` (`valor`) e
+  `lost_reason_id` (`motivo de perda`)) + `models/__init__.py` + 9 testes do Odoo
+  (`tests/test_oportunidade_canonica.py`, tag `post_install`) + runbook
+  `docs/runbooks/odoo-oportunidade-canonica.md`. O modelo **não** traz score de prioridade (o
+  contrato o mapeia para `res.partner`/`crm.lead`), FK para `crm.lead` (o vínculo é
+  `crm.lead.tf_opportunity_id`, card E04-T02), view (E06) nem ACL (E07); a versão do módulo fica em
+  `19.0.1.0.0` (nada instalado em ambiente persistente e três cards da onda editam o mesmo manifesto).
+- **Aceite do card item a item (51 itens, 0 falhas)**: instalação em banco limpo → teste do Odoo →
+  desinstalação → reinstalação, tudo em dupla descartável própria e com `TRE_MODULO_DIR`/`TRE_BANCO`/
+  `TRE_LOG_DIR` **próprios do card** (`/opt/tre/dev/modulos-e05t01/…`, `tre_e05_t01_oportunidade`) →
+  `RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0. Medido: `0 failed, 0 error(s) of 15 tests`
+  (6 herdados do E03 + 9 novos), 0 `ERROR/CRITICAL` nos quatro logs, `DESINSTALACAO_OK
+  estado_antes=installed estado_depois=uninstalled` com 0 resquício e 0 tabela do módulo, e
+  reinstalação com `latest_version` == manifesto. O teste 06 imprime a prova do vínculo no log:
+  `ForeignKeyViolation … violates foreign key constraint "tf_process_opportunity_partner_id_fkey"`.
+- **Dentes do aceite**: os 2 herdados do E03 (`--prova-de-dente`, em cópia do módulo) **mais 3 provas
+  negativas próprias deste card**, cada uma mutando uma cópia do módulo e exigindo reprovação **com o
+  teste esperado caindo**: `tf_uuid` sem `required` → `FAIL: …test_01_modelo_criado_com_os_campos_do_contrato`
+  (`tf_uuid tem de ser obrigatorio`); guarda de imutabilidade neutralizada →
+  `FAIL: …test_08_uuid_canonico_e_imutavel` (`ValidationError not raised`); `unique (tf_uuid)` trocada
+  por `unique (id)` → `FAIL: …test_07_uuid_canonico_e_unico` (`IntegrityError not raised`). Nas três o
+  aceite reprovou com `MODULO_ODOO_FALHOU (36 itens, 2 falhas)`, exit 1.
 
 ### Security
 
