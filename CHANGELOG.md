@@ -386,6 +386,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `ODOO_DEV_FALHOU (19 itens, 1 falha)`, exit 1; `remover-odoo-dev.sh` sem
   `TRE_ODOO_CONFIRMAR_REMOCAO=1` → recusa, exit 1; verificador rodado após o rollback →
   `13 falha(s)`, exit 1.
+- **CRM básico configurado no dev (`TRE-W2-E02-T01`)** — funil comercial do módulo `crm` derivado
+  **literalmente** da §7.1 do Data Contract V1.0 (congelado) e declarado de forma versionada em
+  `odoo/crm/funil-transformativa.yaml` (11 etapas, ordem 10..110, `Won` com `is_won`, ramo lateral
+  `Nurture` em pipeline próprio, `Lost` deixado no nativo do Odoo — **nenhuma etapa inventada**) +
+  `scripts/provision/{configurar-crm-dev.sh,verificar-crm-dev.sh,reverter-crm-dev.sh,aplicar_funil_crm.py,desfazer_funil_crm.py,repor_etapas_padrao_crm.py}`
+  + runbook `docs/runbooks/odoo-crm-dev.md`. Medido na VPS Contabo `vmi3619453`, 01/10/2026: módulo `crm`
+  instalado em `odoo_dev`; pipeline `Sales` com `Descoberto 10 … Negociação 100` + `Won 110`; time/etapa
+  `Nurture` fora do funil; etapas do módulo `New`/`Qualified`/`Proposition` reconciliadas e `Won` **adotada**;
+  `crm.lead` com 0 oportunidades antes e depois (nenhum dado de negócio tocado).
+- **Aceite do CRM item a item**: `bash verificar-crm-dev.sh` → `RESULTADO: CRM_DEV_OK (29 itens, 0 falhas)`,
+  exit 0 — confronto **banco × declaração** etapa por etapa, pipeline único, etapa de ganho única e última,
+  ramo lateral separado, ausência de etapa órfã, campos mínimos 10/10 em `crm.lead`, banco do Odoo ainda
+  separado do `sales_intelligence`, `pg-sales-dev` de pé e Odoo **só em loopback**.
+- **Dentes do aceite do CRM** (provas negativas medidas, com exit code): declaração mutada → `CRM_DEV_FALHOU
+  (30 itens, 3 falhas)`, exit 1; **etapa intrusa plantada no banco vivo** → `CRM_DEV_FALHOU (29 itens, 1 falha)`,
+  exit 1, e o configurador a removeu; rollback **padrão** → `CRM_DEV_FALHOU (29 itens, 15 falhas)`, exit 1;
+  rollback **total** (módulo desinstalado) → `CRM_DEV_FALHOU (13 itens, 3 falhas)`, exit 1 — com o aceite
+  voltando a 29/29 em cada reconfiguração.
 
 ### Security
 
@@ -413,6 +431,23 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `"<chave> = <variável>"` (falso positivo) — conserto no código, não no scanner (`PASS` depois);
   (5) a guarda de "porta em uso" reprovava a **reexecução idempotente** (o próprio `odoo-dev` segurava a
   8069) — a guarda passou a valer só quando o container ainda não existe.
+- **Oito defeitos encontrados executando o CRM (`TRE-W2-E02-T01`)**, todos consertados nesta execução:
+  (1) `docker exec` em container parado (o configurador parava o serviço antes do `odoo shell`);
+  (2) o desenho previa **arquivar** etapa extra, mas no Odoo 19 `crm.stage` **não tem** `active` — a
+  reconciliação passou a **remover**, com guarda fail-closed para etapa com oportunidade;
+  (3) ler `etapa.name` depois do `unlink()` abortava a transação — o nome é guardado antes;
+  (4) **`NULL || '…'` colapsa a linha do `psql`**: etapa criada fora do módulo fica com `is_won` **NULL**
+  (não `false`), a linha saía **vazia** e o comparador **descartava a etapa em silêncio** — uma etapa
+  intrusa no pipeline passava como aceite (achado pela prova negativa); todo campo entrou em `coalesce` e
+  linha vazia/malformada agora **reprova**;
+  (5) `rpad(jsonb, integer) does not exist` — `crm_stage.name`/`crm_team.name` são **JSONB** (traduzíveis);
+  (6) item de exposição olhava a linha inteira do `ss` (a 5ª coluna é o *peer*, sempre `0.0.0.0:*`) → falso
+  "porta pública", e exigia "UFW só com 22/tcp", fato que o card de TLS muda legitimamente — passou a medir
+  o **bind** da porta do Odoo e a **inexistência de regra** de UFW para ela;
+  (7) o rollback repunha o padrão com `-u crm`, que **não repõe** dado `noupdate` apagado — o pipeline
+  ficava **vazio** depois do rollback; a reposição é explícita e conferida (`repor_etapas_padrao_crm.py`);
+  (8) `odoo-dev` é compartilhado e um reinício de container por outro card mata o `docker exec` no meio
+  (exit **137**) — cada passo de ORM sobe o serviço, confere `HTTP 200` e tem até 3 tentativas.
 
 ### Notas de estado
 
