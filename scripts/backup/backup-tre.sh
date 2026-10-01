@@ -296,7 +296,13 @@ backup_ambiente() {
     return 1
   fi
 
-  mkdir -p "$saida" && chmod 700 "$saida"
+  # Diretorio do artefato: sem escrita aqui, a rotina seguiria e o erro apareceria como
+  # "No such file or directory" no meio do dump (diagnostico no lugar errado — medido no
+  # ensaio do card t_a5afde31 quando o destino nao era gravavel pelo usuario de servico).
+  if ! mkdir -p "$saida" || ! chmod 700 "$saida"; then
+    ko "nao consegui criar o diretorio do artefato em '$saida' (destino $DEST nao e gravavel por '$(id -un)'?)"
+    return 1
+  fi
 
   # 1. o servico responde?
   if docker exec "$servico" pg_isready -U "$usuario" >/dev/null 2>&1; then
