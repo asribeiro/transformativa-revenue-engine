@@ -463,6 +463,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   dente `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)` exit 0 com os 4 logs do aceite em **sha256
   idêntico** e ainda citando o banco do aceite; controle negativo (cópia do script com o caminho
   compartilhado de volta) → a guarda reprova, exit 1.
+- **`TRE-W2-E03-T01-D04` (severidade média, `fix/TRE-W2-E03-T01-D04`) — o `--prova-de-dente`
+  mentia sobre os dentes quando chamado pela forma documentada.** O cabeçalho do script documenta
+  `bash verificar-modulo-odoo.sh --prova-de-dente` (nome simples, cwd = diretório do script), mas o
+  modo de dente era o **único** que re-invocava o próprio arquivo — e fazia isso com `"$0"`: por
+  nome simples `$0` não tem diretório e não está no `PATH`, então a re-invocação morria em
+  `verificar-modulo-odoo.sh: line 103/121: verificar-modulo-odoo.sh: command not found` e as duas
+  provas eram acusadas de **não ter dente** (`MODULO_ODOO_DENTE_FALHOU (2 prova(s) sem dente)`,
+  exit 1) — fail-closed, mas com diagnóstico **falso** ("o aceite é oco"), justamente para quem
+  foi ler os dentes. A bateria do E03 nunca pegou porque chama por caminho absoluto. Conserto:
+  `EU="$(readlink -f "$0")"` e `bash "$EU" --…` em **toda** re-invocação; sub-run **sem** linha
+  `RESULTADO:` passa a ser reportado como **falha de invocação** (contador próprio), nunca como
+  "item sem dente". Medido na VPS: blob antigo (`72d00aa1…`) na forma documentada → `command not
+  found` nas duas provas + `FALHOU … nao tem dente`, exit 1; conserto nas **duas formas**
+  (`bash verificar-modulo-odoo.sh --prova-de-dente` de dentro do diretório e `bash /caminho/absoluto/…
+  --prova-de-dente`) → `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0 nas duas**; aceite
+  completo remedido com o mesmo blob → `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0; controle
+  negativo (re-invocação apontada para caminho inexistente) → `2 falha(s) de invocacao` e **0**
+  "prova(s) sem dente", exit 1. Detalhe no runbook §5.2.
 
 ### Notas de estado
 

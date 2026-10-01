@@ -33,6 +33,16 @@
 # TRE_VERSAO_ESPERADA, TRE_SERIE_ESPERADA, TRE_LOG_DIR, TRE_DEV_PG_CT (conferencia do dev),
 # TRE_MANTER_BANCO=1 (nao limpa no fim).
 #
+# FORMA DE CHAMADA (defeito TRE-W2-E03-T01-D04): valem as duas — o nome simples, de dentro do
+# diretorio do script, e o caminho absoluto:
+#   bash verificar-modulo-odoo.sh --prova-de-dente
+#   bash /caminho/absoluto/verificar-modulo-odoo.sh --prova-de-dente
+# Os modos que re-invocam este proprio arquivo (o --prova-de-dente) usam o caminho RESOLVIDO
+# (`$EU`, logo apos `set -u`), nunca `"$0"`: chamado por nome simples, `$0` e um nome sem
+# diretorio que nao esta no PATH e a re-invocacao morria em `command not found` — o modo de
+# dente entao acusava "o item nao tem dente" (diagnostico falso e alarmante) quando o que
+# falhou foi a invocacao.
+#
 # TRE_LOG_DIR: diretorio dos logs de passo do aceite (passos 1 a 4). O modo --prova-de-dente
 # NAO escreve nele: cada prova usa "$TRE_LOG_DIR/dente/prova-N" (defeito TRE-W2-E03-T01-D02 —
 # antes, o dente herdava este diretorio e sobrescrevia a evidencia do aceite).
@@ -43,7 +53,10 @@
 set -u
 
 MODULO="${TRE_MODULO:-transformativa_sales_ai}"
-AQUI="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# Caminho RESOLVIDO deste proprio arquivo (defeito TRE-W2-E03-T01-D04): `$0` pode ser um nome
+# simples sem diretorio (`bash verificar-modulo-odoo.sh`); toda re-invocacao interna usa `$EU`.
+EU="$(readlink -f "$0")"
+AQUI="$(cd "$(dirname "$EU")" && pwd)"
 MODULO_DIR="${TRE_MODULO_DIR:-/opt/tre/dev/modulos/$MODULO}"
 PARSER="${TRE_PARSER:-$AQUI/manifesto_do_modulo.py}"
 DESINSTALADOR="${TRE_DESINSTALADOR:-$AQUI/desinstalar_modulo.py}"
@@ -102,6 +115,12 @@ resumo() {
 # usava os MESMOS nomes de passo: rodar o dente depois de um aceite verde sobrescrevia
 # `1-instalacao.log`/`2-teste.log` (e os outros dois) com a execucao mutada, apagando a
 # evidencia bruta do aceite. O runbook §5.1 registra o caso medido.
+#
+# INVOCACAO (defeito TRE-W2-E03-T01-D04, conserto): as re-invocacoes usam o caminho RESOLVIDO
+# (`bash "$EU" ...`) — a forma documentada `bash verificar-modulo-odoo.sh` passa a valer tambem
+# para este modo. Com `"$0"`, chamar por nome simples de dentro do diretorio dava
+# `command not found` e a prova era acusada de "item sem dente"; agora o veredito ausente e
+# reportado como falha de INVOCACAO, com contador proprio (nao mente na direcao errada).
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e03t01-XXXXXX)"
@@ -110,6 +129,15 @@ if [ "$MODO" = "dente" ]; then
     mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2"
     DENTE_FALHAS=0
     GUARDA_FALHAS=0
+    INVOCACAO_FALHAS=0
+    # Guarda fail-closed do proprio defeito D04: sem o caminho resolvido nao ha prova a fazer —
+    # reprova com o motivo certo em vez de culpar os dentes do aceite.
+    if [ ! -f "$EU" ]; then
+        echo "FALHOU nao consegui resolver o caminho deste verificador (EU='$EU'): a re-invocacao do modo de dente nao roda — falha de INVOCACAO, nao veredito sobre dente"
+        echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU (0 prova(s) sem dente, 0 falha(s) na guarda dos logs do aceite, 1 falha(s) de invocacao) modulo=$MODULO"
+        exit 1
+    fi
+    info "verificador re-invocado por caminho resolvido: $EU"
     # Guarda fail-closed do proprio defeito D02: o conteudo dos logs de passo do aceite
     # e fotografado antes e depois das provas; qualquer mudanca reprova o dente.
     ACEITE_ANTES="$(cd "$LOG_DIR" 2>/dev/null && sha256sum [1-4]-*.log 2>/dev/null | LC_ALL=C sort)"
@@ -118,13 +146,15 @@ if [ "$MODO" = "dente" ]; then
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
     sed -i "s/'version': *'$VERSAO_ESPERADA'/'version': '18.0.1.0.0'/" "$DENTE_DIR/m1/__manifest__.py"
     sed -i "s/'version': *\"$VERSAO_ESPERADA\"/'version': '18.0.1.0.0'/" "$DENTE_DIR/m1/__manifest__.py"
-    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" "$0" --apenas-manifesto 2>&1)"
+    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" bash "$EU" --apenas-manifesto 2>&1)"
     echo "$D1" >"$DENTE_LOG_DIR/dente-1-manifesto-mutado.out"
     echo "$D1" | tail -4
     if echo "$D1" | grep -q 'RESULTADO: MODULO_ODOO_FALHOU'; then
         echo 'OK    dente 1: versao mutada reprova (o verificador nao passa por qualquer coisa)'
-    else
+    elif echo "$D1" | grep -q 'RESULTADO: '; then
         echo 'FALHOU dente 1: versao mutada NAO reprovou — o item de versao nao tem dente'; DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    else
+        echo "FALHOU dente 1: a prova NAO produziu veredito nenhum (o sub-run de '$EU' falhou — sem linha RESULTADO:) — falha de INVOCACAO, nao 'item sem dente' (defeito TRE-W2-E03-T01-D04)"; INVOCACAO_FALHAS=$((INVOCACAO_FALHAS + 1))
     fi
 
     cabecalho "prova de dente 2: teste do Odoo que falha de proposito (espera-se FALHOU)"
@@ -136,13 +166,15 @@ if [ "$MODO" = "dente" ]; then
         self.assertTrue(False, 'teste plantado pela prova de dente (TRE-W2-E03-T01)')
 PY
     D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_dente" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-2" \
-          "$0" --apenas-instalacao-e-teste 2>&1)"
+          bash "$EU" --apenas-instalacao-e-teste 2>&1)"
     echo "$D2" >"$DENTE_LOG_DIR/dente-2-teste-mutado.out"
     echo "$D2" | tail -4
     if echo "$D2" | grep -q 'RESULTADO: MODULO_ODOO_FALHOU'; then
         echo 'OK    dente 2: teste que falha reprova o aceite'
-    else
+    elif echo "$D2" | grep -q 'RESULTADO: '; then
         echo 'FALHOU dente 2: teste que falha NAO reprovou — o item de --test-enable nao tem dente'; DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    else
+        echo "FALHOU dente 2: a prova NAO produziu veredito nenhum (o sub-run de '$EU' falhou — sem linha RESULTADO:) — falha de INVOCACAO, nao 'item sem dente' (defeito TRE-W2-E03-T01-D04)"; INVOCACAO_FALHAS=$((INVOCACAO_FALHAS + 1))
     fi
 
     # Guarda D02: os logs de passo do aceite tem de sair das provas com o MESMO conteudo.
@@ -158,11 +190,11 @@ PY
     fi
 
     echo '---'
-    if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ]; then
+    if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ] && [ "$INVOCACAO_FALHAS" -eq 0 ]; then
         echo "RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
         exit 0
     fi
-    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite) modulo=$MODULO"
+    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite, $INVOCACAO_FALHAS falha(s) de invocacao) modulo=$MODULO"
     exit 1
 fi
 

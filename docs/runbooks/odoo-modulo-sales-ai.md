@@ -155,6 +155,33 @@ ou reprova o dente com `FALHOU o modo dente mexeu nos logs de passo do aceite �
 negativo (cópia do script com o caminho compartilhado de volta) é medido e registrado no
 card `t_5c4fc7ac` / `docs/operations/registro-de-execucoes.md`.
 
+### 5.2 As duas formas de chamada (defeito `TRE-W2-E03-T01-D04`, consertado em 01/10/2026)
+
+O cabeçalho do script documenta a chamada pelo **nome**, de dentro do diretório do script
+(`bash verificar-modulo-odoo.sh --prova-de-dente`). O modo de dente era o **único** que re-invocava
+o próprio arquivo — e fazia isso com `"$0"`: chamado por nome simples, `$0` é um nome **sem
+diretório**, que não está no `PATH`, e a re-invocação morria com
+
+```
+verificar-modulo-odoo.sh: line 103: verificar-modulo-odoo.sh: command not found
+FALHOU dente 1: versao mutada NAO reprovou — o item de versao nao tem dente
+```
+
+ou seja: as duas provas eram acusadas de **não ter dente** (`MODULO_ODOO_DENTE_FALHOU (2 prova(s)
+sem dente)`, exit 1) quando o que falhou foi a **invocação** — *fail-closed*, mas com diagnóstico
+falso e alarmante (diz que o aceite é oco justamente para quem foi ler os dentes). A bateria do E03
+não pegou porque chama por **caminho absoluto**, forma em que `$0` resolve.
+
+Conserto: o script resolve o próprio caminho em `EU="$(readlink -f "$0")"` (usado também para
+derivar `AQUI`) e **toda** re-invocação usa `bash "$EU" --…`. Sub-run **sem** linha `RESULTADO:`
+passou a ser reportado como **falha de invocação**, com contador próprio
+(`…, N falha(s) de invocacao)`) — nunca como "item sem dente"; sem caminho resolvido o modo reprova
+antes de qualquer prova. Medido nas **duas formas** (VPS, 01/10/2026): `bash verificar-modulo-odoo.sh
+--prova-de-dente` (cwd = diretório do script) e `bash /caminho/absoluto/…/verificar-modulo-odoo.sh
+--prova-de-dente` → `RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** nas duas.
+Controle negativo (re-invocação apontada para caminho inexistente) → `2 falha(s) de invocacao` e
+**0** "prova(s) sem dente". Evidência e controles no card `t_025f9a2a`.
+
 ## 6. Rollback
 
 **Nível 1 — desinstalar o módulo (rollback declarado no card):** é o **passo 3** do aceite e está
