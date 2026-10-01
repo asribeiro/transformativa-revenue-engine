@@ -294,13 +294,22 @@ case "$BINARIO" in
   *) ko "binario responde '${BINARIO:-nada}' e o manifesto registra a imagem '$IMAGEM'" ;;
 esac
 
-# o Odoo que responde e o do banco RESTAURADO: a base servida tem de ser a restaurada
+# o Odoo que responde e o do banco RESTAURADO: a base servida tem de ser a restaurada.
+# `version_info` e JSON-RPC (POST) — GET devolve 415 Unsupported Media Type (medido em
+# 01/10/2026), o que reprovava um Odoo que estava respondendo certo.
 if [ -n "$PORTA" ]; then
-  VERSION_INFO="$(curl -s -m 10 "http://127.0.0.1:$PORTA/web/webclient/version_info" 2>/dev/null || true)"
+  VERSION_INFO="$(curl -s -m 10 -X POST -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","method":"call","params":{}}' \
+    "http://127.0.0.1:$PORTA/web/webclient/version_info" 2>/dev/null || true)"
   case "$VERSION_INFO" in
-    *server_version*) ok "endpoint /web/webclient/version_info respondeu do Odoo restaurado" ;;
+    *server_version*) ok "JSON-RPC /web/webclient/version_info respondeu do Odoo restaurado" ;;
     *) ko "endpoint /web/webclient/version_info nao respondeu o esperado: $(printf '%s' "$VERSION_INFO" | head -c 120)" ;;
   esac
+  # a tela de login do BANCO restaurado (nao de outro) responde 200
+  CODIGO_DB="$(curl -s -m 10 -o "$TMP/login-db.html" -w '%{http_code}' \
+    "http://127.0.0.1:$PORTA/web/login?db=$BANCO" || true)"
+  [ "$CODIGO_DB" = "200" ] && ok "tela de login do banco restaurado '$BANCO' responde 200" \
+    || ko "tela de login do banco '$BANCO' respondeu HTTP $CODIGO_DB"
 fi
 
 # ---------------------------------------------------------------- 6. o ambiente dev ficou intacto

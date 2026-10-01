@@ -207,18 +207,21 @@ tre_resolver_odoo() {
   maiuscula="$(printf '%s' "$amb" | tr '[:lower:]' '[:upper:]')"
   arquivo="$(tre_env_dir)/$amb.env"
 
-  local v_servico v_usuario v_banco v_fs
-  local f_servico="" f_usuario="" f_banco="" f_fs=""
+  local v_servico v_usuario v_banco v_fs v_imagem v_digest
+  local f_servico="" f_usuario="" f_banco="" f_fs="" f_imagem="" f_digest=""
   v_servico="$(tre_valor_de "TRE_ODOO_PG_SERVICO_$maiuscula")"
   v_usuario="$(tre_valor_de "TRE_ODOO_PG_USER_$maiuscula")"
   v_banco="$(tre_valor_de "TRE_ODOO_PG_DB_$maiuscula")"
   v_fs="$(tre_valor_de "TRE_ODOO_FILESTORE_$maiuscula")"
+  v_imagem="$(tre_valor_de "TRE_ODOO_IMAGEM_$maiuscula")"
+  v_digest="$(tre_valor_de "TRE_ODOO_IMAGEM_DIGEST_$maiuscula")"
 
   if [ -f "$arquivo" ]; then
     local vals
     if ! vals="$(. "$arquivo" >/dev/null 2>&1 && \
-         printf '%s\n%s\n%s\n%s\n' "${TRE_ODOO_PG_SERVICO:-}" "${TRE_ODOO_PG_USER:-}" \
-                                   "${TRE_ODOO_PG_DB:-}" "${TRE_ODOO_FILESTORE:-}")"; then
+         printf '%s\n%s\n%s\n%s\n%s\n%s\n' "${TRE_ODOO_PG_SERVICO:-}" "${TRE_ODOO_PG_USER:-}" \
+                                   "${TRE_ODOO_PG_DB:-}" "${TRE_ODOO_FILESTORE:-}" \
+                                   "${TRE_ODOO_IMAGEM:-}" "${TRE_ODOO_IMAGEM_DIGEST:-}")"; then
       TRE_ODOO_ERRO="arquivo de ambiente invalido ou ilegivel: $arquivo"
       return 1
     fi
@@ -226,12 +229,18 @@ tre_resolver_odoo() {
     f_usuario="$(printf '%s\n' "$vals" | sed -n 2p)"
     f_banco="$(printf '%s\n' "$vals" | sed -n 3p)"
     f_fs="$(printf '%s\n' "$vals" | sed -n 4p)"
+    f_imagem="$(printf '%s\n' "$vals" | sed -n 5p)"
+    f_digest="$(printf '%s\n' "$vals" | sed -n 6p)"
   fi
 
   TRE_ODOO_SERVICO="${v_servico:-$f_servico}"
   TRE_ODOO_USUARIO="${v_usuario:-${f_usuario:-odoo}}"
   TRE_ODOO_BANCO="${v_banco:-${f_banco:-odoo_dev}}"
   TRE_ODOO_FILESTORE="${v_fs:-${f_fs:-odoo-data-dev}}"
+  # Identidade do que o teste de restore vai SUBIR (nao do que esta no ar): sem ela o
+  # verificador nao teria como recusar uma imagem diferente.
+  TRE_ODOO_IMAGEM="${v_imagem:-${f_imagem:-${TRE_ODOO_IMAGEM:-odoo:19.0}}}"
+  TRE_ODOO_IMAGEM_DIGEST="${v_digest:-${f_digest:-${TRE_ODOO_IMAGEM_DIGEST:-}}}"
   if [ -n "$TRE_ODOO_SERVICO" ]; then
     TRE_ODOO_DECLARADO=1
     if [ -n "$v_servico" ]; then
