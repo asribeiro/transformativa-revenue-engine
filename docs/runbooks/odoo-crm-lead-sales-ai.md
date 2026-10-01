@@ -70,6 +70,21 @@ registro resumido no fio do card remete para cá).
   no `help`): promover para `Selection` criaria um vocabulário fechado novo (o contrato declara
   os eventos, não um vocabulário de "estado do último evento").
 
+**Observações da revisão independente (rodada 1) — declaradas, não consertadas nesta rodada**
+(a decisão fica registrada em vez de silenciada; o módulo medido é o mesmo nas duas rodadas,
+`models/crm_lead.py bc18a74e…`):
+
+- `tf_opportunity_id` aceita valor com **espaços nas pontas** e grava **cru** (a constraint valida
+  com `strip()`, o armazenamento não normaliza) — quem buscar pelo UUID exato pode não achar o
+  lead. **Decisão:** não normalizar nem recusar no espelho agora: o valor é escrito pela integração
+  (`TRE-W2-E05-T01` / `TRE-W3-E01-T01`), que é quem decide a normalização na fronteira, e alterar o
+  modelo invalidaria a medição dos 3 AC homologados. Declarado para o card que escreve os campos;
+- dois leads com o **mesmo** `tf_opportunity_id` são aceitos: o contrato **não** pede `UNIQUE` em
+  `crm.lead` (a unicidade canônica é do `sales_intelligence`) — registrado para a integração;
+- tiering por **piso** (`89,995 → A`, `100,5 → A+`, negativo → sem faixa): consequência declarada do
+  §8, sem faixa nova inventada;
+- `tf_last_event_type` é `Char`, não `Selection` (justificado acima).
+
 ## 3. Procedimento (na VPS do dev)
 
 ```bash
