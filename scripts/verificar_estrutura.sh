@@ -140,5 +140,17 @@ else
   echo "OK    manifesto do modulo sem valor de senha"
 fi
 
+# Verificador da CLASSE do D04-D01 (t_37db9564) existe E esta versionado: ponteiro de commit
+# citado em doc de registro (`scripts/verificar_ponteiros_de_registro.py`) e o teste de dente
+# dele. O defeito `t_5cad1689` ja mostrou o custo de artefato fora deste verificador de estrutura:
+# doc de registro com commit que nao se alcanca por ref nenhuma passava em todo mundo.
+for f in scripts/verificar_ponteiros_de_registro.py scripts/teste_ponteiros_de_registro.sh; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+if [ -x scripts/teste_ponteiros_de_registro.sh ]; then echo "OK    executavel scripts/teste_ponteiros_de_registro.sh"
+else echo "FALHOU sem permissao de execucao scripts/teste_ponteiros_de_registro.sh"; FALHAS=$((FALHAS+1)); fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
