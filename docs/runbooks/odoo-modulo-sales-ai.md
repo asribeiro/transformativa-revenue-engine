@@ -325,9 +325,10 @@ entidades**:
 - **modelos próprios** = `ir_model_data (module = <módulo>, model = 'ir.model')` **menos** os modelos
   compartilhados com outro módulo (mesmo critério que o Odoo usa para decidir se apaga o modelo na
   desinstalação). O filtro não é decorativo: medido em `odoo_dev` (leitura read-only) no módulo do core
-  `crm`, são **22** entradas `ir.model` em `ir_model_data`, das quais **8 compartilhadas**
-  (`res.partner`, `res.users`, `calendar.event`, `mail.activity`, `digest.digest`,
-  `ir.config_parameter`, `res.config.settings`, `utm_campaign`) — sem o filtro a régua acusaria
+  `crm`, são **22** entradas `ir.model` em `ir_model_data`, das quais **11 compartilhadas**
+  (`calendar.event`, `crm.lead`, `crm.team`, `crm.team.member`, `digest.digest`,
+  `ir.config_parameter`, `mail.activity`, `res.config.settings`, `res.partner`, `res.users`,
+  `utm.campaign`) — sem o filtro a régua acusaria
   `res.partner` de resquício em qualquer módulo que estenda o parceiro;
 - **tabelas** = existência **medida** em `information_schema` para cada modelo próprio (nome derivado
   do modelo, não suposto): `1 tabela` no E05, `tf_process_opportunity`;
