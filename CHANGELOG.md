@@ -646,6 +646,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   de guarda reprova o dente; (d) o contrato deixou de ter default morto — sem `TRE_CONTRATO_JSON` em
   disco o comando **recusa de cara** (`exit 1`) e diz o que exportar, e o USO do cabeçalho/runbook §3
   passaram a exportá-lo. Detalhe no runbook §8.
+- **Modo `--prova-de-dente` fail-closed no aceite das views (`TRE-W2-E06-T01`, `t_cf7519c9`)** — a
+  revisão independente da rodada 1 mediu dois defeitos bloqueantes no harness novo e pediu mudanças:
+  (1) **fail-open** — o julgamento aceitava **qualquer** `RESULTADO: VIEWS_FALHOU`, inclusive aborto
+  de guarda de ambiente: com `TRE_MODULO_DIR` inexistente, `DOCKER_HOST` inválido ou `TRE_IMAGEM`
+  ausente o comando devolvia `VIEWS_DENTE_OK (2 provas, 0 falhas)`, **exit 0** (mesma classe já
+  consertada no E04-T01, `a539802`/defeito `t_e1f62fae`, e no E04-T02, `e8bfe71`); (2) o **D-02 do
+  E03 reincidiu** — os sub-runs do dente herdavam `TRE_LOG_DIR` e sobrescreviam os 4 logs do aceite
+  (terceira incidência: `t_5c4fc7ac`/`c389223` → `t_aaaf1558` → aqui). Conserto medido na rodada 2
+  (commit `1c93804`): **âncora do artefato** (sha256 arquivo a arquivo contra o checkout do card — o
+  default `/opt/tre/dev/modulos/<módulo>` passa a ser **recusado**), **baseline não mutado
+  obrigatório** (o caminho sem mutação tem de medir `VIEWS_OK`; sem ele o comando termina em
+  `VIEWS_DENTE_FALHOU (baseline nao medido)`, exit 1), **assinatura própria por dente** + exigência
+  de ter medido o aceite inteiro (`passo 6/6`) + recusa de marcador de aborto de guarda, **log
+  próprio por prova** (`$TRE_LOG_DIR/dente/prova-N`) com guarda fail-closed por sha256 do diretório
+  do aceite antes/depois. Resultado: aceite `VIEWS_OK (83 itens, 0 falhas)`, dente
+  `VIEWS_DENTE_OK (2 provas, 0 falhas)` com baseline verde, dente 1 `83 itens / 6 falhas` e dente 2
+  `83 itens / 27 falhas` com as assinaturas esperadas, `logs do aceite intactos` (4 arquivos com
+  sha256 idêntico, mais guarda externa `EXIT_GUARDA=0`) e **6 de 6 controles fail-closed** com exit 1
+  (`ctl-a` default compartilhado, `ctl-b` docker fora, `ctl-c` imagem ausente, `ctl-d` sem âncora,
+  `ctl-e` módulo inexistente, `ctl-f` README divergente). Achado menor corrigido no mesmo rework: a
+  rodada 1 registrou sha256 igual "nos 20 arquivos" e a cópia medida carregava um `README.md` de
+  rodada anterior ao commit entregue. Detalhe no runbook §8.
 
 ### Notas de estado
 

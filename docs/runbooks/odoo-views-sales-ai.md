@@ -126,11 +126,13 @@ dev abre sessao de cron contra qualidade de banco da instancia `pg-odoo-dev`; na
 
 ```
 RESULTADO: VIEWS_OK (83 itens, 0 falhas) modulo=transformativa_sales_ai
-           modelo=tf.process.opportunity banco=tre_e06t01_views imagens=odoo:19.0+postgres:16
+           modelo=tf.process.opportunity banco=tre_e06t01r2_views imagens=odoo:19.0+postgres:16
 EXIT_ACEITE=0
 ```
 
-Destaques da rodada (log completo em `evidencias/aceite.out` da copia de aceite):
+A rodada 1 mediu o banco `tre_e06t01_views`; a rodada 2 (depois do conserto do modo dente, §8) o
+banco `tre_e06t01r2_views` — o mesmo aceite, os mesmos 83 itens e as mesmas 0 falhas. Destaques da
+rodada (log completo em `evidencias/aceite.out` da copia de aceite):
 
 * `odoo --init exit 0`; `ir_module_module.state = installed`; log sem `ERROR`/`CRITICAL`.
 * `runner do Odoo: 0 failed, 0 error(s) of 50 tests`; `TestViewsSalesAi` com 10 metodos.
@@ -147,9 +149,26 @@ Destaques da rodada (log completo em `evidencias/aceite.out` da copia de aceite)
   a abertura da lista da entidade canonica pelo restrito recusam com `AccessError`.
 * Rollback: 0 view, 0 menu, 0 registro do modulo; nenhuma view de parceiro carrega a secao.
 
-Prova de dente (`--prova-de-dente`): duas mutacoes do artefato em copia propria, cada uma tem de
-reprovar o aceite — (1) o `groups` da secao do parceiro removido (o restrito passaria a ver a
-secao) e (2) a view do modelo fora do manifesto `data`. Se alguma passar, o aceite nao tem dente.
+Prova de dente (`--prova-de-dente`): baseline NAO mutado + duas mutacoes do artefato em copia
+propria, cada uma com a SUA assinatura de falha exigida — (1) o `groups` da secao do parceiro
+removido (o restrito passaria a ver a secao) e (2) a view do modelo fora do manifesto `data`. Se
+alguma passar, o aceite nao tem dente. Rodada 2 medida (logs em `evidencias/dente.out` e
+`evidencias/logs/dente/`):
+
+```
+ancora: 20 arquivos com sha256 identico ao checkout do card
+baseline (caminho NAO mutado, 6 passos): VIEWS_OK (83 itens, 0 falhas)
+dente 1: VIEWS_FALHOU (83 itens, 6 falhas)  -> OK (assinaturas "AC2 ... nao recorta a secao pelo
+         grupo do vendedor" e "prova independente: 21 itens, 2 falha")
+dente 2: VIEWS_FALHOU (83 itens, 27 falhas) -> OK (assinaturas "views do modulo no banco: 2
+         (esperado 5)" e "AC1 a busca do tf.process.opportunity nao traz tf_uuid")
+guarda D02: logs do aceite intactos depois das provas (4 arquivo(s) com sha256 identico)
+RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas)   EXIT_DENTE=0
+```
+
+O contrato do modo dente (ancora, baseline obrigatorio, assinatura por prova, log proprio e
+guarda dos logs do aceite) esta na §8 — ele existe porque a rodada 1 da revisao independente mediu
+o modo dente **dando verde sem medir** e **apagando a evidencia do aceite**.
 
 ## 6. Armadilhas do Odoo 19 medidas neste card
 
@@ -179,3 +198,40 @@ aceite mede o resíduo: zero view, zero menu, zero registro em `ir_model_data`, 
 ausente do formulario do parceiro. A desinstalacao **nao** remove os campos `tf_*` das tabelas
 `res_partner`/`crm_lead`: as colunas sao dos cards TRE-W2-E04-T01/T02 e o Odoo as derruba quando
 *os modulos donos* saem — este modulo so' declara as views.
+
+## 8. Modo dente fail-closed (revisao independente: rodada 1 -> conserto na rodada 2)
+
+O aceite dos 6 passos passou nos 3 AC homologados nas duas rodadas. O que a rodada 1 da revisao
+independente reprovou foi o `--prova-de-dente` — o modo que promete provar que o aceite tem dente:
+
+* **fail-open**: o julgamento era `grep -q 'RESULTADO: VIEWS_FALHOU'`. Qualquer falha de ambiente
+  faz o aceite inteiro reprovar nas **guardas**, antes de medir: com `TRE_MODULO_DIR` inexistente,
+  `DOCKER_HOST` invalido ou `TRE_IMAGEM` ausente o comando devolvia
+  `VIEWS_DENTE_OK (2 provas, 0 falhas)`, **exit 0**. A classe ja' tinha sido consertada no E04-T01
+  (commit `a539802`, defeito `t_e1f62fae`) e no E04-T02 (commit `e8bfe71`) — este harness novo
+  nasceu sem a licao.
+* **D-02 do E03 reincidente**: os sub-runs herdavam `TRE_LOG_DIR` e escreviam os MESMOS nomes de
+  passo (`1-instalacao.log`, `2-teste.log`, `4-prova-independente.log`, `5-desinstalacao.log`).
+  Rodar o dente depois do aceite **apagava a evidencia bruta do aceite** e deixava, no lugar dela, o
+  log do mutante (medido na copia entregue: `2-teste.log` dizia `2 failed, 5 error(s) of 50 tests`
+  enquanto o `aceite.out` dizia `0 failed`). Defeito `TRE-W2-E03-T01-D02` (`t_5c4fc7ac`, conserto
+  aceito em `c389223`); terceira incidencia (E03 -> E07 `t_aaaf1558` -> este card).
+* **identidade da copia medida** (achado menor, mesmo rework): a copia do aceite carregava um
+  `README.md` de rodada anterior ao commit entregue, e a rodada 1 do registro afirmava sha256 igual
+  "nos 20 arquivos" — o aceite nao mede o README, mas a identidade registrada estava errada.
+
+Conserto (rodada 2), com os controles medidos na VPS em `evidencias/controles/`:
+
+| Regra do modo dente | O que ela impede | Controle medido |
+|---|---|---|
+| ancora do artefato: sha256 arquivo a arquivo contra `TRE_ANCORA_DIR` (default: o modulo do checkout ao lado do script) | medir contra copia de OUTRO card (o default `/opt/tre/dev/modulos/<modulo>` nao tem `views/`) ou contra copia com arquivo de rodada antiga | `ctl-a-defaults` -> artefato nao ancorado, exit 1; `ctl-f-readme-divergente` (README com uma linha a mais) -> recusa apontando `README.md` com os dois sha256 |
+| baseline NAO mutado tem de medir `VIEWS_OK` antes de qualquer mutacao | "dente" que na verdade reprova por ambiente quebrado | `ctl-b-dockerhost-ruim` e `ctl-c-imagem-ruim` -> `VIEWS_DENTE_FALHOU (baseline nao medido)`, exit 1 |
+| assinatura propria por dente, exigencia de ter medido o aceite inteiro (`passo 6/6`) e recusa de marcador de aborto de guarda | mutacao que "reprova" por motivo que nao e' o dela | dente 1 e dente 2 da rodada 2 (assinaturas na §5) |
+| log proprio por prova (`$TRE_LOG_DIR/dente/prova-N`) + guarda fail-closed por sha256 do diretorio do aceite antes/depois | perda da evidencia bruta do aceite (defeito D-02) | rodada 2: `OK logs do aceite intactos depois das provas (4 arquivo(s) com sha256 identico)`; guarda **externa** (`sha256sum -c` do manifesto gerado antes do dente) `EXIT_GUARDA=0` |
+| `SELF="$(readlink -f "$0")"` nos sub-runs | `$0` sem caminho (defeito `t_025f9a2a`) | as duas rodadas rodaram por `bash scripts/odoo/verificar-views-sales-ai.sh` |
+
+Licao para o fechamento da onda: um modo de prova negativa tem de **exigir verde no caminho nao
+mutado** e **assinar a falha de cada prova**; e a evidencia do aceite tem de morar em diretorio
+proprio, com guarda que reprove quem escrever nele. As duas classes ja' estavam registradas em
+cards anteriores do mesmo modulo — o que faltou nao foi conhecimento, foi o harness novo nao
+herdar a guarda (e o default do `TRE_MODULO_DIR` apontar para uma copia compartilhada).
