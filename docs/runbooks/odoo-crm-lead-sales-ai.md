@@ -209,6 +209,19 @@ de guarda → reprovado; (g3) a saída real **sem** o passo medido → reprovado
 dente 1 julgada pela assinatura de **outro** dente → reprovado; (g5) a saída **verde** do aceite →
 reprovado → `DENTE_FALHAS=4` = `CONTROLE_JULGAMENTO_OK`, **exit 0**.
 
+**Rodada 3 (card de defeito `t_945f96f1`, achado da revisão independente da rodada 2 — observação O8 do
+`t_d3bd6660`):** a assinatura de falha, sozinha, provava o **sintoma** e não a **causa** — um defeito de
+**outra** classe (erro de sintaxe plantado na cauda do modelo → `odoo --init exit 255`, `Couldn't load
+module`, nenhum rename) também faz o campo sumir do banco e satisfazia a assinatura do dente 1 (o
+`confere_dente` **aprovava** essa saída real; o mesmo valia para a assinatura de índice do dente 2 quando a
+leitura do banco cai). Conserto: os dentes **1–3** (os que medem por banco) só são aprovados se a saída
+também trouxer, do passo 1, `OK    odoo --init exit 0` **e** `OK    ir_module_module.state = installed` —
+isto é, se a mutação mutou o **pós-instalação** em vez de derrubar o módulo (`"a prova nao instalou o
+modulo — queda de ambiente nao e' prova de dente"`) — e o passo 2 passou a **recusar de cara** quando a
+leitura SQL volta vazia (queda de ambiente não vira "campo ausente"/"sem índice"). O veredito e as
+contagens da bateria **não mudaram** (`CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, `35/3 35/1 35/2 13/1 43/3`;
+aceite `CRM_LEAD_OK (64 itens, 0 falhas)`). Medições do antes/depois: **§8.2**.
+
 ## 6. Rollback
 
 **Nível 1 — reverter pelo módulo (rollback declarado no card):** desinstalação, executada como
@@ -308,3 +321,52 @@ dente; (d) o `TRE_CONTRATO_JSON` deixou de ter um default morto: sem contrato em
 **recusa de cara**, `exit 1`, antes de subir qualquer coisa, dizendo o que exportar (as guardas de
 arquivo passaram a ser as primeiras), e o USO do cabeçalho + o bloco da §3 passaram a exportar as
 três variáveis de caminho. A bateria inteira foi reexecutada com o script final (§5 e §4).
+
+### 8.2 Defeito 6 — a assinatura do dente provava o sintoma, não a causa (rodada 3, achado da revisão independente)
+
+**Achado pela revisão independente da rodada 2** (perfil `tester`, sobre o artefato `0fbaa3c5…`),
+registrado no card de defeito **`t_945f96f1`** (observação **O8** do `t_d3bd6660`) com severidade **baixa**.
+As assinaturas de falha dos dentes 1–3 não eram **exclusivas** da mutação do próprio dente: um defeito de
+**outra classe** plantado na cauda de `models/crm_lead.py` (`def isso_nao_e_python(:` — erro de sintaxe →
+`odoo --init exit 255`, `Couldn't load module`, `Failed to load registry`, **nenhum rename**) reprova o
+aceite com o mesmo texto, e o `confere_dente` do artefato **aprovava** o dente 1 com essa saída real
+(`OK    o8: a mutacao REPROVOU o aceite com a assinatura esperada`, `DENTE_FALHAS_O8=0`). O mesmo valia
+para a assinatura do dente 2 (`sem indice no banco para tf_idempotency_key`), que também aparece quando a
+leitura do banco cai (o `psql` volta vazio e "índice ausente" é indistinguível de "banco fora do ar").
+
+**Por que não era falso-verde do veredito:** no fluxo real do harness os 5 dentes medem sobre instalação
+**bem-sucedida** e o veredito exige os 5 — a fraqueza era do **julgador**, não do aceite.
+
+**Conserto (rodada 3, `verificar-crm-lead-odoo.sh` sha256 `8127577487ba…`, commit `a96e8af`):**
+
+- `confere_dente` ganhou o 5º parâmetro (**exigir o caminho saudável**) e os dentes **1–3** passam `1`:
+  além da assinatura, a saída tem de trazer do passo 1 `OK    odoo --init exit 0` **e**
+  `OK    ir_module_module.state = installed` — a mutação tem de ter mutado o **pós-instalação**; caso
+  contrário reprova com `"a prova nao instalou o modulo — queda de ambiente nao e' prova de dente"`;
+- o **passo 2** ganhou guarda **fail-closed de medição**: leitura SQL vazia **recusa** o aceite
+  (`FALHOU nao consegui ler o banco (leitura SQL vazia) — sem medicao nao ha aceite`, `exit 1`) em vez de
+  virar "campo ausente"/"sem índice", e a mensagem entrou na lista de abortos de ambiente do julgador;
+- o **dente 4** (assinatura = relatório do runner do Odoo, que só existe depois de o módulo carregar) e o
+  **dente 5** (caminho estático, sem instalação) passam `0` explícito;
+- a guarda nova **não conta item** (`info`): as contagens do aceite (**64**) e dos dentes
+  (`35/3`, `35/1`, `35/2`) permaneceram **iguais** — medido.
+
+**Medições da rodada 3 (VPS `vmi3619453`, base própria `/opt/tre/evid-t_945f96f1`, módulo **inalterado**
+`bc18a74e…`; logs brutos em `/opt/tre/evid-t_945f96f1/`):**
+
+| Medida | Antes (`0fbaa3c5…`) | Depois (`8127577487ba…`) |
+|---|---|---|
+| Saída real do defeito de instalação (O8) julgada como dente 1 | **OK** (o dente era aprovado sem o módulo instalar — o defeito) | **FALHOU** — `a prova nao instalou o modulo — queda de ambiente nao e' prova de dente (falta 'OK    odoo --init exit 0' no passo 1)` |
+| Saídas reais dos dentes 1/2/3 **saudáveis** (logs da rodada 2) | OK | **OK (3/3)** — nenhum falso-reprovado |
+| Saída verde do baseline julgada como dente 1 | reprovado | reprovado (`a mutacao NAO reprovou o aceite`) |
+| Saída do dente 4 julgada como dente 1 | reprovado | reprovado (falta a assinatura) |
+| Leitura SQL **de verdade falhando** (container do banco ausente) na guarda do passo 2 | — (não existia) | **recusa**: `FALHOU nao consegui ler o banco (leitura SQL vazia) — sem medicao nao ha aceite`, `exit 1` |
+| Leitura SQL **de verdade OK** (controle, instância do dev em modo leitura) | — | segue adiante **sem contar item** (`INFO`), `exit 0` |
+| Mutação de outra classe rodada **de verdade** com o script corrigido | — | `CRM_LEAD_FALHOU (35 itens, 16 falha(s))` (contagem preservada) e o julgamento **reprova** |
+| `--prova-de-dente` (ambiente completo) | `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, contagens `35/3 35/1 35/2 13/1 43/3` | **igual**: `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, `exit 0`, baseline `CRM_LEAD_OK (43 itens, 0 falhas)` e contagens `35/3`, `35/1`, `35/2`, `13/1`, `43/3` |
+| Aceite completo (6 passos) | `CRM_LEAD_OK (64 itens, 0 falhas)` | **igual**: `CRM_LEAD_OK (64 itens, 0 falhas)`, `exit 0` |
+| `--prova-de-dente` com os **defaults** e só com `TRE_MODULO_DIR` | `CRM_LEAD_DENTE_FALHOU (baseline nao medido …)`, `exit 1` | **igual**: `EXIT_A=1` e `EXIT_B=1` |
+
+**O que NÃO mudou nesta rodada:** nenhum byte do módulo (`models/crm_lead.py bc18a74e…`), os 3 AC
+homologados e as contagens do aceite e dos dentes — o diff é do **verificador** (§5/§8.2), da runbook, do
+CHANGELOG e do registro de execuções.
