@@ -482,6 +482,11 @@ fi
 if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
     cabecalho "passo 3 — servidor HTTP real + curl (consumidor externo)"
     LOG_ATUAL="$LOG_DIR/3-preparo.log"
+    # O container `odoo:19.0` roda como uid 100 (`odoo`) / gid 101: o diretorio descartavel tem de
+    # ser gravavel por ELE para o preparo conseguir escrever a chave (sem isso o `open()` do
+    # preparador falha com Permission denied). O diretorio continua 700 — quem manda nele e' o uid
+    # do container, e o verificador (root) continua lendo tudo.
+    chown 100:101 "$DESC_DIR" 2>/dev/null || info "nao consegui chown do diretorio descartavel (uid do container pode diferir)"
     RC="$(docker run --rm -i --network "$NET_TMP" \
             -v "$DESC_DIR/odoo.conf":/etc/odoo/odoo.conf:ro \
             -v "$MODULO_DIR":/mnt/extra-addons/"$MODULO":ro \
@@ -546,6 +551,7 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
 
     CHAMADAS=0
     AUDITADAS=0
+    ULTIMA_RESPOSTA=""
     api_post() { # $1=rotulo $2=codigo_esperado $3=operacao $4=corpo $5=config (padrao: com token)
         local rotulo="$1" esperado="$2" operacao="$3" corpo="$4" config="${5:-$CFG}"
         local saida codigo
@@ -560,14 +566,17 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
             falhou "$rotulo -> HTTP $codigo (esperado $esperado): $(head -c 300 "$DESC_DIR/resposta.json" | tr -d '\n')"
         fi
         cp "$DESC_DIR/resposta.json" "$DESC_DIR/resposta-$CHAMADAS.json"
+        ULTIMA_RESPOSTA="$DESC_DIR/resposta-$CHAMADAS.json"
     }
     api_get() { # $1=rotulo $2=codigo_esperado $3=operacao
+        # NAO conta como chamada auditada: o 405 e' levantado pelo roteamento do Odoo (o verbo nao
+        # combina com a rota), ANTES do controlador — entao nao ha' linha de auditoria, por desenho.
         local saida
         saida="$(curl --config "$CFG" -o "$DESC_DIR/resposta.json" -w '%{http_code}' \
             "$BASE/tf/api/v1/$3" || true)"
         CHAMADAS=$((CHAMADAS + 1))
-        AUDITADAS=$((AUDITADAS + 1))
         cp "$DESC_DIR/resposta.json" "$DESC_DIR/resposta-$CHAMADAS.json"
+        ULTIMA_RESPOSTA="$DESC_DIR/resposta-$CHAMADAS.json"
         if [ "$saida" = "$2" ]; then ok "$1 -> HTTP $saida"; else falhou "$1 -> HTTP $saida (esperado $2)"; fi
     }
     sem_token() { # $1=rotulo $2=codigo_esperado $3=operacao
@@ -576,6 +585,7 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
             -o "$DESC_DIR/resposta.json" -w '%{http_code}' "$BASE/tf/api/v1/$3" || true)"
         CHAMADAS=$((CHAMADAS + 1))
         cp "$DESC_DIR/resposta.json" "$DESC_DIR/resposta-$CHAMADAS.json"
+        ULTIMA_RESPOSTA="$DESC_DIR/resposta-$CHAMADAS.json"
         if [ "$saida" = "$2" ]; then ok "$1 -> HTTP $saida"; else falhou "$1 -> HTTP $saida (esperado $2)"; fi
     }
     campo_json() { python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ''))" \
@@ -585,9 +595,9 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
     api_post "token invalido" "401" "sistema_capacidades" '{}' "$CFG_RUIM"
     api_post "operacao declarada (sistema_capacidades)" "200" "sistema_capacidades" \
         '{"correlation_id":"tre-e01-t01-http-1"}'
-    VALOR_OK="$(campo_json "$DESC_DIR/resposta-3.json" ok)"
-    VERSAO_OK="$(campo_json "$DESC_DIR/resposta-3.json" politica_versao)"
-    CORREL_OK="$(campo_json "$DESC_DIR/resposta-3.json" correlation_id)"
+    VALOR_OK="$(campo_json "$ULTIMA_RESPOSTA" ok)"
+    VERSAO_OK="$(campo_json "$ULTIMA_RESPOSTA" politica_versao)"
+    CORREL_OK="$(campo_json "$ULTIMA_RESPOSTA" correlation_id)"
     [ "$VALOR_OK" = "True" ] && ok "envelope de sucesso com ok=true" || falhou "resposta 200 sem ok=true"
     [ "$VERSAO_OK" = "1.0.0" ] && ok "envelope traz a versao da politica (1.0.0)" \
         || falhou "envelope sem politica_versao (veio '$VERSAO_OK')"
@@ -597,24 +607,24 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
 import json, sys
 dados = json.load(open(sys.argv[1]))
 print(','.join(sorted(op['nome'] for op in dados['dados']['capacidades']['operacoes'])))
-" "$DESC_DIR/resposta-3.json")"
+" "$ULTIMA_RESPOSTA")"
     [ "$OPERACOES_DECLARADAS" = "crm_registros_ler,sistema_capacidades" ] \
         && ok "a API declara exatamente as operacoes da politica ($OPERACOES_DECLARADAS)" \
         || falhou "operacoes servidas diferentes da politica: $OPERACOES_DECLARADAS"
     api_post "operacao nao declarada" "404" "parceiro_criar" '{}'
-    [ "$(campo_json "$DESC_DIR/resposta-5.json" codigo)" = "operacao_nao_declarada" ] \
+    [ "$(campo_json "$ULTIMA_RESPOSTA" codigo)" = "operacao_nao_declarada" ] \
         && ok "recusa de operacao nao declarada nomeia o codigo" || falhou "codigo de recusa errado"
     api_get "verbo GET na mesma rota" "405" "sistema_capacidades"
     api_post "leitura declarada (res.partner)" "200" "crm_registros_ler" \
         '{"parametros":{"modelo":"res.partner","campos":["id","name"],"limite":3}}'
     TOTAL_LIDO="$(python3 -c "
 import json, sys
-print(json.load(open(sys.argv[1]))['dados']['total'])" "$DESC_DIR/resposta-7.json")"
+print(json.load(open(sys.argv[1]))['dados']['total'])" "$ULTIMA_RESPOSTA")"
     [ "$TOTAL_LIDO" -ge 1 ] && ok "leitura declarada devolveu registros (total=$TOTAL_LIDO)" \
         || falhou "leitura declarada nao devolveu registro (total=$TOTAL_LIDO)"
     api_post "campo nao declarado" "422" "crm_registros_ler" \
         '{"parametros":{"modelo":"res.partner","campos":["id","email"]}}'
-    [ "$(campo_json "$DESC_DIR/resposta-8.json" codigo)" = "campo_nao_declarado" ] \
+    [ "$(campo_json "$ULTIMA_RESPOSTA" codigo)" = "campo_nao_declarado" ] \
         && ok "recusa de campo nao declarado nomeia o codigo" || falhou "codigo de recusa errado (campo)"
     api_post "operador nao declarado no filtro" "422" "crm_registros_ler" \
         '{"parametros":{"modelo":"crm.lead","filtro":[["tf_opportunity_id","like","x"]]}}'
@@ -633,7 +643,7 @@ print(json.load(open(sys.argv[1]))['dados']['total'])" "$DESC_DIR/resposta-7.jso
     docker logs "$API_CT" >"$LOG_API" 2>&1
     LINHAS_AUDITORIA="$(grep -c 'TF_API_AUDIT' "$LOG_API" || true)"
     if [ "$LINHAS_AUDITORIA" = "$AUDITADAS" ]; then
-        ok "uma linha TF_API_AUDIT por chamada autenticada ($LINHAS_AUDITORIA linhas, $AUDITADAS chamadas; as 2 sem token valido param no 401 do Odoo, antes do controlador)"
+        ok "uma linha TF_API_AUDIT por chamada autenticada ($LINHAS_AUDITORIA linhas, $AUDITADAS chamadas; as outras 3 param no Odoo antes do controlador: 2 sem token valido e 1 verbo errado)"
     else
         falhou "auditoria: $LINHAS_AUDITORIA linhas para $AUDITADAS chamadas autenticadas"
     fi

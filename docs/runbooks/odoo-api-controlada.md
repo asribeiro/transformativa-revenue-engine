@@ -210,15 +210,21 @@ teste provam.
 5. **A ISO do teste HTTP compartilha a transação do teste** (`HttpCase` + `url_open`): dá para gerar
    `res.users.apikeys` e gravar `ir.config_parameter` **sem commitar** e a requisição vê. Fora do
    teste, `odoo shell` **precisa** de `env.cr.commit()`.
-6. **Validade da chave de API é limitada pelo grupo** (`api_key_duration`): a suíte gera com
-   `timedelta(days=0.5)`, como o teste do próprio Odoo. No preparo HTTP, `expiration_date=None`
-   (sem validade) passa porque o usuário é criado por ali mesmo.
-7. **`docker port <container> 8069/tcp` com `-p 127.0.0.1::8069`**: porta alta aleatória — evita
+6. **Chave de API do Odoo 19 exige data de validade**: `res.users.apikeys._generate` levanta
+   `ValidationError("The API key must have an expiration date")` quando a data é `None` (só passa
+   em ambiente `sudo` de usuário de sistema), e o teto é o `api_key_duration` do grupo do usuário
+   (1 dia por padrão). Teste e preparo usam **12 horas**. Os dois nomes mudaram em relação ao que
+   se lembra do Odoo: `res.users.group_ids` (era `groups_id`) e `res.users.apikeys` (era
+   `res.users.apikey`).
+7. **O container `odoo:19.0` roda como uid 100/gid 101**: diretório montado para o preparo tem de
+   ser gravável por ele (`chown 100:101`) — o `open()` do preparador falha com `Permission denied`
+   sem isso, mesmo com o processo chamador sendo root no host.
+8. **`docker port <container> 8069/tcp` com `-p 127.0.0.1::8069`**: porta alta aleatória — evita
    colisão com o `proxy-dev`/outros agentes; e `dbfilter` fixo no `odoo.conf` descartável para o
    `db_monodb` resolver o banco certo.
-8. **O token não pode ir em `-H` na linha de comando** (aparece em `ps`): `curl --config` lê os
+9. **O token não pode ir em `-H` na linha de comando** (aparece em `ps`): `curl --config` lê os
    cabeçalhos de arquivo 600.
-9. **O `secret_scan.sh` do projeto reprova `password = <valor>`**: no gerador do `odoo.conf` as
+10. **O `secret_scan.sh` do projeto reprova `password = <valor>`**: no gerador do `odoo.conf` as
    chaves vão por variável (`CHAVE_SENHA_BANCO='db_password'` + `printf '%s = %s'`), como já fazia o
    provisionamento do dev.
 

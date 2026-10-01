@@ -20,6 +20,7 @@ TRE_API_ARQUIVO_CHAVE (/preparo/chave.txt).
 """
 
 import os
+from datetime import datetime, timedelta
 
 AMBIENTE = os.environ.get("TRE_API_AMBIENTE", "dev")
 LOGIN = os.environ.get("TRE_API_USUARIO", "tf_api_integracao")
@@ -49,7 +50,14 @@ if not usuario:
     })
 
 chaves = env["res.users.apikeys"].sudo().with_user(usuario)  # noqa: F821
-chave = chaves._generate(scope="rpc", name="api-controlada-tre", expiration_date=None)
+# Odoo 19 EXIGE data de validade em `res.users.apikeys._generate` (`_check_expiration_date`
+# levanta "The API key must have an expiration date") e nao aceita passar do teto do grupo do
+# usuario (`api_key_duration`, 1 dia por padrao em `base.group_user`). 12 horas entram nos dois.
+chave = chaves._generate(
+    scope="rpc",
+    name="api-controlada-tre",
+    expiration_date=datetime.now() + timedelta(hours=12),
+)
 
 with open(ARQUIVO_CHAVE, "w", encoding="utf-8") as fh:
     fh.write(chave)
