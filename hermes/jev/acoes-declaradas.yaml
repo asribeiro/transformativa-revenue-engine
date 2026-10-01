@@ -322,3 +322,157 @@ declaracoes:
       que so cobre dev sem credencial e sem producao.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_daca4bda
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (DEFEITO: card em execução ressincroniza /opt/tre/repo por fora do caminho único (tar ad-ho). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_25922fe5
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E04-T02-D02 — DEFEITO [revisão independente]: --faixas imprime nome de faixa fixo e). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_44cbc48c
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E04-T02-D01 — DEFEITO [retroativo]: hash do commit no handoff de review com um cara). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_d508d27e
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (TRE-W1-E04-T02-D02 — DEFEITO [retroativo]: card D01 atribui o typo do hash ao evento revie). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_0f74266d
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card nascido de worker (DEFEITO: publicacao versionada falha de forma intermitente no manifesto do staging (exit 6). Declarado pelo destravador
+      automatico com escopo de desenvolvimento; a aprovacao segue pela onda W1-dev,
+      que so cobre dev sem credencial e sem producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_8253ad1f
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-09-30'
+    motivo: >-
+      Card pos-revisao do E05 (perfil revisor): precisao documental, sem alterar artefato
+      entregue. Correcao em desenvolvimento, sem producao e sem credencial de deploy.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_d6dc5a4c
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Instalar Odoo Community (W2-E01-T01): provisionamento no PRIMEIRO estagio da sequencia obrigatoria dev -> homolog -> producao (ADR-005, declarado no proprio card). Nada nasce em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_1acf11f2
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Configurar TLS/reverse proxy/security (W2-E01-T02): ainda no estagio dev da sequencia do card. Nada nasce em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_a5afde31
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card nascido de worker no ciclo automatico: correcao/verificacao em desenvolvimento,
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_adea8e6b
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_c536ce86
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_adee6ad7
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_d3bd6660
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_9c91ecce
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_cf7519c9
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_e0b1bcbf
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card de plano da onda W2 (provisionamento do CRM no primeiro estagio da sequencia
+      obrigatoria dev -> homolog -> producao, ADR-005 declarado no proprio card).
+      Execucao em desenvolvimento, sem credencial de deploy e sem ato em producao.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento

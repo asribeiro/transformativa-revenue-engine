@@ -3,7 +3,24 @@
 # teste_tenant_rls.sh [ambiente] [--prefixo '<prefixo psql>'] [--papel-app <papel>]
 #                     [--guc-tenant <nome>] [--prova-de-dente]
 #
-# Aceite TRE-W1-E05-T01 (criterio 2, homologado por Anderson em 29/09/2026):
+# INSTRUMENTO DO V2 — NAO e mais chamado pela suite (`scripts/db/suite_banco.sh`).
+#
+# O criterio 2 do TRE-W1-E05-T01 foi REFORMULADO pela decisao do dono de 30/09/2026 (opcao A —
+# isolamento FISICO, um banco por cliente; card t_e340c29b, registrado em
+# `docs/operations/registro-de-aprovacoes.md` e em `docs/data/DATA_CONTRACT_V1.md`):
+#
+#     de:   "consulta sem filtro de tenant devolve vazio ou erro — NUNCA material de outro
+#            cliente"  (que este script mede, e que contra o Data Contract V1.0 — sem dimensao
+#            de cliente, RLS desligada e papel superuser+bypassrls — so pode dar NAO_TESTAVEL)
+#     para: "NAO existem dois clientes no mesmo banco"
+#
+# O criterio NA FORMA NOVA e medido por `scripts/db/teste_isolamento_clientes.sh` (etapa
+# `isolamento` da suite). ESTE script continua versionado como instrumento para o dia em que
+# tenant/RLS voltar como dimensao de primeira classe (V2, se houver multi-cliente no mesmo
+# banco): nesse cenario o contrato ganha a dimensao e este teste passa a ser o que prove o
+# fail-closed. Ele NAO deve ser wireado na suite antes da decisao do V2.
+#
+# Aceite original TRE-W1-E05-T01 (criterio 2, homologado por Anderson em 29/09/2026):
 #   "consulta sem filtro de tenant devolve vazio ou erro — NUNCA material de outro cliente".
 #
 # O que este teste faz, e por que assim:
@@ -33,7 +50,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RAIZ="${TRE_RAIZ:-$(cd "$DIR/../.." && pwd)}"
 IMAGEM="${TRE_FIXTURE_IMAGEM:-postgres:16}"
 MIGRATION="$RAIZ/db/migrations/0001_sales_intelligence_v1.sql"
-REGEX_TENANT="(^|_)(tenant|cliente|client)(_id)?$"
+REGEX_TENANT="(^|_)(tenant|tenants|cliente|clientes|client|clients)(_|$)"
+# mesmo regex do teste do criterio vigente (teste_isolamento_clientes.sh), aplicado com `~*`:
+# token tenant|cliente|client (+ plurais) em qualquer posicao, case-insensitive.
 
 AMB="dev"
 MODO="medir"
@@ -269,8 +288,8 @@ echo "-- usuario da conexao: $CONEXAO | papel da aplicacao sob teste: $PAPEL"
 
 leitura() { psql_alvo -tAc "$1" | tr -d '[:space:]'; }
 TABELAS="$(leitura "SELECT count(*) FROM information_schema.tables WHERE table_schema='sales_intelligence' AND table_type='BASE TABLE'")"
-QTD_COLUNAS_TENANT="$(leitura "SELECT count(*) FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~ '$REGEX_TENANT'")"
-COLUNAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~ '$REGEX_TENANT'")"
+QTD_COLUNAS_TENANT="$(leitura "SELECT count(*) FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~* '$REGEX_TENANT'")"
+COLUNAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(table_name||'.'||column_name, ', ' ORDER BY table_name), '(nenhuma)') FROM information_schema.columns WHERE table_schema='sales_intelligence' AND column_name ~* '$REGEX_TENANT'")"
 QTD_TABELAS_RLS="$(leitura "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='sales_intelligence' AND c.relkind='r' AND c.relrowsecurity")"
 TABELAS_RLS_NOMES="$(psql_alvo -tAc "SELECT coalesce(string_agg(c.relname, ' ' ORDER BY c.relname), '') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='sales_intelligence' AND c.relkind='r' AND c.relrowsecurity")"
 QTD_POLICIES="$(leitura "SELECT count(*) FROM pg_policies WHERE schemaname='sales_intelligence'")"
@@ -328,7 +347,7 @@ else
   ok "papel da aplicacao '$PAPEL' NAO contorna RLS (nao e superuser, nao tem BYPASSRLS, nao e dono de tabela com RLS sem FORCE)"
 fi
 
-TABELAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(col.table_name||'|'||col.column_name, ' ' ORDER BY col.table_name), '') FROM information_schema.columns col WHERE col.table_schema='sales_intelligence' AND col.column_name ~ '$REGEX_TENANT'")"
+TABELAS_TENANT="$(psql_alvo -tAc "SELECT coalesce(string_agg(col.table_name||'|'||col.column_name, ' ' ORDER BY col.table_name), '') FROM information_schema.columns col WHERE col.table_schema='sales_intelligence' AND col.column_name ~* '$REGEX_TENANT'")"
 if [ -z "$TABELAS_TENANT" ]; then
   nt "nenhuma tabela tem coluna de cliente/tenant — o isolamento nao e por cliente (criterio nao expressavel)"
   echo "RESULTADO: TENANT_RLS_NAO_TESTAVEL ($ITENS itens, 0 reprovacoes, $NAO_TESTAVEIS criterio(s) nao testavel(is))"

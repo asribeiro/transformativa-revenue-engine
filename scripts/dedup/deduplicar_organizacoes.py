@@ -181,6 +181,22 @@ def faixa_de_confianca(confianca) -> dict:
     raise RuntimeError(f"confianca {valor} fora das faixas documentadas")
 
 
+def linha_detalhe_faixas() -> str:
+    """Linha de detalhe do `--faixas` — DERIVADA do modelo, nunca texto fixo (defeito D02).
+
+    O defeito original tinha os NOMES das faixas escritos no codigo enquanto as decisoes eram
+    calculadas: com o limiar do contrato diferente de 0,95 o proprio comando imprimia duas
+    afirmacoes que se contradiziam (`0,94` dentro de `MERGE_AUTOMATICO [0.90, 1.00]` na tabela
+    e "0,94 cai em REVISAO_HUMANA" no detalhe), com exit 0. Aqui a faixa e a decisao saem de
+    `faixa_de_confianca()` — a MESMA fonte que decide o merge.
+    """
+    partes = []
+    for valor in (0.94, 0.95):
+        faixa = faixa_de_confianca(valor)
+        partes.append(f"{valor:.2f}".replace(".", ",") + f" cai em {faixa['faixa']} ({faixa['decisao']})")
+    return "detalhe: " + "; ".join(partes) + "; limiar inclusivo"
+
+
 def tabelas_do_contrato() -> list:
     return [t["name"] for t in _contrato()["tables"]]
 
@@ -725,6 +741,7 @@ SABOTAGENS = {
     "fraco": "evidencia fraca passa a alcancar a faixa de merge",
     "persistencia": "o registro auditado (merge/revisao) perde o entity_match_confidence",
     "coerencia": "a decisao do par deixa de ser a decisao da faixa do score",
+    "detalhe": "a linha de detalhe do --faixas volta a ter NOME de faixa fixo no codigo (defeito D02)",
 }
 
 
@@ -764,6 +781,14 @@ def aplicar_sabotagem(nome: str):
             return avaliacao
 
         setattr(modulo, "avaliar_par", _avaliar_com_decisao_solta)
+    elif nome == "detalhe":
+        # reproduz o defeito D02: nome de faixa fixo no codigo, decisao calculada
+        def _detalhe_fixo() -> str:
+            return ("detalhe: 0,94 cai em REVISAO_HUMANA "
+                    f"({decidir_por_confianca(0.94)}); 0,95 cai em MERGE_AUTOMATICO "
+                    f"({decidir_por_confianca(0.95)}); limiar inclusivo")
+
+        setattr(modulo, "linha_detalhe_faixas", _detalhe_fixo)
     else:
         raise SystemExit(f"FALHOU sabotagem desconhecida: {nome}")
 
@@ -924,6 +949,8 @@ def _itens_sinteticos(suite: Suite) -> None:
               _decisoes_coerentes_com_faixas())
     suite.chk("aceite (faixa): no ponto exato, 0,94 nao mescla (merge recusado) e 0,95 mescla (SQL gerado)",
               _limite_094_nao_mescla_095_mescla())
+    suite.chk("faixas: a linha de detalhe do --faixas acompanha o limiar (nao e nome de faixa fixo)",
+              _detalhe_acompanha_o_contrato())
 
     # ---- limiar nao e ajustavel por codigo de producao (D1)
     suite.chk("governanca: o limiar vigente e o do contrato (0,95) e o teto fraco e 0,94",
@@ -1063,6 +1090,28 @@ def _limite_094_nao_mescla_095_mescla() -> bool:
     except ValueError:
         return False                      # 0,95 recusado: o limiar deixou de ser inclusivo
     return "'MERGE'" in sql and CAMPO_CONFIANCA in sql
+
+
+def _detalhe_acompanha_o_contrato() -> bool:
+    """A linha de detalhe do `--faixas` acompanha o limiar do contrato — nao e constante.
+
+    Prova a CLASSE do defeito D02 (nomes fixos no codigo): com o limiar em 0,90 a tabela e o
+    detalhe tem de se mover JUNTOS. Nome fixo reprova; derivado do modelo passa.
+    """
+    modulo = sys.modules[__name__]
+    original = modulo.limiar_merge
+    setattr(modulo, "limiar_merge", lambda: 0.90)   # contrato hipotetico, so neste processo
+    try:
+        faixa = faixa_de_confianca(0.94)
+        tabela = "  ".join(f"{f['faixa']} [{f['piso']:.2f}, {f['teto']:.2f}]" for f in faixas_confianca())
+        detalhe = linha_detalhe_faixas()
+    finally:
+        setattr(modulo, "limiar_merge", original)
+    return (faixa["faixa"] == "MERGE_AUTOMATICO" and faixa["decisao"] == "MERGE"
+            and "MERGE_AUTOMATICO [0.90, 1.00]" in tabela
+            and "0,94 cai em MERGE_AUTOMATICO (MERGE)" in detalhe
+            and "0,95 cai em MERGE_AUTOMATICO (MERGE)" in detalhe
+            and "0,94 cai em REVISAO_HUMANA" not in detalhe)
 
 
 def _recusa_kwarg_limiar() -> bool:
@@ -1345,8 +1394,7 @@ def main(argv=None) -> int:
         for faixa in faixas_confianca():
             print(f"  {faixa['faixa']:<17} [{faixa['piso']:.2f}, {faixa['teto']:.2f}{']' if faixa['teto_inclusivo'] else ')'}"
                   f"  -> {faixa['decisao']:<16} {faixa['significado']}")
-        print(f"detalhe: 0,94 cai em REVISAO_HUMANA ({decidir_por_confianca(0.94)}); "
-              f"0,95 cai em MERGE_AUTOMATICO ({decidir_por_confianca(0.95)}); limiar inclusivo")
+        print(linha_detalhe_faixas())
         return 0
 
     if args.autoteste:

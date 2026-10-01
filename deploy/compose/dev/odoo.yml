@@ -1,0 +1,71 @@
+# Odoo Community no ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+#
+# Card: TRE-W2-E01-T01 (`t_d6dc5a4c`). Runbook: docs/runbooks/odoo-dev.md.
+#
+# Regras que este arquivo carrega (e que o verificador cobra item a item):
+#   * nenhum segredo aqui: o PostgreSQL le `POSTGRES_*` de /etc/tre/odoo-dev/pg.env e o Odoo
+#     le `admin_passwd`/`db_password` de /etc/tre/odoo-dev/odoo.conf — os dois 600 na VPS,
+#     fora do artefato publicado (politica de secrets V1, docs/operations/gestao-de-secrets.md);
+#   * nenhuma porta publica: o Odoo publica SO em 127.0.0.1 (loopback) e o PostgreSQL do Odoo
+#     nao publica porta nenhuma — fala pela rede interna `tre-odoo-dev`. Exposicao publica e
+#     card proprio (TRE-W2-E01-T02, TLS/proxy);
+#   * banco do Odoo SEPARADO do `sales_intelligence`: container (`pg-odoo-dev`), volume
+#     (`pgdata-odoo-dev`) e banco (`odoo_dev`) proprios;
+#   * versao e porta sao OBRIGATORIAS e vem do par nao-secreto versionado
+#     (deploy/environments/dev-odoo.env): sem ele `docker compose config` FALHA em vez de
+#     subir "a ultima de hoje" — a identidade do que esta no ar e o digest registrado la.
+#
+# VERSAO ESCOLHIDA (card TRE-W2-E01-T01, registrada aqui E no par): Odoo Community **19.0**,
+# digest do manifesto `sha256:77bac5cd1e065210828f34883a7f76740b7373d06dd3a5a55d3eeb31ee2f85cd`
+# (medido no pull em 01/10/2026). O valor vive em deploy/environments/dev-odoo.env
+# (`ODOO_VERSION`/`ODOO_DIGEST_ESPERADO`) e e conferido pelo verificador item a item; a
+# ratificacao do dono esta pendente para homologacao/producao — ver docs/runbooks/odoo-dev.md §1.
+#
+# Uso na VPS (a partir da copia do ambiente em /opt/tre/dev/compose/):
+#   docker compose --env-file /opt/tre/dev/compose/odoo.env -f /opt/tre/dev/compose/odoo.yml up -d
+name: tre-odoo-dev
+
+services:
+  pg-odoo-dev:
+    image: postgres:16
+    container_name: pg-odoo-dev
+    restart: unless-stopped
+    env_file:
+      - /etc/tre/odoo-dev/pg.env
+    volumes:
+      - pgdata-odoo-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - odoo-dev
+
+  odoo-dev:
+    image: odoo:${ODOO_VERSION:?defina ODOO_VERSION em deploy/environments/dev-odoo.env}
+    container_name: odoo-dev
+    restart: unless-stopped
+    depends_on:
+      pg-odoo-dev:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${ODOO_HTTP_PORT:?defina ODOO_HTTP_PORT em deploy/environments/dev-odoo.env}:8069"
+    volumes:
+      - odoo-data-dev:/var/lib/odoo
+      - /etc/tre/odoo-dev/odoo.conf:/etc/odoo/odoo.conf:ro
+      # addons do repo chegam pelo caminho publicado (o Odoo do dev enxerga o modulo
+      # `transformativa_sales_ai` quando ele for publicado; W2/E03 em diante)
+      - /opt/tre/repo/odoo/addons:/mnt/extra-addons:ro
+    networks:
+      - odoo-dev
+
+volumes:
+  pgdata-odoo-dev:
+    name: pgdata-odoo-dev
+  odoo-data-dev:
+    name: odoo-data-dev
+
+networks:
+  odoo-dev:
+    name: tre-odoo-dev

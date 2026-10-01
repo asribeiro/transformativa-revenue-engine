@@ -127,10 +127,33 @@ qualificada o score é 0,00 e não a similaridade bruta de nome (que segue audit
 D-T02-5 o registro leva a tabela de faixas vigente e a versão do modelo. Detalhe em
 `docs/data/entity-match-confidence.md` §6.
 
+**Defeito medido na revisão independente (D02) e corrigido:** a linha de detalhe do `--faixas` tinha os nomes
+das faixas fixos no código e se contradizia com a tabela quando o limiar do contrato não era 0,95 (reproduzido
+pela revisão independente em cópia com `auto_merge_threshold=0.90`, exit 0, e reconfirmado aqui na correção); o teste do projeto asseria a string
+constante como evidência do critério. Correção: `linha_detalhe_faixas()` derivada de `faixa_de_confianca()`;
+a verificação compara com o modelo (não com constante) e exige que tabela e detalhe se movam juntos numa cópia
+com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D-T02-6** em
+`docs/data/entity-match-confidence.md` §6 e no `CHANGELOG.md` (Fixed).
+
 ## TRE-W1-E05-T01 — Criar database test suite
 
 - Suíte roda com um comando único e falha (exit ≠ 0) se o schema divergir do contrato.
 - Teste de tenant/RLS: consulta sem filtro de tenant devolve vazio ou erro — **nunca** dado de outro cliente.
+
+> **NOTA DATADA (30/09/2026) — o 2º critério acima foi REFORMULADO pelo dono; a forma vigente é a desta nota.**
+> Decisão do dono (opção A — isolamento **físico**, um banco por cliente), card `t_e340c29b`, registrada em
+> `docs/operations/registro-de-aprovacoes.md` e em `docs/data/DATA_CONTRACT_V1.md`:
+>
+> **forma vigente: "não existem dois clientes no mesmo banco"** (medida por
+> `scripts/db/teste_isolamento_clientes.sh`, etapa 5 da suíte) — 0 dimensão de cliente no schema, 1 base de
+> aplicação na instância do alvo, 1 base provisionada (`pg-*`) servindo o schema no host.
+>
+> A forma antiga ("consulta sem filtro de tenant devolve vazio ou erro") **não é decidível** contra o Data
+> Contract V1.0 (0 coluna de cliente, RLS desligada nas 12 tabelas, 0 policy, papel `sales_ai`
+> superuser+bypassrls): não há o que filtrar — foi medido (`NAO_TESTAVEL`, exit 3) e devolvido ao
+> requisito, que decidiu pela forma nova. Tenant/RLS como dimensão de primeira classe fica para o **V2**,
+> com o instrumento já versionado (`scripts/db/teste_tenant_rls.sh`, fora da suíte).
+
 - Exit code é confiável: suíte verde = exit 0 com os testes efetivamente executados (não 'sem output').
 
 **Test plan:** Executar a suíte em dev e em homolog; evidência = saída completa + exit code.
