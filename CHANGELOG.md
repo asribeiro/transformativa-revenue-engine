@@ -520,6 +520,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   dá 0 no mesmo log. `verificar_estrutura.sh`, `secret_scan.sh` e `verificar_papeis.sh` → `PASS` no
   commit consolidado. Detalhe no runbook §11.
 
+- **`t_26be11c7` (severidade baixa, `fix/t_26be11c7-ponteiro-publicacao`) — o registro de execuções e o runbook
+  de backup citavam um commit de publicação que não se alcança por ref nenhuma** (`f1f1cb6b…`, a publicação
+  versionada da cópia operacional de 30/09 20:12:35Z). Achado pela varredura da classe do `c41822e` (D04-D01) na
+  verificação independente do `t_52c74f31`, **pré-existente** ao conserto daquele card. Medido: o objeto existe
+  (`git cat-file -t f1f1cb6b` → `commit`), mas `git for-each-ref --contains f1f1cb6b` é **vazio** nas 69 refs
+  (medido em 01/10/2026), `git merge-base --is-ancestor f1f1cb6b develop` → rc 1 e, num clone limpo do `origin`,
+  `git fetch` por sha → `remote error: upload-pack: not our ref` (não é servido pelo remoto). **Conserto doc-only** (nenhum código tocado): o valor histórico
+  **fica** — é o registro do evento, e o parente alcançável de mesma mensagem (`e1eacd2`) é conteúdo
+  **diferente** (`308` arquivos / digest `69b954b0…` contra `306` / `e4e1f05d…`), então trocá-lo seria nova
+  imprecisão — e ganha errata explícita + **âncora que sobrevive sem ref**: o digest da árvore publicada
+  `e4e1f05d…` (`306` arquivos) de `/opt/tre/.publicacoes.log` (20:12:35Z e 20:13:40Z), reconferido hoje por
+  `git archive f1f1cb6b` + manifesto `<modo> <sha256> <caminho>` do `deploy/publicar.sh` → **mesmo digest**.
+  Detalhe em `docs/operations/registro-de-execucoes.md` (entrada `TRE-W1-E06-T01-D01`, ERRATA) e
+  `docs/runbooks/backup-restore-rollback.md` (§7d, nota de rastreabilidade + as 5 menções marcadas).
+
 ### Notas de estado
 
 - **Rollback testado de verdade** (não só escrito): `TRE_ODOO_CONFIRMAR_REMOCAO=1 bash remover-odoo-dev.sh`
