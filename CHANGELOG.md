@@ -479,6 +479,35 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `RES_PARTNER_FALHOU`, exit 1; teste plantado que falha → `1 failed` no relatório, `odoo
   --test-enable exit 1`, exit 1.
 
+- **Campos de rastreio em `crm.lead` (`TRE-W2-E04-T02`)** — `odoo/addons/transformativa_sales_ai/models/crm_lead.py`
+  acrescenta a `crm.lead` os **13 campos de rastreio** do Sales AI, aditivos (nenhum campo padrão é
+  alterado): os 2 que o Data Contract V1.0 §3 nomeia (`tf_opportunity_id`, `tf_priority_score`) e 11
+  espelhos de artefatos do contrato (score model §8, vocabulário `next_best_action` §7, correlação/
+  idempotência §3 e trilha de sincronização/eventos §6), com `tracking=True` e índice nos 3 campos de
+  busca por identidade/correlação. Ferramentas: `scripts/odoo/conferir_crm_lead_no_contrato.py` (confronto
+  módulo × contrato congelado, 18 itens), `scripts/odoo/medir_crm_lead.py` (medição ORM com dado
+  sintético) e `scripts/odoo/verificar-crm-lead-odoo.sh` (aceite de 6 passos, com rollback medido) +
+  `tests/test_crm_lead_rastreio.py` (7 testes) + runbook `docs/runbooks/odoo-crm-lead-sales-ai.md`.
+  Decisão registrada: o contrato nomeia **dois** campos em `crm.lead`; o "13" do plano não tem fonte
+  materializada no repo, então o inventário é declarado item a item com proveniência (runbook §2) — e
+  nenhum vocabulário novo é criado.
+- **Aceite de `crm.lead` item a item (64 itens)**: confronto módulo × contrato → instalação em banco
+  limpo → 13 campos em `ir_model_fields` + índices reais em `pg_indexes` → `--test-enable` com
+  `0 failed, 0 error(s) of 13 tests` (7 do card) → dado sintético pelo ORM (`MEDICAO_CRM_LEAD_OK`,
+  58 itens) com conferência por SQL fora da sessão do Odoo → rollback por desinstalação (0 campo, 0
+  coluna e 0 índice `tf_` depois; colunas padrão do `crm_lead` intactas) → limpeza e dev intacto →
+  `RESULTADO: CRM_LEAD_OK (64 itens, 0 falhas)`, exit 0, numa **dupla descartável própria**.
+- **Dentes do aceite de `crm.lead`** (`--prova-de-dente`, **5 provas**, cada uma em cópia do módulo):
+  `tf_opportunity_id` renomeado, medido **no banco** → `CRM_LEAD_FALHOU (35 itens, 3 falhas)`, exit 1;
+  índice do `tf_idempotency_key` removido, no banco → `CRM_LEAD_FALHOU (35 itens, 1 falha)`, exit 1;
+  `tf_next_best_action` apagado do modelo, no banco → `CRM_LEAD_FALHOU (35 itens, 2 falhas)`, exit 1;
+  a mesma renomeação medida **só pelo confronto estático** → `CRM_LEAD_FALHOU (13 itens, 1 falha)`,
+  exit 1; teste plantado que falha → `CRM_LEAD_FALHOU (43 itens, 3 falhas)`, exit 1. Resultado do
+  comando: `RESULTADO: CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, exit 0. Os dentes 1–3 rodam com
+  `TRE_PULAR_CONFRONTO=1` (pula só o passo 0) para que quem reprove seja a **medição de banco** — sem
+  isso a mutação de campo/índice pararia no confronto estático e o caminho de banco não era exercitado
+  (defeito 4 do runbook §8).
+
 ### Security
 
 - **Aprovação humana nunca concedida por máquina** (`TRE-W2-E07-T01`) — medido, não declarado: a
@@ -548,6 +577,40 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (`TRE-W2-E04-T01`): medido — ele **não** aparece nem com teste reprovado. O item do aceite ficou só
   como ausência (não pode dar falso OK) e os dentes reais do passo de testes são o **exit code**, o
   **relatório do runner** e as **linhas `FAIL:`**.
+- **Cinco defeitos encontrados executando o aceite de `crm.lead` (`TRE-W2-E04-T02`)**, todos
+  consertados e remedidos (os quatro primeiros na rodada 1; o 5º veio da **revisão independente** e
+  foi remedido na rodada 2):
+  (1) `test_07` do card estourava `ValueError: too many values to unpack (expected 2)` — o teste
+  desempacotava a constante do vocabulário como pares, e ela é a lista de VALORES do contrato (a
+  primeira rodada do aceite pegou: `0 failed, 1 error(s) of 13 tests`, exit 1);
+  (2) o item "nenhuma linha de teste `FAIL:`/`ERROR:`" do verificador novo usava `^(FAIL|ERROR): ` e o
+  log do Odoo prefixa a linha com data/hora/nível — o item ficava **cego** (com 1 erro real ele
+  imprimia "nenhuma linha"). Conserto: padrão sem âncora de início; provado pelo dente 4 (teste
+  plantado), que agora reprova o passo 3 com `3 falha(s)`;
+  (3) as provas de dente reexecutavam o verificador por `"$0"`, que só funciona quando o chamador passa
+  caminho com barra — invocado como `bash verificar-crm-lead-odoo.sh` as 4 provas morriam com
+  `verificar-crm-lead-odoo.sh: command not found` e o comando devolvia
+  `CRM_LEAD_DENTE_FALHOU (4 prova(s) sem dente)`. Conserto: caminho absoluto do próprio script
+  (`SELF="$(readlink -f "$0")"`). Detalhe no runbook §8.
+  (4) os dentes de campo/índice reprovavam **só no confronto estático** (passo 0) e o verificador
+  encerrava logo depois do par — os itens de **banco** nunca eram exercitados (`16 itens, 1 falha`),
+  então o dente não provava quem mede o quê. Conserto: `TRE_PULAR_CONFRONTO=1` (pula só o passo 0,
+  registrando `INFO`) nos dentes 1–3 — que passaram a reprovar pelo banco (`35 itens`, 3/1/2 falhas) —
+  mais o **dente 5**, que mede o confronto estático com a mesma mutação (`13 itens, 1 falha`); a
+  bateria final deu `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, exit 0. Detalhe no runbook §8.
+  (5) **o modo `--prova-de-dente` dava verde sem exercitar dente nenhum** (fail-open, achado pela
+  revisão independente da rodada 1) — o julgamento aceitava **qualquer** `CRM_LEAD_FALHOU` como prova
+  de dente, e as 5 provas morriam na **guarda**, antes de medir qualquer coisa. Reproduzido por mim
+  com o artefato da rodada 1 (`verificar-crm-lead-odoo.sh 161b512e…`, nada exportado): cada prova
+  devolvia `CRM_LEAD_FALHOU (6 itens, 1 falha(s))` (contrato ausente no caminho padrão, que não existe
+  em nenhum ambiente medido) e o comando terminava em `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`,
+  **exit 0** — verde sem medição. Conserto na rodada 2: (a) o modo dente roda o **caminho não mutado**
+  (baseline: passo 0+1+2+3) e **exige verde**, terminando em
+  `CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, exit 1, quando o baseline
+  não mede; (b) cada dente exige a **sua** assinatura de falha em vez de "qualquer FALHOU"; (c) aborto
+  de guarda reprova o dente; (d) o contrato deixou de ter default morto — sem `TRE_CONTRATO_JSON` em
+  disco o comando **recusa de cara** (`exit 1`) e diz o que exportar, e o USO do cabeçalho/runbook §3
+  passaram a exportá-lo. Detalhe no runbook §8.
 
 ### Notas de estado
 

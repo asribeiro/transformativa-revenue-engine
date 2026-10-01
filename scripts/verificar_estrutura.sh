@@ -119,17 +119,26 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/__init__.py \
          odoo/addons/transformativa_sales_ai/README.md \
          odoo/addons/transformativa_sales_ai/models/__init__.py \
+         odoo/addons/transformativa_sales_ai/models/res_partner.py \
+         odoo/addons/transformativa_sales_ai/models/crm_lead.py \
          odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py \
          odoo/addons/transformativa_sales_ai/security/transformativa_sales_ai_security.xml \
          odoo/addons/transformativa_sales_ai/security/ir.model.access.csv \
          odoo/addons/transformativa_sales_ai/tests/__init__.py \
          odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
+         odoo/addons/transformativa_sales_ai/tests/test_res_partner_dedup.py \
+         odoo/addons/transformativa_sales_ai/tests/test_crm_lead_rastreio.py \
          odoo/addons/transformativa_sales_ai/tests/test_oportunidade_canonica.py \
          odoo/addons/transformativa_sales_ai/tests/test_acl_seguranca.py \
          scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
          scripts/odoo/desinstalar_modulo.py scripts/odoo/verificar-acl-modulo.sh \
-         scripts/odoo/provar_acl_modulo.py docs/runbooks/odoo-modulo-sales-ai.md \
-         docs/runbooks/odoo-oportunidade-canonica.md docs/runbooks/odoo-acl-seguranca.md; do
+         scripts/odoo/provar_acl_modulo.py scripts/odoo/conferir_res_partner_no_contrato.py \
+         scripts/odoo/medir_res_partner.py scripts/odoo/verificar-res-partner.sh \
+         scripts/odoo/conferir_crm_lead_no_contrato.py scripts/odoo/medir_crm_lead.py \
+         scripts/odoo/verificar-crm-lead-odoo.sh \
+         docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
+         docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
+         docs/runbooks/odoo-crm-lead-sales-ai.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -138,7 +147,8 @@ done
 # proprio verificador, por um unit ou por outro script) tem de ser executavel, e corrigir so a
 # copia operacional nao sobrevive ao proximo deploy (mesma licao do defeito t_22c27625).
 for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo.sh \
-         scripts/odoo/provar_acl_modulo.py; do
+         scripts/odoo/provar_acl_modulo.py scripts/odoo/verificar-crm-lead-odoo.sh \
+         scripts/odoo/verificar-res-partner.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
