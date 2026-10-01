@@ -236,8 +236,14 @@ fi
 chmod -R a+rwX "$DADOS" 2>/dev/null || true
 
 # ---------------------------------------------------------------- 5. Odoo contra o banco restaurado
+# `--entrypoint /usr/bin/odoo`: o entrypoint da imagem (`/entrypoint.sh`) ACRESCENTA os
+# argumentos de banco DEPOIS dos nossos — `odoo "$@" "${DB_ARGS[@]}"` — e o HOST default e
+# `db`. Como a ultima ocorrencia vence, o Odoo descartavel tentava `db` e morria com
+# "could not translate host name db" (medido em 01/10/2026). Chamando o binario direto,
+# os argumentos abaixo sao os unicos e a identidade do que sobe e exatamente esta linha.
 if docker run -d --name "$APP" --network "$REDE" \
      -v "$DADOS:/var/lib/odoo" -p 127.0.0.1::8069 \
+     --entrypoint /usr/bin/odoo \
      "$IMAGEM" --db_host="$PG" --db_port=5432 --db_user="$USUARIO" \
      --database="$BANCO" --data-dir=/var/lib/odoo --http-port=8069 \
      >/dev/null 2>&1; then
@@ -262,6 +268,12 @@ if [ -n "$PORTA" ]; then
   for _ in $(seq 1 "$((TIMEOUT / 5))"); do
     CODIGO="$(curl -s -m 10 -o "$CORPO" -w '%{http_code}' "http://127.0.0.1:$PORTA/web/login" || true)"
     [ "$CODIGO" = "200" ] && break
+    # processo morto nao vai responder: falha agora, com o log na mao, em vez de esperar o timeout
+    if [ "$(docker inspect "$APP" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]; then
+      ko "o Odoo descartavel MORREU antes de responder (exit $(docker inspect "$APP" --format '{{.State.ExitCode}}' 2>/dev/null))"
+      docker logs --tail 25 "$APP" 2>&1 | sed 's/^/       /'
+      break
+    fi
     sleep 5
   done
 fi
