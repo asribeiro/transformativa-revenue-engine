@@ -365,3 +365,66 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `/opt/tre/{prod,homolog}` com **0 arquivo**. O dedup sintético passou de 47 para 48 itens **por mudança de
   outro card** (`7a6a270`, TRE-W1-E04-T02/D02) que entrou em `develop` entre as rodadas — o commit desta
   rodada toca 4 arquivos (2 scripts de teste + régua + runbook).
+
+## [W2 — Odoo Community] — 01/10/2026
+
+### Added
+
+- **Odoo Community `19.0` instalado no ambiente dev (`TRE-W2-E01-T01`)** — compose versionado
+  (`deploy/compose/dev/odoo.yml`) + par não-secreto (`deploy/environments/dev-odoo.env`, com
+  `ODOO_VERSION`/`ODOO_HTTP_PORT`/`ODOO_DIGEST_ESPERADO` **obrigatórios**: sem o par o
+  `docker compose config` falha em vez de subir "a última de hoje") + `scripts/provision/{instalar,verificar,remover}-odoo-dev.sh`
+  + runbook `docs/runbooks/odoo-dev.md`. Medido na VPS Contabo `vmi3619453`, 01/10/2026: imagem
+  `odoo:19.0` (`19.0-20260926`) no digest `sha256:77bac5cd…`; containers `odoo-dev` (id `12cf65a3c1c6…`)
+  e `pg-odoo-dev` (id `c7cb12f75eb9…`, `postgres:16`); volumes `odoo-data-dev`/`pgdata-odoo-dev`; rede
+  `tre-odoo-dev`; banco `odoo_dev` com o módulo `base` (sem dados de demonstração).
+- **Aceite item a item**: `bash verificar-odoo-dev.sh` → `RESULTADO: ODOO_DEV_OK (19 itens, 0 falhas)`,
+  exit 0 — compose válido, identidade (imagem/tag/digest) conferida, `HTTP 200` real em
+  `127.0.0.1:8069/web/login`, banco do Odoo separado do `sales_intelligence` medido **nos dois lados**, e
+  nenhuma porta pública.
+- **Dentes do aceite** (provas negativas medidas): `docker` falso publicando o Odoo em `0.0.0.0` →
+  `ODOO_DEV_FALHOU (19 itens, 1 falha)`, exit 1; `remover-odoo-dev.sh` sem
+  `TRE_ODOO_CONFIRMAR_REMOCAO=1` → recusa, exit 1; verificador rodado após o rollback →
+  `13 falha(s)`, exit 1.
+
+### Security
+
+- **Nenhuma porta pública**: o Odoo publica só em `127.0.0.1:8069`, o PostgreSQL do Odoo não publica
+  porta nenhuma (fala pela rede interna `tre-odoo-dev`) e a UFW segue com **só a 22/tcp**. Exposição
+  pública continua sendo card próprio (`TRE-W2-E01-T02`, TLS/proxy).
+- **Segredo fora do artefato**: `admin_passwd` e a senha do banco nascem na VPS, em
+  `/etc/tre/odoo-dev/{pg.env,odoo.conf}` (600; o `odoo.conf` com dono uid 100 porque o processo roda como
+  `odoo` no container). Nada de valor de senha no repo, em log ou em argumento; o verificador de
+  estrutura ganhou item que reprova par de ambiente com valor de senha.
+
+### Fixed
+
+- **Cinco defeitos encontrados nesta execução** (todos medidos, todos consertados):
+  (1) o `POSTGRES_DB` do `postgres:16` cria o banco **vazio**, e o check por `pg_database` pulou a
+  inicialização — o Odoo respondia **HTTP 500** em `/web/login`; o que prova inicialização passou a ser a
+  tabela do módulo `base` (`ir_module_module`);
+  (2) `docker compose run` consome o stdin de quem o executa e, orquestrado por `ssh 'bash -s' < script`,
+  **matava o script remoto no meio** (mesma armadilha já registrada neste CHANGELOG) — conserto com `-T` e
+  `< /dev/null`, e execução por arquivo na VPS;
+  (3) o item 6 do próprio verificador reprovava o **formato** real do `docker port`
+  (`8069/tcp -> 127.0.0.1:8069`) em vez do comportamento — agora reprova endereço não-loopback, com a
+  prova por mutação acima;
+  (4) o instalador reprovava o `secret_scan.sh` do repo por escrever a chave na forma literal
+  `"<chave> = <variável>"` (falso positivo) — conserto no código, não no scanner (`PASS` depois);
+  (5) a guarda de "porta em uso" reprovava a **reexecução idempotente** (o próprio `odoo-dev` segurava a
+  8069) — a guarda passou a valer só quando o container ainda não existe.
+
+### Notas de estado
+
+- **Rollback testado de verdade** (não só escrito): `TRE_ODOO_CONFIRMAR_REMOCAO=1 bash remover-odoo-dev.sh`
+  derrubou containers, volumes do Odoo e segredos, com `pg-sales-dev` **intacto** (`running` ao fim); o
+  verificador então reprovou o ambiente ausente e a **reinstalação limpa** voltou a passar 19/19.
+- **Versão escolhida pelo executor em dev** (19.0 em vez do 20.0 recém-lançado), dentro da declaração de
+  ação do dono para este card (`hermes/jev/acoes-declaradas.yaml`, 01/10/2026; recibo JEV
+  `dec-c6650746cbb56e76` = PASS): fica **pendente de ratificação do Anderson** para homologação/produção,
+  onde a aprovação humana é obrigatória de qualquer forma (ADR-005).
+- **Cópia operacional segue em linha divergente do `develop`**: `/opt/tre/repo` está em
+  `fix/t_daca4bda-enforcement` (com `deploy/publicar.sh`, watchdog e enforcement), e uma árvore nascida do
+  `develop` não os contém — publicar apagaria o enforcement. Por isso o dev do Odoo roda do par em
+  `/opt/tre/dev/compose/`, com o compose **versionado no repo**. `homolog` e `prod` seguem **sem
+  nenhum arquivo e sem container**.

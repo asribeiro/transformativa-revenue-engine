@@ -91,5 +91,27 @@ for f in scripts/kanban/abrir-defeito.sh scripts/kanban/fechar-defeito.sh script
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos do Odoo Community em dev (TRE-W2-E01-T01) existem E estao versionados
+for f in deploy/compose/dev/odoo.yml deploy/environments/dev-odoo.env \
+         scripts/provision/instalar-odoo-dev.sh scripts/provision/verificar-odoo-dev.sh \
+         scripts/provision/remover-odoo-dev.sh docs/runbooks/odoo-dev.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/provision/instalar-odoo-dev.sh scripts/provision/verificar-odoo-dev.sh \
+         scripts/provision/remover-odoo-dev.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+# O par do Odoo nao carrega segredo: a senha vive so na VPS (politica de secrets V1). Este
+# teste barato pega copia/cola de credencial para dentro do artefato.
+if grep -qiE '(passwd|password|senha)[[:space:]]*=[[:space:]]*[^[:space:]#]' deploy/environments/dev-odoo.env 2>/dev/null; then
+  echo "FALHOU deploy/environments/dev-odoo.env carrega valor de senha (segredo nao vai para o artefato)"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    par do Odoo sem valor de senha"
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
