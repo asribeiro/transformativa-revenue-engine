@@ -501,6 +501,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `ODOO_DEV_FALHOU (19 itens, 1 falha)`, exit 1; `remover-odoo-dev.sh` sem
   `TRE_ODOO_CONFIRMAR_REMOCAO=1` → recusa, exit 1; verificador rodado após o rollback →
   `13 falha(s)`, exit 1.
+- **Backup do Odoo no MESMO artefato do ambiente (`TRE-W2-E01-T01-F01`, card `t_a5afde31`)** — o
+  artefato diário deixa de ser "só o trio": passa a levar o Odoo do ambiente junto
+  (`odoo_dev.dump` + `.sha256`, `odoo-contagens.txt` por tabela, `odoo-filestore.tar.gz` do volume
+  `odoo-data-dev` e `odoo-manifest.txt` com o **digest da imagem** do Odoo), tudo em
+  `scripts/backup/{lib-ambiente.sh,backup-tre.sh}` e declarado no par não-secreto
+  `deploy/environments/dev.env` (`TRE_ODOO_PG_SERVICO`/`_USER`/`_DB`/`TRE_ODOO_FILESTORE`/
+  `TRE_ODOO_IMAGEM`). O Odoo é resolvido **por ambiente**, na mesma precedência do trio (variável por
+  ambiente → arquivo do ambiente → nada): ambiente que não declara Odoo é **pulado com a ausência
+  declarada no manifesto**, ambiente que declara e não tem container (ou cujo dump/filestore não sai)
+  é **falha** — nunca `BACKUP_OK`.
+- **`scripts/backup/verificar-odoo.sh` — a prova de restore do Odoo** (alvo descartável): confere
+  `sha256`/nº de arquivos/**digest da imagem** contra o manifesto, restaura o dump num PostgreSQL
+  descartável **sem porta publicada**, compara **tabela por tabela linha a linha**, exige o módulo
+  `base` instalado, desempacota o filestore (exige `filestore/odoo_dev` e a mesma contagem de
+  arquivos), sobe um **Odoo descartável** contra o banco restaurado e só aceita com `/web/login` em
+  **HTTP 200** + JSON-RPC respondendo — e confere ao fim que `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev`
+  continuam `running`. `verificar-ultimo-backup.sh` encadeia esse verificador quando o artefato mais
+  recente do ambiente traz o Odoo; artefato **pela metade** (trio sem Odoo, com o ambiente declarando
+  Odoo) é **falha** na verificação.
 
 ### Security
 
@@ -528,6 +547,19 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `"<chave> = <variável>"` (falso positivo) — conserto no código, não no scanner (`PASS` depois);
   (5) a guarda de "porta em uso" reprovava a **reexecução idempotente** (o próprio `odoo-dev` segurava a
   8069) — a guarda passou a valer só quando o container ainda não existe.
+- **Dois defeitos do verificador do Odoo, achados rodando (01/10/2026):**
+  (6) o `/entrypoint.sh` da imagem faz `exec odoo "$@" "${DB_ARGS[@]}"` e os argumentos que ele monta
+  (com `HOST` default **`db`**) entram **depois** dos informados — o Odoo descartável subia procurando
+  um host `db` (`Database connection failure: could not translate host name "db"`) e o verificador
+  reprovava um backup **bom**; conserto: `--entrypoint /usr/bin/odoo`;
+  (7) o teste de identidade do Odoo pedia `GET` em `/web/webclient/version_info` e o endpoint é
+  JSON-RPC (**415 Unsupported Media Type**) — mesmo efeito de reprovar quem responde; conserto: `POST`
+  `Content-Type: application/json`, mantendo o `/web/login` **HTTP 200** como critério principal.
+- **`ls *.dump | head -1` deixou de ser o seletor de dump** (`verificar-backup.sh`, `restore-tre.sh`,
+  `teste-backup-restore.sh`): com o Odoo no mesmo artefato há **dois** `*.dump` e `odoo_dev.dump` vem
+  primeiro em ordem alfabética — o verificador do trio compararia o banco errado. Quem escolhe agora é
+  o **manifesto** (`banco:`). Medido: `verificar-backup.sh` num artefato com dois dumps →
+  `RESTORE_OK (11 itens, 0 falhas)`.
 
 ### Notas de estado
 
@@ -543,3 +575,12 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `develop` não os contém — publicar apagaria o enforcement. Por isso o dev do Odoo roda do par em
   `/opt/tre/dev/compose/`, com o compose **versionado no repo**. `homolog` e `prod` seguem **sem
   nenhum arquivo e sem container**.
+  **Atualização 01/10/2026 (`t_a5afde31`):** a branch `feature/TRE-W2-E01-T01-F01` foi criada **da**
+  `fix/t_daca4bda-enforcement` e trouxe o `develop` para dentro (`git merge origin/develop`), então a
+  publicação dela **não apaga o enforcement** — é o caminho para o Odoo do dev voltar a rodar do par
+  versionado. Publicação por `deploy/publicar.sh` e evidência em
+  `docs/runbooks/backup-restore-rollback.md` §7g e `docs/operations/registro-de-execucoes.md`.
+- **Rotina de backup cobre o Odoo do dev desde 01/10/2026** (`t_a5afde31`): `backup-tre.sh dev` grava
+  num **único** artefato o dump do trio **e** o par do Odoo (banco + filestore), e o timer de
+  domingo (`tre-backup-verify.timer`) verifica os dois. Ambiente que declare Odoo e cujo artefato não
+  o traga é **falha** de verificação, não "meio backup".

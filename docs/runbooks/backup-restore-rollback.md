@@ -16,6 +16,13 @@ na VPS e o resultado medido está na seção 7.
 | `pg_dumpall --globals-only` (papéis e globais, sem senhas) | senhas, tokens, chaves de API |
 | `contagens.txt` (linhas por tabela) e `manifest.txt` (metadados) | dados de tenant diferente do ambiente copiado |
 | `sha256` do dump e `pg_dump.err` (vazio em caso de sucesso) | imagens Docker (são reconstruíveis do repositório) |
+| **Odoo do ambiente:** `odoo_dev.dump` + `odoo_dev.dump.sha256`, `odoo-contagens.txt` (por tabela) e `odoo-manifest.txt` | `/etc/tre/odoo-dev/*` (senha mestra e senha do banco), `sessions/` do filestore |
+
+**O artefato de um ambiente carrega o ambiente inteiro** (TRE-W2-E01-T01-F01): o Odoo grava no
+**mesmo** diretório do dump do trio, com manifesto próprio (`odoo-manifest.txt`). Quem escolhe "o
+dump do artefato" pelo manifesto (`banco:`) e **nunca** por `ls *.dump | head -1` — com o Odoo no
+mesmo diretório existem **dois** `*.dump` e `odoo_dev.dump` vem primeiro em ordem alfabética
+(`verificar-backup.sh`/`restore-tre.sh` já resolvem pelo manifesto; medido em 01/10/2026).
 
 Segredo se recupera do cofre (`docs/operations/gestao-de-secrets.md`), **não** de arquivo de
 backup. Um diretório de backup que carrega senha vira um vazamento com data marcada.
@@ -50,6 +57,21 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
   **falha** — nunca `BACKUP_OK`. Ambiente provisionado **sem** backup é **falha** na verificação, assim
   como backup com **mais de 48h** (é o sinal de que a rotina parou).
 - Zero ambientes cobertos ⇒ `RESULTADO: BACKUP_SEM_AMBIENTE` (nunca `BACKUP_OK` com exit 0).
+- **O Odoo é resolvido por ambiente, na mesma ordem** (`scripts/backup/lib-ambiente.sh`,
+  `tre_resolver_odoo`): 1. `TRE_ODOO_PG_SERVICO_<AMBIENTE>`, `TRE_ODOO_PG_USER_<AMBIENTE>`,
+  `TRE_ODOO_PG_DB_<AMBIENTE>`, `TRE_ODOO_FILESTORE_<AMBIENTE>`, `TRE_ODOO_IMAGEM_<AMBIENTE>`,
+  `TRE_ODOO_IMAGEM_DIGEST_<AMBIENTE>`; 2. as mesmas chaves sem sufixo em
+  `$TRE_ENV_DIR/<ambiente>.env`; 3. nada (Odoo **não é** uma quarta etapa global — um Odoo único em
+  variável global atravessaria os três ambientes em `todos`, a mesma armadilha do trio).
+  - Ambiente que **não declara** Odoo ⇒ `PULADO ambiente ... (Odoo nao declarado)` e o manifesto
+    grava `odoo: ausente neste ambiente` — a ausência fica **declarada**, não omitida.
+  - Ambiente que **declara** Odoo e cujo container não existe (ou cujo dump/filestore não sai)
+    ⇒ **falha**; o artefato do trio ainda é gravado (com `odoo: ausente neste ambiente`) e o
+    `RESULTADO` é `BACKUP_FALHOU`, nunca `BACKUP_OK`.
+  - O filestore sai do **volume** (`odoo-data-dev`), empacotado por container efêmero
+    (`docker run --entrypoint tar -v <volume>:/origem:ro`), sem depender do caminho do host.
+- Na verificação, ambiente que declara Odoo cujo artefato mais recente **não** tem o bloco do Odoo
+  ⇒ `FALHOU backup do ambiente esta pela metade` (o dump do trio existe e o do Odoo não).
 
 ## 3. BACKUP — manual
 
@@ -105,6 +127,42 @@ scripts/backup/restore-tre.sh homolog /opt/tre/backup/tre_prod_20260929T174742Z 
 2. subir os containers do ambiente: `docker compose -f /opt/tre/prod/compose/*.yml up -d`
 3. restaurar os dados: `restore-tre.sh prod <artefato> --confirmo`
 4. validar: `verificar-backup.sh <artefato>` e o smoke test do ambiente
+
+### 4.4 Restore do Odoo — a prova é o par banco **+** filestore
+
+```bash
+# 1) rotina (já roda no timer das 02:30): o artefato do ambiente passa a levar o Odoo junto
+scripts/backup/backup-tre.sh dev
+
+# 2) prova: restore do Odoo em alvo DESCARTAVEL, com o Odoo RESPONDENDO depois
+scripts/backup/verificar-odoo.sh /opt/tre/backup/tre_dev_20261001T133653Z
+
+# no domingo o timer já encadeia os dois (verificar-ultimo-backup.sh chama o do Odoo
+# quando o artefato mais recente do ambiente traz odoo-manifest.txt)
+```
+
+O verificador **não** pergunta se o arquivo existe — ele:
+
+1. confere a identidade do artefato: `sha256` do dump e do filestore **contra o manifesto**,
+   número de arquivos do tar, e o **digest da imagem** do Odoo registrado no backup contra o
+   `RepoDigest` da imagem local (um Odoo de imagem diferente não é o mesmo Odoo);
+2. sobe um PostgreSQL **descartável** (rede própria, **sem porta publicada**) e roda `pg_restore`
+   `--no-owner --no-privileges` do `odoo_dev.dump`;
+3. compara **tabela por tabela, linha a linha** (`odoo-contagens.txt`) e exige o módulo `base`
+   instalado — um banco vazio também "restaura" sem erro;
+4. desempacota o filestore e exige o diretório `filestore/odoo_dev` e o mesmo número de arquivos;
+5. sobe um **Odoo descartável** (`odoo:<versão do manifesto>`, `--entrypoint /usr/bin/odoo`)
+   contra esse banco, publicado **só em loopback**, e só aceita quando `/web/login` responde
+   **HTTP 200** com a cara do Odoo e o JSON-RPC `/web/webclient/version_info` responde;
+6. derruba tudo e confere que `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` **continuam running**.
+
+`RESULTADO: RESTORE_ODOO_OK` / `RESTORE_ODOO_FALHOU`, com `OK`/`FALHOU` por item — o container
+descartável é removido no `trap` mesmo quando o teste falha.
+
+**Por que `--entrypoint /usr/bin/odoo`:** o `/entrypoint.sh` da imagem acrescenta os argumentos de
+banco **depois** dos informados (`exec odoo "$@" "${DB_ARGS[@]}"`), com `HOST` default `db` — o
+Odoo subia procurando um host `db` que não existe e o verificador reprovava um backup bom.
+Medido em 01/10/2026 (`Database connection failure: could not translate host name "db"`).
 
 ## 5. ROLLBACK
 
@@ -447,8 +505,20 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
 - **Watchdog externo** (checar a idade do último backup de fora da máquina, onde o Hermes vive)
   ainda **não** está ligado: hoje o sinal é o `tre-backup-verify.timer` no journal local. Se a
   VPS inteira morrer, ninguém avisa — item para o W1.
-- **Restauração do Odoo** (arquivos + banco) entra quando o Odoo subir (W2): este runbook cobre
-  o PostgreSQL.
+- **RESOLVIDO 01/10/2026 (`feature/TRE-W2-E01-T01-F01`, card `t_a5afde31`; evidência em §7g) — era
+  "Restauração do Odoo entra quando o Odoo subir (W2)".** O Odoo do dev subiu e a rotina **não** o
+  cobria: `backup-tre.sh` copiava só o PostgreSQL do trio, e um restore do dump do `sales_intelligence`
+  devolveria um dev sem Odoo nenhum. Agora o **artefato do ambiente carrega o ambiente inteiro** —
+  `odoo_dev.dump` + `odoo_dev.dump.sha256`, `odoo-contagens.txt`, `odoo-filestore.tar.gz` (volume
+  `odoo-data-dev`) e `odoo-manifest.txt` (com o digest da imagem do Odoo) no **mesmo** diretório do
+  dump do trio —, e `scripts/backup/verificar-odoo.sh` **prova** o restore num alvo descartável com o
+  Odoo **respondendo HTTP 200** contra o banco restaurado (`RESTORE_ODOO_OK`).
+  **O que fica declarado:** o restore do Odoo é provado em alvo descartável; a **restauração
+  operacional** (dentro do `odoo-dev`/`pg-odoo-dev` de verdade) continua sendo procedimento manual
+  documentado em §4.4 + §4.3, sem script destrutivo próprio (`restore-tre.sh` cobre o trio) — não
+  inventar um caminho destrutivo novo sem card.
+- **O filestore do Odoo não tem retenção própria:** vai e volta junto com o artefato do ambiente
+  (mesma janela de 14 dias). Não há versionamento de anexo por dia.
 
 ## 9. Armadilhas registradas (custaram tempo real)
 
@@ -467,6 +537,21 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   devolve 644 na cópia operacional e o `ExecStart` do systemd morre com `203/EXEC` — **mesmo que a máquina
   tenha rodado o timer ontem**. Antes de publicar um script por timer, conferir
   `git ls-files -s <arquivo>` e, na cópia operacional, `install -m 755`.
+- **Dois `*.dump` no mesmo artefato: `ls *.dump | head -1` escolhe o errado.** Com o Odoo no mesmo
+  diretório do trio, `odoo_dev.dump` vem **antes** de `sales_intelligence.dump` em ordem alfabética e
+  o verificador compararia o banco errado (ou reprovaria um backup bom). Quem escolhe o dump é o
+  **manifesto** (`banco:`), nunca o glob. Medido 01/10/2026.
+- **O `CMD` da imagem do Odoo não é o binário.** O `/entrypoint.sh` faz `exec odoo "$@" "${DB_ARGS[@]}"`
+  — os argumentos de banco que ele monta (com `HOST` default **`db`**) entram **depois** dos seus e
+  vencem. Subir com `--db_host=<container>` não basta: `Database connection failure: could not
+  translate host name "db"`. Para um alvo descartável, `--entrypoint /usr/bin/odoo` (sem entrypoint)
+  e passar tudo na linha de comando. Medido 01/10/2026.
+- **`GET` em `/web/webclient/version_info` devolve 415 (`Unsupported Media Type`)** — o endpoint é
+  JSON-RPC e exige `POST` com `Content-Type: application/json`. Um teste que pede `GET` reprova um
+  Odoo que está respondendo (o `HTTP 200` em `/web/login` é o critério que vale). Medido 01/10/2026.
+- **Verificador com veredito no fim é lento quando o alvo está quebrado:** o `pg_restore` falha e o
+  script ainda sobe o Odoo e espera o timeout de HTTP. Para um artefato truncado, ouça o
+  `FALHOU sha256 do dump NAO confere` — ele já é a resposta; o resto é confirmação.
 - **"Só o meu pedaço" na cópia operacional.** `tar -cz <subconjunto> | ssh … 'tar -xz -C /opt/tre/repo'`
   parece inofensivo e é o defeito: o `tar` da árvore de trabalho leva o modo do *checkout* (não o do
   git), **não apaga** o que não vai no pacote (arquivo velho sobrevive ao lado do novo) e não deixa
