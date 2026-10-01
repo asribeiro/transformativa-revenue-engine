@@ -80,11 +80,12 @@ TRE_LOG_DIR=/opt/tre/dev/evidencias/t_adee6ad7/logs-round2 \
     bash /opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh
 ```
 
-## 4. Aceite — TEST PLAN medido (01/10/2026, VPS `vmi3619453`, rodada 2)
+## 4. Aceite — TEST PLAN medido (01/10/2026, VPS `vmi3619453`, rodada final no commit `a569ece`)
 
 `bash verificar-res-partner.sh` →
 **`RESULTADO: RES_PARTNER_OK (64 itens, 0 falhas) modulo=transformativa_sales_ai
-banco=tre_e04_t01_res_partner imagens=odoo:19.0+postgres:16`**, **exit 0**.
+banco=tre_e04_t01_res_partner imagens=odoo:19.0+postgres:16`**, **exit 0** — medido sobre o módulo
+**idêntico (sha256) ao commit `a569ece`** da branch `feature/TRE-W2-E04-T01`.
 
 | Passo | Medição |
 |---|---|
@@ -104,16 +105,19 @@ banco=tre_e04_t01_res_partner imagens=odoo:19.0+postgres:16`**, **exit 0**.
 `verificar-res-partner.sh 1bc9e1b8…`, `conferir_res_partner_no_contrato.py`,
 `medir_res_partner.py`.
 
-**Logs brutos:** `/opt/tre/dev/evidencias/t_adee6ad7/` — `verificacao-completa-round2.out` (64 itens +
-`EXIT=0`), `prova-de-dente.out`, `logs-round2/{1-instalacao,2-teste,4-medicao-orm,5-desinstalacao}.log`
-e `0-contrato.out`; a rodada 1 (com o defeito F1/F2, ver §6) fica em `verificacao-completa.out` e
-`logs/`.
+**Logs brutos:** `/opt/tre/dev/evidencias/t_adee6ad7/` — `verificacao-completa-final.out` (64 itens +
+`EXIT=0`, a rodada do commit entregue), `prova-de-dente-final.out` (3 provas, exit 0),
+`logs-final/{0-contrato.out,1-instalacao.log,2-teste.log,4-medicao-orm.log,5-desinstalacao.log}`,
+mais a `logs-dente-final/`; ficam preservadas a **rodada 1** (`verificacao-completa.out`, `logs/`) —
+com o defeito F1/F2, ver §6 — e a **rodada 2** (`…-round2.out`), que mediu uma versão do módulo cuja
+única diferença era o `README.md` e por isso foi refeita.
 
 ## 5. Provas negativas — o aceite tem dentes
 
 `bash verificar-res-partner.sh --prova-de-dente` →
-**`RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`**, **exit 0**. Cada prova roda numa **cópia**
-do módulo (o módulo real não é tocado) e espera **reprovação**:
+**`RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`**, **exit 0** (rodada final:
+`prova-de-dente-final.out`). Cada prova roda numa **cópia** do módulo (o módulo real não é tocado) e
+espera **reprovação**:
 
 | Prova | Mutação | Resultado medido |
 |---|---|---|
