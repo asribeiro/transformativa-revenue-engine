@@ -450,6 +450,19 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `configparser.DuplicateOptionError: option 'admin_passwd' … already exists` (`MODULO_ODOO_FALHOU
   (24 itens, 3 falhas)`, exit 1) — conserto e a bateria inteira (manifesto + dentes + aceite)
   reexecutada depois de **qualquer** edição do verificador. Detalhe no runbook §8.
+- **`TRE-W2-E03-T01-D02` (severidade média, `fix/TRE-W2-E03-T01-D02`) — o `--prova-de-dente`
+  sobrescrevia a evidência do aceite.** O sub-run do dente herdava o `TRE_LOG_DIR` do chamador
+  **por ambiente** e escrevia os mesmos nomes de passo: encadear aceite → dente na mesma sessão
+  apagava a evidência bruta do aceite (o caso apareceu no `TRE-W2-E05-T01` — runbook §5.1).
+  Medido com o script anterior (`72d00aa1…`): aceite `MODULO_ODOO_OK (51 itens, 0 falhas)` exit 0
+  seguido de `--prova-de-dente` no mesmo diretório → `1-instalacao.log` com **547** referências ao
+  banco `tre_e03_t01_modulo_dente` e `2-teste.log` com **33** (o log do aceite verde sobrava só no
+  console). Conserto: cada prova do dente escreve em `$TRE_LOG_DIR/dente/prova-N` (nada do dente
+  toca o diretório do aceite) **+ guarda fail-closed** que fotografa o `sha256` dos `[1-4]-*.log`
+  do aceite antes das provas e reprova o dente se algum mudar. Medido depois: mesma sequência →
+  dente `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)` exit 0 com os 4 logs do aceite em **sha256
+  idêntico** e ainda citando o banco do aceite; controle negativo (cópia do script com o caminho
+  compartilhado de volta) → a guarda reprova, exit 1.
 
 ### Notas de estado
 
