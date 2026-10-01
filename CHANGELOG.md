@@ -560,6 +560,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   primeiro em ordem alfabética — o verificador do trio compararia o banco errado. Quem escolhe agora é
   o **manifesto** (`banco:`). Medido: `verificar-backup.sh` num artefato com dois dumps →
   `RESTORE_OK (11 itens, 0 falhas)`.
+- **Rodada 2 do `TRE-W2-E01-T01-F01` (card `t_a5afde31`, 01/10/2026 — o que a revisão independente
+  reprovou):** o artefato de backup passou a nascer com o dono do **usuário de serviço**
+  (`TRE_BACKUP_DONO`, padrão `tre-deploy` quando existe na máquina; rodando como `root` a rotina
+  aplica o `chown` antes da retenção; declarar um usuário inexistente é **falha**), porque a execução
+  manual do operador como `root` gerava `root:root 700` e o verificador do timer (`tre-deploy`) não
+  conseguia ler o artefato — acusava "backup pela metade"/"sem Odoo" (defeito de **conteúdo**, falso)
+  para um artefato íntegro. Junto: a retenção passou a **conferir o exit do `rm`** e a reportar
+  `NAO consegui remover …` (`BACKUP_FALHOU`) em vez de contar como removido o que continua no disco; os
+  três verificadores passaram a distinguir **ilegível por permissão** de **ausente/pela metade**; o
+  `pg_restore.err` deixou de ser gravado **dentro** do artefato verificado (arquivo temporário); e
+  destino sem escrita falha com o diagnóstico certo (antes: `No such file or directory` no meio do
+  dump). Medido no mesmo estado entregue: rotina a mão por `root` → artefato `tre-deploy:tre-deploy`
+  (`executado_por: root`) verificado por `tre-deploy` → `VERIFICACAO_OK (3 itens)`; units →
+  `Result=success`; negativos de conteúdo continuam reprovando (dump truncado 10 falhas, filestore
+  ausente 4); hermético `TESTE_OK (84 itens, 0 falhas)`. Runbook §7h.
 
 ### Notas de estado
 
@@ -583,4 +598,6 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Rotina de backup cobre o Odoo do dev desde 01/10/2026** (`t_a5afde31`): `backup-tre.sh dev` grava
   num **único** artefato o dump do trio **e** o par do Odoo (banco + filestore), e o timer de
   domingo (`tre-backup-verify.timer`) verifica os dois. Ambiente que declare Odoo e cujo artefato não
-  o traga é **falha** de verificação, não "meio backup".
+  o traga é **falha** de verificação, não "meio backup". O artefato nasce com dono do **usuário de
+  serviço** (`TRE_BACKUP_DONO`, padrão `tre-deploy`) mesmo quando a rotina é executada a mão por
+  `root`, e a retenção **confere o `rm`** antes de dizer que removeu (rodada 2, runbook §7h).

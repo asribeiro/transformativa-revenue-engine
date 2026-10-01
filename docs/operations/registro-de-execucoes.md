@@ -460,3 +460,64 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   independente (estagio 6); a homologacao e do Anderson. A linha formal de aprovacao da publicacao em
   `docs/operations/registro-de-aprovacoes.md` fica declarada como pendencia (runbook §8).
 - Segredos: nenhum valor nesta entrada.
+
+## 2026-10-01 (rodada 2) — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W2-E01-T01-F01 (card `t_a5afde31`): o que a revisao independente reprovou (dono do artefato, retencao honesta, diagnostico de permissao)
+
+- **Motivo da rodada:** a revisao independente (perfil `tester`) mediu que o artefato nomeado no handoff
+  (`/opt/tre/backup/tre_dev_20261001T135513Z`) era `root:root 700` (a rotina foi executada a mao pelo
+  agente como `root`) e **nao reproduzia sob a identidade do timer**: `verificar-ultimo-backup.sh` como
+  `tre-deploy` → `VERIFICACAO_FALHOU (2 itens, 2 falhas)` com "backup do ambiente esta pela metade" e
+  `verificar-odoo.sh` → "artefato sem Odoo?" (diagnostico FALSO, de conteudo, para artefato integro); o
+  diretorio era irremovivel por `tre-deploy` e a retencao o contava como removido.
+- **Publicacao versionada (`deploy/publicar.sh --commit 9c17e5f81b154e82e59d785c3ea0a03dbe9d8915
+  --producao --card t_a5afde31`):** `PUBLICACAO_OK commit=9c17e5f… digest=106440348b44ba76a441a8fec66e524e60c07f72ec1bfb5a59343ebc2a41cc90
+  arquivos=323 digest_antes=09e36cdf… trava=travada`, `publicado_em 2026-10-01T14:26:42Z`, `concorrencia:
+  (nenhuma)`. Antes de publicar, a copia estava **identica** ao commit que `.publicado` registrava
+  (`a879fdf`, publicado por este mesmo card na rodada 1). Revert: `--commit a879fdf… --producao`.
+- **Conserto medido (o caso real do defeito):** `backup-tre.sh dev` executado **a mao por `root`** com o
+  `/etc/tre/backup.env` do timer → `BACKUP_OK`, artefato `/opt/tre/backup/tre_dev_20261001T142755Z`
+  **`tre-deploy:tre-deploy 700`**, manifesto com `executado_por: root` / `dono_artefato: tre-deploy` /
+  `externo: enviado (contabo:tre-backup)`; o **mesmo** artefato verificado por `tre-deploy` →
+  `RESTORE_OK (11 itens, 0 falhas)` + `RESTORE_ODOO_OK (27 itens, 0 falhas)` → `VERIFICACAO_OK (3 itens)`,
+  exit 0. Com o codigo anterior, o mesmo cenario (instrumento isolado, `/opt/tre/neg-r2`, ja removido)
+  dava `VERIFICACAO_FALHOU (2 itens, 2 falhas)` e "artefato sem Odoo?".
+- **Retencao honesta (antes x depois, cenario isolado, usuario `tre-deploy`):** ANTES
+  (`rm: cannot remove …: Permission denied` + `OK retencao aplicada (1 dias; 1 artefato(s) antigo(s)
+  removido(s))` + `BACKUP_OK` exit 0, diretorio no disco); DEPOIS (`FALHOU retencao: NAO consegui
+  remover tre_dev_20200101T000000Z (dono root:root, modo 700, rodando como tre-deploy)` +
+  `FALHOU retencao 1 dias: 0 de 1 artefato(s) removido(s), 1 NAO removido(s)` → `BACKUP_FALHOU` exit 1).
+  Positivo: artefato antigo removivel → `OK retencao aplicada (1 dias; 1 de 1 …)`, `BACKUP_OK`.
+- **Diagnostico de permissao:** artefato `root:root 700` verificado por `tre-deploy` →
+  `FALHOU … existe mas NAO e legivel por 'tre-deploy': dono root:root, modo 700 — e PERMISSAO, nao
+  conteudo` (`VERIFICACAO_FALHOU (1 itens, 1 falha)`) e, no verificador do Odoo,
+  `… — e PERMISSAO, nao 'artefato sem Odoo'`.
+- **Caminho real do timer:** `systemctl start tre-backup.service` → `Result=success`,
+  `ExecMainStatus=0`, `User=tre-deploy`, artefato `tre_dev_20261001T142800Z` `tre-deploy:tre-deploy 700`;
+  `systemctl start tre-backup-verify.service` → `Result=success`, `ExecMainStatus=0`, `RESTORE_OK` +
+  `RESTORE_ODOO_OK (27 itens)` e `RESULTADO: VERIFICACAO_OK (3 itens)`.
+- **Negativos de CONTEUDO seguem reprovando** (codigo publicado, usuario `tre-deploy`, copias em
+  `/opt/tre/neg-r4`, removidas ao fim): dump do Odoo truncado → `RESTORE_ODOO_FALHOU (27 itens, 10
+  falhas)`; filestore ausente → `RESTORE_ODOO_FALHOU (26 itens, 4 falhas)`; dump do trio truncado →
+  `RESTORE_FALHOU (11 itens, 7 falhas)`; controle positivo → `RESTORE_ODOO_OK (27 itens, 0 falhas)`.
+- **Remediacao do artefato da rodada 1:** `/opt/tre/backup/tre_dev_20261001T135513Z`
+  `root:root 700` → `tre-deploy:tre-deploy 700` (leitura e escrita por `tre-deploy` comprovadas), e
+  esse mesmo artefato restaurou inteiro sob a identidade do timer → `RESTORE_ODOO_OK (27 itens, 0
+  falhas)` com HTTP 200 em `127.0.0.1:32780/web/login`: estava integro, o defeito era o dono.
+- **Destino externo:** `rclone lsl contabo:tre-backup/tre_dev_20261001T142800Z` (14 objetos) e `sha256`
+  do bucket == manifesto local para `odoo_dev.dump` (`f77d0f27…`), `odoo-filestore.tar.gz`
+  (`521d4ece…`) e `sales_intelligence.dump` (`153630db…`).
+- **Teste hermetico:** `scripts/backup/teste-rotina-ambiente.sh` → `TESTE_OK (84 itens, 0 falhas)`,
+  com as secoes novas 9d (retencao que nao remove), 9e (dono do artefato) e 9f (permissao x conteudo).
+- **O que NAO foi tocado:** `odoo-dev 12cf65a3c1c6` (`StartedAt 2026-10-01T13:48:40Z`),
+  `pg-odoo-dev c7cb12f75eb9` (`12:41:17Z`) e `pg-sales-dev 396ace563710` (`2026-09-30T17:05:15Z`) com os
+  mesmos ids/StartedAt; `0` container de verificacao deixado; nenhum timer novo (os dois units + watchdog
+  `active`); trava da copia armada (`----i---------e-------`); producao intocada.
+- **Rollback desta rodada:** `rm -rf` dos cenarios isolados (`/opt/tre/neg-r2`, `neg-r3`, `neg-r4`,
+  `/opt/tre/ensaio-t_a5afde31-r2`), mantidos os artefatos reais criados pela rotina publicada
+  (`tre_dev_20261001T142755Z`, `tre_dev_20261001T142800Z`) e o artefato da rodada 1 remediado.
+- **Logs brutos:** `/opt/data/profiles/devops/evidence/t_a5afde31/rodada2/` (agente) e
+  `/opt/tre/evid-t_a5afde31-r2/` (VPS: `antes-*`, `depois-*`, `neg-*`, `verificacao-tre-deploy.log`,
+  `remediado-verificar-odoo.log`).
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao
+  independente (estagio 6); a homologacao e do Anderson.
+- Segredos: nenhum valor nesta entrada.
