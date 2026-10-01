@@ -1,0 +1,5 @@
+{
+  "esquema": "1",
+  "descricao": "Politica de TESTE propositalmente INVALIDA (sem 'versao' e sem 'ambientes_permitidos'): serve ao item que prova que politica ilegivel/invalida nao serve nada (500 politica_invalida), em vez de atender com regra inventada. Fixture do teste do card TRE-W3-E01-T01.",
+  "operacoes": []
+}

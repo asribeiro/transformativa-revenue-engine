@@ -1,0 +1,52 @@
+{
+  "esquema": "1",
+  "versao": "teste-1.0.0",
+  "descricao": "Politica de TESTE da API controlada (card TRE-W3-E01-T01). Existe para exercitar o caminho de ESCRITA do motor, que a politica real ainda nao declara — as operacoes de negocio entram pelos cards TRE-W3-E01-T02..T05. Declara, de proposito, um ambiente a mais ('producao'), para provar que a guarda de ambiente e' portao (permite com aprovacao) e nao parede.",
+  "ambientes_permitidos": ["dev", "producao"],
+  "padroes": {
+    "idempotency_key": "^[A-Za-z0-9._:-]{8,128}$",
+    "limite_maximo_de_registros": 200
+  },
+  "operacoes": [
+    {
+      "nome": "sistema_capacidades",
+      "tipo": "leitura",
+      "descricao": "Mesma operacao de fonte da politica real: usada aqui para a prova de aprovacao em 'producao' sem escrever nada.",
+      "fonte": "capacidades",
+      "limite_de_registros": 1,
+      "operadores_de_dominio": ["="],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": true,
+      "somente_leitura": true
+    },
+    {
+      "nome": "teste_upsert_parceiro",
+      "tipo": "escrita",
+      "descricao": "Operacao de teste: upsert de parceiro por CNPJ, com dois campos declarados. Prova o caminho de escrita (acao upsert), a exigencia de idempotency_key e o dry-run.",
+      "modelos": {
+        "res.partner": {
+          "campos": ["name", "tf_cnpj", "tf_domain"],
+          "campos_obrigatorios": ["name", "tf_cnpj"],
+          "campo_de_identidade": "tf_cnpj",
+          "acao": "upsert"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    },
+    {
+      "nome": "teste_criar_parceiro",
+      "tipo": "escrita",
+      "descricao": "Operacao de teste: criacao simples de parceiro com campos declarados. Usada para o item 'campo nao declarado na escrita' e para o controle negativo do upsert.",
+      "modelos": {
+        "res.partner": {
+          "campos": ["name", "tf_cnpj"],
+          "campos_obrigatorios": ["name"],
+          "acao": "criar"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    }
+  ]
+}

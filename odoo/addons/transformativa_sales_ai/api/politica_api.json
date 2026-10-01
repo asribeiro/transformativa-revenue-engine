@@ -1,0 +1,87 @@
+{
+  "esquema": "1",
+  "versao": "1.0.0",
+  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. Card TRE-W3-E01-T01. Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa. As operacoes de NEGOCIO (company/contact/opportunity upsert e activity create) sao declaradas pelos cards TRE-W3-E01-T02..T05; as operacoes de escrita nao entram aqui antes do motor de idempotencia (TRE-W3-E02-T02).",
+  "ambientes_permitidos": ["dev"],
+  "padroes": {
+    "idempotency_key": "^[A-Za-z0-9._:-]{8,128}$",
+    "limite_maximo_de_registros": 200
+  },
+  "operacoes": [
+    {
+      "nome": "sistema_capacidades",
+      "tipo": "leitura",
+      "descricao": "Capacidades declaradas desta versao da API: versao da politica, operacoes e seus tipos/modelos. Nao acessa nenhum modelo de negocio — serve de sonda de saude para o consumidor (n8n) e para o verificador provar o caminho declarado ponta a ponta.",
+      "fonte": "capacidades",
+      "limite_de_registros": 1,
+      "operadores_de_dominio": ["="],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": true,
+      "somente_leitura": true
+    },
+    {
+      "nome": "crm_registros_ler",
+      "tipo": "leitura",
+      "descricao": "Leitura controlada dos registros de CRM que o contrato da' ao Odoo (doc 12 §1): parceiro comercial (`res.partner`) e oportunidade/lead (`crm.lead`). Somente os campos declarados, somente nos campos de filtro declarados, com teto de registros. E' a primitiva das operacoes de leitura da integracao (eventos Odoo->PG e reconciliacao, cards TRE-W3-E03-T01/TRE-W3-E04-T01).",
+      "modelos": {
+        "res.partner": {
+          "campos": [
+            "id",
+            "name",
+            "active",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_company_id",
+            "tf_priority_score",
+            "write_date"
+          ],
+          "campos_de_filtro": [
+            "id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_company_id",
+            "write_date"
+          ],
+          "campos_de_ordem": ["id", "write_date"]
+        },
+        "crm.lead": {
+          "campos": [
+            "id",
+            "name",
+            "active",
+            "tf_opportunity_id",
+            "tf_priority_score",
+            "tf_icp_score",
+            "tf_automation_fit_score",
+            "tf_buying_signal_score",
+            "tf_data_quality_score",
+            "tf_score_version",
+            "tf_priority_tier",
+            "tf_next_best_action",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_sync_at",
+            "tf_last_event_type",
+            "write_date"
+          ],
+          "campos_de_filtro": [
+            "id",
+            "tf_opportunity_id",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_event_type",
+            "write_date"
+          ],
+          "campos_de_ordem": ["id", "write_date"]
+        }
+      },
+      "limite_de_registros": 200,
+      "operadores_de_dominio": ["=", "!=", "in", ">", ">=", "<", "<="],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": true,
+      "somente_leitura": true
+    }
+  ]
+}
