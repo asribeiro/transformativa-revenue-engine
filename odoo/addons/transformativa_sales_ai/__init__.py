@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# Pacote do modulo `transformativa_sales_ai` (card TRE-W2-E03-T01).
+# Pacote do modulo `transformativa_sales_ai` (base: card TRE-W2-E03-T01).
 #
-# Este card entrega o modulo VAZIO de proposito — a base das customizacoes. Nenhum modelo e
-# importado aqui ainda; quando a primeira card de customizacao (TRE-W2-E04-T01) chegar, ela
-# acrescenta `from . import models` nesta linha e cria o pacote `models/`.
+# A base nasceu sem modelo de proposito. As cards de customizacao acrescentam o pacote `models/`
+# — cada card importa o SEU modulo dentro de `models/__init__.py`, mantendo este arquivo estavel.
+from . import models

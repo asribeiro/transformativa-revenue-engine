@@ -42,3 +42,18 @@ assentada (nenhum módulo em `to install`/`to upgrade`/`to remove`).
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
 `--prova-de-dente`.
+
+## Campos de rastreio em `crm.lead` (`TRE-W2-E04-T02`)
+
+`models/crm_lead.py` acrescenta a `crm.lead` os **13 campos de rastreio** do Sales AI: os dois
+que o Data Contract V1.0 §3 nomeia (`tf_opportunity_id`, `tf_priority_score`) e 11 espelhos de
+artefatos do contrato (score model §8, vocabulário `next_best_action` §7, correlação/
+idempotência §3 e trilha de sincronização/eventos §6). Os campos entram **aditivos** — nenhum
+campo padrão do `crm.lead` é alterado —, com `tracking=True` e índice só nos três campos de
+busca por identidade/correlação. Inventário, proveniência item a item e lacunas declaradas:
+`docs/runbooks/odoo-crm-lead-sales-ai.md` §1–§2.
+
+- **Testes do Odoo:** `tests/test_crm_lead_rastreio.py` (7 testes, tag `post_install`).
+- **Confronto módulo × contrato congelado:** `python3 scripts/odoo/conferir_crm_lead_no_contrato.py`.
+- **Aceite (6 passos, com rollback medido):** `bash scripts/odoo/verificar-crm-lead-odoo.sh`
+  (na VPS, com `TRE_MODULO_DIR` do card); provas negativas em `--prova-de-dente`.

@@ -118,15 +118,20 @@ fi
 for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/__init__.py \
          odoo/addons/transformativa_sales_ai/README.md \
+         odoo/addons/transformativa_sales_ai/models/__init__.py \
+         odoo/addons/transformativa_sales_ai/models/crm_lead.py \
          odoo/addons/transformativa_sales_ai/tests/__init__.py \
          odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
+         odoo/addons/transformativa_sales_ai/tests/test_crm_lead_rastreio.py \
          scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
-         scripts/odoo/desinstalar_modulo.py docs/runbooks/odoo-modulo-sales-ai.md; do
+         scripts/odoo/desinstalar_modulo.py scripts/odoo/conferir_crm_lead_no_contrato.py \
+         scripts/odoo/medir_crm_lead.py scripts/odoo/verificar-crm-lead-odoo.sh \
+         docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-crm-lead-sales-ai.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
-for f in scripts/odoo/verificar-modulo-odoo.sh; do
+for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-crm-lead-odoo.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
