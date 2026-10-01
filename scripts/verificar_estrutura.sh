@@ -112,9 +112,9 @@ if grep -qiE '(passwd|password|senha)[[:space:]]*=[[:space:]]*[^[:space:]#]' dep
 else
   echo "OK    par do Odoo sem valor de senha"
 fi
-# Artefatos do modulo Odoo (TRE-W2-E03-T01, TRE-W2-E05-T01 e TRE-W2-E07-T01) existem E estao
-# versionados: o modulo (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o
-# aceite do card pode passar na VPS por arquivo que nunca entrou no repo.
+# Artefatos do modulo Odoo (TRE-W2-E03-T01, TRE-W2-E05-T01, TRE-W2-E07-T01 e TRE-W2-E06-T01)
+# existem E estao versionados: o modulo (`transformativa_sales_ai`) e as ferramentas de aceite.
+# Sem isto o aceite do card pode passar na VPS por arquivo que nunca entrou no repo.
 for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/__init__.py \
          odoo/addons/transformativa_sales_ai/README.md \
@@ -124,21 +124,26 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py \
          odoo/addons/transformativa_sales_ai/security/transformativa_sales_ai_security.xml \
          odoo/addons/transformativa_sales_ai/security/ir.model.access.csv \
+         odoo/addons/transformativa_sales_ai/views/tf_process_opportunity_views.xml \
+         odoo/addons/transformativa_sales_ai/views/res_partner_views.xml \
+         odoo/addons/transformativa_sales_ai/views/crm_lead_views.xml \
          odoo/addons/transformativa_sales_ai/tests/__init__.py \
          odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
          odoo/addons/transformativa_sales_ai/tests/test_res_partner_dedup.py \
          odoo/addons/transformativa_sales_ai/tests/test_crm_lead_rastreio.py \
          odoo/addons/transformativa_sales_ai/tests/test_oportunidade_canonica.py \
          odoo/addons/transformativa_sales_ai/tests/test_acl_seguranca.py \
+         odoo/addons/transformativa_sales_ai/tests/test_views_sales_ai.py \
          scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
          scripts/odoo/desinstalar_modulo.py scripts/odoo/verificar-acl-modulo.sh \
          scripts/odoo/provar_acl_modulo.py scripts/odoo/conferir_res_partner_no_contrato.py \
          scripts/odoo/medir_res_partner.py scripts/odoo/verificar-res-partner.sh \
          scripts/odoo/conferir_crm_lead_no_contrato.py scripts/odoo/medir_crm_lead.py \
          scripts/odoo/verificar-crm-lead-odoo.sh \
+         scripts/odoo/verificar-views-sales-ai.sh scripts/odoo/provar_views_sales_ai.py \
          docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
          docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
-         docs/runbooks/odoo-crm-lead-sales-ai.md; do
+         docs/runbooks/odoo-crm-lead-sales-ai.md docs/runbooks/odoo-views-sales-ai.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -148,7 +153,7 @@ done
 # copia operacional nao sobrevive ao proximo deploy (mesma licao do defeito t_22c27625).
 for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo.sh \
          scripts/odoo/provar_acl_modulo.py scripts/odoo/verificar-crm-lead-odoo.sh \
-         scripts/odoo/verificar-res-partner.sh; do
+         scripts/odoo/verificar-res-partner.sh scripts/odoo/verificar-views-sales-ai.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

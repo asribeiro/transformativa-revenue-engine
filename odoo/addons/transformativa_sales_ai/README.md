@@ -12,10 +12,10 @@ O que já existe e quem entrega o quê:
 |---|---|---|
 | Base: manifesto, versão, dependências, empacotamento, teste do módulo | `TRE-W2-E03-T01` | entregue |
 | Modelo canônico `tf.process.opportunity` (oportunidade canônica do lado Odoo) | `TRE-W2-E05-T01` | entregue |
-| ACLs / segurança (carteira × tenant) | `TRE-W2-E07-T01` | **neste card** |
-| Campos de dedup em `res.partner` (CNPJ, domínio, LinkedIn) | `TRE-W2-E04-T01` | pendente |
-| Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | pendente |
-| Views do Sales AI | `TRE-W2-E06-T01` | pendente |
+| ACLs / segurança (carteira × tenant) | `TRE-W2-E07-T01` | entregue |
+| Campos de dedup em `res.partner` (CNPJ, domínio, LinkedIn) | `TRE-W2-E04-T01` | entregue |
+| Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | entregue |
+| Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
 | API controlada | `TRE-W3-E01-T01` | pendente |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
@@ -104,8 +104,9 @@ propósito. O conteúdo entra por card, cada um no seu arquivo — o que já exi
 | Card | Arquivo | O que entra |
 |---|---|---|
 | `TRE-W2-E04-T01` | `models/res_partner.py` | `tf_cnpj`, `tf_domain`, `tf_linkedin_url` (identificadores fortes do contrato §5, os três **indexados**), `tf_company_id` (UUID canônico de `organizations.id`, com a forma do UUID conferida) e `tf_priority_score` (contrato §8) — runbook `docs/runbooks/res-partner-campos-dedup.md` |
-| `TRE-W2-E04-T02` | `models/crm_lead.py` (previsto) | campos de rastreio de `crm.lead` |
-| `TRE-W2-E05-T01` | `models/tf_process_opportunity.py` (previsto) | modelo canônico `tf.process.opportunity` |
+| `TRE-W2-E04-T02` | `models/crm_lead.py` | campos de rastreio de `crm.lead` — runbook `docs/runbooks/odoo-crm-lead-sales-ai.md` |
+| `TRE-W2-E05-T01` | `models/tf_process_opportunity.py` | modelo canônico `tf.process.opportunity` — runbook `docs/runbooks/odoo-oportunidade-canonica.md` |
+| `TRE-W2-E06-T01` | `views/*.xml` | as views do Sales AI — runbook `docs/runbooks/odoo-views-sales-ai.md` |
 
 **Ponto de contato entre cards paralelos (hotspot declarado):** `__init__.py` (uma vez),
 `models/__init__.py`, `tests/__init__.py` e este README. Cada card acrescenta **uma linha** nesses
@@ -129,3 +130,36 @@ busca por identidade/correlação. Inventário, proveniência item a item e lacu
 - **Confronto módulo × contrato congelado:** `python3 scripts/odoo/conferir_crm_lead_no_contrato.py`.
 - **Aceite (6 passos, com rollback medido):** `bash scripts/odoo/verificar-crm-lead-odoo.sh`
   (na VPS, com `TRE_MODULO_DIR` do card); provas negativas em `--prova-de-dente`.
+
+## Views do Sales AI (`TRE-W2-E06-T01`)
+
+Runbook do card: **`docs/runbooks/odoo-views-sales-ai.md`**. Arquivos: `views/` (três deles) e a
+lista `data` do manifesto.
+
+| View | Modelo | O que mostra |
+|---|---|---|
+| `view_tf_process_opportunity_list` | `tf.process.opportunity` | lista da oportunidade canônica (`name`, `partner_id`, `stage_id`, `expected_revenue`, `company_id`) |
+| `view_tf_process_opportunity_form` | `tf.process.opportunity` | formulário da oportunidade (os da lista + `currency_id`, `lost_reason_id`, `tf_uuid` somente leitura) |
+| `view_tf_process_opportunity_search` | `tf.process.opportunity` | busca — o `tf_uuid` é caminho de busca declarado (contrato §3) |
+| `view_partner_form_tf_sales_ai` | `res.partner` | herda `base.view_partner_form` e acrescenta a seção **"Sales AI"** com os 5 campos `tf_*` do parceiro |
+| `view_crm_lead_form_tf_sales_ai` | `crm.lead` | herda `crm.crm_lead_view_form` e acrescenta a seção **"Sales AI"** com os 13 campos `tf_*` do lead |
+
+A ação `action_tf_process_opportunity` (`view_mode = list,form`) e o menu **Sales AI →
+Oportunidades**, pendurado no menu raiz do CRM, fecham o AC3 (abertura da lista e do formulário).
+
+Recorte por perfil (AC2): o menu e as duas seções "Sales AI" estão presos ao grupo
+`group_tf_sales_ai_user`. O recorte vai no **nó da arch** (a página da seção) e no menu, não no
+registro da view herdada — no Odoo 19 uma view herdada **não pode** carregar `groups` no registro
+(`ParseError: Inherited view cannot have 'groups' defined on the record`); o detalhe e as demais
+armadilhas medidas estão no runbook §6. `company_id` e `currency_id` seguem o convencional do
+Odoo (grupos padrão `group_multi_company`/`group_multi_currency`), como no próprio `crm.lead`.
+
+- **Testes do Odoo:** `tests/test_views_sales_ai.py` (10 testes, tag `post_install`) — declaração
+  das views/ação/menus, campos do contrato na lista/formulário/busca, views herdadas, abertura pelo
+  membro, seção visível ao membro, e os negativos do restrito (menu, seção do parceiro/lead e a
+  entidade canônica com `AccessError`).
+- **Aceite (6 passos, com rollback medido):** `bash scripts/odoo/verificar-views-sales-ai.sh`
+  (na VPS, com `TRE_MODULO_DIR` do card): 83 itens — instalação em banco limpo, suite do Odoo
+  (`0 failed of 50 tests`), leitura das views/grupos/menu **no banco**, a prova independente
+  `scripts/odoo/provar_views_sales_ai.py` (21 itens, com três usuários que diferem só pelo grupo
+  do módulo) e a desinstalação pelo ORM. Provas negativas em `--prova-de-dente`.

@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Views do Sales AI — card TRE-W2-E06-T01 (`t_cf7519c9`).
+  Runbook: docs/runbooks/odoo-views-sales-ai.md.
+
+  Criterios de aceitacao homologados (Anderson, 29/09/2026):
+    AC1 as views exibem os campos das entidades customizadas, sem erro de renderizacao;
+    AC2 o acesso respeita o perfil de usuario (quem nao pode ver, nao ve);
+    AC3 evidencia de abertura das views (lista/formulario).
+
+  Este arquivo entrega as views da ENTIDADE PROPRIA do modulo — `tf.process.opportunity`, a
+  oportunidade canonica do lado Odoo (card TRE-W2-E05-T01): lista, formulario e busca, mais a
+  acao de janela e o menu que dao acesso a elas.
+
+  AC2 — o recorte por perfil (decisao D2 do runbook §1): este arquivo NAO inventa grupo novo.
+  Usa os grupos que o card TRE-W2-E07-T01 criou (`group_tf_sales_ai_user` — vendedor da carteira
+  — e `group_tf_sales_ai_manager` — gestor do tenant, que herda o do vendedor):
+    * o MENU "Sales AI" e preso ao grupo do vendedor (`groups` no `<menuitem>`): quem nao tem o
+      grupo nao ve o menu, porque `ir.ui.menu` filtra por `group_ids` na busca;
+    * o MODELO ja e' fail-closed por ACL (E07): sem o grupo, leitura levanta `AccessError`.
+
+  ORDEM DE CARGA (manifesto): `security/` antes deste arquivo — o menu referencia
+  `group_tf_sales_ai_user`, que precisa existir quando este XML for carregado.
+-->
+<odoo>
+
+    <!--
+      LISTA (o "lista" do criterio de abertura das views). `currency_id` nao aparece como coluna
+      (`column_invisible`): ele existe na view porque o campo `expected_revenue` e' Monetary e o
+      cliente precisa da moeda para formatar o valor.
+    -->
+    <record id="view_tf_process_opportunity_list" model="ir.ui.view">
+        <field name="name">tf.process.opportunity.list</field>
+        <field name="model">tf.process.opportunity</field>
+        <field name="arch" type="xml">
+            <list string="Oportunidades" default_order="id desc">
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="stage_id"/>
+                <field name="expected_revenue" widget="monetary"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="company_id" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!--
+      FORMULARIO. Todo campo do contrato que o modelo carrega aparece aqui: identificacao,
+      vinculo com o parceiro, fatos do funil (estagio/valor/motivo de perda) e a identidade
+      canonica (`tf_uuid`, somente leitura — a imutabilidade e' do modelo, nao da view).
+    -->
+    <record id="view_tf_process_opportunity_form" model="ir.ui.view">
+        <field name="name">tf.process.opportunity.form</field>
+        <field name="model">tf.process.opportunity</field>
+        <field name="arch" type="xml">
+            <form string="Oportunidade">
+                <sheet>
+                    <field name="active" invisible="1"/>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Oportunidade"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Funil (Data Contract §2)">
+                            <field name="partner_id"/>
+                            <field name="stage_id"/>
+                            <field name="lost_reason_id"/>
+                        </group>
+                        <group string="Valor (Data Contract §2)">
+                            <field name="expected_revenue" widget="monetary"/>
+                            <field name="currency_id" groups="base.group_multi_currency"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <group string="Identidade canonica (Data Contract §3)">
+                        <field name="tf_uuid" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!--
+      BUSCA. A busca por `tf_uuid` e' o caminho operacional do contrato (§3): o lado
+      PostgreSQL/n8n so' conhece a oportunidade pelo UUID canonico.
+    -->
+    <record id="view_tf_process_opportunity_search" model="ir.ui.view">
+        <field name="name">tf.process.opportunity.search</field>
+        <field name="model">tf.process.opportunity</field>
+        <field name="arch" type="xml">
+            <search string="Oportunidades">
+                <field name="name" string="Oportunidade"/>
+                <field name="partner_id" string="Parceiro"/>
+                <field name="tf_uuid" string="UUID canonico"/>
+                <field name="stage_id" string="Estagio"/>
+                <separator/>
+                <filter name="arquivadas" string="Arquivadas"
+                        domain="[('active', '=', False)]"/>
+                <group name="tf_agrupar_por">
+                    <filter name="agrupar_estagio" string="Estagio"
+                            context="{'group_by': 'stage_id'}"/>
+                    <filter name="agrupar_parceiro" string="Parceiro"
+                            context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Acao de janela da lista/formulario (o par do criterio de abertura das views). -->
+    <record id="action_tf_process_opportunity" model="ir.actions.act_window">
+        <field name="name">Oportunidades</field>
+        <field name="res_model">tf.process.opportunity</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Nenhuma oportunidade do Sales AI ainda
+            </p>
+            <p>
+                A oportunidade canonica do lado Odoo. O vinculo com o CRM e' pelo UUID canonico
+                (<code>tf_uuid</code>) e o estagio do funil vem do CRM.
+            </p>
+        </field>
+    </record>
+
+    <!--
+      MENU. Preso ao grupo do vendedor (`groups` no `<menuitem>` -> `ir.ui.menu.group_ids`):
+      quem nao tem o grupo nao ve o menu (a busca de menu do Odoo filtra por `group_ids`).
+      O gestor enxerga o mesmo menu (o grupo do gestor herda o do vendedor — card E07).
+    -->
+    <menuitem id="menu_tf_sales_ai_root"
+              name="Sales AI"
+              parent="crm.crm_menu_root"
+              groups="transformativa_sales_ai.group_tf_sales_ai_user"
+              sequence="30"/>
+    <menuitem id="menu_tf_sales_ai_oportunidades"
+              name="Oportunidades"
+              parent="menu_tf_sales_ai_root"
+              action="action_tf_process_opportunity"
+              sequence="10"/>
+
+</odoo>

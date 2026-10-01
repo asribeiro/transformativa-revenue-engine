@@ -508,6 +508,41 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   isso a mutação de campo/índice pararia no confronto estático e o caminho de banco não era exercitado
   (defeito 4 do runbook §8).
 
+- **Views do Sales AI no módulo Odoo (`TRE-W2-E06-T01`, `t_cf7519c9`)** — `views/` do
+  `transformativa_sales_ai`: três views próprias da entidade canônica
+  (`view_tf_process_opportunity_list/form/search`, com o `tf_uuid` como caminho de busca —
+  contrato §3), a ação `action_tf_process_opportunity` (`list,form`) e o menu **Sales AI →
+  Oportunidades** pendurado no menu raiz do CRM; mais as duas views **herdadas** que acrescentam a
+  seção "Sales AI" ao formulário do parceiro (`view_partner_form_tf_sales_ai` sobre
+  `base.view_partner_form`, 5 campos `tf_*`) e do lead (`view_crm_lead_form_tf_sales_ai` sobre
+  `crm.crm_lead_view_form`, 13 campos `tf_*`). Ferramentas: `scripts/odoo/verificar-views-sales-ai.sh`
+  (aceite de 6 passos, com rollback medido), `scripts/odoo/provar_views_sales_ai.py` (prova
+  independente, 21 itens), `tests/test_views_sales_ai.py` (10 testes) e o runbook
+  `docs/runbooks/odoo-views-sales-ai.md`.
+- **Recorte por perfil medido no servidor (AC2)**: o menu e as duas seções "Sales AI" são recortados
+  por `group_tf_sales_ai_user`, com o `groups` no **nó da arch** e no menu — no Odoo 19 o *registro*
+  de view herdada não pode carregar `groups` (`ParseError: Inherited view cannot have 'groups'
+  defined on the record`, medido na primeira rodada). A prova independente mede a view
+  **renderizada** para três usuários que diferem só pelo grupo do módulo: o membro abre lista e
+  formulário e vê a seção; o restrito não vê o menu, não vê a seção no parceiro/lead e recebe
+  `AccessError` na entidade canônica (fail-closed do E07). Decisão registrada: `company_id` e
+  `currency_id` seguem o convencional do Odoo (grupos padrão multi-companhia/multi-moeda, como no
+  `crm.lead`) e são medidos com um usuário multi — e o grupo `base.group_multi_company` **não** se
+  concede na mão (o Odoo o deriva de `company_ids`, `UsersMultiCompany` em `res_users.py`).
+- **Aceite das views item a item (83 itens)**: instalação em banco limpo → `--test-enable` com
+  `0 failed, 0 error(s) of 50 tests` (10 do card) → views/menus/ação e `groups` lidos **no banco**
+  (arch gravada, `ir_ui_menu_group_rel`, hierarquia do menu) → prova independente com dado
+  sintético (`VIEW_ITENS=21`, `VIEW_FALHAS=0`) → rollback por desinstalação (0 view, 0 menu, 0
+  registro do módulo; seção "Sales AI" ausente do parceiro) → limpeza e dev/homolog/prod intactos →
+  `RESULTADO: VIEWS_OK (83 itens, 0 falhas)`, exit 0, numa **dupla descartável própria**
+  (`postgres:16` + `odoo:19.0`).
+- **Dentes do aceite das views** (`--prova-de-dente`, **2 provas**, cada uma em cópia do módulo):
+  dente 1 (o `groups` da seção do parceiro removido) → `VIEWS_FALHOU (83 itens, 6 falhas)`, exit 1
+  (`FAIL: TestViewsSalesAi.test_09_ac2…`, `AC2 a view herdada view_partner_form_tf_sales_ai nao
+  recorta a secao pelo grupo do vendedor (medido 0)` e a prova independente com 2 falhas); dente 2
+  (a view do modelo fora do manifesto `data`) → `VIEWS_FALHOU (83 itens, 27 falhas)`, exit 1.
+  Resultado do comando: `RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas)`, exit 0.
+
 ### Security
 
 - **Aprovação humana nunca concedida por máquina** (`TRE-W2-E07-T01`) — medido, não declarado: a

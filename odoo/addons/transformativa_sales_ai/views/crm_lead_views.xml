@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Views das customizacoes de `crm.lead` — card TRE-W2-E06-T01 (`t_cf7519c9`).
+  Runbook: docs/runbooks/odoo-views-sales-ai.md.
+
+  O contrato poe em `crm.lead` dois nomes fixos (`canonical_ids.odoo_map`: `tf_opportunity_id` e
+  `tf_priority_score`) e o card TRE-W2-E04-T02 acrescentou os 13 campos de rastreio (`CAMPOS_DE_
+  RASTREIO`). Esta view NAO cria campo nenhum: ela ABRE a pagina "Sales AI" no formulario do
+  lead/oportunidade do CRM e mostra os 13 campos, agrupados por origem no contrato.
+
+  AC2 (decisao D2 do runbook §1): a pagina e presa ao grupo do vendedor do modulo
+  (`groups` no `<page>` e na `ir.ui.view`) — quem nao tem o grupo do Sales AI nao ve a secao.
+  O CRM padrao segue intocado (o AC2 do card E04-T02): nada e' removido nem escondido de quem
+  nao e' do Sales AI alem desta secao.
+-->
+<odoo>
+
+    <record id="view_crm_lead_form_tf_sales_ai" model="ir.ui.view">
+        <field name="name">crm.lead.form.sales.ai</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="Sales AI" name="tf_sales_ai"
+                      groups="transformativa_sales_ai.group_tf_sales_ai_user">
+                    <group string="Oportunidade canonica e proxima acao (Data Contract §3/§7)">
+                        <field name="tf_opportunity_id"/>
+                        <field name="tf_next_best_action"/>
+                    </group>
+                    <group string="Score model (Data Contract §8)">
+                        <field name="tf_priority_score"/>
+                        <field name="tf_priority_tier"/>
+                        <field name="tf_icp_score"/>
+                        <field name="tf_automation_fit_score"/>
+                        <field name="tf_buying_signal_score"/>
+                        <field name="tf_data_quality_score"/>
+                        <field name="tf_score_version"/>
+                    </group>
+                    <group string="Rastreio da integracao (Data Contract §3/§6)">
+                        <field name="tf_correlation_id"/>
+                        <field name="tf_idempotency_key"/>
+                        <field name="tf_last_sync_at"/>
+                        <field name="tf_last_event_type"/>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

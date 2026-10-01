@@ -4,3 +4,4 @@ from . import test_res_partner_dedup
 from . import test_crm_lead_rastreio
 from . import test_oportunidade_canonica
 from . import test_acl_seguranca
+from . import test_views_sales_ai
