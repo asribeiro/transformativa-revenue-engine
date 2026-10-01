@@ -113,8 +113,10 @@ bash /opt/tre/dev/e07t01/scripts/odoo/verificar-acl-modulo.sh
 | **4 prova negativa independente** | `provar_acl_modulo.py` → `ACL_ITENS=22 ACL_FALHAS=0`, `ACL_RESULTADO: OK`, **0 acusação de material alheio**, sem traceback: vendedor de cada carteira vê só a sua; vendedor sem carteira devolve **vazio**; leitura por id de carteira/tenant alheio → **AccessError**; gestor vê as duas carteiras do SEU tenant e nenhuma do outro; sem o grupo do módulo → **AccessError** (fail-closed); criação em carteira alheia recusada e na própria aceita; AC3 (superfície, escalada e autopromoção) fechado |
 | **limpeza / dev intocado** | banco, `postgres`, rede e diretório de configuração descartáveis removidos; **instância do dev com os mesmos 4 bancos antes e depois** (`odoo_dev, postgres, template0, template1`); `homolog`/`prod` com **0 arquivo** |
 
-**Logs brutos:** `/opt/tre/dev/e07t01/evidencias/logs/` — `1-instalacao.log`, `2-teste.log`,
-`4-prova-negativa.log` e `dente-{1,2}-*.out`.
+**Logs brutos:** `/opt/tre/dev/e07t01/evidencias/logs/` — `1-instalacao.log`, `2-teste.log`
+(relatório do runner), `4-prova-negativa.log` (a prova negativa item a item) — e
+`/opt/tre/dev/e07t01/evidencias/dentes-final.out` (as duas rodadas mutadas, saída completa dos
+filhos, terminando em `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`).
 
 ## 5. Provas negativas — o aceite tem dentes
 
@@ -147,15 +149,16 @@ próprio (`tre_e07t01_acl_d1` / `_d2`) que é removido no fim.
 - Imagens: `odoo:19.0` no digest `odoo@sha256:77bac5cd1e065210828f34883a7f76740b7373d06dd3a5a55d3eeb31ee2f85cd`
   e `postgres:16` no digest `postgres@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54`
   (as mesmas do par de dev).
-- sha256 dos artefatos do módulo **iguais no repo e na VPS**:
+- sha256 dos artefatos do módulo **iguais no repo (worktree do commit `060c369`) e na VPS**:
   `security/transformativa_sales_ai_security.xml c5d89ba3…`,
   `security/ir.model.access.csv 1066372f…`, `tests/test_acl_seguranca.py 3dca5720…`,
-  `tests/__init__.py 9183eb85…`, `__manifest__.py 015399f6…`, `README.md eda86a9b…`,
+  `tests/__init__.py 9183eb85…`, `__manifest__.py 015399f6…`, `README.md 06806487…`,
   `models/tf_process_opportunity.py 2045dd0a…` (intocado do E05),
   `tests/test_modulo_base.py ea75d283…` (intocado do E03),
-  `tests/test_oportunidade_canonica.py 56dc0865…` (intocado do E05).
+  `tests/test_oportunidade_canonica.py 56dc0865…` (intocado do E05) — **12/12 arquivos
+  idênticos**, conferidos arquivo a arquivo depois do commit.
 - Scripts do aceite: `scripts/odoo/verificar-acl-modulo.sh` e `scripts/odoo/provar_acl_modulo.py`
-  (sha256 do prover impresso pelo próprio verificador na rodada).
+  (o verificador imprime o sha256 do prover na rodada; os dois estão versionados com bit `100755`).
 
 ## 8. Defeitos e pendências declaradas (não são deste card)
 
