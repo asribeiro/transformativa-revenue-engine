@@ -418,9 +418,9 @@ Commit publicado **`e2b960b5bb79e5773a25fa3c594461a699ccf9d5`** (árvore `f10552
 `4f0c65390a54aa9df22a0871ae920935e5121795303e63145c2f9a9eb878a845`, 323 arquivos) em
 `root@169.58.24.102:/opt/tre/repo` às **13:54:33Z**, `--producao` declarado, **trava rearmada**
 (`lsattr -d` → `----i---------e-------`) e `--conferir` posterior `PUBLICACAO_OK … trava=travada`.
-**Ponta final publicada: `4ebcb040010b683fd1d92075cee13bbeb5f0a758`** (digest
-`0938ee32fa410a0065c78dcb632b3a8374f5b0bd69a6108a91c4b5d03d22a5a7`, os mesmos 323 arquivos — este
-commit muda só documentação), também com `--conferir` `PUBLICACAO_OK … trava=travada`.
+**Ponta final publicada:** o commit de documentação que acompanha este texto (`--conferir`
+`PUBLICACAO_OK … trava=travada` na hora da publicação; os commits seguintes ao `e2b960b5` mudam só
+documentação — o mesmo `323 arquivos` e o mesmo código de rotina).
 Antes, a cópia estava idêntica ao commit `66c7152` (card `t_daca4bda`): a publicação é **avanço na
 própria linha** (branch nascida da `fix/t_daca4bda-enforcement` com `origin/develop` mergeado), e
 nenhuma publicação de outro card ficou de fora — `/opt/tre/.publicacoes.log` mostra a última
