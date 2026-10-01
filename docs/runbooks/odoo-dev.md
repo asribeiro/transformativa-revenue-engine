@@ -19,7 +19,7 @@ medido e do rollback — **testado**, não só escrito.
 | **Identidade do artefato** | digest do manifesto `sha256:77bac5cd1e065210828f34883a7f76740b7373d06dd3a5a55d3eeb31ee2f85cd` (`odoo:19.0`, imagem de 28/09/2026, `19.0-20260926`) | `deploy/environments/dev-odoo.env` (`ODOO_DIGEST_ESPERADO`), conferido item a item pelo verificador |
 | **Porta do Odoo** | **`127.0.0.1:8069`** (só loopback) | `compose` (obrigatório, via `ODOO_HTTP_PORT`), verificador item 6 |
 | **Porta do banco do Odoo** | **nenhuma** publicada; o Odoo fala com `pg-odoo-dev` pela rede interna `tre-odoo-dev` | `compose`, verificador item 6 |
-| **UFW** | intocado: só a 22/tcp aberta | `provisionamento-contabo.md`; exposição pública é o card `TRE-W2-E01-T02` (TLS/proxy) |
+| **UFW** | durante o T01: só a `22/tcp`. **Desde o T02** (feito): `22/80/443` — o proxy terminou TLS em 80/443 e o Odoo continua só em loopback | `odoo-dev-tls.md` §1.1; verificador dos dois cards |
 | **Banco** | `odoo_dev` em `pg-odoo-dev` (volume `pgdata-odoo-dev`), **separado** de `sales_intelligence`/`pg-sales-dev` | `compose`, verificador item 5 |
 
 **Por que 19.0 e não 20.0** (as duas existem no repo oficial; `20.0` foi construída em 28/09/2026):
@@ -157,6 +157,8 @@ e reexecução idempotente), não por leitura — e cada conserto foi remedido.
 - **Backup do Odoo** (banco + filestore): `backup-restore-rollback.md` declara a restauração do Odoo
   como entrada "quando o Odoo subir (W2)" — agora subiu; a rotina de backup ainda cobre só o
   `sales_intelligence`.
-- **TLS/reverse proxy e exposição** — card `TRE-W2-E01-T02`.
+- **TLS/reverse proxy e exposição** — **feito** no card `TRE-W2-E01-T02`: `docs/runbooks/odoo-dev-tls.md`
+  (Caddy em 80/443, `proxy_mode` no Odoo, `basic_auth` protegendo o dev, aceite 28/28 e dente 6/6).
+  Falta a **decisão do dono** sobre o domínio (§1.2 daquele runbook) para o certificado público.
 - **Cópia operacional em linha divergente do `develop`** (§2): enquanto não se encontrarem, o dev usa o
   par em `/opt/tre/dev/compose/`.
