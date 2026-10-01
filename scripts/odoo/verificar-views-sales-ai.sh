@@ -109,11 +109,12 @@ resumo() {
 # revisao: com `TRE_MODULO_DIR` inexistente, `DOCKER_HOST` invalido ou imagem ausente as provas
 # morriam na GUARDA antes de medir e o comando devolvia `VIEWS_DENTE_OK (2 provas, 0 falhas)`,
 # exit 0 — verde sem exercitar dente nenhum. Agora o modo dente:
-#   1. CONFERE A ANCORA: o `TRE_MODULO_DIR` tem de ser o artefato DESTE card (sha256 do
-#      manifesto e das tres views iguais aos do `TRE_ANCORA_DIR`, por padrao o modulo no
-#      checkout ao lado deste script) — diretorio que nao e' o artefato do card nao prova
-#      nada e o modo RECUSA (o default `/opt/tre/dev/modulos/<modulo>` e' copia compartilhada
-#      de outro card: medido, sem o diretorio `views/` do E06);
+#   1. CONFERE A ANCORA: o `TRE_MODULO_DIR` tem de ser o artefato DESTE card, arquivo a arquivo
+#      (sha256 de tudo o que existe no modulo do `TRE_ANCORA_DIR`, por padrao o checkout ao lado
+#      deste script) — diretorio que nao e' o artefato do card nao prova nada e o modo RECUSA:
+#      o default `/opt/tre/dev/modulos/<modulo>` e' copia compartilhada de outro card (medido,
+#      sem o diretorio `views/` do E06) e uma copia com o README de rodada anterior tambem
+#      diverge (foi o defeito apontado na revisao);
 #   2. roda o caminho NAO mutado (baseline = os 6 passos do aceite, superconjunto do que os
 #      dois dentes medem) e EXIGE `VIEWS_OK`; sem baseline verde nao existe prova de dente
 #      (`VIEWS_DENTE_FALHOU (baseline nao medido)`, exit 1, nenhuma mutacao sobe);
@@ -135,11 +136,13 @@ if [ "$MODO" = "dente" ]; then
     VIEW_PARCEIRO="views/res_partner_views.xml"
     VIEW_OPORTUNIDADE="views/tf_process_opportunity_views.xml"
     MANIFESTO="__manifest__.py"
-    # Artefato do card = manifesto + as tres views do E06 (o que este modo mutila e mede).
-    ANCORA_ARQUIVOS="__manifest__.py views/tf_process_opportunity_views.xml views/res_partner_views.xml views/crm_lead_views.xml"
+    # Artefato do card = todos os arquivos do modulo no checkout do card (o proprio modulo, os
+    # modelos dos cards irmaos, README, etc.). A comparacao e' arquivo a arquivo: um `MODULO_DIR`
+    # que seja copia de OUTRO card (o default compartilhado) ou copia com um arquivo de rodada
+    # antiga (foi o caso do README na revisao) diverge e o modo RECUSA.
     ANCORA_DIR="${TRE_ANCORA_DIR:-$AQUI/../../odoo/addons/$MODULO}"
-    foto_ancora() { # $1=diretorio do modulo -> sha256 dos arquivos-ancora presentes
-        (cd "$1" 2>/dev/null && for a in $ANCORA_ARQUIVOS; do [ -f "$a" ] && sha256sum "$a"; done)
+    foto_ancora() { # $1=diretorio do modulo -> "sha256  caminho" de todo arquivo (sem __pycache__)
+        (cd "$1" 2>/dev/null && find . -type f -not -path '*__pycache__*' -printf '%P\n' | LC_ALL=C sort | xargs -r sha256sum)
     }
     # Guarda do defeito D02: fotografia dos arquivos do diretorio do ACEITE (nivel 1 — o modo
     # dente escreve em $DENTE_LOG_DIR, subdiretorio). Qualquer escrita aqui reprova a rodada.
@@ -184,18 +187,30 @@ if [ "$MODO" = "dente" ]; then
         exit 1
     fi
     ANCORA_REF="$(foto_ancora "$ANCORA_DIR")"
-    ANCORA_MOD="$(foto_ancora "$MODULO_DIR")"
     if [ -z "$ANCORA_REF" ]; then
-        echo "FALHOU ancora: $ANCORA_DIR nao tem os arquivos-ancora do card ($ANCORA_ARQUIVOS) — nao e' o artefato deste card"
+        echo "FALHOU ancora: $ANCORA_DIR nao tem nenhum arquivo do modulo — nao e' o artefato deste card"
         echo '---'
         echo "RESULTADO: VIEWS_DENTE_FALHOU (artefato nao ancorado — nenhum dente exercitado) modulo=$MODULO"
         exit 1
-    elif [ "$ANCORA_REF" = "$ANCORA_MOD" ]; then
-        echo "OK    ancora: o artefato em $MODULO_DIR e' o do checkout ($ANCORA_DIR) — sha256 identico em $(printf '%s\n' "$ANCORA_REF" | grep -c . | tr -d ' ') arquivos"
+    fi
+    ANCORA_N=0
+    ANCORA_DIVERGE=""
+    while read -r sha arq; do
+        [ -z "${arq:-}" ] && continue
+        ANCORA_N=$((ANCORA_N + 1))
+        if [ "$(sha256sum "$MODULO_DIR/$arq" 2>/dev/null | cut -d' ' -f1)" != "$sha" ]; then
+            ANCORA_DIVERGE="$ANCORA_DIVERGE $arq"
+        fi
+    done <<<"$ANCORA_REF"
+    if [ -z "$ANCORA_DIVERGE" ]; then
+        echo "OK    ancora: o artefato em $MODULO_DIR e' o do checkout ($ANCORA_DIR) — sha256 identico em $ANCORA_N arquivos"
     else
-        echo "FALHOU ancora: o artefato medido NAO e' o do card — sha256 divergente contra $ANCORA_DIR:"
-        printf '%s\n' "$ANCORA_REF" | sed 's/^/      referencia: /'
-        printf '%s\n' "$ANCORA_MOD" | sed 's/^/      medido:     /'
+        echo "FALHOU ancora: o artefato medido NAO e' o do card — arquivo(s) divergente(s) contra $ANCORA_DIR:"
+        for a in $ANCORA_DIVERGE; do
+            echo "      $a"
+            echo "        referencia: $(printf '%s\n' "$ANCORA_REF" | grep -F -- " $a" | cut -d' ' -f1)"
+            echo "        medido:     $(sha256sum "$MODULO_DIR/$a" 2>/dev/null | cut -d' ' -f1)"
+        done
         echo '---'
         echo "RESULTADO: VIEWS_DENTE_FALHOU (artefato nao ancorado — nenhum dente exercitado) modulo=$MODULO"
         exit 1

@@ -83,8 +83,8 @@ bash verificar-views-sales-ai.sh --banco tre_e06t01_alt   # outro banco descarta
 
 # provas de dente: baseline NAO mutado (tem de medir VIEWS_OK) + 2 mutacoes, cada uma com a SUA
 # assinatura de falha exigida. O modo dente RECUSA rodar contra um `TRE_MODULO_DIR` que nao seja
-# o artefato do card (sha256 do manifesto e das 3 views contra `TRE_ANCORA_DIR`, por padrao o
-# modulo do checkout ao lado deste script) e escreve os logs em `$TRE_LOG_DIR/dente/` — nunca no
+# o artefato do card (sha256 de TODOS os arquivos do modulo contra o `TRE_ANCORA_DIR`, por padrao
+# o modulo do checkout ao lado deste script) e escreve os logs em `$TRE_LOG_DIR/dente/` — nunca no
 # diretorio do aceite:
 TRE_MODULO_DIR=/opt/tre/dev/e06t01/odoo/addons/transformativa_sales_ai \
 TRE_LOG_DIR=/opt/tre/dev/e06t01/evidencias/logs \
