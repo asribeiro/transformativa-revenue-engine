@@ -450,6 +450,22 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `configparser.DuplicateOptionError: option 'admin_passwd' … already exists` (`MODULO_ODOO_FALHOU
   (24 itens, 3 falhas)`, exit 1) — conserto e a bateria inteira (manifesto + dentes + aceite)
   reexecutada depois de **qualquer** edição do verificador. Detalhe no runbook §8.
+- **Defeito do verificador do módulo — a régua do resquício media pelo nome do pacote
+  (`TRE-W2-E03-T01-D03`)** — os dois itens de resquício do passo 3 (o rollback declarado do card)
+  mediam `ir_ui_view`/`ir_model_fields` por `like '<módulo>%'` e "tabela com prefixo do módulo"; com o
+  módulo **instalado** os três termos davam **0** (código morto), enquanto a superfície real era
+  **1 tabela** (`tf_process_opportunity`, 14 colunas), **1 modelo**, **15 campos** e 17 registros de
+  `ir_model_data`. Provado com o banco sujo de propósito (desinstalação real + plantio de modelo,
+  tabela, campo e view, nada com `ir_model_data` do módulo): o verificador antigo (`72d00aa1…`) deu
+  **`MODULO_ODOO_OK (51 itens, 0 falhas)`** e o corrigido (`fa1f69f2…`) deu
+  **`MODULO_ODOO_FALHOU (51 itens, 2 falhas)`**, só nos dois itens de resquício. Conserto: a régua passou
+  a ser **derivada do que o módulo registra** (`ir_model_data` → modelos próprios, sem os compartilhados
+  com outro módulo; tabelas medidas em `information_schema`; campos/views por `model`), capturada
+  **antes** de desinstalar (depois o `ir_model_data` do módulo já não existe e a régua ficaria vazia de
+  novo) e impressa em `INFO`; e `--prova-de-dente` ganhou o **dente 3** (resquício plantado) →
+  `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`. O aceite segue **51 itens** nos dois módulos medidos (E05
+  com modelo e E03 base sem modelo — neste, com a superfície 0 **impressa**, não silenciosa). Detalhe no
+  runbook §10.
 
 ### Notas de estado
 
