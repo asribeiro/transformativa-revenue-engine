@@ -183,7 +183,7 @@ não pegou porque chama por **caminho absoluto**, forma em que `$0` resolve.
 Conserto: o script resolve o próprio caminho em `EU="$(readlink -f "$0")"` (usado também para
 derivar `AQUI`) e **toda** re-invocação usa `bash "$EU" --…`. Sub-run **sem** linha `RESULTADO:`
 passou a ser reportado como **falha de invocação**, com contador próprio
-(`…, N falha(s) de invocacao)`) — nunca como "item sem dente"; sem caminho resolvido o modo reprova
+(`…, N falha(s) de invocacao`) — nunca como "item sem dente"; sem caminho resolvido o modo reprova
 antes de qualquer prova. Medido nas **duas formas** (VPS, 01/10/2026): `bash verificar-modulo-odoo.sh
 --prova-de-dente` (cwd = diretório do script) e `bash /caminho/absoluto/…/verificar-modulo-odoo.sh
 --prova-de-dente` → `RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** nas duas.
