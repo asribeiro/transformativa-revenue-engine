@@ -112,6 +112,33 @@ if grep -qiE '(passwd|password|senha)[[:space:]]*=[[:space:]]*[^[:space:]#]' dep
 else
   echo "OK    par do Odoo sem valor de senha"
 fi
+# Artefatos do modulo Odoo (TRE-W2-E03-T01) existem E estao versionados: o modulo
+# (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o aceite do card pode
+# passar na VPS por arquivo que nunca entrou no repo.
+for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
+         odoo/addons/transformativa_sales_ai/__init__.py \
+         odoo/addons/transformativa_sales_ai/README.md \
+         odoo/addons/transformativa_sales_ai/tests/__init__.py \
+         odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
+         scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
+         scripts/odoo/desinstalar_modulo.py docs/runbooks/odoo-modulo-sales-ai.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/odoo/verificar-modulo-odoo.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+# O manifesto do modulo nao pode carregar credencial nem nome de banco (o aceite roda em
+# banco descartavel criado na hora; nome de banco com valor fixo no manifesto e' vazamento de ambiente).
+if grep -qiE '(passwd|password|senha|db_password|api_key|token)[[:space:]]*=[[:space:]]*[^[:space:]#]' \
+     odoo/addons/transformativa_sales_ai/__manifest__.py 2>/dev/null; then
+  echo "FALHOU manifesto do modulo carrega valor de senha (segredo nao vai para o artefato)"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    manifesto do modulo sem valor de senha"
+fi
 
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

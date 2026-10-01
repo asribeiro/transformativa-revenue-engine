@@ -386,6 +386,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `ODOO_DEV_FALHOU (19 itens, 1 falha)`, exit 1; `remover-odoo-dev.sh` sem
   `TRE_ODOO_CONFIRMAR_REMOCAO=1` → recusa, exit 1; verificador rodado após o rollback →
   `13 falha(s)`, exit 1.
+- **Módulo Odoo `transformativa_sales_ai` criado (`TRE-W2-E03-T01`)** — a base das customizações e da
+  integração: `odoo/addons/transformativa_sales_ai/` (manifesto `version 19.0.1.0.0`,
+  `license LGPL-3`, `depends ['base','crm']`, `application False`) + 6 testes do Odoo
+  (`tests/test_modulo_base.py`, tag `post_install`) + `scripts/odoo/verificar-modulo-odoo.sh`
+  (aceite de 4 passos) com `manifesto_do_modulo.py` e `desinstalar_modulo.py` + runbook
+  `docs/runbooks/odoo-modulo-sales-ai.md`. O módulo nasce **sem modelo, view ou ACL**: os campos de
+  `res.partner`/`crm.lead`, o `tf.process.opportunity`, as views, as ACLs e a API entram nas cards
+  `E04-T01/T02`, `E05`, `E06`, `E07` e `W3-E01`.
+- **Aceite do módulo item a item (51 itens)**: instalação em banco limpo → teste do Odoo →
+  desinstalação → reinstalação, tudo numa **dupla descartável própria** (`postgres:16` + `odoo:19.0`,
+  as imagens do par de dev) e não no `odoo-dev`/`pg-odoo-dev` → `RESULTADO: MODULO_ODOO_OK (51 itens,
+  0 falhas)`, exit 0. Medido: banco criado do zero, 0 ERROR/CRITICAL nos quatro logs,
+  `0 failed, 0 error(s) of 6 tests`, `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled`
+  com 0 resquício no banco, e reinstalação com `latest_version` == manifesto.
+- **Dentes do aceite do módulo** (`--prova-de-dente`, 2 provas, cada uma em cópia do módulo):
+  `version` mutada para `18.0.1.0.0` → `MODULO_ODOO_FALHOU (19 itens, 3 falhas)`, exit 1; teste
+  plantado que falha → `MODULO_ODOO_FALHOU (36 itens, 2 falhas)` com `odoo --test-enable exit 1`,
+  exit 1.
 
 ### Security
 
@@ -413,6 +431,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `"<chave> = <variável>"` (falso positivo) — conserto no código, não no scanner (`PASS` depois);
   (5) a guarda de "porta em uso" reprovava a **reexecução idempotente** (o próprio `odoo-dev` segurava a
   8069) — a guarda passou a valer só quando o container ainda não existe.
+- **Seis defeitos do verificador do módulo, achados executando (`TRE-W2-E03-T01`)** —
+  (1) o nome técnico do módulo saía errado porque o manifesto era lido montado em `/modulo` (o item
+  acusava qualquer módulo) — conserto: montar em `/leitura/<nome-real>`;
+  (2) o Odoo do dev **entra em qualquer banco novo** da instância `pg-odoo-dev` (medido: sessão de
+  `172.18.0.3` = `odoo-dev`, `application_name=odoo-1`, em ~30s num banco criado do zero) e a limpeza
+  morria com `being accessed by other users` — conserto: dupla descartável própria + `dropdb --force`;
+  (3) `select name … join ir_module_module` → `column reference "name" is ambiguous` no item de
+  dependências (com o `stderr` descartado, o item reprovava **sempre** — falso negativo) — conserto:
+  `select d.name`;
+  (4) `ir_module_module_dependency.state` é campo calculado (não tem coluna) — conserto: conferir o
+  estado no módulo dependente;
+  (5) o `secret_scan.sh` do repo reprovou o verificador por escrever a chave da senha na forma
+  literal (`"<chave> = <variável>"` — falso positivo, o valor é variável) — conserto **no código, não
+  no scanner** (chave por variável + `printf`), `secret_scan.sh` → `PASS`;
+  (6) **regressão da correção (5), pega por reexecutar**: sobrou o `echo` antigo da chave mestra, o
+  `odoo.conf` ficou com a opção **duas vezes** e a instalação morreu com
+  `configparser.DuplicateOptionError: option 'admin_passwd' … already exists` (`MODULO_ODOO_FALHOU
+  (24 itens, 3 falhas)`, exit 1) — conserto e a bateria inteira (manifesto + dentes + aceite)
+  reexecutada depois de **qualquer** edição do verificador. Detalhe no runbook §8.
 
 ### Notas de estado
 
@@ -428,3 +465,9 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `develop` não os contém — publicar apagaria o enforcement. Por isso o dev do Odoo roda do par em
   `/opt/tre/dev/compose/`, com o compose **versionado no repo**. `homolog` e `prod` seguem **sem
   nenhum arquivo e sem container**.
+- **Módulo `transformativa_sales_ai` ainda não aparece no `odoo-dev` (`TRE-W2-E03-T01`)**: o container
+  monta `/opt/tre/repo/odoo/addons` como `/mnt/extra-addons`, e a cópia operacional está na linha
+  divergente acima — enquanto as duas linhas não se encontrarem, o módulo é medido pelo runbook
+  `docs/runbooks/odoo-modulo-sales-ai.md` (dupla descartável própria com as imagens do par de dev) e a
+  publicação na cópia operacional fica pendente. O aceite do card pede banco **limpo**, e o `odoo_dev`
+  não é limpo (carrega o funil do `TRE-W2-E02-T01`).
