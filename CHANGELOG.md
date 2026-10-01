@@ -481,6 +481,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   teste reprovado** (o Odoo 19 escreve `… ERROR <banco> <módulo>: FAIL: TestX.test_y`) — mesma classe
   do defeito D04 do verificador de estrutura; conserto com `grep -cE '(^| )(FAIL|ERROR): [A-Za-z_]'`,
   provado no log da rodada 1 (padrão antigo 0 casamentos / padrão novo 1) e pelo dente 3.
+- **`--prova-de-dente` do aceite de `res.partner` dava verde sem medir dente nenhum**
+  (`TRE-W2-E04-T01`, defeito registrado no card `t_e1f62fae` — achado da revisão independente do card
+  irmão `TRE-W2-E04-T02`, observação O6; registro **retroativo**, a origem já estava `done`): o
+  julgamento de cada dente aceitava **qualquer** `RES_PARTNER_FALHOU`, inclusive a que vem das
+  **guardas do ambiente** — com `TRE_CARTAO_DIR=/opt/tre/nao-existe` as 3 provas morriam na guarda e o
+  comando devolvia `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`, **exit 0** (reproduzido por mim antes do
+  conserto; o **aceite** em si sempre foi fail-**CLOSED** — quem falhava aberto era só o modo dente).
+  Conserto no mesmo padrão já medido e aprovado no E04-T02: **baseline** do caminho não mutado exigido
+  verde (senão `RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, exit 1),
+  **assinatura de falha própria por dente** (`tf_cnpj NAO esta indexado`; `campo tf_domain AUSENTE em
+  res.partner`; `1 failed, 0 error(s) of` **e** `rodei 8 teste`), dente que **abortou numa guarda** ou
+  não chegou ao passo medido é reprovado, guardas de **arquivo primeiro** e reexecução do próprio script
+  por caminho absoluto (`SELF`). Medido na VPS do dev: ambiente não resolvido — antes `exit 0`
+  (falso-verde) / depois `exit 1`; ambiente completo → baseline `RES_PARTNER_OK (29 itens, 0 falhas)` +
+  3 dentes com as contagens da revisão **preservadas** (dente 1 `9/1`, dente 2 `9/2`, dente 3 `1 failed`
+  + suite `8 != 7`) → `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`; aceite `RES_PARTNER_OK (64 itens, 0
+  falhas)` e regressão do módulo base `MODULO_ODOO_OK (51 itens, 0 falhas)` seguem verdes. Detalhe no
+  runbook §9 (`docs/runbooks/res-partner-campos-dedup.md`).
 - **`'At least one test failed when loading the modules.'` é marcador vazio no Odoo 19**
   (`TRE-W2-E04-T01`): medido — ele **não** aparece nem com teste reprovado. O item do aceite ficou só
   como ausência (não pode dar falso OK) e os dentes reais do passo de testes são o **exit code**, o

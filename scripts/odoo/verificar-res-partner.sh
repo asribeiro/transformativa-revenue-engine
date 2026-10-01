@@ -29,9 +29,14 @@
 #   bash verificar-res-partner.sh --prova-de-dente
 #   bash verificar-res-partner.sh --banco tre_outro_banco
 #
-# Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_CONTRATO, TRE_BANCO, TRE_IMAGEM, TRE_IMAGEM_PG,
-# TRE_PG_USER, TRE_LOG_DIR, TRE_TESTES_MINIMOS, TRE_TESTES_DO_CARD, TRE_DEV_PG_CT,
-# TRE_MANTER_BANCO=1 (nao limpa no fim).
+# TRE_CARTAO_DIR e' a raiz dos caminhos default (modulo e contrato): fora do diretorio DESTE card
+# na VPS ele NAO resolve, e o verificador RECUSA DE CARA (fail-closed, antes de subir qualquer
+# coisa) quando contrato, conferidor ou medidor nao estao em disco — dizendo o que exportar. Este
+# e' o conserto do modo dente fail-open registrado no §9 do runbook.
+#
+# Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_CARTAO_DIR, TRE_CONTRATO, TRE_BANCO, TRE_IMAGEM,
+# TRE_IMAGEM_PG, TRE_PG_USER, TRE_CONFERIDOR, TRE_MEDIDOR, TRE_LOG_DIR, TRE_TESTES_MINIMOS,
+# TRE_TESTES_DO_CARD, TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim).
 #
 # Saida: um item por linha (`OK`/`FALHOU`), resumo final em uma linha e exit code:
 #   0 = aceite cumprido (todos os itens OK)   1 = falhou / nao deu para medir
@@ -40,6 +45,10 @@ set -u
 
 MODULO="${TRE_MODULO:-transformativa_sales_ai}"
 AQUI="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# Caminho ABSOLUTO deste script: as provas de dente reexecutam o proprio verificador e `"$0"` so'
+# funciona quando o chamador passou caminho com barra (com `bash verificar-res-partner.sh` o shell
+# procuraria no PATH). Mesma classe do defeito D04 do verificador de modulo (E03-T01).
+SELF="$(readlink -f "$0")"
 CARTAO_DIR="${TRE_CARTAO_DIR:-/opt/tre/dev/cards/t_adee6ad7}"
 MODULO_DIR="${TRE_MODULO_DIR:-$CARTAO_DIR/modulos/$MODULO}"
 CONTRATO="${TRE_CONTRATO:-$CARTAO_DIR/docs/data/data_contract_v1.json}"
@@ -114,12 +123,72 @@ confere_contrato() {
 }
 
 # ---------------------------------------------------------------------------
-# --prova-de-dente: o aceite tem dentes? tres mutacoes, cada uma em copia propria
+# --prova-de-dente: o aceite tem dentes? baseline nao mutado + 3 mutacoes, cada uma em copia propria
+#
+# DEFEITO CONSERTADO (revisao independente do card irmao TRE-W2-E04-T02, observacao O6 — mesma
+# classe do defeito 5 de la — reproduzido por mim com este artefato): a versao anterior aceitava
+# QUALQUER `RES_PARTNER_FALHOU` como prova de dente. Com o ambiente sem resolver (por exemplo
+# `TRE_CARTAO_DIR=/opt/tre/nao-existe`) as 3 provas morriam na GUARDA — antes de medir qualquer
+# coisa — e o modo devolvia `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`, exit 0: verde sem dente
+# nenhum (fail-open). O aceite sempre foi fail-CLOSED; quem era fail-open era o modo dente, e e'
+# ele que o TEST PLAN do card promete. Agora o modo dente:
+#   1. roda o caminho NAO mutado (baseline: contrato + instalacao + testes — o superconjunto dos
+#      caminhos que os 3 dentes medem) e EXIGE verde; sem baseline verde nao existe prova de dente,
+#      e o comando termina em RES_PARTNER_DENTE_FALHOU (baseline nao medido), exit 1;
+#   2. exige de CADA prova a SUA assinatura de falha (o texto que so' aquela mutacao produz; mais
+#      de uma pode ser exigida, separadas por `;;`), em vez de "qualquer FALHOU";
+#   3. reprova o dente cuja saida abortou numa guarda do ambiente ou nao chegou ao passo que ele mede.
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e04t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     DENTE_FALHAS=0
+    # $1=rotulo  $2=assinatura(s) de falha exigida(s), separadas por `;;`  $3=passo que tem de ter
+    # sido medido  $4=saida do verificador mutado
+    confere_dente() {
+        local rotulo="$1" assinaturas="$2" passo="$3" saida="$4" motivo="" assinatura resto
+        if ! printf '%s' "$saida" | grep -q 'RESULTADO: RES_PARTNER_FALHOU'; then
+            motivo="a mutacao NAO reprovou o aceite — o item nao mede o que promete"
+        elif printf '%s' "$saida" | grep -qE 'nada a medir|modulo ausente|artefato ausente|contrato ausente|sem contrato nao ha confronto|nao responde|nao consegui criar|nao consegui subir|nao ficou pronto|e do ambiente|fora do padrao descartavel'; then
+            motivo="a prova ABORTOU numa guarda do ambiente, antes de medir — aborto nao e' prova de dente"
+        elif ! printf '%s' "$saida" | grep -qF -- "$passo"; then
+            motivo="a prova nao chegou ao passo '$passo' (morreu antes de medir) — aborto nao e' prova de dente"
+        else
+            resto="$assinaturas"
+            while [ -n "$resto" ]; do
+                assinatura="${resto%%;;*}"
+                if [ "$assinatura" = "$resto" ]; then resto=""; else resto="${resto#*;;}"; fi
+                if ! printf '%s' "$saida" | grep -qE -- "$assinatura"; then
+                    motivo="a prova reprovou por outro motivo: falta a assinatura esperada /$assinatura/"
+                    break
+                fi
+            done
+        fi
+        if [ -z "$motivo" ]; then
+            echo "OK    $rotulo: a mutacao REPROVOU o aceite com a assinatura esperada (o item tem dente)"
+        else
+            echo "FALHOU $rotulo: $motivo"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1))
+        fi
+    }
+
+    # --- baseline: o caminho NAO mutado tem de medir verde ANTES de qualquer mutacao ------------
+    # Roda o contrato (o caminho dos dentes 1 e 2) MAIS instalacao + testes (o caminho do dente 3):
+    # e' o superconjunto do que os tres dentes medem, sem mutacao nenhuma. Sem este verde, uma
+    # mutacao que "reprova" nao prova nada — ela pode estar reprovando a guarda do ambiente.
+    cabecalho "baseline: caminho NAO mutado (contrato + instalacao + testes) tem de medir RES_PARTNER_OK"
+    BASE="$(TRE_MODULO_DIR="$MODULO_DIR" TRE_BANCO="${BANCO}_baseline" TRE_LOG_DIR="$LOG_DIR" \
+            bash "$SELF" --apenas-instalacao-e-teste 2>&1)"
+    printf '%s\n' "$BASE" >"$LOG_DIR/dente-0-baseline.out"
+    printf '%s\n' "$BASE" | grep -E 'FALHOU|RESULTADO' | tail -3
+    if printf '%s' "$BASE" | grep -q 'RESULTADO: RES_PARTNER_OK'; then
+        echo 'OK    baseline: o caminho NAO mutado mediu RES_PARTNER_OK — os dentes tem contra o que medir'
+    else
+        echo "FALHOU baseline: o caminho NAO mutado NAO mediu verde: $(printf '%s' "$BASE" | grep '^FALHOU ' | head -3 | tr '\n' ' ')"
+        echo '---'
+        echo "RESULTADO: RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    fi
 
     cabecalho "dente 1: identificador forte sem indice (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
@@ -132,28 +201,18 @@ alvo = "string='CNPJ',\n        index=True,\n"
 assert alvo in texto, 'trecho do tf_cnpj nao encontrado para mutar'
 arquivo.write_text(texto.replace(alvo, "string='CNPJ',\n", 1))
 PY
-    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$LOG_DIR" "$0" --apenas-contrato 2>&1)"
+    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$LOG_DIR" bash "$SELF" --apenas-contrato 2>&1)"
     printf '%s\n' "$D1" >"$LOG_DIR/dente-1-sem-indice.out"
     printf '%s\n' "$D1" | grep -E 'FALHOU|RESULTADO' | tail -3
-    if printf '%s' "$D1" | grep -q 'RESULTADO: RES_PARTNER_FALHOU'; then
-        echo 'OK    dente 1: campo de dedup sem indice reprova o aceite'
-    else
-        echo 'FALHOU dente 1: campo de dedup sem indice NAO reprovou — o item de indice nao tem dente'
-        DENTE_FALHAS=$((DENTE_FALHAS + 1))
-    fi
+    confere_dente "dente 1" 'tf_cnpj NAO esta indexado' 'contrato V1.0 x modelo res.partner' "$D1"
 
     cabecalho "dente 2: nome de campo diferente do contrato (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
     sed -i 's/tf_domain/tf_dominio/g' "$DENTE_DIR/m2/models/res_partner.py"
-    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_LOG_DIR="$LOG_DIR" "$0" --apenas-contrato 2>&1)"
+    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_LOG_DIR="$LOG_DIR" bash "$SELF" --apenas-contrato 2>&1)"
     printf '%s\n' "$D2" >"$LOG_DIR/dente-2-nome-divergente.out"
     printf '%s\n' "$D2" | grep -E 'FALHOU|RESULTADO' | tail -3
-    if printf '%s' "$D2" | grep -q 'RESULTADO: RES_PARTNER_FALHOU'; then
-        echo 'OK    dente 2: nome divergente do contrato reprova o aceite'
-    else
-        echo 'FALHOU dente 2: nome divergente NAO reprovou — a conferencia de nome nao tem dente'
-        DENTE_FALHAS=$((DENTE_FALHAS + 1))
-    fi
+    confere_dente "dente 2" 'campo tf_domain AUSENTE em res.partner' 'contrato V1.0 x modelo res.partner' "$D2"
 
     cabecalho "dente 3: teste do Odoo que falha de proposito (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
@@ -164,15 +223,10 @@ PY
         self.assertTrue(False, 'teste plantado pela prova de dente (TRE-W2-E04-T01)')
 PY
     D3="$(TRE_MODULO_DIR="$DENTE_DIR/m3" TRE_BANCO="${BANCO}_dente" TRE_LOG_DIR="$LOG_DIR" \
-          "$0" --apenas-instalacao-e-teste 2>&1)"
+          bash "$SELF" --apenas-instalacao-e-teste 2>&1)"
     printf '%s\n' "$D3" >"$LOG_DIR/dente-3-teste-mutado.out"
     printf '%s\n' "$D3" | grep -E 'FALHOU|RESULTADO' | tail -3
-    if printf '%s' "$D3" | grep -q 'RESULTADO: RES_PARTNER_FALHOU'; then
-        echo 'OK    dente 3: teste reprovado reprova o aceite'
-    else
-        echo 'FALHOU dente 3: teste reprovado NAO reprovou — o passo de testes nao tem dente'
-        DENTE_FALHAS=$((DENTE_FALHAS + 1))
-    fi
+    confere_dente "dente 3" '1 failed, 0 error\(s\) of;;rodei 8 teste' 'passo 2/5' "$D3"
 
     echo '---'
     if [ "$DENTE_FALHAS" -eq 0 ]; then
@@ -229,6 +283,23 @@ erros_no_log() { grep -cE '(^| )(ERROR|CRITICAL) ' "$1" 2>/dev/null || true; }
 # guardas do ambiente (fail-closed: sem ambiente medido, nao existe aceite)
 # ---------------------------------------------------------------------------
 cabecalho "guardas do ambiente"
+# Contrato, conferidor e medidor sao artefatos de ARQUIVO: conferidos PRIMEIRO, para o comando
+# RECUSAR DE CARA — sem subir nada — quando um caminho nao resolve. O default do contrato depende de
+# TRE_CARTAO_DIR (so' existe no diretorio DESTE card na VPS); fora dele, um erro de ambiente podia
+# virar "prova de dente" no modo fail-open consertado no §9 do runbook.
+for arquivo in "$CONTRATO" "$CONFERIDOR" "$MEDIDOR" "$PARSER" "$DESINSTALADOR"; do
+    if [ -f "$arquivo" ]; then
+        ok "artefato em disco: $arquivo"
+    else
+        case "$arquivo" in
+            "$CONTRATO") dica=" — sem contrato nao ha confronto: exporte TRE_CONTRATO=<commit>/docs/data/data_contract_v1.json (ou TRE_CARTAO_DIR)" ;;
+            "$CONFERIDOR") dica=" — exporte TRE_CONFERIDOR=<commit>/scripts/odoo/conferir_res_partner_no_contrato.py" ;;
+            "$MEDIDOR") dica=" — exporte TRE_MEDIDOR=<commit>/scripts/odoo/medir_res_partner.py" ;;
+            *) dica="" ;;
+        esac
+        falhou "artefato ausente: $arquivo$dica"; resumo
+    fi
+done
 if docker info >/dev/null 2>&1; then ok "docker responde"; else falhou "docker nao responde"; resumo; fi
 for img in "$IMAGEM" "$IMAGEM_PG"; do
     if docker image inspect "$img" >/dev/null 2>&1; then
@@ -246,11 +317,8 @@ if [ -f "$MODULO_DIR/__manifest__.py" ]; then
     info "sha256 do modulo sob teste:"
     (cd "$MODULO_DIR" && find . -type f | LC_ALL=C sort | xargs sha256sum | sed 's/^/      /')
 else
-    falhou "modulo ausente em $MODULO_DIR (__manifest__.py nao encontrado)"; resumo
+    falhou "modulo ausente em $MODULO_DIR (__manifest__.py nao encontrado) — exporte TRE_MODULO_DIR=<commit>/odoo/addons/$MODULO"; resumo
 fi
-for arquivo in "$CONTRATO" "$CONFERIDOR" "$MEDIDOR" "$PARSER" "$DESINSTALADOR"; do
-    [ -f "$arquivo" ] && ok "artefato em disco: $arquivo" || { falhou "artefato ausente: $arquivo"; resumo; }
-done
 case "$BANCO" in
     odoo_dev|sales_intelligence|postgres) falhou "banco $BANCO e do ambiente — so banco descartavel"; resumo ;;
 esac
