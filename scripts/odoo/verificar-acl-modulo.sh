@@ -36,6 +36,12 @@
 # TRE_MIN_TESTS (minimo de testes no relatorio do runner), TRE_MIN_ITENS_PROVA, TRE_LOG_DIR,
 # TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim).
 #
+# TRE_LOG_DIR: diretorio dos logs de passo do ACEITE (passos 1 a 4). O modo --prova-de-dente NAO
+# escreve nele: cada prova usa "$TRE_LOG_DIR/dente/prova-N" e os .out dos dentes ficam em
+# "$TRE_LOG_DIR/dente/". A guarda do modo dente fotografa o sha256 dos [1-4]-*.log do aceite antes
+# e depois das provas e REPROVA se algum mudar (defeito TRE-W2-E03-T01-D02, reincidente na primeira
+# versao deste verificador — ver runbook §8/§9).
+#
 # Saida: um item por linha (`OK`/`FALHOU`), resumo em uma linha e exit code:
 #   0 = aceite cumprido (todos os itens OK)   1 = falhou / nao deu para medir
 # ============================================================================
@@ -94,11 +100,24 @@ resumo() {
 # --prova-de-dente: o aceite tem dentes? duas mutacoes, cada uma em copia propria
 #   dente 1: a regra de CARTEIRA vira "(1,'=',1)" (o vendedor passa a ver tudo) -> tem de reprovar
 #   dente 2: uma ACL plantada da o grupo do vendedor poder de escrita em `res.users`  -> tem de reprovar
+#
+# LOG PROPRIO (defeito TRE-W2-E03-T01-D02, reincidente na 1a versao deste verificador): cada prova
+# escreve num diretorio seu, sob "$LOG_DIR/dente/", e o modo dente nao escreve nem um arquivo no
+# diretorio do aceite. Na forma anterior, o sub-run herdava o TRE_LOG_DIR do chamador por ambiente e
+# usava os MESMOS nomes de passo: encadear aceite -> dente na mesma sessao (a forma do runbook §3)
+# sobrescrevia 1-instalacao.log/2-teste.log/4-prova-negativa.log do aceite com a execucao mutada,
+# apagando a evidencia bruta do aceite. A guarda abaixo e' fail-closed: fotografa os [1-4]-*.log do
+# aceite antes e depois e reprova o dente se algum mudar.
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e07t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
+    DENTE_LOG_DIR="${LOG_DIR}/dente"
+    mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2"
     DENTE_FALHAS=0
+    GUARDA_FALHAS=0
+    ACEITE_ANTES="$(cd "$LOG_DIR" 2>/dev/null && sha256sum [1-4]-*.log 2>/dev/null | LC_ALL=C sort)"
+    info "logs do aceite: $LOG_DIR  |  logs do dente: $DENTE_LOG_DIR (caminhos separados)"
     SEGURANCA="security/transformativa_sales_ai_security.xml"
 
     cabecalho "prova de dente 1: regra de carteira mutada para (1,'=',1) (espera-se FALHOU)"
@@ -108,8 +127,8 @@ if [ "$MODO" = "dente" ]; then
         echo 'FALHOU dente 1: a mutacao nao pegou no arquivo (prova sem valor)'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     else
-        D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$LOG_DIR" bash "$0" 2>&1)"
-        printf '%s\n' "$D1" >"$LOG_DIR/dente-1-carteira-aberta.out"
+        D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" bash "$0" 2>&1)"
+        printf '%s\n' "$D1" >"$DENTE_LOG_DIR/dente-1-carteira-aberta.out"
         printf '%s\n' "$D1" | grep -E '^(FALHOU|RESULTADO)' | tail -6
         if printf '%s\n' "$D1" | grep -q 'RESULTADO: ACL_FALHOU'; then
             echo 'OK    dente 1: a regra de carteira aberta reprova o aceite'
@@ -123,8 +142,8 @@ if [ "$MODO" = "dente" ]; then
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
     printf '%s\n' 'access_res_users_plantada,"ACL plantada pela prova de dente",base.model_res_users,group_tf_sales_ai_user,1,1,1,1' \
         >>"$DENTE_DIR/m2/security/ir.model.access.csv"
-    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$LOG_DIR" bash "$0" 2>&1)"
-    printf '%s\n' "$D2" >"$LOG_DIR/dente-2-acl-plantada.out"
+    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-2" bash "$0" 2>&1)"
+    printf '%s\n' "$D2" >"$DENTE_LOG_DIR/dente-2-acl-plantada.out"
     printf '%s\n' "$D2" | grep -E '^(FALHOU|RESULTADO)' | tail -6
     if printf '%s\n' "$D2" | grep -q 'RESULTADO: ACL_FALHOU'; then
         echo 'OK    dente 2: a ACL plantada (superficie/escalacao) reprova o aceite'
@@ -132,13 +151,35 @@ if [ "$MODO" = "dente" ]; then
         echo 'FALHOU dente 2: a ACL plantada NAO reprovou — o criterio 3 nao tem dente'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
+    # Dente do item de linha de teste reprovado (aprendizado do TRE-W2-E03-T01-D01: item de
+    # verificador precisa de dente proprio): o dente 2 tem teste reprovado de verdade no log do
+    # runner — o item do passo 2 TEM de disparar nele. Sem isto, o item pode voltar a ser codigo
+    # morto (grep ancorado em formato que o Odoo nao emite) sem a bateria perceber.
+    if printf '%s\n' "$D2" | grep -qE '^FALHOU [0-9]+ linha\(s\) de teste reprovado'; then
+        echo 'OK    dente 2: o item de linha de teste reprovado disparou (item com dente proprio)'
+    else
+        echo 'FALHOU dente 2: o item "linha(s) de teste reprovado(a) no log" NAO disparou com um teste reprovado — item sem dente'
+        DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
+
+    # Guarda D02: os logs de passo do aceite tem de sair das provas com o MESMO conteudo.
+    ACEITE_DEPOIS="$(cd "$LOG_DIR" 2>/dev/null && sha256sum [1-4]-*.log 2>/dev/null | LC_ALL=C sort)"
+    if [ -z "$ACEITE_ANTES" ]; then
+        info "sem logs de passo do aceite em $LOG_DIR (guarda D02 sem o que proteger nesta rodada)"
+    elif [ "$ACEITE_ANTES" = "$ACEITE_DEPOIS" ]; then
+        echo "OK    logs de passo do aceite intactos depois das provas ($(printf '%s\n' "$ACEITE_ANTES" | grep -c . | tr -d ' ') arquivo(s) com sha256 identico)"
+    else
+        echo 'FALHOU o modo dente mexeu nos logs de passo do aceite — evidencia do aceite destruida (defeito TRE-W2-E03-T01-D02 de volta)'; GUARDA_FALHAS=$((GUARDA_FALHAS + 1))
+        printf '%s\n' "$ACEITE_ANTES" | sed 's/^/      antes:  /'
+        printf '%s\n' "$ACEITE_DEPOIS" | sed 's/^/      depois: /'
+    fi
 
     echo '---'
-    if [ "$DENTE_FALHAS" -eq 0 ]; then
-        echo "RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO"
+    if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ]; then
+        echo "RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
         exit 0
     fi
-    echo "RESULTADO: ACL_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente) modulo=$MODULO"
+    echo "RESULTADO: ACL_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite) modulo=$MODULO"
     exit 1
 fi
 
@@ -320,9 +361,14 @@ else
     grep -q 'At least one test failed when loading the modules\.' "$LOG_ATUAL" \
         && falhou "log traz 'At least one test failed when loading the modules.'" \
         || ok "log sem 'At least one test failed when loading the modules.'"
-    FALHAS_TESTE="$(grep -cE '^(FAIL|ERROR): ' "$LOG_ATUAL" || true)"
+    # Formato real do Odoo 19: a linha vem prefixada por `data pid NIVEL banco logger:` —
+    # `<logger>: FAIL: TestClasse.test_metodo`. O padrao antigo (`^(FAIL|ERROR): `, ancorado no
+    # inicio da linha) era CODIGO MORTO aqui (defeito TRE-W2-E03-T01-D01): imprimia OK com teste
+    # reprovado no log. Padrao usado: o mesmo ja medido em `scripts/odoo/verificar-res-partner.sh`.
+    LINHAS_TESTE_REPROVADO="$(grep -E '(^| )(FAIL|ERROR): [A-Za-z_]' "$LOG_ATUAL" || true)"
+    FALHAS_TESTE="$(printf '%s' "$LINHAS_TESTE_REPROVADO" | grep -c . || true)"
     [ "$FALHAS_TESTE" = "0" ] && ok "nenhuma linha de teste 'FAIL:'/'ERROR:' no log" \
-        || falhou "$FALHAS_TESTE linha(s) de teste reprovado(a) no log"
+        || falhou "$FALHAS_TESTE linha(s) de teste reprovado(a) no log: $(printf '%s\n' "$LINHAS_TESTE_REPROVADO" | head -2 | tr '\n' ' ')"
     # a classe do aceite TEM de ter rodado: suite verde sem a classe nao prova nada do card
     N_METODOS_ACL="$(grep -cE 'Starting TestAclSeguranca\.test_' "$LOG_ATUAL" || true)"
     if [ "$N_METODOS_ACL" -ge 11 ]; then

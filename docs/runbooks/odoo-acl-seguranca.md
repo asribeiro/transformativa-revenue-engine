@@ -95,6 +95,13 @@ tenha rodado) → **passo 3** regras lidas no banco (grupos, privilégio/categor
 regras com domínio/alcance/global) → **passo 4** prova negativa independente → **limpeza** e
 conferência de que a instância do dev não foi tocada.
 
+O modo `--prova-de-dente` **não escreve no diretório do aceite**: cada prova usa
+`"$TRE_LOG_DIR/dente/prova-N"` (os `.out` dos dentes ficam em `"$TRE_LOG_DIR/dente/"`) e uma **guarda
+fail-closed** fotografa o sha256 dos `[1-4]-*.log` do aceite antes das provas e confere no fim —
+qualquer mudança reprova o dente. Por isso a sequência acima (um único `export TRE_LOG_DIR` seguido
+do aceite **e** dos dentes) é segura; antes do conserto da revisão rodada 1 ela **sobrescrevia** a
+evidência bruta do aceite com a do mutante (§9).
+
 ## 4. Aceite — TEST PLAN medido (01/10/2026, VPS `vmi3619453`)
 
 ```
@@ -115,8 +122,11 @@ bash /opt/tre/dev/e07t01/scripts/odoo/verificar-acl-modulo.sh
 
 **Logs brutos:** `/opt/tre/dev/e07t01/evidencias/logs/` — `1-instalacao.log`, `2-teste.log`
 (relatório do runner), `4-prova-negativa.log` (a prova negativa item a item) — e
-`/opt/tre/dev/e07t01/evidencias/dentes-final.out` (as duas rodadas mutadas, saída completa dos
-filhos, terminando em `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`).
+`/opt/tre/dev/e07t01/evidencias/logs/dente/` (`dente-1-carteira-aberta.out`,
+`dente-2-acl-plantada.out` e `prova-N/[1-4]-*.log`), as duas rodadas mutadas terminando em
+`RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`. **Este é o par de evidências re-medido no retrabalho
+da revisão rodada 1 (§9)**, com o harness commitado: os três arquivos do aceite estão intactos
+depois dos dentes (`sha256` antes/depois idêntico) e citam o banco do aceite (`tre_e07t01_acl`).
 
 ## 5. Provas negativas — o aceite tem dentes
 
@@ -132,6 +142,17 @@ TRE_MODULO_DIR=... TRE_LOG_DIR=... bash scripts/odoo/verificar-acl-modulo.sh --p
 
 A mutação é **do artefato**, em cópia: o módulo real não é tocado, e cada dente roda num banco
 próprio (`tre_e07t01_acl_d1` / `_d2`) que é removido no fim.
+
+**O que cada dente exercita (e o que o impede de voltar a ser frouxo):**
+
+* cada prova escreve no **seu** diretório de log (`"$TRE_LOG_DIR/dente/prova-N"`), nunca no do aceite;
+* a **guarda** compara o sha256 dos `[1-4]-*.log` do aceite antes e depois das provas e reprova o
+  dente se algum mudar (controle medido: com o caminho compartilhado de volta → `ACL_DENTE_FALHOU`,
+  exit 1 — §9);
+* o dente 2, além de exigir que o aceite reprove, exige que **o item do log de teste dispare**
+  (`OK dente 2: o item de linha de teste reprovado disparou (item com dente proprio)`) — sem isso o
+  item "nenhuma linha de teste `FAIL:`/`ERROR:`" pode voltar a ser código morto sem a bateria notar
+  (aprendizado do `TRE-W2-E03-T01-D01`).
 
 ## 6. Rollback
 
@@ -159,13 +180,19 @@ próprio (`tre_e07t01_acl_d1` / `_d2`) que é removido no fim.
   idênticos**, conferidos arquivo a arquivo depois do commit.
 - Scripts do aceite: `scripts/odoo/verificar-acl-modulo.sh` e `scripts/odoo/provar_acl_modulo.py`
   (o verificador imprime o sha256 do prover na rodada; os dois estão versionados com bit `100755`).
+  Blob do verificador nesta versão (retrabalho da revisão rodada 1, §9): `fa47f627…` — a versão
+  anterior (que sobrescrevia os logs do aceite) era `1ce368e6…`; o prover segue `76c25e79…`, intocado.
 
-## 8. Defeitos e pendências declaradas (não são deste card)
+## 8. Defeitos e pendências declaradas
 
-- **Defeitos abertos do E03** (`t_578a4e4d`, `t_5c4fc7ac`, `t_9e402411`, `t_de461d14`) continuam no
-  verificador do E03; **este card não os toca** — o próprio verificador deste card usa `grep`
-  ancorado no formato real da linha de reprovação (`^ACL_ITEM FALHOU`), não no padrão morto
-  `^(FAIL|ERROR): ` registrado no `t_578a4e4d`.
+- **Defeitos abertos do E03** (`t_578a4e4d`/D01, `t_5c4fc7ac`/D02, `t_9e402411`/D03, `t_de461d14`/D05)
+  continuam no verificador do E03; **este card não edita o verificador do E03** — o verificador deste
+  card é próprio (`scripts/odoo/verificar-acl-modulo.sh`, D11). Corrigindo a versão anterior deste
+  runbook: o script deste card **não** usa `grep` ancorado em `^ACL_ITEM FALHOU` (essa linha não
+  existe nele; as contagens da prova negativa vêm de `ACL_ITENS=`/`ACL_FALHAS=`) e a primeira versão
+  **tinha** o padrão morto `^(FAIL|ERROR): ` (`t_578a4e4d`/D01) **e** o dente herdando o diretório de
+  log do aceite (`t_5c4fc7ac`/D02) — as duas classes de defeito do E03 **reincidiram neste card** e
+  foram consertadas na revisão rodada 1 (**§9**).
 - **Publicação do módulo na cópia operacional `/opt/tre/repo`**: pendência herdada do E03 (§9
   daquele runbook) — a cópia está numa linha divergente do `develop`.
 - **Views (E06)**: a view do modelo vai mostrar a oportunidade **já filtrada** pelas regras
@@ -176,3 +203,52 @@ próprio (`tre_e07t01_acl_d1` / `_d2`) que é removido no fim.
   a mesma carteira no lead, é decisão nova — não está declarada aqui.
 - **Ratificação da versão do Odoo (19.0)**, **homologação** (estágio 7) e **verificação
   independente** (estágio 6, perfil `tester`) seguem fora deste card: quem entrega não homologa.
+
+## 9. Retrabalho — verificação independente, rodada 1 (01/10/2026)
+
+**O que o revisor mediu** (card `t_e0b1bcbf`, veredito *mudanças pedidas*, anexo
+`evidencia-t_e0b1bcbf-r1.txt`): os **3 AC homologados estão OK** — ele reproduziu o aceite
+(`ACL_OK`, 51 itens, exit 0), a sonda independente dele (28 itens, 0 falhas, incluindo "o tenant
+trunca a carteira"), os 2 dentes e dois controles negativos próprios (banco do ambiente recusado;
+cópia sem a classe de aceite reprovada fail-closed) —, mas o **harness novo deste card** havia
+reimplementado a forma **anterior** aos consertos do E03:
+
+| # | Defeito medido pelo revisor | Classe |
+|---|---|---|
+| 1 | o `--prova-de-dente` herdava `TRE_LOG_DIR="$LOG_DIR"` nos dois sub-runs mutados e escrevia os **mesmos nomes de passo** no diretório do aceite: a sequência do §3 (um `export TRE_LOG_DIR` + aceite **e** dentes) deixava `2-teste.log` = `1 failed, 0 error(s) of 26 tests` e `4-prova-negativa.log` = `ACL_ITENS=22 ACL_FALHAS=2` — a evidência bruta do aceite passava a ser a do **mutante** (`tre_e07t01_acl_d2`) | `TRE-W2-E03-T01-D02` reincidente |
+| 2 | o item "nenhuma linha de teste 'FAIL:'/'ERROR:' no log" usava `grep -cE '^(FAIL|ERROR): '` (ancorado no início da linha — o Odoo 19 prefixa com `data pid NIVEL banco logger:`) e imprimiu `OK` numa rodada com **4 testes reprovados** | `TRE-W2-E03-T01-D01` reincidente |
+| 3 | o §8 (e a assertion do handoff) afirmava um `grep` ancorado em `^ACL_ITEM FALHOU` que **não existe** no script | documentação incorreta |
+| 4 | o anexo do aceite vinha de uma revisão anterior do harness (`instalacal` × `instalacao`) | proveniência da evidência |
+
+**Conserto** — um arquivo: `scripts/odoo/verificar-acl-modulo.sh` (blob `fa47f627…`; **não** toca o
+XML/CSV de segurança, o módulo, os testes nem o prover `76c25e79…`, como a revisão pediu):
+
+1. cada prova escreve em `"$TRE_LOG_DIR/dente/prova-N"`; os `.out` dos dentes vão para
+   `"$TRE_LOG_DIR/dente/"` — o modo dente **não** escreve arquivo nenhum no diretório do aceite;
+2. **guarda fail-closed**: sha256 dos `[1-4]-*.log` do aceite fotografado antes das provas e
+   conferido no fim; qualquer mudança → `FALHOU o modo dente mexeu nos logs de passo do aceite` e
+   `ACL_DENTE_FALHOU`, exit 1;
+3. item do log de teste: `grep -E '(^| )(FAIL|ERROR): [A-Za-z_]'` (padrão já medido em
+   `scripts/odoo/verificar-res-partner.sh`), com as linhas casadas impressas na falha, **e dente
+   próprio** no dente 2 (o item tem de disparar com um teste reprovado — aprendizado do D01).
+
+**Medições do retrabalho** (VPS `vmi3619453`, mesmo `TRE_LOG_DIR` do aceite — a forma do §3; bateria em
+`/opt/tre/dev/e07t01-retrabalho/retrabalho-e07t01.sh` sha256 `5319f4fb…` e controles em
+`.../controles-e07t01.sh`, saídas em `.../out/`):
+
+| # | Medição | Resultado |
+|---|---|---|
+| 1 | aceite → dentes na **mesma** sessão | `RESULTADO: ACL_OK (51 itens, 0 falhas)` **exit 0** + `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)` **exit 0** |
+| 2 | sha256 dos `[1-4]-*.log` do aceite antes × depois dos dentes | **idênticos** — `1-instalacao.log da4cbf55…`, `2-teste.log 54b457d8…`, `4-prova-negativa.log e307d12f…` |
+| 3 | conteúdo final dos 3 arquivos | `2-teste.log`: `0 failed, 0 error(s) of 26 tests`; `4-prova-negativa.log`: `ACL_ITENS=22 ACL_FALHAS=0` e `ACL_RESULTADO: OK`; os dois citam **`tre_e07t01_acl`** (banco do aceite, não o do dente) |
+| 4 | dente 2 (ACL plantada) | `FALHOU 1 linha(s) de teste reprovado(a) no log: … : FAIL: TestAclSeguranca.test_11…` e `OK dente 2: o item de linha de teste reprovado disparou (item com dente proprio)` |
+| 5 | **controle da guarda** — cópia do harness com o sub-run apontando de volta para `$LOG_DIR` (diff = só os dois `TRE_LOG_DIR`) | `FALHOU o modo dente mexeu nos logs de passo do aceite` com os sha256 antes/depois impressos → `ACL_DENTE_FALHOU (0 prova(s) sem dente, 1 falha(s) na guarda dos logs do aceite)` **exit 1** |
+| 6 | **controle do item** — cópia com o padrão morto de volta (diff = só o item) | no **mesmo** log com `1 failed, 0 error(s) of 26 tests`: o item imprime `OK nenhuma linha de teste 'FAIL:'/'ERROR:' no log` (o defeito, reproduzido); o padrão antigo casa **0** linha e o novo **1** linha nesse log |
+| 7 | logs do dente | `logs/dente/prova-1/` e `logs/dente/prova-2/` com `[1-4]-*.log` próprios — caminho separado do aceite |
+| 8 | ambiente | mesmos 4 bancos no dev (`odoo_dev, postgres, template0, template1`); **0 container** e **0 rede** `e07t01-*`; `homolog`/`prod` com 0 arquivo (ADR-005) |
+
+**Verificadores do projeto** no commit do retrabalho: `verificar_estrutura.sh` → `PASS (0 falhas)`
+RC=0 · `secret_scan.sh` → `PASS` RC=0 · `verificar_papeis.sh` → `PASS (0 falhas)` RC=0 · `bash -n` OK.
+
+**Anexo do aceite re-gerado** a partir do harness commitado (`fa47f627…`): a saída completa do aceite
+desta rodada é a anexada ao card (a anterior tinha sido capturada de uma revisão anterior do harness).
