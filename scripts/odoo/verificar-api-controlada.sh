@@ -634,7 +634,10 @@ print(json.load(open(sys.argv[1]))['dados']['total'])" "$ULTIMA_RESPOSTA")"
         '{"marcador_que_nao_pode_vazar":"MARCADOR-NAO-DEVE-APARECER"}'
     api_post "escrita nao declarada na politica real" "404" "parceiro_upsert" \
         '{"idempotency_key":"tre-e01-t01-http-escrita","parametros":{"valores":{"name":"x"}}}'
-    MARCADOR_VAZOU="$(grep -c 'MARCADOR-NAO-DEVE-APARECER' "$DESC_DIR"/resposta-*.json 2>/dev/null || true)"
+    # `grep -c` com VÁRIOS arquivos imprime "arquivo:contagem" por arquivo (e vira multi-linha) — o
+    # item media sempre FALHOU por isso. Aqui o total e' contado de verdade: uma ocorrencia a mais
+    # ja' reprova.
+    MARCADOR_VAZOU="$(grep -h -o 'MARCADOR-NAO-DEVE-APARECER' "$DESC_DIR"/resposta-*.json 2>/dev/null | wc -l | tr -d ' ')"
     [ "$MARCADOR_VAZOU" = "0" ] && ok "payload recusado nao ecoa de volta na resposta" \
         || falhou "payload recusado voltou na resposta"
 
