@@ -225,6 +225,8 @@ def main():
         "valor_invalido", "limite nao inteiro")
 
     print("== plano de escrita (politica de teste) ==")
+    verificar(not motor.validar_politica(politica_teste),
+              "politica de teste (fixture) passa na propria validacao")
     recusa(motor, lambda: motor.montar_plano(
         politica_teste, "teste_criar_parceiro",
         {"parametros": {"valores": {"name": "x"}}}, ambiente="dev"),
@@ -253,6 +255,15 @@ def main():
     recusa(motor, lambda: motor.montar_plano(
         politica_teste, "sistema_capacidades", {"dry_run": "sim"}, ambiente="dev"),
         "payload_invalido", "dry_run nao booleano")
+    recusa(motor, lambda: motor.montar_plano(
+        politica_teste, "teste_ler_sem_dry_run",
+        {"dry_run": True, "parametros": {"modelo": "res.partner"}}, ambiente="dev"),
+        "dry_run_nao_suportado", "dry_run onde a politica declara que NAO aceita")
+    plano = motor.montar_plano(
+        politica_teste, "teste_ler_sem_dry_run",
+        {"parametros": {"modelo": "res.partner"}}, ambiente="dev")
+    verificar(plano["acao"] == "ler" and plano["dry_run"] is False,
+              "sem dry_run a mesma operacao de leitura e' planejada normalmente")
 
     print("== operacao de fonte ==")
     plano = motor.montar_plano(politica, "sistema_capacidades", {}, ambiente="dev")

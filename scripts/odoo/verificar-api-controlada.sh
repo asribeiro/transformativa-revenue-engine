@@ -63,9 +63,9 @@ LOG_DIR="${TRE_LOG_DIR:-/tmp/verificacao-api-controlada}"
 DEV_PG_CT="${TRE_DEV_PG_CT:-pg-odoo-dev}"
 DEV_HOMOLOG_PROD="${TRE_DEV_HOMOLOG_PROD:-/opt/tre/homolog /opt/tre/prod}"
 MANTER_BANCO="${TRE_MANTER_BANCO:-0}"
-# Piso de testes do modulo medido em 01/10/2026 na rodada 1 do aceite: 80 testes
-# (50 dos cards W2 + 30 da suite da API deste card). Piso = o medido: menos que isso e' regressao.
-PISO_DE_TESTES="${TRE_PISO_DE_TESTES:-80}"
+# Piso de testes do modulo medido em 01/10/2026: 82 testes
+# (50 dos cards W2 + 32 da suite da API deste card). Piso = o medido: menos que isso e regressao.
+PISO_DE_TESTES="${TRE_PISO_DE_TESTES:-82}"
 
 MODO=completo
 while [ $# -gt 0 ]; do

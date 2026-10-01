@@ -437,3 +437,29 @@ class TestApiControlada(HttpCase):
         for linha in linhas:
             self.assertNotIn("Bearer", linha)
             self.assertNotIn("chave-que-nao-existe", linha)
+
+    def test_31_dry_run_na_leitura_nao_consulta_o_dado(self):
+        """`dry_run: true` vale para leitura tambem: descreve a consulta e NAO a executa (AC6)."""
+        resposta = self._post(
+            "crm_registros_ler",
+            {
+                "dry_run": True,
+                "parametros": {"modelo": "res.partner", "campos": ["id", "name"], "limite": 2},
+            },
+        )
+        self.assertEqual(resposta.status_code, 200, resposta.text)
+        dados = resposta.json()["dados"]
+        self.assertTrue(resposta.json()["dry_run"])
+        self.assertTrue(dados["dry_run"])
+        self.assertNotIn("registros", dados)
+        self.assertEqual(dados["consultaria"]["modelo"], "res.partner")
+        self.assertEqual(dados["consultaria"]["limite"], 2)
+
+    def test_32_dry_run_onde_a_politica_nao_aceita_422(self):
+        """`aceita_dry_run: false` na declaracao vale: pedir dry_run ali e' recusa nomeada."""
+        self.icp.set_param("tf.api.politica", self.politica_de_teste)
+        resposta = self._post(
+            "teste_ler_sem_dry_run", {"dry_run": True, "parametros": {"modelo": "res.partner"}}
+        )
+        self.assertEqual(resposta.status_code, 422, resposta.text)
+        self.assertEqual(self._codigo(resposta), "dry_run_nao_suportado")

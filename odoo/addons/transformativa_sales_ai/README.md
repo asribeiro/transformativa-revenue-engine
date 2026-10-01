@@ -87,11 +87,12 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   usuários de verdade (`with_user`): fail-closed sem o grupo, carteira alheia (busca e leitura
   por id), carteira vazia, outro tenant, gestor do tenant, criação em carteira alheia (recusada)
   e na própria (aceita), e a prova de que o módulo não promove ninguém (AC3).
-- `tests/test_api_controlada.py` (card W3-E01-T01, 30 testes, tag `post_install`): a API controlada
+- `tests/test_api_controlada.py` (card W3-E01-T01, 32 testes, tag `post_install`): a API controlada
   — os negativos de credencial (401), superfície (404/405), payload (400), campo/limite/modelo fora
   da declaração (422), ambiente e aprovação (503), escrita sem `idempotency_key` (422), `dry_run`
-  que não escreve, upsert que cria uma vez e atualiza depois, a ACL do dono da chave valendo na
-  leitura e a auditoria das duas linhas (`ok` e `recusado`).
+  que não escreve (e o `dry_run` na leitura, que descreve a consulta sem executá-la), a recusa
+  `dry_run_nao_suportado` onde a política não aceita, upsert que cria uma vez e atualiza depois, a
+  ACL do dono da chave valendo na leitura e a auditoria das duas linhas (`ok` e `recusado`).
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -198,7 +199,7 @@ em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exi
 registrada (`tf.api.aprovacao`, `card=...,aprovador=...,validade=AAAA-MM-DD`). A política desta
 versão permite `dev` e só.
 
-- **Testes do Odoo:** `tests/test_api_controlada.py` (30 testes, tag `post_install`) — inclui os
+- **Testes do Odoo:** `tests/test_api_controlada.py` (32 testes, tag `post_install`) — inclui os
   negativos de credencial (401), superfície (404/405), campo/limite/modelo fora da declaração (422),
   ambiente e aprovação (503), escrita sem `idempotency_key` (422), `dry_run` que não escreve,
   upsert que cria uma vez e atualiza depois, e a auditoria das duas linhas.

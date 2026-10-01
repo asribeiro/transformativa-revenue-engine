@@ -47,6 +47,22 @@
       },
       "requer_idempotency_key": true,
       "aceita_dry_run": true
+    },
+    {
+      "nome": "teste_ler_sem_dry_run",
+      "tipo": "leitura",
+      "descricao": "Operacao de teste: leitura que NAO aceita dry_run (aceita_dry_run: false). Existe para medir a recusa dry_run_nao_suportado — no caminho de escrita o dry-run e' aceito por desenho, entao a recusa nao teria como ser medida com as operacoes reais.",
+      "modelos": {
+        "res.partner": {
+          "campos": ["id", "name", "tf_cnpj"],
+          "campos_de_filtro": ["id", "tf_cnpj"]
+        }
+      },
+      "limite_de_registros": 5,
+      "operadores_de_dominio": ["=", "!="],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": false,
+      "somente_leitura": true
     }
   ]
 }
