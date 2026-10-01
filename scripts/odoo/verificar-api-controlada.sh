@@ -63,8 +63,9 @@ LOG_DIR="${TRE_LOG_DIR:-/tmp/verificacao-api-controlada}"
 DEV_PG_CT="${TRE_DEV_PG_CT:-pg-odoo-dev}"
 DEV_HOMOLOG_PROD="${TRE_DEV_HOMOLOG_PROD:-/opt/tre/homolog /opt/tre/prod}"
 MANTER_BANCO="${TRE_MANTER_BANCO:-0}"
-# Piso de testes do modulo medido em 01/10/2026 (26 testes dos cards W2 + 30 da suite da API).
-PISO_DE_TESTES="${TRE_PISO_DE_TESTES:-56}"
+# Piso de testes do modulo medido em 01/10/2026 na rodada 1 do aceite: 80 testes
+# (50 dos cards W2 + 30 da suite da API deste card). Piso = o medido: menos que isso e' regressao.
+PISO_DE_TESTES="${TRE_PISO_DE_TESTES:-80}"
 
 MODO=completo
 while [ $# -gt 0 ]; do
@@ -115,9 +116,20 @@ if [ "$MODO" = "dente" ]; then
     trap 'rm -rf "$DENTE_DIR"' EXIT
     DENTE_FALHAS=0
 
+    # Ancora do alvo: o dente TEM de rodar contra uma copia do artefato REAL, e o artefato real
+    # nao pode mudar por causa da prova (a licao do E06: prova negativa que nao ancora o alvo nao
+    # prova nada, porque pode estar medindo outra coisa).
+    manifesto_modulo() {
+        find "$MODULO_DIR" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1
+    }
+    arquivos_modulo() { find "$MODULO_DIR" -type f | wc -l | tr -d ' '; }
+    MANIFESTO_ANTES="$(manifesto_modulo)"
+    ARQUIVOS_MODULO="$(arquivos_modulo)"
+    echo "OK    ancora: alvo do dente = $MODULO_DIR ($ARQUIVOS_MODULO arquivos, sha256 $MANIFESTO_ANTES)"
+
     cabecalho "prova de dente 1: politica sem a operacao declarada (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
-    python3 - "$DENTE_DIR/m1/api/politica_api.json" <<'PY'
+    MUT1="$(python3 - "$DENTE_DIR/m1/api/politica_api.json" <<'PY'
 import json, sys
 caminho = sys.argv[1]
 with open(caminho, encoding="utf-8") as fh:
@@ -125,7 +137,15 @@ with open(caminho, encoding="utf-8") as fh:
 dados["operacoes"] = [op for op in dados["operacoes"] if op["nome"] != "sistema_capacidades"]
 with open(caminho, "w", encoding="utf-8") as fh:
     json.dump(dados, fh, ensure_ascii=False, indent=2)
+print("MUTACAO_APLICADA")
 PY
+)"
+    if [ "$MUT1" = "MUTACAO_APLICADA" ] && ! grep -q 'sistema_capacidades' "$DENTE_DIR/m1/api/politica_api.json"; then
+        echo 'OK    dente 1: mutacao aplicada (a operacao sumiu da copia da politica)'
+    else
+        echo 'FALHOU dente 1: mutacao NAO foi aplicada na copia — o dente mediria o artefato intacto'
+        DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
     D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$LOG_DIR/dente1" \
           "$0" --apenas-http 2>&1)"
     printf '%s\n' "$D1" >"$LOG_DIR/dente-1-politica-mutada.out"
@@ -139,7 +159,7 @@ PY
 
     cabecalho "prova de dente 2: motor sem a checagem de campo declarado (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
-    python3 - "$DENTE_DIR/m2/api/motor.py" <<'PY'
+    MUT2="$(python3 - "$DENTE_DIR/m2/api/motor.py" <<'PY'
 import re, sys
 caminho = sys.argv[1]
 with open(caminho, encoding="utf-8") as fh:
@@ -160,6 +180,13 @@ with open(caminho, "w", encoding="utf-8") as fh:
     fh.write(texto)
 print("MUTACAO_APLICADA")
 PY
+)"
+    if [ "$MUT2" = "MUTACAO_APLICADA" ]; then
+        echo 'OK    dente 2: mutacao aplicada na copia do motor'
+    else
+        echo "FALHOU dente 2: mutacao NAO foi aplicada na copia do motor ($MUT2) — o dente mediria o motor intacto"
+        DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
     D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$LOG_DIR/dente2" \
           "$0" --apenas-http 2>&1)"
     printf '%s\n' "$D2" >"$LOG_DIR/dente-2-motor-mutado.out"
@@ -173,7 +200,7 @@ PY
 
     cabecalho "prova de dente 3: motor sem a checagem de aprovacao (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
-    python3 - "$DENTE_DIR/m3/api/motor.py" <<'PY'
+    MUT3="$(python3 - "$DENTE_DIR/m3/api/motor.py" <<'PY'
 import sys
 caminho = sys.argv[1]
 with open(caminho, encoding="utf-8") as fh:
@@ -191,6 +218,13 @@ with open(caminho, "w", encoding="utf-8") as fh:
     fh.write(texto)
 print("MUTACAO_APLICADA")
 PY
+)"
+    if [ "$MUT3" = "MUTACAO_APLICADA" ]; then
+        echo 'OK    dente 3: mutacao aplicada na copia do motor'
+    else
+        echo "FALHOU dente 3: mutacao NAO foi aplicada na copia do motor ($MUT3)"
+        DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
     D3="$(TRE_MODULO_DIR="$DENTE_DIR/m3" "$0" --apenas-motor 2>&1)"
     printf '%s\n' "$D3" >"$LOG_DIR/dente-3-aprovacao-mutada.out"
     printf '%s\n' "$D3" | tail -3
@@ -198,6 +232,14 @@ PY
         echo 'OK    dente 3: motor sem a checagem de aprovacao reprova a suite pura'
     else
         echo 'FALHOU dente 3: motor mutado NAO reprovou — o item de aprovacao nao tem dente'
+        DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
+
+    MANIFESTO_DEPOIS="$(manifesto_modulo)"
+    if [ "$MANIFESTO_DEPOIS" = "$MANIFESTO_ANTES" ]; then
+        echo "OK    guarda externa: o artefato real nao foi tocado pelos dentes ($ARQUIVOS_MODULO arquivos, sha256 $MANIFESTO_DEPOIS)"
+    else
+        echo "FALHOU guarda externa: o artefato real MUDOU durante as provas ($MANIFESTO_ANTES -> $MANIFESTO_DEPOIS)"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
 

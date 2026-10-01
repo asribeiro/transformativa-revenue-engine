@@ -43,7 +43,9 @@ if not usuario:
         "name": "API Controlada (integracao)",
         "login": LOGIN,
         "email": "%s@tre.local" % LOGIN,
-        "groups_id": [(6, 0, [env.ref(xmlid).id for xmlid in GRUPOS.split(",")])],  # noqa: F821
+        # Odoo 19 renomeou `groups_id` para `group_ids` em `res.users` (o verificador pegou o
+        # `ValueError: Invalid field 'groups_id'` na primeira rodada).
+        "group_ids": [(6, 0, [env.ref(xmlid).id for xmlid in GRUPOS.split(",")])],  # noqa: F821
     })
 
 chaves = env["res.users.apikeys"].sudo().with_user(usuario)  # noqa: F821

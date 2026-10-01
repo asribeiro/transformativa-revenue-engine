@@ -255,12 +255,27 @@ class TestApiControlada(HttpCase):
         self.assertEqual(dados["registros"][0]["id"], parceiro.id)
         self.assertEqual(set(dados["registros"][0]), {"id", "name", "tf_cnpj"})
 
-    def test_22_leitura_declarada_de_oportunidade_por_id_canonico(self):
-        lead = self.env["crm.lead"].create(
+    def test_22_leitura_declarada_respeita_a_acl_do_usuario_da_chave(self):
+        """AC4: a leitura por `POST /tf/api/v1/*` roda com as ACLs do dono da chave — nao por sudo.
+
+        O CRM tem regra propria: o vendedor so' enxerga o lead DELE. Entao o mesmo pedido devolve o
+        lead proprio e nao devolve o alheio — e' a ACL do Odoo valendo, nao um filtro meu. O item
+        existe porque a primeira rodada mediu `[] != [1]` exatamente aqui: o teste antigo criava o
+        lead sem `user_id` e o usuario de integracao (restrito) nao o via.
+        """
+        proprio = self.env["crm.lead"].create(
             {
-                "name": "Oportunidade da API",
+                "name": "Oportunidade do usuario da chave",
                 "type": "opportunity",
+                "user_id": self.usuario.id,
                 "tf_opportunity_id": "8f14e45f-ceea-467f-a0e0-000000000001",
+            }
+        )
+        alheio = self.env["crm.lead"].create(
+            {
+                "name": "Oportunidade de OUTRO vendedor",
+                "type": "opportunity",
+                "tf_opportunity_id": "8f14e45f-ceea-467f-a0e0-000000000002",
             }
         )
         resposta = self._post(
@@ -268,14 +283,25 @@ class TestApiControlada(HttpCase):
             {
                 "parametros": {
                     "modelo": "crm.lead",
-                    "filtro": [["tf_opportunity_id", "=", "8f14e45f-ceea-467f-a0e0-000000000001"]],
+                    "filtro": [["tf_opportunity_id", "=", proprio.tf_opportunity_id]],
                 }
             },
         )
         self.assertEqual(resposta.status_code, 200, resposta.text)
         registros = resposta.json()["dados"]["registros"]
-        self.assertEqual([r["id"] for r in registros], [lead.id])
+        self.assertEqual([r["id"] for r in registros], [proprio.id])
         self.assertIn("tf_priority_tier", registros[0])
+        fora = self._post(
+            "crm_registros_ler",
+            {
+                "parametros": {
+                    "modelo": "crm.lead",
+                    "filtro": [["tf_opportunity_id", "=", alheio.tf_opportunity_id]],
+                }
+            },
+        )
+        self.assertEqual(fora.status_code, 200, fora.text)
+        self.assertEqual(fora.json()["dados"]["registros"], [])
 
     # ------------------------------------------------------------------ AC6 contrato de escrita
     def test_23_escrita_sem_idempotency_key_422(self):
@@ -312,13 +338,27 @@ class TestApiControlada(HttpCase):
         self.assertEqual(self._codigo(resposta), "campo_nao_declarado")
 
     def test_26_escrita_sem_campo_obrigatorio_422(self):
+        """`valores` com campo declarado mas sem o obrigatorio: 422, nao 400.
+
+        `valores: {}` (vazio) e' outra coisa — payload vazio, 400 `payload_invalido` (medido na
+        rodada 1, quando este item esperava 422 e o motor devolveu 400 por desenho).
+        """
         self.icp.set_param("tf.api.politica", self.politica_de_teste)
+        vazio = self._post(
+            "teste_criar_parceiro",
+            {"idempotency_key": "tre-e01-t01-teste-valores-vazios", "parametros": {"valores": {}}},
+        )
+        self.assertEqual(vazio.status_code, 400, vazio.text)
+        self.assertEqual(self._codigo(vazio), "payload_invalido")
         resposta = self._post(
             "teste_criar_parceiro",
-            {"idempotency_key": "tre-e01-t01-teste-sem-obrigatorio", "parametros": {"valores": {}}},
+            {
+                "idempotency_key": "tre-e01-t01-teste-sem-obrigatorio",
+                "parametros": {"valores": {"tf_cnpj": "33.222.111/0001-00"}},
+            },
         )
         self.assertEqual(resposta.status_code, 422, resposta.text)
-        self.assertEqual(self._codigo(resposta), "payload_invalido")
+        self.assertEqual(self._codigo(resposta), "campo_obrigatorio_ausente")
 
     def test_27_dry_run_nao_escreve(self):
         self.icp.set_param("tf.api.politica", self.politica_de_teste)

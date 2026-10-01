@@ -16,7 +16,7 @@ O que já existe e quem entrega o quê:
 | Campos de dedup em `res.partner` (CNPJ, domínio, LinkedIn) | `TRE-W2-E04-T01` | entregue |
 | Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | entregue |
 | Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
-| API controlada | `TRE-W3-E01-T01` | pendente |
+| API controlada | `TRE-W3-E01-T01` | **neste card** |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
 
@@ -87,6 +87,11 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   usuários de verdade (`with_user`): fail-closed sem o grupo, carteira alheia (busca e leitura
   por id), carteira vazia, outro tenant, gestor do tenant, criação em carteira alheia (recusada)
   e na própria (aceita), e a prova de que o módulo não promove ninguém (AC3).
+- `tests/test_api_controlada.py` (card W3-E01-T01, 30 testes, tag `post_install`): a API controlada
+  — os negativos de credencial (401), superfície (404/405), payload (400), campo/limite/modelo fora
+  da declaração (422), ambiente e aprovação (503), escrita sem `idempotency_key` (422), `dry_run`
+  que não escreve, upsert que cria uma vez e atualiza depois, a ACL do dono da chave valendo na
+  leitura e a auditoria das duas linhas (`ok` e `recusado`).
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -107,6 +112,7 @@ propósito. O conteúdo entra por card, cada um no seu arquivo — o que já exi
 | `TRE-W2-E04-T02` | `models/crm_lead.py` | campos de rastreio de `crm.lead` — runbook `docs/runbooks/odoo-crm-lead-sales-ai.md` |
 | `TRE-W2-E05-T01` | `models/tf_process_opportunity.py` | modelo canônico `tf.process.opportunity` — runbook `docs/runbooks/odoo-oportunidade-canonica.md` |
 | `TRE-W2-E06-T01` | `views/*.xml` | as views do Sales AI — runbook `docs/runbooks/odoo-views-sales-ai.md` |
+| `TRE-W3-E01-T01` | `api/` e `controllers/api_controlada.py` | a API controlada (`POST /tf/api/v1/<operacao>`) — runbook `docs/runbooks/odoo-api-controlada.md` |
 
 **Ponto de contato entre cards paralelos (hotspot declarado):** `__init__.py` (uma vez),
 `models/__init__.py`, `tests/__init__.py` e este README. Cada card acrescenta **uma linha** nesses
@@ -163,3 +169,41 @@ Odoo (grupos padrão `group_multi_company`/`group_multi_currency`), como no pró
   (`0 failed of 50 tests`), leitura das views/grupos/menu **no banco**, a prova independente
   `scripts/odoo/provar_views_sales_ai.py` (21 itens, com três usuários que diferem só pelo grupo
   do módulo) e a desinstalação pelo ORM. Provas negativas em `--prova-de-dente`.
+
+## API controlada — a porta única do Odoo para a integração (`TRE-W3-E01-T01`)
+
+Runbook do card: **`docs/runbooks/odoo-api-controlada.md`**. Arquivos: `api/politica_api.json`
+(a declaração), `api/motor.py` (a decisão) e `controllers/api_controlada.py` (a rota).
+
+```
+POST /tf/api/v1/<operacao>     Authorization: Bearer <chave de API do Odoo>
+```
+
+| Peça | O que é |
+|---|---|
+| `api/politica_api.json` | A **fonte da verdade**: operação a operação, o modelo alvo, os campos permitidos, o teto de registros e a exigência de `idempotency_key`. Mora dentro do módulo, logo vai versionada no repo **e** no artefato publicado |
+| `api/motor.py` | Valida a chamada contra a política e monta o plano — **sem importar `odoo`**, para a decisão ser exercitável sem subir Odoo (`scripts/odoo/testar_motor_api.py`) |
+| `controllers/api_controlada.py` | UMA rota, UM verbo: não há rota genérica de "execute qualquer modelo/método/campo" (doc 02 §3). Executa o plano **pelo ORM** (as ACLs do dono da chave valem — não é `sudo`) e grava uma linha `TF_API_AUDIT` por chamada |
+
+Operações declaradas nesta versão da política (**só leitura** — as escritas de negócio entram por
+`TRE-W3-E01-T02..T05`, depois do motor de idempotência do `TRE-W3-E02-T02`):
+
+| Operação | O que faz |
+|---|---|
+| `sistema_capacidades` | Sonda de saúde do consumidor: devolve a versão da política e as operações declaradas, sem tocar modelo de negócio |
+| `crm_registros_ler` | Leitura controlada de `res.partner` (campos `tf_*` do E04-T01) e `crm.lead` (rastreio do E04-T02): só campos declarados, só filtros declarados, com teto |
+
+Guarda de ambiente (ADR-005): sem `ir.config_parameter` `tf.api.ambiente` **declarado** e presente
+em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exigem aprovação humana
+registrada (`tf.api.aprovacao`, `card=...,aprovador=...,validade=AAAA-MM-DD`). A política desta
+versão permite `dev` e só.
+
+- **Testes do Odoo:** `tests/test_api_controlada.py` (30 testes, tag `post_install`) — inclui os
+  negativos de credencial (401), superfície (404/405), campo/limite/modelo fora da declaração (422),
+  ambiente e aprovação (503), escrita sem `idempotency_key` (422), `dry_run` que não escreve,
+  upsert que cria uma vez e atualiza depois, e a auditoria das duas linhas.
+- **Aceite:** `bash scripts/odoo/verificar-api-controlada.sh` (na VPS) — suíte pura do motor,
+  instalação em banco limpo, suíte do Odoo, **servidor HTTP real com `curl` de fora do processo**
+  (chave gerada na hora, arquivo 600, nunca em `ps`), auditoria lida do log do servidor, greps de
+  contrato e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3
+  mutações, cada uma **tem** de reprovar, com guarda externa do artefato por sha256).
