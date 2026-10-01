@@ -30,10 +30,13 @@
 #   bash verificar-views-sales-ai.sh
 #   bash verificar-views-sales-ai.sh --apenas-artefatos      (sem a suite de testes do Odoo)
 #   bash verificar-views-sales-ai.sh --banco tre_e06t01_outro
-#   bash verificar-views-sales-ai.sh --prova-de-dente        (duas mutacoes do artefato)
+#   bash verificar-views-sales-ai.sh --prova-de-dente        (baseline NAO mutado, que tem de
+#        medir VIEWS_OK, + duas mutacoes; exige a assinatura de falha de cada uma e escreve os
+#        logs em TRE_LOG_DIR/dente/ — nunca no diretorio do aceite)
 #
-# Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_PROVA, TRE_DESINSTALADOR, TRE_BANCO, TRE_IMAGEM,
-# TRE_IMAGEM_PG, TRE_PG_USER, TRE_MIN_TESTS, TRE_MIN_METODOS_VIEWS, TRE_MIN_ITENS_PROVA,
+# Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_ANCORA_DIR (diretorio de ancora do modo dente; por
+# padrao o modulo no checkout ao lado deste script), TRE_PROVA, TRE_DESINSTALADOR, TRE_BANCO,
+# TRE_IMAGEM, TRE_IMAGEM_PG, TRE_PG_USER, TRE_MIN_TESTS, TRE_MIN_METODOS_VIEWS, TRE_MIN_ITENS_PROVA,
 # TRE_LOG_DIR, TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim).
 #
 # Saida: um item por linha (`OK`/`FALHOU`), resumo em uma linha e exit code:
@@ -44,6 +47,7 @@ set -u
 MODULO="${TRE_MODULO:-transformativa_sales_ai}"
 MODELO="${TRE_MODELO:-tf.process.opportunity}"
 AQUI="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+SELF="$(readlink -f "$0")"   # sub-runs do modo dente chamam ESTE arquivo pelo caminho resolvido
 MODULO_DIR="${TRE_MODULO_DIR:-/opt/tre/dev/modulos/$MODULO}"
 PROVA="${TRE_PROVA:-$AQUI/provar_views_sales_ai.py}"
 DESINSTALADOR="${TRE_DESINSTALADOR:-$AQUI/desinstalar_modulo.py}"
@@ -93,19 +97,126 @@ resumo() {
 }
 
 # ---------------------------------------------------------------------------
-# --prova-de-dente: o aceite tem dentes? duas mutacoes, cada uma em copia propria
+# --prova-de-dente: o aceite tem dentes? baseline NAO mutado (tem de medir VERDE) + 2 mutacoes
 #   dente 1: o recorte por grupo das views do parceiro/lead removido (pagina e view) -> o
 #            usuario RESTRITO passa a ver a secao do Sales AI -> tem de reprovar (AC2)
 #   dente 2: a view de formulario do modelo sai do manifesto -> a view nao esta no banco ->
 #            tem de reprovar (AC1/AC3: a lista/formulario do modulo nao existe)
+#
+# FAIL-CLOSED (revisao independente da rodada 1 deste card; a classe ja' tinha sido consertada
+# no E04-T01 `a539802` — defeito `t_e1f62fae` — e no E04-T02 `e8bfe71`): a versao anterior
+# aceitava QUALQUER `RESULTADO: VIEWS_FALHOU` como "o dente mordeu" (fail-open). Medido pela
+# revisao: com `TRE_MODULO_DIR` inexistente, `DOCKER_HOST` invalido ou imagem ausente as provas
+# morriam na GUARDA antes de medir e o comando devolvia `VIEWS_DENTE_OK (2 provas, 0 falhas)`,
+# exit 0 — verde sem exercitar dente nenhum. Agora o modo dente:
+#   1. CONFERE A ANCORA: o `TRE_MODULO_DIR` tem de ser o artefato DESTE card (sha256 do
+#      manifesto e das tres views iguais aos do `TRE_ANCORA_DIR`, por padrao o modulo no
+#      checkout ao lado deste script) — diretorio que nao e' o artefato do card nao prova
+#      nada e o modo RECUSA (o default `/opt/tre/dev/modulos/<modulo>` e' copia compartilhada
+#      de outro card: medido, sem o diretorio `views/` do E06);
+#   2. roda o caminho NAO mutado (baseline = os 6 passos do aceite, superconjunto do que os
+#      dois dentes medem) e EXIGE `VIEWS_OK`; sem baseline verde nao existe prova de dente
+#      (`VIEWS_DENTE_FALHOU (baseline nao medido)`, exit 1, nenhuma mutacao sobe);
+#   3. exige de CADA prova a SUA assinatura de falha (o texto que so' aquela mutacao produz;
+#      mais de uma separadas por `;;`), o aceite inteiro medido (`passo 6/6`) e nenhum
+#      marcador de aborto de guarda;
+#   4. escreve em LOG PROPRIO (`$TRE_LOG_DIR/dente/prova-N`) e nao escreve NADA em
+#      `$TRE_LOG_DIR`: guarda fail-closed compara o sha256 dos arquivos do diretorio do
+#      aceite antes/depois (defeito TRE-W2-E03-T01-D02 — conserto `c389223`; terceira
+#      incidencia, agora com guarda no proprio harness).
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e06t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
+    DENTE_LOG_DIR="${LOG_DIR}/dente"
+    mkdir -p "$DENTE_LOG_DIR/baseline" "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2"
     DENTE_FALHAS=0
+    GUARDA_FALHAS=0
     VIEW_PARCEIRO="views/res_partner_views.xml"
     VIEW_OPORTUNIDADE="views/tf_process_opportunity_views.xml"
     MANIFESTO="__manifest__.py"
+    # Artefato do card = manifesto + as tres views do E06 (o que este modo mutila e mede).
+    ANCORA_ARQUIVOS="__manifest__.py views/tf_process_opportunity_views.xml views/res_partner_views.xml views/crm_lead_views.xml"
+    ANCORA_DIR="${TRE_ANCORA_DIR:-$AQUI/../../odoo/addons/$MODULO}"
+    foto_ancora() { # $1=diretorio do modulo -> sha256 dos arquivos-ancora presentes
+        (cd "$1" 2>/dev/null && for a in $ANCORA_ARQUIVOS; do [ -f "$a" ] && sha256sum "$a"; done)
+    }
+    # Guarda do defeito D02: fotografia dos arquivos do diretorio do ACEITE (nivel 1 — o modo
+    # dente escreve em $DENTE_LOG_DIR, subdiretorio). Qualquer escrita aqui reprova a rodada.
+    foto_logs_aceite() {
+        (cd "$LOG_DIR" 2>/dev/null && find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | xargs -r sha256sum 2>/dev/null)
+    }
+    # $1=rotulo  $2=assinatura(s) de falha exigida(s), separadas por `;;`  $3=passo que tem de
+    # ter sido medido  $4=saida do aceite mutado
+    confere_dente() {
+        local rotulo="$1" assinaturas="$2" passo="$3" saida="$4" motivo="" assinatura resto
+        if ! printf '%s' "$saida" | grep -q 'RESULTADO: VIEWS_FALHOU'; then
+            motivo="a mutacao NAO reprovou o aceite — o item nao mede o que promete"
+        elif printf '%s' "$saida" | grep -qE 'nada a medir|modulo ausente|artefato ausente|docker nao responde|nao consegui criar|nao consegui subir|nao ficou pronto|e do ambiente|fora do padrao descartavel|script ausente|imagem .* ausente'; then
+            motivo="a prova ABORTOU numa guarda do ambiente, antes de medir — aborto nao e' prova de dente"
+        elif ! printf '%s' "$saida" | grep -qF -- "$passo"; then
+            motivo="a prova nao chegou ao passo '$passo' (morreu antes de medir) — aborto nao e' prova de dente"
+        else
+            resto="$assinaturas"
+            while [ -n "$resto" ]; do
+                assinatura="${resto%%;;*}"
+                if [ "$assinatura" = "$resto" ]; then resto=""; else resto="${resto#*;;}"; fi
+                if ! printf '%s' "$saida" | grep -qF -- "$assinatura"; then
+                    motivo="a prova reprovou por outro motivo: falta a assinatura esperada '$assinatura'"
+                    break
+                fi
+            done
+        fi
+        if [ -z "$motivo" ]; then
+            echo "OK    $rotulo: a mutacao REPROVOU o aceite com a assinatura esperada (o item tem dente)"
+        else
+            echo "FALHOU $rotulo: $motivo"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1))
+        fi
+    }
+
+    # --- ancora do artefato: sem ela, "reprovar" pode ser so' o ambiente errado ---------------
+    cabecalho "ancora do artefato: o TRE_MODULO_DIR tem de ser o modulo DESTE card"
+    if [ ! -d "$ANCORA_DIR" ]; then
+        echo "FALHOU ancora: diretorio de referencia ausente ($ANCORA_DIR) — sem ancora nao ha como saber se o artefato medido e' o do card (aponte TRE_ANCORA_DIR para o checkout do card)"
+        echo '---'
+        echo "RESULTADO: VIEWS_DENTE_FALHOU (artefato nao ancorado — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    fi
+    ANCORA_REF="$(foto_ancora "$ANCORA_DIR")"
+    ANCORA_MOD="$(foto_ancora "$MODULO_DIR")"
+    if [ -z "$ANCORA_REF" ]; then
+        echo "FALHOU ancora: $ANCORA_DIR nao tem os arquivos-ancora do card ($ANCORA_ARQUIVOS) — nao e' o artefato deste card"
+        echo '---'
+        echo "RESULTADO: VIEWS_DENTE_FALHOU (artefato nao ancorado — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    elif [ "$ANCORA_REF" = "$ANCORA_MOD" ]; then
+        echo "OK    ancora: o artefato em $MODULO_DIR e' o do checkout ($ANCORA_DIR) — sha256 identico em $(printf '%s\n' "$ANCORA_REF" | grep -c . | tr -d ' ') arquivos"
+    else
+        echo "FALHOU ancora: o artefato medido NAO e' o do card — sha256 divergente contra $ANCORA_DIR:"
+        printf '%s\n' "$ANCORA_REF" | sed 's/^/      referencia: /'
+        printf '%s\n' "$ANCORA_MOD" | sed 's/^/      medido:     /'
+        echo '---'
+        echo "RESULTADO: VIEWS_DENTE_FALHOU (artefato nao ancorado — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    fi
+
+    ACEITE_ANTES="$(foto_logs_aceite)"
+    info "logs do aceite: $LOG_DIR  |  logs do dente: $DENTE_LOG_DIR (caminhos separados)"
+
+    # --- baseline: o caminho NAO mutado (6 passos) tem de medir VERDE antes das mutacoes ------
+    cabecalho "baseline: caminho NAO mutado (6 passos do aceite) tem de medir VIEWS_OK"
+    BASE="$(TRE_MODULO_DIR="$MODULO_DIR" TRE_BANCO="${BANCO}_baseline" TRE_LOG_DIR="$DENTE_LOG_DIR/baseline" bash "$SELF" 2>&1)"
+    printf '%s\n' "$BASE" >"$DENTE_LOG_DIR/dente-0-baseline.out"
+    printf '%s\n' "$BASE" | grep -E '^(FALHOU|RESULTADO)' | tail -3
+    if printf '%s' "$BASE" | grep -q 'RESULTADO: VIEWS_OK'; then
+        echo 'OK    baseline: o caminho NAO mutado mediu VIEWS_OK — os dentes tem contra o que medir'
+    else
+        echo "FALHOU baseline: o caminho NAO mutado NAO mediu verde: $(printf '%s' "$BASE" | grep '^FALHOU ' | head -3 | tr '\n' ' ')"
+        echo '---'
+        echo "RESULTADO: VIEWS_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    fi
 
     cabecalho "prova de dente 1: recorte por grupo da secao do parceiro removido (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
@@ -117,15 +228,12 @@ if [ "$MODO" = "dente" ]; then
         echo 'FALHOU dente 1: a mutacao nao pegou no arquivo (prova sem valor)'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     else
-        D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$LOG_DIR" bash "$0" 2>&1)"
-        printf '%s\n' "$D1" >"$LOG_DIR/dente-1-sem-recorte.out"
+        D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" bash "$SELF" 2>&1)"
+        printf '%s\n' "$D1" >"$DENTE_LOG_DIR/dente-1-sem-recorte.out"
         printf '%s\n' "$D1" | grep -E '^(FALHOU|RESULTADO)' | tail -6
-        if printf '%s\n' "$D1" | grep -q 'RESULTADO: VIEWS_FALHOU'; then
-            echo 'OK    dente 1: a secao visivel ao restrito reprova o aceite'
-        else
-            echo 'FALHOU dente 1: a secao visivel ao restrito NAO reprovou — o AC2 nao tem dente'
-            DENTE_FALHAS=$((DENTE_FALHAS + 1))
-        fi
+        confere_dente "dente 1" \
+            'AC2 a view herdada view_partner_form_tf_sales_ai nao recorta a secao pelo grupo do vendedor;;prova independente: 21 itens, 2 falha' \
+            'passo 6/6' "$D1"
     fi
 
     cabecalho "prova de dente 2: formulario do modelo fora do manifesto (espera-se FALHOU)"
@@ -135,23 +243,35 @@ if [ "$MODO" = "dente" ]; then
         echo 'FALHOU dente 2: a mutacao nao pegou no manifesto (prova sem valor)'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     else
-        D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$LOG_DIR" bash "$0" 2>&1)"
-        printf '%s\n' "$D2" >"$LOG_DIR/dente-2-view-fora-do-manifesto.out"
+        D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-2" bash "$SELF" 2>&1)"
+        printf '%s\n' "$D2" >"$DENTE_LOG_DIR/dente-2-view-fora-do-manifesto.out"
         printf '%s\n' "$D2" | grep -E '^(FALHOU|RESULTADO)' | tail -6
-        if printf '%s\n' "$D2" | grep -q 'RESULTADO: VIEWS_FALHOU'; then
-            echo 'OK    dente 2: a view fora do manifesto reprova o aceite'
+        confere_dente "dente 2" \
+            'views do modulo no banco: 2 (esperado 5);;AC1 a busca do tf.process.opportunity nao traz tf_uuid' \
+            'passo 6/6' "$D2"
+    fi
+
+    # Guarda D02: o diretorio do aceite tem de sair das provas com o MESMO conteudo.
+    ACEITE_DEPOIS="$(foto_logs_aceite)"
+    if [ "$ACEITE_ANTES" = "$ACEITE_DEPOIS" ]; then
+        if [ -z "$ACEITE_ANTES" ]; then
+            echo 'OK    diretorio do aceite sem arquivo no inicio e no fim (o modo dente nao escreveu nele)'
         else
-            echo 'FALHOU dente 2: a view fora do manifesto NAO reprovou — o AC1/AC3 nao tem dente'
-            DENTE_FALHAS=$((DENTE_FALHAS + 1))
+            echo "OK    logs do aceite intactos depois das provas ($(printf '%s\n' "$ACEITE_ANTES" | grep -c . | tr -d ' ') arquivo(s) com sha256 identico)"
         fi
+    else
+        echo 'FALHOU o modo dente mexeu no diretorio do aceite — evidencia do aceite destruida (defeito TRE-W2-E03-T01-D02 de volta)'
+        printf '%s\n' "$ACEITE_ANTES" | sed 's/^/      antes:  /'
+        printf '%s\n' "$ACEITE_DEPOIS" | sed 's/^/      depois: /'
+        GUARDA_FALHAS=$((GUARDA_FALHAS + 1))
     fi
 
     echo '---'
-    if [ "$DENTE_FALHAS" -eq 0 ]; then
-        echo "RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO"
+    if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ]; then
+        echo "RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
         exit 0
     fi
-    echo "RESULTADO: VIEWS_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente) modulo=$MODULO"
+    echo "RESULTADO: VIEWS_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda do diretorio do aceite) modulo=$MODULO"
     exit 1
 fi
 
@@ -224,6 +344,18 @@ if [ -f "$MODULO_DIR/__manifest__.py" ]; then
     ok "modulo em disco: $MODULO_DIR/__manifest__.py"
     info "sha256 dos artefatos sob teste:"
     (cd "$MODULO_DIR" && find . -type f | LC_ALL=C sort | xargs sha256sum | sed 's/^/      /')
+    # Identidade do alvo medido (informativo — quem bloqueia e' o modo dente, pela ancora): o
+    # aceite mede um diretorio que pode ser copia. Rodada de revisao anterior pegou uma copia com
+    # o README de uma rodada antiga; o bloco sha256 acima e' o que permite auditar arquivo a
+    # arquivo, e o INFO abaixo diz na hora se a copia casa com o modulo do checkout.
+    ANCORA_INFO="${TRE_ANCORA_DIR:-$AQUI/../../odoo/addons/$MODULO}"
+    if [ -f "$ANCORA_INFO/__manifest__.py" ]; then
+        if [ "$(sha256sum "$MODULO_DIR/__manifest__.py" | cut -d' ' -f1)" = "$(sha256sum "$ANCORA_INFO/__manifest__.py" | cut -d' ' -f1)" ]; then
+            info "identidade: o manifesto medido casa com o checkout ($ANCORA_INFO)"
+        else
+            info "identidade: ATENCAO — o manifesto medido NAO casa com o checkout $ANCORA_INFO (TRE_MODULO_DIR fora do artefato do card)"
+        fi
+    fi
 else
     falhou "modulo ausente em $MODULO_DIR (__manifest__.py nao encontrado)"; resumo
 fi

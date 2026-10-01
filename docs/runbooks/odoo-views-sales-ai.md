@@ -80,12 +80,21 @@ Formas auxiliares:
 ```
 bash verificar-views-sales-ai.sh --apenas-artefatos       # sem a suite de testes do Odoo
 bash verificar-views-sales-ai.sh --banco tre_e06t01_alt   # outro banco descartavel
-bash verificar-views-sales-ai.sh --prova-de-dente         # duas mutacoes do artefato (dentes)
+
+# provas de dente: baseline NAO mutado (tem de medir VIEWS_OK) + 2 mutacoes, cada uma com a SUA
+# assinatura de falha exigida. O modo dente RECUSA rodar contra um `TRE_MODULO_DIR` que nao seja
+# o artefato do card (sha256 do manifesto e das 3 views contra `TRE_ANCORA_DIR`, por padrao o
+# modulo do checkout ao lado deste script) e escreve os logs em `$TRE_LOG_DIR/dente/` — nunca no
+# diretorio do aceite:
+TRE_MODULO_DIR=/opt/tre/dev/e06t01/odoo/addons/transformativa_sales_ai \
+TRE_LOG_DIR=/opt/tre/dev/e06t01/evidencias/logs \
+  bash /opt/tre/dev/e06t01/scripts/odoo/verificar-views-sales-ai.sh --prova-de-dente
 ```
 
-Variaveis: `TRE_MODULO`, `TRE_MODULO_DIR`, `TRE_PROVA`, `TRE_DESINSTALADOR`, `TRE_BANCO`,
-`TRE_IMAGEM`, `TRE_IMAGEM_PG`, `TRE_PG_USER`, `TRE_MIN_TESTS`, `TRE_MIN_METODOS_VIEWS`,
-`TRE_MIN_ITENS_PROVA`, `TRE_LOG_DIR`, `TRE_DEV_PG_CT`, `TRE_MANTER_BANCO=1`.
+Variaveis: `TRE_MODULO`, `TRE_MODULO_DIR`, `TRE_ANCORA_DIR`, `TRE_PROVA`, `TRE_DESINSTALADOR`,
+`TRE_BANCO`, `TRE_IMAGEM`, `TRE_IMAGEM_PG`, `TRE_PG_USER`, `TRE_MIN_TESTS`,
+`TRE_MIN_METODOS_VIEWS`, `TRE_MIN_ITENS_PROVA`, `TRE_LOG_DIR`, `TRE_DEV_PG_CT`,
+`TRE_MANTER_BANCO=1`.
 
 Saida: um item por linha (`OK`/`FALHOU`), uma linha `RESULTADO:` e o exit code
 (`0` = `VIEWS_OK`, `1` = `VIEWS_FALHOU`, `2` = guarda de ambiente). O script cria o **proprio
