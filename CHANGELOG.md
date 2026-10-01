@@ -431,9 +431,45 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `FAIL: …test_08_uuid_canonico_e_imutavel` (`ValidationError not raised`); `unique (tf_uuid)` trocada
   por `unique (id)` → `FAIL: …test_07_uuid_canonico_e_unico` (`IntegrityError not raised`). Nas três o
   aceite reprovou com `MODULO_ODOO_FALHOU (36 itens, 2 falhas)`, exit 1.
+- **ACLs e regras de segurança do módulo (carteira × tenant)** (`TRE-W2-E07-T01`, `t_e0b1bcbf`):
+  `odoo/addons/transformativa_sales_ai/security/transformativa_sales_ai_security.xml` e
+  `security/ir.model.access.csv` — dois grupos (`Sales AI: Vendedor (carteira)` e
+  `Sales AI: Gestor (tenant)`, este herdando o primeiro) num `res.groups.privilege`/`ir.module.category`
+  do módulo (a API de grupos do Odoo 19: `res.groups.category_id` não existe mais), ACL do modelo
+  (vendedor `1,1,1,0`; gestor `1,1,1,1`; **nada** para `base.group_user`/portal/público) e **três
+  regras de registro**: tenant `[('company_id', 'in', company_ids)]` (**global**, vale para todo mundo
+  que alcança o modelo), carteira `[('partner_id.user_id', '=', user.id)]` no grupo do vendedor e
+  `[(1, '=', 1)]` no grupo do gestor. Nenhum campo novo: **tenant = `res.company`** (companhia do
+  Odoo; o isolamento entre clientes na V1 é físico, um banco por cliente, decisão do dono de
+  30/09/2026) e **carteira = `res.partner.user_id`** (vendedor do parceiro, campo nativo, `store=True`).
+- **Aceite próprio das ACLs**: `scripts/odoo/verificar-acl-modulo.sh` (novo; instalado em dupla
+  descartável própria, `e07t01-*`) mede 51 itens em quatro passos — instalação em banco limpo, suíte do
+  Odoo (`0 failed, 0 error(s) of 26 tests`, com a classe `TestAclSeguranca` no log), as regras **lidas
+  no banco** (grupos, privilégio/categoria, ACL, as 3 regras com domínio/alcance/global) e a **prova
+  negativa independente** `scripts/odoo/provar_acl_modulo.py` (22 itens, 0 falhas) → `RESULTADO: ACL_OK
+  (51 itens, 0 falhas)`, exit 0. Os testes do próprio módulo (`tests/test_acl_seguranca.py`, 11 testes
+  `post_install`) usam usuários de verdade (`with_user`) em dois tenants e três carteiras: fail-closed
+  sem o grupo, carteira alheia (busca e leitura por id), carteira vazia, outro tenant, gestor do tenant,
+  criação em carteira alheia recusada e na própria aceita.
+- **Duas provas de dente próprias do card** (`--prova-de-dente`, cada uma mutando uma **cópia** do
+  módulo em banco próprio): regra de carteira aberta para `[(1, '=', 1)]` → `ACL_FALHOU` com 6 falhas,
+  incluindo a acusação de **material alheio** na prova negativa; ACL plantada dando escrita em
+  `res.users` ao grupo do vendedor → `ACL_FALHOU` com a superfície de ACL reprovando
+  (`res.users, tf.process.opportunity`). `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`, exit 0.
 
 ### Security
 
+- **Aprovação humana nunca concedida por máquina** (`TRE-W2-E07-T01`) — medido, não declarado: a
+  superfície de ACL do módulo é **exatamente um modelo** (`tf.process.opportunity`); nenhum grupo do
+  módulo implica ou alcança `base.group_system`/`base.group_erp_manager`; o usuário do Sales AI não
+  administra **outro** usuário (`AccessError`), não cria `ir.rule` (`AccessError`) e a tentativa de se
+  dar o grupo de administrador **não promove** (o grupo não entra). O módulo também não concede
+  `base.group_user` por conta própria. A aprovação humana segue fora do Odoo (registro de aprovações +
+  gate JEV), intocada por este card.
+- **Isolamento por tenant/carteira no módulo Odoo** (`TRE-W2-E07-T01`) — regra de tenant **global**
+  (`company_id in company_ids`) e regra de carteira por grupo; sem o grupo do módulo o modelo é
+  inalcançável (**fail-closed**, `AccessError`, medido), e o dado do outro tenant/carteira não chega
+  nem por busca (vazio) nem por leitura de id (erro) — nunca material alheio.
 - **Nenhuma porta pública**: o Odoo publica só em `127.0.0.1:8069`, o PostgreSQL do Odoo não publica
   porta nenhuma (fala pela rede interna `tre-odoo-dev`) e a UFW segue com **só a 22/tcp**. Exposição
   pública continua sendo card próprio (`TRE-W2-E01-T02`, TLS/proxy).

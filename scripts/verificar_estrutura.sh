@@ -112,25 +112,33 @@ if grep -qiE '(passwd|password|senha)[[:space:]]*=[[:space:]]*[^[:space:]#]' dep
 else
   echo "OK    par do Odoo sem valor de senha"
 fi
-# Artefatos do modulo Odoo (TRE-W2-E03-T01 e TRE-W2-E05-T01) existem E estao versionados: o
-# modulo (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o aceite do card pode
-# passar na VPS por arquivo que nunca entrou no repo.
+# Artefatos do modulo Odoo (TRE-W2-E03-T01, TRE-W2-E05-T01 e TRE-W2-E07-T01) existem E estao
+# versionados: o modulo (`transformativa_sales_ai`) e as ferramentas de aceite. Sem isto o
+# aceite do card pode passar na VPS por arquivo que nunca entrou no repo.
 for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/__init__.py \
          odoo/addons/transformativa_sales_ai/README.md \
          odoo/addons/transformativa_sales_ai/models/__init__.py \
          odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py \
+         odoo/addons/transformativa_sales_ai/security/transformativa_sales_ai_security.xml \
+         odoo/addons/transformativa_sales_ai/security/ir.model.access.csv \
          odoo/addons/transformativa_sales_ai/tests/__init__.py \
          odoo/addons/transformativa_sales_ai/tests/test_modulo_base.py \
          odoo/addons/transformativa_sales_ai/tests/test_oportunidade_canonica.py \
+         odoo/addons/transformativa_sales_ai/tests/test_acl_seguranca.py \
          scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/manifesto_do_modulo.py \
-         scripts/odoo/desinstalar_modulo.py docs/runbooks/odoo-modulo-sales-ai.md \
-         docs/runbooks/odoo-oportunidade-canonica.md; do
+         scripts/odoo/desinstalar_modulo.py scripts/odoo/verificar-acl-modulo.sh \
+         scripts/odoo/provar_acl_modulo.py docs/runbooks/odoo-modulo-sales-ai.md \
+         docs/runbooks/odoo-oportunidade-canonica.md docs/runbooks/odoo-acl-seguranca.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
-for f in scripts/odoo/verificar-modulo-odoo.sh; do
+# O bit executavel vive no GIT (100755 x 100644): script chamado direto (pelos dentes do
+# proprio verificador, por um unit ou por outro script) tem de ser executavel, e corrigir so a
+# copia operacional nao sobrevive ao proximo deploy (mesma licao do defeito t_22c27625).
+for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo.sh \
+         scripts/odoo/provar_acl_modulo.py; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

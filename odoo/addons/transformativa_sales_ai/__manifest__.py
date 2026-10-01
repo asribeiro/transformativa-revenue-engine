@@ -3,14 +3,15 @@
 #
 # Card de origem: TRE-W2-E03-T01 (`t_c536ce86`). Runbook: docs/runbooks/odoo-modulo-sales-ai.md.
 # Conteúdo atual: TRE-W2-E05-T01 (`t_9c91ecce`) — modelo `tf.process.opportunity`
-# (runbook docs/runbooks/odoo-oportunidade-canonica.md).
+# (runbook docs/runbooks/odoo-oportunidade-canonica.md) — e TRE-W2-E07-T01 (`t_e0b1bcbf`) —
+# ACLs/regras de segurança (carteira × tenant; runbook docs/runbooks/odoo-acl-seguranca.md).
 #
 # A base (manifesto, versão, dependências, empacotamento) é do E03. Os demais conteúdos
 # entram nas cards seguintes:
 #   * TRE-W2-E04-T01/T02 — customização de `res.partner` (dedup) e `crm.lead` (rastreio);
 #   * TRE-W2-E05-T01     — modelo `tf.process.opportunity` (FEITO);
 #   * TRE-W2-E06-T01     — views do Sales AI;
-#   * TRE-W2-E07-T01     — ACLs/security (carteira × tenant);
+#   * TRE-W2-E07-T01     — ACLs/security (carteira × tenant) (FEITO);
 #   * TRE-W3-E01-T01     — API controlada.
 # `depends` já declara `crm` (o alvo das customizações e o dono do funil) e a série da versão
 # acompanha a do Odoo em dev (19.0). A versão não sobe neste card (decisão D6 do runbook §1):
@@ -29,10 +30,12 @@ a integracao do Sales AI.
 
 Conteudo de hoje: o modelo `tf.process.opportunity` — a oportunidade canonica
 do lado Odoo (card TRE-W2-E05-T01), com vinculo a `res.partner` e a identidade
-canonica em UUID. A base do modulo (manifesto, versao, dependencias, testes) e
-do card TRE-W2-E03-T01; os campos de `res.partner`/`crm.lead`, as views, as
-regras de acesso e a API entram nas cards TRE-W2-E04-T01/T02, TRE-W2-E06-T01,
-TRE-W2-E07-T01 e TRE-W3-E01-T01.
+canonica em UUID — e as ACLs/regras de seguranca do modulo (card
+TRE-W2-E07-T01): grupos de vendedor/gestor, isolamento por tenant
+(`res.company`) e por carteira (`res.partner.user_id`). A base do modulo
+(manifesto, versao, dependencias, testes) e do card TRE-W2-E03-T01; os campos
+de `res.partner`/`crm.lead`, as views e a API entram nas cards
+TRE-W2-E04-T01/T02, TRE-W2-E06-T01 e TRE-W3-E01-T01.
 
 Regra de ambiente (ADR-005): nada nasce em producao. O modulo e desenvolvido e
 medido em dev; homologacao e producao exigem aprovacao humana registrada.
@@ -47,7 +50,12 @@ medido em dev; homologacao e producao exigem aprovacao humana registrada.
         # para que a dependencia seja explicita e resolvivel no ambiente de dev
         'crm',
     ],
-    'data': [],
+    'data': [
+        # Grupos, regras de registro (carteira × tenant) e ACLs do modelo do módulo.
+        # Ordem: XML (grupos e regras) antes do CSV (ACLs que referenciam os grupos).
+        'security/transformativa_sales_ai_security.xml',
+        'security/ir.model.access.csv',
+    ],
     'demo': [],
     'installable': True,
     'application': False,
