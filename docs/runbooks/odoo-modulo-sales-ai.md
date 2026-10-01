@@ -83,6 +83,12 @@ TRE_LOG_DIR=/opt/tre/dev/evidencias/<card>/logs bash /opt/tre/dev/scripts/odoo/v
 `--prova-de-dente` pode ser rodado com o **mesmo** `TRE_LOG_DIR` do aceite: o dente escreve
 em `$TRE_LOG_DIR/dente/` e não toca os logs do aceite (§5.1).
 
+A cópia de onde esses comandos rodam é **publicada a partir de um commit** e tem registro ao lado do
+arquivo: antes de usar, `cat /opt/tre/dev/scripts/odoo/.publicado` (commit, blob, sha256) e
+`sha256sum /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` — o mecanismo e a medição da rodada de
+consolidação estão na **§11**. Não sincronize essa cópia por `tar`/cópia ad-hoc: foi assim que cópias já
+publicadas foram revertidas em silêncio (§11 e runbook `publicacao-da-copia-operacional.md`).
+
 O verificador, em ordem: **guardas** (docker, as duas imagens com os digests medidos, `openssl`,
 módulo em disco, nome de banco descartável; e mede o estado do dev **antes**) → **dupla
 descartável** (rede própria, `postgres:16` com senha gerada na hora, `odoo:19.0` com
@@ -362,3 +368,83 @@ perfil `tester`.
 ambientes):** régua de resquício tem de ser derivada do que o módulo **registra**
 (modelos/tabelas/campos/views), nunca do nome do pacote — e medida **antes** da limpeza, senão a
 própria régua é apagada junto com o que ela deveria acusar.
+
+## 11. Publicação única do verificador consolidado (`TRE-W2-E03-T01-D05`, card `t_de461d14`)
+
+Os consertos dos quatro defeitos do **mesmo arquivo** (`scripts/odoo/verificar-modulo-odoo.sh`) nasceram
+em branches paralelas sobre `fe26aa5` e **não** foram publicados por nenhum deles — cada um declarou de
+propósito que a publicação da cópia operacional tem de ser **uma só**, depois de consolidados (§3, e o
+motivo: três publicações parciais da mesma base, em paralelo, fazem cada uma reverter a outra). Enquanto
+isso não acontecesse, `/opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` seguia no **blob do defeito**
+`72d00aa1…` e quem rodasse o aceite pela forma documentada continuava avaliando o item morto do D01
+(“OK” com teste reprovado no log).
+
+**Consolidação (`fix/TRE-W2-E03-T01-D05`, commit `3da9f2f`, empurrado para `origin`).** Base `f773d3c`
+(D04, que já contém `c389223`/D02 no histórico) + merge de `ebd90fd` (D01) + merge de `9054c61` (D03).
+Um único conflito de conteúdo, no bloco do `--prova-de-dente`; resolução:
+
+- **contadores:** os três contadores do D02/D04 (`DENTE_FALHAS`, `GUARDA_FALHAS`, `INVOCACAO_FALHAS`)
+  convivem com o `DENTE_PROVAS` do D03; o resumo final do modo de dente usa **os três** e o total de
+  provas — `MODULO_ODOO_DENTE_OK ($DENTE_PROVAS provas, 0 falhas)` e, na reprovação,
+  `$DENTE_FALHAS prova(s) sem dente de $DENTE_PROVAS, $GUARDA_FALHAS falha(s) na guarda dos logs do
+  aceite, $INVOCACAO_FALHAS falha(s) de invocacao`;
+- **dente 3 × defeito do D04:** o dente 3 do D03 re-invocava o próprio arquivo por `"$0"` — a **terceira**
+  ocorrência do defeito do D04 (medida também pelo revisor do D03 no blob antigo: é pré-existente).
+  Passou a `bash "$EU"`, e o seu log foi para `$TRE_LOG_DIR/dente/prova-3` (o `.out` do plantio também
+  saiu do diretório do aceite), mantendo a disciplina do D02: **o modo de dente não escreve nada dentro
+  do diretório do aceite**;
+- `bash -n` OK; os demais artefatos do E03 não foram tocados.
+
+**Publicação na cópia operacional do dev.** O conteúdo publicado vem do **commit** (nunca de uma árvore
+de trabalho, de uma pasta de evidência ou de uma cópia de card — foram exatamente essas sincronizações
+ad-hoc que reverteram cópia publicada em outros cards). O caminho versionado do projeto
+(`deploy/publicar.sh`) espelha a **árvore inteira** de um commit em um diretório e não sabe publicar
+**um arquivo** dentro de `/opt/tre/dev/scripts/odoo/` sem apagar os vizinhos (a cópia do dev não é
+espelho de árvore de commit: ela guarda a `bateria-e03t01.sh` de orquestração). Por isso a publicação
+foi feita em dois passos, os dois registrados:
+
+```bash
+# 1) materializa o commit na VPS pelo caminho versionado, em destino ISOLADO (nunca /opt/tre/repo, que e producao)
+TRE_PUBLICAR_DESTINO=/opt/tre/.publicacao-t_de461d14 \
+TRE_PUBLICAR_LOCK=/opt/tre/.publicacao-t_de461d14.lock \
+TRE_PUBLICAR_LOG=/opt/tre/.publicacoes-t_de461d14.log \
+TRE_PUBLICAR_ARTEFATO=/opt/tre/.artefato-t_de461d14 TRE_PUBLICAR_TRAVA=0 \
+    bash deploy/publicar.sh --commit 3da9f2f --card t_de461d14
+#   -> PUBLICACAO_OK digest=9e1bedc2e2ad5d19b26948498c9e389b20304006dd72e5e8ca1c7ca382d5f438 arquivos=322
+
+# 2) instala O ARQUIVO do artefato publicado (modo do git) e registra a publicacao ao lado dele
+install -m 755 /opt/tre/.publicacao-t_de461d14/scripts/odoo/verificar-modulo-odoo.sh \
+                /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh
+```
+
+O registro fica em `/opt/tre/dev/scripts/odoo/.publicado` — `commit 3da9f2f`, blob `44913fd8…`,
+sha256 `bf63fdf4…`, modo `755`, autor (card), data e o artefato de origem —, de modo que qualquer um
+pode dizer **qual commit** roda naquela cópia e conferir o conteúdo:
+
+```bash
+sha256sum /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh   # bf63fdf4…  == git rev-parse 3da9f2f:scripts/odoo/verificar-modulo-odoo.sh
+```
+
+Antes da publicação: `72d00aa1…` (blob do defeito, mtime 12:46). Depois: `bf63fdf4…` (= blob
+`44913fd8…` do commit), modo `755`, 44.499 bytes.
+
+**Medição a partir da cópia publicada** (não da branch), 01/10/2026, VPS `vmi3619453`:
+
+| prova | resultado |
+|---|---|
+| aceite completo (4 passos) | `RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas)`, **exit 0** — passo 2 com `0 failed, 0 error(s) of 6 tests`, passos 1/3/4 e limpeza todos `OK` |
+| `--prova-de-dente` na **forma documentada** (nome simples, `cd` no diretório do script) | `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** (é a prova do D04) + `OK logs de passo do aceite intactos depois das provas (4 arquivo(s) com sha256 identico)` (prova do D02) |
+| `--prova-de-dente` por **caminho absoluto** (§3) | `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** |
+| `--prova-de-dente` na forma documentada com módulo que **declara `models/`** (E05) | `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, **exit 0** — dente 3 exercitado (`RESQUICIO_PLANTADO modelos=tf.process.opportunity`, sub-run `MODULO_ODOO_FALHOU (51 itens, 2 falhas)`) |
+| controle negativo do D01: cópia do módulo **com teste que falha** | `FALHOU 1 linha(s) de teste reprovado(a) no log: … FAIL: TestModuloBase.test_99_controle_d05` e `RESULTADO: MODULO_ODOO_FALHOU (51 itens, 3 falhas)`, **exit 1** — o padrão do verificador casa **1** linha no log enquanto o padrão morto do defeito casa **0** |
+| `verificar_estrutura.sh` / `secret_scan.sh` / `verificar_papeis.sh` no commit consolidado | `PASS (0 falhas)` / `PASS (nenhum segredo versionado)` / `PASS (0 falhas)`, exit 0 nos três |
+| ambiente | dupla descartável própria por rodada; **instância do dev intacta** (mesmos 4 bancos: `odoo_dev, postgres, template0, template1`), `homolog`/`prod` sem arquivo, **0** container/rede `e03t01-*` residual, `/opt/tre/repo` (produção) **não tocada** |
+
+**Evidência bruta:** `/opt/tre/dev/evidencias/t_de461d14/` — `1-aceite-copia-operacional.out`,
+`2-dente-copia-operacional.out`, `3-controle-negativo-verificador.out`, `4-verificadores-do-projeto.out`,
+`antes-verificar-modulo-odoo.sh` (o blob do defeito, guardado), `logs/`, `logs-abs/`, `logs-dente3/`,
+`logs-controle/` e os quatro runners (`rodada{1,2,3,4}-*.sh`).
+
+**Rastreio:** card `t_de461d14` (D05, criado pela revisão do D01 `t_578a4e4d`); defeitos consolidados
+`t_578a4e4d` (D01), `t_5c4fc7ac` (D02), `t_9e402411` (D03) e `t_025f9a2a` (D04). Verificação independente
+é do perfil `tester`; homologação é do Anderson.

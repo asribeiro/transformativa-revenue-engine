@@ -498,6 +498,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   com modelo e E03 base sem modelo — neste, com a superfície 0 **impressa**, não silenciosa). Detalhe no
   runbook §10.
 
+- **`TRE-W2-E03-T01-D05` (card `t_de461d14`, branch `fix/TRE-W2-E03-T01-D05`) — os quatro consertos do
+  verificador do módulo (D01+D02+D03+D04) consolidados em **um** commit e publicados **uma vez** na cópia
+  operacional do dev.** Os três cards irmãos declararam de propósito que **não** republicariam (três
+  consertos parciais da mesma base, em paralelo, fazem cada um reverter o outro), e
+  `/opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` seguia no **blob do defeito** `72d00aa1…`: quem
+  rodasse o aceite pela forma documentada continuava avaliando o item morto do D01. Merge com base
+  `f773d3c` (D04, que já contém o D02) + `ebd90fd` (D01) + `9054c61` (D03); o conflito (um bloco no
+  mesmo arquivo) foi resolvido mantendo os **três contadores** (`DENTE_FALHAS`, `GUARDA_FALHAS`,
+  `INVOCACAO_FALHAS`) e o `DENTE_PROVAS`. O **dente 3** do D03 re-invocava por `"$0"` — terceira
+  ocorrência do defeito do D04 — e passou a `bash "$EU"`, com log próprio em
+  `$TRE_LOG_DIR/dente/prova-3` (a disciplina do D02). Publicação pelo caminho versionado
+  (`deploy/publicar.sh --commit 3da9f2f`, destino isolado, `digest 9e1bedc2…`, 322 arquivos) e o arquivo
+  instalado a partir do **artefato publicado**, com registro em `/opt/tre/dev/scripts/odoo/.publicado`
+  (`commit 3da9f2f`, blob `44913fd8…`, sha256 `bf63fdf4…`, modo 755). Remedido **da cópia
+  operacional**, não da branch: aceite `MODULO_ODOO_OK (51 itens, 0 falhas)` exit 0; `--prova-de-dente`
+  na forma documentada (nome simples, cwd = diretório do script) e por caminho absoluto →
+  `MODULO_ODOO_DENTE_OK` exit 0 nas duas, com os 4 logs do aceite em **sha256 idêntico** depois das
+  provas; módulo que declara `models/` → `(3 provas, 0 falhas)`; controle negativo (cópia do módulo com
+  teste que falha) → o item do D01 **FALHOU** (1 linha casada, exit 1) enquanto o padrão morto do defeito
+  dá 0 no mesmo log. `verificar_estrutura.sh`, `secret_scan.sh` e `verificar_papeis.sh` → `PASS` no
+  commit consolidado. Detalhe no runbook §11.
+
 ### Notas de estado
 
 - **Rollback testado de verdade** (não só escrito): `TRE_ODOO_CONFIRMAR_REMOCAO=1 bash remover-odoo-dev.sh`
