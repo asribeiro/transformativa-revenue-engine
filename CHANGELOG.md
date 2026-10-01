@@ -479,8 +479,9 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `configparser.DuplicateOptionError: option 'admin_passwd' … already exists` (`MODULO_ODOO_FALHOU
   (24 itens, 3 falhas)`, exit 1) — conserto e a bateria inteira (manifesto + dentes + aceite)
   reexecutada depois de **qualquer** edição do verificador. Detalhe no runbook §8.
-- **Quatro defeitos encontrados executando o aceite de `crm.lead` (`TRE-W2-E04-T02`)**, todos
-  consertados e remedidos:
+- **Cinco defeitos encontrados executando o aceite de `crm.lead` (`TRE-W2-E04-T02`)**, todos
+  consertados e remedidos (os quatro primeiros na rodada 1; o 5º veio da **revisão independente** e
+  foi remedido na rodada 2):
   (1) `test_07` do card estourava `ValueError: too many values to unpack (expected 2)` — o teste
   desempacotava a constante do vocabulário como pares, e ela é a lista de VALORES do contrato (a
   primeira rodada do aceite pegou: `0 failed, 1 error(s) of 13 tests`, exit 1);
@@ -499,6 +500,19 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   registrando `INFO`) nos dentes 1–3 — que passaram a reprovar pelo banco (`35 itens`, 3/1/2 falhas) —
   mais o **dente 5**, que mede o confronto estático com a mesma mutação (`13 itens, 1 falha`); a
   bateria final deu `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, exit 0. Detalhe no runbook §8.
+  (5) **o modo `--prova-de-dente` dava verde sem exercitar dente nenhum** (fail-open, achado pela
+  revisão independente da rodada 1) — o julgamento aceitava **qualquer** `CRM_LEAD_FALHOU` como prova
+  de dente, e as 5 provas morriam na **guarda**, antes de medir qualquer coisa. Reproduzido por mim
+  com o artefato da rodada 1 (`verificar-crm-lead-odoo.sh 161b512e…`, nada exportado): cada prova
+  devolvia `CRM_LEAD_FALHOU (6 itens, 1 falha(s))` (contrato ausente no caminho padrão, que não existe
+  em nenhum ambiente medido) e o comando terminava em `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`,
+  **exit 0** — verde sem medição. Conserto na rodada 2: (a) o modo dente roda o **caminho não mutado**
+  (baseline: passo 0+1+2+3) e **exige verde**, terminando em
+  `CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, exit 1, quando o baseline
+  não mede; (b) cada dente exige a **sua** assinatura de falha em vez de "qualquer FALHOU"; (c) aborto
+  de guarda reprova o dente; (d) o contrato deixou de ter default morto — sem `TRE_CONTRATO_JSON` em
+  disco o comando **recusa de cara** (`exit 1`) e diz o que exportar, e o USO do cabeçalho/runbook §3
+  passaram a exportá-lo. Detalhe no runbook §8.
 
 ### Notas de estado
 

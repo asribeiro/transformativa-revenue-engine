@@ -21,16 +21,26 @@
 # operacional `/opt/tre/repo` — o Odoo do dev abre sessao em qualquer banco novo da instancia do
 # dev (medido no E03-T01) e o AC pede banco limpo.
 #
-# Uso (na VPS, a partir de ARQUIVO):
+# Uso (na VPS, a partir de ARQUIVO) — as tres variaveis de caminho vao SEMPRE juntas:
+#   TRE_MODULO_DIR=/caminho/modulo/transformativa_sales_ai \
+#   TRE_CONTRATO_JSON=/caminho/docs/data/data_contract_v1.json \
+#   TRE_LOG_DIR=/caminho/logs \
 #   bash verificar-crm-lead-odoo.sh                     # aceite completo
 #   bash verificar-crm-lead-odoo.sh --apenas-confronto  # so o confronto modulo x contrato
 #   bash verificar-crm-lead-odoo.sh --apenas-instalacao-e-campos
 #   bash verificar-crm-lead-odoo.sh --apenas-instalacao-e-testes
-#   bash verificar-crm-lead-odoo.sh --prova-de-dente    # 5 mutacoes; espera-se FALHOU em todas
+#   bash verificar-crm-lead-odoo.sh --prova-de-dente    # baseline nao mutado (exige verde) + 5
+#                                                       # mutacoes; espera-se FALHOU em TODAS
 #   bash verificar-crm-lead-odoo.sh --banco tre_outro_banco
 #
 # Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_BANCO, TRE_IMAGEM, TRE_IMAGEM_PG, TRE_PG_USER,
 # TRE_CONTRATO_JSON, TRE_CONFERIDOR, TRE_MEDIDOR, TRE_LOG_DIR, TRE_DEV_PG_CT, TRE_MANTER_BANCO.
+#
+# TRE_CONTRATO_JSON NAO tem default que resolva: o caminho padrao
+# (/opt/tre/dev/contrato/data_contract_v1.json) nao existe em nenhum ambiente medido, e o
+# verificador RECUSA DE CARA (fail-closed) quando o contrato nao esta em disco, apontando o que
+# exportar — exporte sempre o `docs/data/data_contract_v1.json` do commit sob teste
+# (defeito 5 do §8 da runbook: dente que dava verde sem medir).
 #
 # Saida: um item por linha (`OK`/`FALHOU`), resumo final em uma linha e exit code:
 #   0 = aceite cumprido (todos os itens OK)   1 = falhou / nao deu para medir
@@ -101,20 +111,61 @@ resumo() {
 }
 
 # ---------------------------------------------------------------------------
-# --prova-de-dente: o aceite tem dentes? 3 mutacoes, cada uma em copia propria
+# --prova-de-dente: o aceite tem dentes? baseline nao mutado + 5 mutacoes, cada uma em copia propria
+#
+# DEFEITO 5 do §8 (rodada 2): a versao anterior aceitava QUALQUER `CRM_LEAD_FALHOU` como prova de
+# dente. Com os defaults do script (contrato ausente no caminho padrao / modulo publicado sem
+# `crm_lead.py`) as 5 provas morriam na GUARDA — antes de medir qualquer coisa — e o modo devolvia
+# `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`, exit 0: verde sem dente nenhum (fail-open). O aceite
+# sempre foi fail-CLOSED; quem era fail-open era o modo dente. Agora o modo dente:
+#   1. roda o caminho NAO mutado (baseline: passo 0 + 1 + 2 + 3) e EXIGE verde — sem baseline
+#      verde nao existe prova de dente, e o comando termina em CRM_LEAD_DENTE_FALHOU, exit 1;
+#   2. exige de CADA prova a SUA assinatura de falha (o texto que so' aquela mutacao produz),
+#      em vez de "qualquer FALHOU";
+#   3. reprova o dente cuja saida abortou numa guarda do ambiente ou nao chegou ao passo medido.
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e04t02-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     DENTE_FALHAS=0
-    confere_dente() { # $1=rotulo $2=saida esperada FALHOU
-        if echo "$2" | grep -q 'RESULTADO: CRM_LEAD_FALHOU'; then
-            echo "OK    $1: a mutacao REPROVOU o aceite (o item tem dente)"
+    # $1=rotulo  $2=regex da ASSINATURA de falha esperada  $3=passo que tem de ter sido medido
+    # $4=saida do verificador mutado
+    confere_dente() {
+        local rotulo="$1" assinatura="$2" passo="$3" saida="$4" motivo=""
+        if ! printf '%s' "$saida" | grep -q 'RESULTADO: CRM_LEAD_FALHOU'; then
+            motivo="a mutacao NAO reprovou o aceite — o item nao mede o que promete"
+        elif printf '%s' "$saida" | grep -qE 'nada a medir|sem contrato nao ha confronto|nao consegui ler o inventario|nao responde|nao ficou pronto|nao consegui subir|nao consegui criar'; then
+            motivo="a prova ABORTOU numa guarda do ambiente, antes de medir — aborto nao e' prova de dente"
+        elif ! printf '%s' "$saida" | grep -q "$passo"; then
+            motivo="a prova nao chegou ao '$passo' (morreu antes de medir) — aborto nao e' prova de dente"
+        elif ! printf '%s' "$saida" | grep -qE "$assinatura"; then
+            motivo="a prova reprovou por outro motivo: falta a assinatura esperada /$assinatura/"
+        fi
+        if [ -z "$motivo" ]; then
+            echo "OK    $rotulo: a mutacao REPROVOU o aceite com a assinatura esperada (o item tem dente)"
         else
-            echo "FALHOU $1: a mutacao NAO reprovou o aceite — o item nao mede o que promete"
+            echo "FALHOU $rotulo: $motivo"
             DENTE_FALHAS=$((DENTE_FALHAS + 1))
         fi
     }
+
+    # --- baseline: o caminho NAO mutado tem de medir verde ANTES de qualquer mutacao ------------
+    # Roda passo 0 (confronto) + passo 1 (instalacao) + passo 2 (campos no banco) + passo 3
+    # (teste do Odoo): e' o mesmo caminho que os 5 dentes medem, sem mutacao nenhuma. Sem este
+    # verde, uma mutacao que "reprova" nao prova nada (ela pode estar reprovando a guarda).
+    cabecalho "baseline: caminho NAO mutado (passo 0 + 1 + 2 + 3) tem de medir CRM_LEAD_OK"
+    BASE="$(TRE_MODULO_DIR="$MODULO_DIR" TRE_BANCO="${BANCO}_baseline" TRE_LOG_DIR="$LOG_DIR" \
+            TRE_PULAR_CONFRONTO=0 bash "$SELF" --apenas-instalacao-e-testes 2>&1)"
+    echo "$BASE" >"$LOG_DIR/dente-0-baseline.out"
+    echo "$BASE" | tail -3
+    if printf '%s' "$BASE" | grep -q 'RESULTADO: CRM_LEAD_OK'; then
+        echo "OK    baseline: o caminho NAO mutado mediu CRM_LEAD_OK — os dentes tem contra o que medir"
+    else
+        echo "FALHOU baseline: o caminho NAO mutado NAO mediu verde: $(printf '%s' "$BASE" | grep '^FALHOU ' | head -3 | tr '\n' ' ')"
+        echo '---'
+        echo "RESULTADO: CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado) modulo=$MODULO"
+        exit 1
+    fi
 
     cabecalho "dente 1: campo do contrato renomeado (tf_opportunity_id -> tf_opp_id)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
@@ -124,7 +175,7 @@ if [ "$MODO" = "dente" ]; then
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D1" >"$LOG_DIR/dente-1-campo-renomeado.out"
     echo "$D1" | tail -3
-    confere_dente "dente 1" "$D1"
+    confere_dente "dente 1" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|so' 12 de 13 campos do inventario" "passo 2/6" "$D1"
 
     cabecalho "dente 2: indice removido do campo de idempotencia (tf_idempotency_key)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
@@ -147,7 +198,7 @@ PY
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D2" >"$LOG_DIR/dente-2-indice-removido.out"
     echo "$D2" | tail -3
-    confere_dente "dente 2" "$D2"
+    confere_dente "dente 2" "sem indice no banco para tf_idempotency_key" "passo 2/6" "$D2"
 
     cabecalho "dente 3: campo do inventario apagado do modelo (tf_next_best_action)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
@@ -170,7 +221,7 @@ PY
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D3" >"$LOG_DIR/dente-3-campo-apagado.out"
     echo "$D3" | tail -3
-    confere_dente "dente 3" "$D3"
+    confere_dente "dente 3" "crm.lead tem 12 campo" "passo 2/6" "$D3"
 
     cabecalho "dente 5: campo do contrato renomeado, medido SO' pelo confronto estatico (passo 0)"
     cp -a "$DENTE_DIR/m1" "$DENTE_DIR/m5"
@@ -178,7 +229,7 @@ PY
           bash "$SELF" --apenas-confronto 2>&1)"
     echo "$D5" >"$LOG_DIR/dente-5-confronto-estatico.out"
     echo "$D5" | tail -3
-    confere_dente "dente 5" "$D5"
+    confere_dente "dente 5" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|inventario != implementado" "passo 0/6" "$D5"
 
     cabecalho "dente 4: teste plantado que falha de proposito (espera-se FALHOU no passo 3)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m4"
@@ -192,7 +243,7 @@ PY
           bash "$SELF" --apenas-instalacao-e-testes 2>&1)"
     echo "$D4" >"$LOG_DIR/dente-4-teste-plantado.out"
     echo "$D4" | tail -3
-    confere_dente "dente 4" "$D4"
+    confere_dente "dente 4" "1 failed, 0 error\(s\) of" "passo 3/6" "$D4"
 
     echo '---'
     if [ "$DENTE_FALHAS" -eq 0 ]; then
@@ -258,6 +309,25 @@ campos_do_modulo() { # $1=nome da constante
 # guardas do ambiente (fail-closed: sem ambiente medido, nao existe aceite)
 # ---------------------------------------------------------------------------
 cabecalho "guardas do ambiente"
+# Contrato, conferidor e medidor sao artefatos de ARQUIVO: conferidos PRIMEIRO, para o comando
+# RECUSAR DE CARA — sem subir nada — quando o caminho do contrato nao resolve. O default antigo
+# (`/opt/tre/dev/contrato/data_contract_v1.json`) nao existe em nenhum ambiente medido: sem esta
+# recusa explicita, o comando morria no meio e (no modo dente) dava verde sem medir (defeito 5 §8).
+if [ -f "$CONTRATO_JSON" ]; then
+    ok "contrato congelado em disco: $CONTRATO_JSON"
+else
+    falhou "contrato congelado ausente em $CONTRATO_JSON (sem contrato nao ha confronto) — exporte TRE_CONTRATO_JSON=/caminho/docs/data/data_contract_v1.json"; resumo
+fi
+if [ -f "$CONFERIDOR" ]; then
+    ok "conferidor modulo x contrato em disco: $CONFERIDOR"
+else
+    falhou "conferidor ausente em $CONFERIDOR (sem confronto estatico)"; resumo
+fi
+if [ -f "$MEDIDOR" ]; then
+    ok "medidor ORM em disco: $MEDIDOR"
+else
+    falhou "medidor ausente em $MEDIDOR (sem medicao de dado sintetico)"; resumo
+fi
 if docker info >/dev/null 2>&1; then ok "docker responde"; else falhou "docker nao responde"; resumo; fi
 for img in "$IMAGEM" "$IMAGEM_PG"; do
     if docker image inspect "$img" >/dev/null 2>&1; then
@@ -299,21 +369,6 @@ if printf '%s' "$BANCO" | grep -qE '^tre_[a-z0-9_]+$' && ! printf '%s' "$BANCO" 
     ok "banco descartavel com nome seguro: $BANCO"
 else
     falhou "nome de banco fora do padrao descartavel (^tre_[a-z0-9_]+$): $BANCO"; resumo
-fi
-if [ -f "$CONTRATO_JSON" ]; then
-    ok "contrato congelado em disco: $CONTRATO_JSON"
-else
-    falhou "contrato ausente em $CONTRATO_JSON (sem contrato nao ha confronto)"; resumo
-fi
-if [ -f "$CONFERIDOR" ]; then
-    ok "conferidor modulo x contrato em disco: $CONFERIDOR"
-else
-    falhou "conferidor ausente em $CONFERIDOR (sem confronto estatico)"; resumo
-fi
-if [ -f "$MEDIDOR" ]; then
-    ok "medidor ORM em disco: $MEDIDOR"
-else
-    falhou "medidor ausente em $MEDIDOR (sem medicao de dado sintetico)"; resumo
 fi
 # estado da instancia do dev ANTES (para provar no fim que o card nao a tocou)
 DEV_PG_ANTES="nao_medido"

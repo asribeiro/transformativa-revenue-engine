@@ -81,22 +81,32 @@ tar -C docs/data -cf - data_contract_v1.json | ssh ... 'mkdir -p /opt/tre/evid-t
 (cd odoo/addons && find transformativa_sales_ai -type f | LC_ALL=C sort | xargs sha256sum)  # e do outro lado
 
 # 2) na VPS (sempre a partir de ARQUIVO — nunca por stdin, ver armadilha do `docker compose run`)
+#    As TRÊS variáveis de caminho vão juntas (export, não prefixo de um comando só): o
+#    `TRE_CONTRATO_JSON` **não tem default que resolva** — o caminho padrão
+#    `/opt/tre/dev/contrato/data_contract_v1.json` não existe em nenhum ambiente medido — e o
+#    verificador **recusa de cara** (`exit 1`, antes de subir qualquer coisa) quando o contrato
+#    não está em disco (defeito 5 do §8).
 cd /opt/tre/evid-t_d3bd6660/scripts
-TRE_MODULO_DIR=/opt/tre/evid-t_d3bd6660/modulo/transformativa_sales_ai \
-TRE_LOG_DIR=/opt/tre/evid-t_d3bd6660/logs \
+export TRE_MODULO_DIR=/opt/tre/evid-t_d3bd6660/modulo/transformativa_sales_ai
+export TRE_CONTRATO_JSON=/opt/tre/evid-t_d3bd6660/contrato/data_contract_v1.json
+export TRE_LOG_DIR=/opt/tre/evid-t_d3bd6660/logs
 bash verificar-crm-lead-odoo.sh                       # aceite completo (6 passos)
 bash verificar-crm-lead-odoo.sh --apenas-confronto    # só o confronto módulo x contrato
-bash verificar-crm-lead-odoo.sh --prova-de-dente      # 5 mutações; espera-se FALHOU
+bash verificar-crm-lead-odoo.sh --prova-de-dente      # baseline não mutado + 5 mutações
 ```
 
-O verificador, em ordem: **guardas** (docker, as duas imagens com os digests medidos, `openssl`,
-módulo e inventário em disco, contrato e conferidor presentes, nome de banco descartável; e mede
-o estado do dev **antes**) → **dupla descartável própria** (rede própria, `postgres:16` e
-`odoo:19.0` com configuração própria) → **passo 0** confronto estático módulo × contrato →
-**passo 1** instalação em banco limpo → **passo 2** os 13 campos no `ir_model_fields` + índices
-reais em `pg_indexes` → **passo 3** `--test-enable` (testes do módulo) → **passo 4** dado
-sintético pelo ORM (`medir_crm_lead.py`) + conferência por SQL fora da sessão do Odoo →
-**passo 5** rollback (desinstalação) com medição de resquício → **limpeza** e conferência do dev.
+O verificador, em ordem: **guardas** — contrato, conferidor e medidor **primeiro** (são arquivos:
+sem eles o comando recusa de cara, sem medir nada), depois docker, as duas imagens com os digests
+medidos, `openssl`, módulo e inventário em disco e nome de banco descartável; e mede o estado do
+dev **antes** → **dupla descartável própria** (rede própria, `postgres:16` e `odoo:19.0` com
+configuração própria) → **passo 0** confronto estático módulo × contrato → **passo 1** instalação
+em banco limpo → **passo 2** os 13 campos no `ir_model_fields` + índices reais em `pg_indexes` →
+**passo 3** `--test-enable` (testes do módulo) → **passo 4** dado sintético pelo ORM
+(`medir_crm_lead.py`) + conferência por SQL fora da sessão do Odoo → **passo 5** rollback
+(desinstalação) com medição de resquício → **limpeza** e conferência do dev. No modo
+`--prova-de-dente`, antes de qualquer mutação o verificador roda o **caminho não mutado**
+(baseline: passo 0 + 1 + 2 + 3) e **exige verde** — sem baseline verde ele termina em
+`CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, `exit 1` (§5).
 
 **Isolamento:** o aceite **não** usa `pg-odoo-dev`, `odoo_dev` nem `/opt/tre/repo` — o AC pede
 banco **limpo** e a instância do dev carrega o funil do `TRE-W2-E02-T01`; além disso o Odoo do
@@ -151,16 +161,18 @@ Odoo, desinstalação e reinstalação seguem passando com os campos novos dentr
 ## 5. Provas negativas — o aceite tem dentes
 
 `bash verificar-crm-lead-odoo.sh --prova-de-dente` →
-**`RESULTADO: CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`**, **exit 0**. Cada prova roda numa **cópia**
-do módulo (o módulo real não é tocado) e espera **reprovação**:
+**`RESULTADO: CRM_LEAD_DENTE_OK (5 provas, 0 falhas)`**, **exit 0** (medido na rodada 2 com
+`verificar-crm-lead-odoo.sh` sha256 `0fbaa3c5…`). Cada prova roda numa **cópia** do módulo (o módulo
+real não é tocado) e espera **reprovação** — mas só depois de o **baseline** medir verde:
 
-| Prova | Mutação (em cópia) | Caminho medido | Resultado medido |
-|---|---|---|---|
-| **Dente 1** | `tf_opportunity_id` → `tf_opp_id` (campo nomeado pelo contrato renomeado) | **banco** (`--apenas-instalacao-e-campos`, com `TRE_PULAR_CONFRONTO=1`) | `FALHOU so' 12 de 13 campos do inventario em ir_model_fields de crm.lead`, `FALHOU sem indice no banco para tf_opportunity_id`, `FALHOU campo nomeado pelo contrato AUSENTE: tf_opportunity_id` → `CRM_LEAD_FALHOU (35 itens, 3 falha(s))`, **exit 1** |
-| **Dente 2** | `index=True` removido do `tf_idempotency_key` | **banco** (idem) | `FALHOU sem indice no banco para tf_idempotency_key (busca por identidade/correlacao — contrato §3/§6)` → `CRM_LEAD_FALHOU (35 itens, 1 falha(s))`, **exit 1** |
-| **Dente 3** | declaração do `tf_next_best_action` apagada do modelo | **banco** (idem) | `FALHOU so' 12 de 13 campos do inventario…`, `FALHOU crm.lead tem 12 campo(s) tf_ (inventario: 13)` → `CRM_LEAD_FALHOU (35 itens, 2 falha(s))`, **exit 1** |
-| **Dente 5** | a mesma mutação do dente 1 | **confronto estático** (`--apenas-confronto`) | `FALHOU conferidor de contrato reprovou (14 OK / 4 falhas, exit 1): campo nomeado pelo contrato AUSENTE: tf_opportunity_id; inventario != implementado: faltando=['tf_opportunity_id'] sobrando=['tf_opp_id']; indices divergem` → `CRM_LEAD_FALHOU (13 itens, 1 falha(s))`, **exit 1** |
-| **Dente 4** | teste plantado que falha (`test_99_prova_de_dente`) | **teste do Odoo** (`--apenas-instalacao-e-testes`) | `FALHOU odoo --test-enable exit 1`, `FALHOU runner do Odoo: 1 failed, 0 error(s) of 14 tests (minimo 13)`, `FALHOU 1 linha(s) de teste reprovado(a) no log` → `CRM_LEAD_FALHOU (43 itens, 3 falha(s))`, **exit 1** |
+| Prova | Mutação (em cópia) | Caminho medido | Assinatura de falha exigida | Resultado medido |
+|---|---|---|---|---|
+| **Baseline** | **nenhuma** (módulo real, caminho intacto) | passo 0 + 1 + 2 + 3 (`--apenas-instalacao-e-testes`) | — (tem de medir **verde**; sem isto o comando termina em `CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, **exit 1**) | `RESULTADO: CRM_LEAD_OK (43 itens, 0 falhas)`, **exit 0** |
+| **Dente 1** | `tf_opportunity_id` → `tf_opp_id` (campo nomeado pelo contrato renomeado) | **banco** (`--apenas-instalacao-e-campos`, com `TRE_PULAR_CONFRONTO=1`) | `campo nomeado pelo contrato AUSENTE: tf_opportunity_id` **ou** `so' 12 de 13 campos do inventario` | `FALHOU so' 12 de 13 campos do inventario em ir_model_fields de crm.lead`, `FALHOU sem indice no banco para tf_opportunity_id`, `FALHOU campo nomeado pelo contrato AUSENTE: tf_opportunity_id` → `CRM_LEAD_FALHOU (35 itens, 3 falha(s))`, **exit 1** |
+| **Dente 2** | `index=True` removido do `tf_idempotency_key` | **banco** (idem) | `sem indice no banco para tf_idempotency_key` | `FALHOU sem indice no banco para tf_idempotency_key (busca por identidade/correlacao — contrato §3/§6)` → `CRM_LEAD_FALHOU (35 itens, 1 falha(s))`, **exit 1** |
+| **Dente 3** | declaração do `tf_next_best_action` apagada do modelo | **banco** (idem) | `crm.lead tem 12 campo` | `FALHOU so' 12 de 13 campos do inventario…`, `FALHOU crm.lead tem 12 campo(s) tf_ (inventario: 13)` → `CRM_LEAD_FALHOU (35 itens, 2 falha(s))`, **exit 1** |
+| **Dente 5** | a mesma mutação do dente 1 | **confronto estático** (`--apenas-confronto`) | `inventario != implementado` **ou** `AUSENTE no modulo: tf_opportunity_id` | `FALHOU conferidor de contrato reprovou (14 OK / 4 falhas, exit 1): … campo nomeado pelo contrato AUSENTE no modulo: tf_opportunity_id … inventario != implementado: faltando=['tf_opportunity_id'] sobrando=['tf_opp_id']; indices divergem` → `CRM_LEAD_FALHOU (13 itens, 1 falha(s))`, **exit 1** |
+| **Dente 4** | teste plantado que falha (`test_99_prova_de_dente`) | **teste do Odoo** (`--apenas-instalacao-e-testes`) | `1 failed, 0 error\(s\) of` | `FALHOU odoo --test-enable exit 1`, `FALHOU runner do Odoo: 1 failed, 0 error(s) of 14 tests (minimo 13)`, `FALHOU 1 linha(s) de teste reprovado(a) no log` → `CRM_LEAD_FALHOU (43 itens, 3 falha(s))`, **exit 1** |
 
 **Por que a mutação não chega só ao passo 0:** o confronto estático reprova a mutação antes do banco,
 e o verificador pararia ali. Por isso os dentes 1–3 rodam com `TRE_PULAR_CONFRONTO=1` (pula **só** o
@@ -169,6 +181,18 @@ dente 5 mede o caminho estático com a mesma mutação. Os dentes 1–3 também 
 banco **não** depende do conferidor estático (defeito 4 do §8). O dente 4 é o que prova que os itens
 do **passo 3** medem de verdade (inclusive o item "nenhuma linha de teste `FAIL:`/`ERROR:`", que na
 primeira versão estava **cego** — defeito 2 do §8).
+
+**Os números da tabela são os da rodada 1 e os da rodada 2** (mesma contagem em todos os dentes:
+`35/3`, `35/1`, `35/2`, `13/1`, `43/3`), o que também mostra que o conserto do **defeito 5** (o
+baseline e a assinatura por dente) não mudou o que cada mutação mede. **Falso-verde fechado e
+medido** (§8.1): com os **defaults** do script (nada exportado) e com **só `TRE_MODULO_DIR`**
+exportado — os dois caminhos que davam `CRM_LEAD_DENTE_OK`, `exit 0`, sem medir nada — o comando
+agora devolve `CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, **exit 1**
+(`EXIT_A=1`, `EXIT_B=1`). E o **julgamento** do dente foi sondado: o `confere_dente` extraído do
+artefato sob teste, alimentado com (g1) a saída real do dente 1 → **OK**; (g2) a saída de **aborto**
+de guarda → reprovado; (g3) a saída real **sem** o passo medido → reprovado; (g4) a saída real do
+dente 1 julgada pela assinatura de **outro** dente → reprovado; (g5) a saída **verde** do aceite →
+reprovado → `DENTE_FALHAS=4` = `CONTROLE_JULGAMENTO_OK`, **exit 0**.
 
 ## 6. Rollback
 
@@ -238,3 +262,34 @@ falso-negativo):** o mesmo `grep -cE '^(FAIL|ERROR): '` existe em
 reprovadas do passo 2. Lá ele também fica cego, mas o item vizinho (relatório do runner do Odoo,
 com `N failed`/`N error`) reprova o passo — o aceite **falha fechado**; é fraqueza de diagnóstico,
 não falso-verde. Registrado para o `tester`/próximo card que tocar aquele script.
+
+### 8.1 Defeito 5 — o modo dente dava verde sem medir (rodada 2, achado da revisão independente)
+
+**Achado pela revisão independente** (`tester`, rodada 1, sobre o commit `5ee09faa`), reproduzido
+por mim com o artefato da rodada 1 antes de consertar. O julgamento do modo `--prova-de-dente`
+aceitava **qualquer** `CRM_LEAD_FALHOU` como prova de dente, inclusive a falha que vem das
+**guardas**, antes de medir qualquer coisa. Com os **defaults** do script — exatamente o comando do
+USO do cabeçalho, e o que o bloco da §3 exportava até esta rodada (só `TRE_MODULO_DIR` e
+`TRE_LOG_DIR`) — as 5 provas morriam na guarda do contrato e o comando dava verde:
+
+```
+$ bash /opt/tre/evid-t_d3bd6660/scripts/verificar-crm-lead-odoo.sh --prova-de-dente   # 161b512e…
+FALHOU contrato ausente em /opt/tre/dev/contrato/data_contract_v1.json (sem contrato nao ha confronto)
+RESULTADO: CRM_LEAD_FALHOU (6 itens, 1 falha(s)) …
+OK    dente 1: a mutacao REPROVOU o aceite (o item tem dente)
+… (dentes 2, 3, 5 e 4 iguais, todos morrendo na guarda) …
+RESULTADO: CRM_LEAD_DENTE_OK (5 provas, 0 falhas) modulo=transformativa_sales_ai
+EXIT_ANTES=0
+```
+
+O aceite sempre foi **fail-CLOSED** (contrato ausente reprova — medido); quem era **fail-OPEN** era
+o modo dente, e é justamente ele que o TEST PLAN do card promete ("campo renomeado, índice removido
+e campo apagado têm de reprovar"). **Conserto (rodada 2):** (a) o modo dente roda o **caminho não
+mutado** (baseline: passo 0 + 1 + 2 + 3) e **exige verde** — sem baseline ele termina em
+`CRM_LEAD_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, `exit 1`; (b) cada dente
+exige a **sua assinatura de falha** (o texto que só aquela mutação produz) em vez de "qualquer
+FALHOU"; (c) saída que abortou numa guarda — ou que não chegou ao passo medido — **reprova** o
+dente; (d) o `TRE_CONTRATO_JSON` deixou de ter um default morto: sem contrato em disco o comando
+**recusa de cara**, `exit 1`, antes de subir qualquer coisa, dizendo o que exportar (as guardas de
+arquivo passaram a ser as primeiras), e o USO do cabeçalho + o bloco da §3 passaram a exportar as
+três variáveis de caminho. A bateria inteira foi reexecutada com o script final (§5 e §4).
