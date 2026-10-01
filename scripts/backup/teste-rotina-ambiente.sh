@@ -28,6 +28,7 @@ ROTINA="$RAIZ_REPO/scripts/backup/backup-tre.sh"
 VERIFICADOR="$RAIZ_REPO/scripts/backup/verificar-ultimo-backup.sh"
 ROTINA_ANTIGA="${TRE_F2_SCRIPT_ANTIGO:-}"
 VERIFICADOR_ANTIGO="${TRE_F2_VERIFICADOR_ANTIGO:-}"
+VERIFICADOR_ODOO="$RAIZ_REPO/scripts/backup/verificar-odoo.sh"
 
 ITENS=0
 FALHAS=0
@@ -289,6 +290,83 @@ rodar_verificador "$TMP/9c.log" "pg-sales-dev pg-odoo-dev" "$TMP/env-dev" "$D9C"
 COD9C=$?
 [ "$COD9C" -ne 0 ] && ok "exit code != 0 ($COD9C)" || ko "aprovou artefato pela metade"
 grep -q "backup do ambiente esta pela metade" "$TMP/9c.log" && ok "nomeia o backup pela metade" || ko "nao nomeia o motivo: $(tail -3 "$TMP/9c.log")"
+
+# ---------------------------------------------------------------------------------
+echo
+echo "== 9d. NEGATIVO: retencao que NAO consegue remover nao pode dizer que removeu =="
+# Mecanismo medido na rodada 2 da revisao independente do card t_a5afde31: `rm -rf` sem
+# conferir o exit contava como removido um artefato que continuava no disco (dono/modo de
+# outro usuario) — e o log imprimia "removido(s)". Aqui o artefato antigo tem um filho que o
+# usuario deste teste nao pode desvincular (pai sem escrita): `rm` devolve 1 e o diretorio
+# PERMANECE. A rotina tem de dizer isso, nao contar como removido.
+D9D="$(mktemp -d "$TMP/d9d.XXXXXX")"
+ANTIGO9D="$D9D/tre_dev_20200101T000000Z"
+mkdir -p "$ANTIGO9D/filho"
+printf 'conteudo\n' >"$ANTIGO9D/filho/x"
+chmod 500 "$ANTIGO9D"
+touch -d '2020-01-01 00:00:00Z' "$ANTIGO9D"
+env -u TRE_PG_SERVICO -u TRE_PG_USER -u TRE_PG_DB -u RCLONE_CONFIG \
+    PATH="$STUB:$PATH" TRE_TESTE_DOCKER_EXISTENTES="pg-sales-dev pg-odoo-dev" \
+    TRE_ENV_DIR="$TMP/env-dev" TRE_BACKUP_DIR="$D9D" TRE_BACKUP_RETENCAO_DIAS=1 \
+    TRE_BACKUP_EXTERNO= bash "$ROTINA" dev >"$TMP/9d.log" 2>&1
+COD9D=$?
+[ "$COD9D" -ne 0 ] && ok "exit code != 0 ($COD9D): retencao que falhou nao passa em silencio" || ko "saiu com exit 0 com artefato que NAO foi removido"
+grep -q "NAO consegui remover tre_dev_20200101T000000Z" "$TMP/9d.log" && ok "nomeia o artefato que nao pode ser removido" || ko "nao nomeia a falha de retencao: $(grep -i retencao "$TMP/9d.log" | tail -2)"
+grep -q "1 NAO removido(s)" "$TMP/9d.log" && ok "resumo da retencao conta o NAO removido" || ko "resumo da retencao mente: $(grep -i retencao "$TMP/9d.log" | tail -2)"
+[ -d "$ANTIGO9D" ] && ok "artefato nao removido continua no disco (o log nao pode dizer o contrario)" || ko "o artefato sumiu — o cenario nao reproduz o defeito"
+grep -q "RESULTADO: BACKUP_FALHOU" "$TMP/9d.log" && ok "declara BACKUP_FALHOU" || ko "nao declarou BACKUP_FALHOU: $(tail -2 "$TMP/9d.log")"
+chmod 700 "$ANTIGO9D" || true
+
+# ---------------------------------------------------------------------------------
+echo
+echo "== 9e. dono do artefato: usuario de servico != quem executa = FALHA (nao entrega artefato ilegivel) =="
+D9E="$(mktemp -d "$TMP/d9e.XXXXXX")"
+TRE_BACKUP_DONO="usuario-de-servico-inexistente" rodar_rotina "$TMP/9e.log" "pg-sales-dev pg-odoo-dev" "$TMP/env-dev" "$D9E" "$ROTINA" dev
+COD9E=$?
+[ "$COD9E" -ne 0 ] && ok "exit code != 0 ($COD9E)" || ko "exit 0 entregando artefato que o usuario de servico nao leria"
+grep -q "foi declarado e esse usuario nao existe" "$TMP/9e.log" && ok "aponta o usuario de servico declarado como causa" || ko "nao aponta a causa: $(grep -i dono "$TMP/9e.log" | tail -2)"
+ART9E="$(find "$D9E" -maxdepth 1 -type d -name 'tre_dev_*' | head -1)"
+confere "manifesto: dono_artefato = dono de fato" "$(id -un)" "$(campo_manifesto "$ART9E" dono_artefato)"
+confere "manifesto: executado_por" "$(id -un)" "$(campo_manifesto "$ART9E" executado_por)"
+confere "dono real do diretorio" "$(id -un):$(id -gn) 700" "$(stat -c '%U:%G %a' "$ART9E")"
+
+# 9e-2: o caminho positivo (o dono alvo e quem executa) e o chown do root, quando existir
+# um usuario de servico de verdade nesta maquina.
+D9E2="$(mktemp -d "$TMP/d9e2.XXXXXX")"
+TRE_BACKUP_DONO="$(id -un)" rodar_rotina "$TMP/9e2.log" "pg-sales-dev pg-odoo-dev" "$TMP/env-dev" "$D9E2" "$ROTINA" dev
+confere "exit code com TRE_BACKUP_DONO = quem executa" "0" "$?"
+grep -q "dono do artefato" "$TMP/9e2.log" && ok "declara o dono do artefato no log" || ko "nao declara o dono do artefato: $(tail -3 "$TMP/9e2.log")"
+if [ "$(id -u)" = "0" ] && id -u tre-deploy >/dev/null 2>&1; then
+  D9E3="$(mktemp -d "$TMP/d9e3.XXXXXX")"
+  rodar_rotina "$TMP/9e3.log" "pg-sales-dev pg-odoo-dev" "$TMP/env-dev" "$D9E3" "$ROTINA" dev
+  ART9E3="$(find "$D9E3" -maxdepth 1 -type d -name 'tre_dev_*' | head -1)"
+  confere "root aplicou o dono do usuario de servico (chown)" "tre-deploy:tre-deploy 700" "$(stat -c '%U:%G %a' "$ART9E3")"
+else
+  nota "sem root ou sem usuario 'tre-deploy': caminho do chown nao exercitado aqui (medido na VPS)"
+fi
+
+# ---------------------------------------------------------------------------------
+echo
+echo "== 9f. VERIFICADOR: artefato ILEGIVEL por permissao nao pode ser acusado de 'pela metade' =="
+if [ "$(id -u)" = "0" ]; then
+  nota "rodando como root: DAC nao restringe root ([ -r ] responde verdadeiro) — o caso real (sudo -u tre-deploy) e medido na VPS"
+else
+  D9F2="$(mktemp -d "$TMP/d9f2.XXXXXX")"
+  cp -r "$D9B/tre_dev_"* "$D9F2/" 2>/dev/null
+  ART9F2="$(find "$D9F2" -maxdepth 1 -type d -name 'tre_dev_*' | head -1)"
+  chmod 000 "$ART9F2"
+  rodar_verificador "$TMP/9f2.log" "pg-sales-dev pg-odoo-dev" "$TMP/env-dev" "$D9F2" "$VERIFICADOR" dev
+  COD9F2=$?
+  [ "$COD9F2" -ne 0 ] && ok "exit code != 0 ($COD9F2)" || ko "aprovou artefato ilegivel por permissao"
+  grep -q "e PERMISSAO, nao conteudo" "$TMP/9f2.log" && ok "nomeia a permissao como causa" || ko "nao nomeia a permissao: $(tail -3 "$TMP/9f2.log")"
+  grep -q "backup do ambiente esta pela metade" "$TMP/9f2.log" && ko "acusou CONTEUDO ('pela metade') para um artefato ilegivel por permissao" || ok "nao acusa conteudo"
+  bash "$VERIFICADOR_ODOO" "$ART9F2" >"$TMP/9f2o.log" 2>&1
+  COD9F2O=$?
+  [ "$COD9F2O" -ne 0 ] && ok "verificador do Odoo reprova artefato ilegivel (exit $COD9F2O)" || ko "verificador do Odoo aprovou artefato ilegivel"
+  grep -q "e PERMISSAO, nao 'artefato sem Odoo'" "$TMP/9f2o.log" && ok "verificador do Odoo nomeia permissao (nao 'sem Odoo')" || ko "nao nomeia a permissao: $(tail -3 "$TMP/9f2o.log")"
+  grep -q "manifesto do Odoo ausente em" "$TMP/9f2o.log" && ko "acusou o artefato de 'sem Odoo' por permissao" || ok "nao acusa falta de conteudo"
+  chmod 700 "$ART9F2" || true
+fi
 
 # ---------------------------------------------------------------------------------
 echo

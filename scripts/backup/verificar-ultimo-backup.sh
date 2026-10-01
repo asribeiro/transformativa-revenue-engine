@@ -54,6 +54,20 @@ verificar_ambiente() {
   # existe artefato: configuracao quebrada continua sendo falha, e o artefato e conferido
   [ "$TRE_AMB_ESTADO" = "FALHAR" ] && ko "$TRE_AMB_MOTIVO"
 
+  # Quem roda ESTE verificador consegue LER o artefato? Caso real medido na rodada 2 da
+  # revisao independente deste card: artefato gravado por execucao manual do operador como
+  # root (`root:root 700`) e o verificador do timer rodando como `tre-deploy` — o diagnostico
+  # que saia era "backup pela metade"/"artefato sem Odoo" (defeito de CONTEUDO, falso) para um
+  # artefato INTEGRO. Ilegivel por permissao tem de ser dito como permissao.
+  if [ ! -r "$ultimo" ] || [ ! -x "$ultimo" ]; then
+    ko "artefato mais recente de '$amb' ($(basename "$ultimo")) existe mas NAO e legivel por '$(id -un)': dono $(stat -c '%U:%G' "$ultimo" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$ultimo" 2>/dev/null || echo n/d) — e PERMISSAO, nao conteudo; a rotina de backup tem de entregar o artefato com dono do usuario de servico"
+    return 0
+  fi
+  if [ -e "$ultimo/manifest.txt" ] && [ ! -r "$ultimo/manifest.txt" ]; then
+    ko "manifesto do artefato mais recente de '$amb' existe e nao e legivel por '$(id -un)' (dono $(stat -c '%U:%G' "$ultimo/manifest.txt" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$ultimo/manifest.txt" 2>/dev/null || echo n/d)) — e PERMISSAO, nao 'manifesto ausente'"
+    return 0
+  fi
+
   local idade_h
   idade_h="$(python3 - "$ultimo" <<'PY' 2>/dev/null || echo "?"
 import os, sys, time

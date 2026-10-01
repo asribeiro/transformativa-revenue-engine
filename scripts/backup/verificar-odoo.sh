@@ -57,6 +57,18 @@ le_manifesto() { # <chave> [default]
 }
 
 # ---------------------------------------------------------------- 0. o que vamos restaurar
+# Ilegivel por PERMISSAO nao e "artefato sem Odoo". Caso real medido na rodada 2 da revisao
+# independente deste card: artefato gravado por execucao manual como root (`root:root 700`) e
+# o verificador do timer rodando como `tre-deploy` — a saida era "artefato sem Odoo?"/
+# RESTORE_ODOO_FALHOU para um artefato que TEM o bloco do Odoo e esta integro.
+if [ -d "$DIR" ] && { [ ! -r "$DIR" ] || [ ! -x "$DIR" ]; }; then
+  ko "artefato '$DIR' existe mas NAO e legivel por '$(id -un)': dono $(stat -c '%U:%G' "$DIR" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$DIR" 2>/dev/null || echo n/d) — e PERMISSAO, nao 'artefato sem Odoo'; a rotina de backup tem de entregar o artefato com dono do usuario de servico"
+  echo; echo "RESULTADO: RESTORE_ODOO_FALHOU ($ITENS itens, $FALHAS falha(s))"; exit 1
+fi
+if [ -e "$MAN" ] && [ ! -r "$MAN" ]; then
+  ko "manifesto do Odoo existe em $MAN e NAO e legivel por '$(id -un)' (dono $(stat -c '%U:%G' "$MAN" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$MAN" 2>/dev/null || echo n/d)) — e PERMISSAO, nao 'manifesto ausente'"
+  echo; echo "RESULTADO: RESTORE_ODOO_FALHOU ($ITENS itens, $FALHAS falha(s))"; exit 1
+fi
 [ -s "$MAN" ] || { ko "manifesto do Odoo ausente em $DIR/odoo-manifest.txt — artefato sem Odoo?"; echo; echo "RESULTADO: RESTORE_ODOO_FALHOU (0/1)"; exit 1; }
 
 BANCO="$(le_manifesto odoo_banco odoo_dev)"

@@ -25,9 +25,18 @@
 #   manifesto (senao `ls *.dump | head -1` pegaria o do Odoo) e `verificar-odoo.sh` faz o
 #   restore do Odoo descartavel, subindo o Odoo contra o banco restaurado.
 #
+# DO DONO DO ARTEFATO (conserto da rodada 2 de revisao do card t_a5afde31): o diretorio do
+# artefato e criado com modo 700 e dono do USUARIO DE SERVICO (`TRE_BACKUP_DONO`, padrao
+# `tre-deploy`), nao de quem por acaso executou o script. Sem isso, uma execucao manual do
+# operador como root gerava `root:root 700` — e o verificador de domingo, que roda como
+# `tre-deploy`, nao lia o artefato: acusava "backup pela metade" (defeito de CONTEUDO, falso)
+# para um artefato integro e a retencao nao conseguia remove-lo, imprimindo "removido(s)".
+#
 # Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB (globais — valem em chamada de UM
 #            ambiente), TRE_ENV_DIR, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
-#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ.
+#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ,
+#            TRE_BACKUP_DONO (usuario de servico dono do artefato; declarado vence o padrao
+#            `tre-deploy`; sem ele na maquina, quem executa, com NOTA).
 #            O trio de CADA ambiente vem de deploy/environments/<ambiente>.env ou de
 #            TRE_PG_SERVICO_<AMBIENTE> — regra completa em scripts/backup/lib-ambiente.sh.
 #
@@ -56,12 +65,62 @@ RAIZ="${TRE_RAIZ:-/opt/tre}"
 DEST="${TRE_BACKUP_DIR:-$RAIZ/backup}"
 RETENCAO="${TRE_BACKUP_RETENCAO_DIAS:-14}"
 EXTERNO="${TRE_BACKUP_EXTERNO:-}"
+# Dono do artefato = usuario de SERVICO (o que o timer usa), nao quem roda o script.
+# Regra: TRE_BACKUP_DONO declarado vence; sem declaracao, `tre-deploy` quando existir nesta
+# maquina; sem ele (maquina de desenvolvimento), quem executa.
+DONO_PADRAO="tre-deploy"
+DONO_DECLARADO="${TRE_BACKUP_DONO:-}"
+DONO_EXPLICITO=0
+if [ -n "$DONO_DECLARADO" ]; then
+  DONO_ALVO="$DONO_DECLARADO"; DONO_EXPLICITO=1
+elif id -u "$DONO_PADRAO" >/dev/null 2>&1; then
+  DONO_ALVO="$DONO_PADRAO"
+else
+  DONO_ALVO="$(id -un)"
+fi
 FALHAS=0
 COBERTOS=0
 PULADOS=0
 
 ok() { echo "OK    $*"; }
 ko() { echo "FALHOU $*"; FALHAS=$((FALHAS + 1)); }
+
+# Quem VAI ser o dono do artefato desta execucao (vai para o manifesto, antes do chown).
+dono_previsto() {
+  if [ "$(id -u)" = "0" ] && [ "$DONO_ALVO" != "root" ] && id -u "$DONO_ALVO" >/dev/null 2>&1; then
+    printf '%s' "$DONO_ALVO"
+  else
+    id -un
+  fi
+}
+
+# O artefato tem de ficar legivel E removivel pelo usuario de servico. Caso real medido na
+# revisao independente deste card (rodada 2): `backup-tre.sh` executado a mao pelo operador root
+# deixou `/opt/tre/backup/tre_dev_20261001T135513Z` como `root:root 700`; o
+# `verificar-ultimo-backup.sh` do timer (`tre-deploy`) nao conseguia ler o artefato, acusava
+# "backup pela metade" (falso, defeito de CONTEUDO) e a retencao nao conseguia remover o
+# diretorio enquanto imprimia "removido(s)". Rodando como root o dono e aplicado aqui.
+aplicar_dono_artefato() {
+  local dir="$1" grupo
+  if [ "$DONO_EXPLICITO" = "1" ] && ! id -u "$DONO_ALVO" >/dev/null 2>&1; then
+    ko "TRE_BACKUP_DONO='$DONO_ALVO' foi declarado e esse usuario nao existe nesta maquina — o artefato ficaria com dono '$(id -un)' e o verificador do timer nao leria nem removeria"
+    return 0
+  fi
+  if [ "$(id -u)" = "0" ] && [ "$DONO_ALVO" != "root" ]; then
+    grupo="$(id -gn "$DONO_ALVO" 2>/dev/null || printf '%s' "$DONO_ALVO")"
+    if chown -R "$DONO_ALVO:$grupo" "$dir" 2>/dev/null && chmod 700 "$dir"; then
+      ok "dono do artefato: $DONO_ALVO:$grupo (modo 700) — legivel e removivel pelo usuario de servico"
+    else
+      ko "nao consegui aplicar o dono '$DONO_ALVO:$grupo' no artefato $dir — o verificador do timer pode nao ler nem remover"
+    fi
+    return 0
+  fi
+  if [ "$(id -un)" = "$DONO_ALVO" ]; then
+    ok "dono do artefato: '$(id -un)' e o usuario de servico (modo 700, legivel e removivel pelo timer)"
+  else
+    ko "artefato criado por '$(id -un)' e o usuario de servico e '$DONO_ALVO' — sem root nao da para corrigir o dono, e o verificador do timer nao vai ler este artefato"
+  fi
+}
 
 # Contagens exatas por tabela (nao usa n_live_tup: depende de ANALYZE e mente).
 # O UNION ALL e montado DENTRO do SQL (string_agg): juntar as linhas fora da consulta nao
@@ -310,6 +369,8 @@ backup_ambiente() {
     echo "config: $TRE_AMB_FONTE"
     echo "selo_utc: $selo"
     echo "host_origem: $(hostname)"
+    echo "executado_por: $(id -un)"
+    echo "dono_artefato: $(dono_previsto)"
     echo "postgres: ${versao_pg:-n/d}"
     echo "tabelas: $(wc -l <"$saida/contagens.txt" 2>/dev/null || echo 0)"
     echo "indices: ${indices:-n/d}"
@@ -345,16 +406,35 @@ backup_ambiente() {
     echo "externo: pendente (sem destino configurado)" >>"$saida/manifest.txt"
   fi
 
+  # 7b. dono/permissao do artefato: quem le e REMOVE este artefato e o usuario de servico
+  # (o timer), nao quem por acaso rodou o script. Vem DEPOIS de tudo escrito (dump, filestore
+  # por container efemero, manifesto e envio externo) e ANTES da retencao.
+  aplicar_dono_artefato "$saida"
+
   # 8. retencao (so o prefixo deste ambiente; nunca toca em outro diretorio)
   if [ "${RETENCAO:-0}" -gt 0 ] 2>/dev/null; then
-    local removidos=0
+    local removidos=0 tentados=0 falhas_rm=0
     while IFS= read -r antigo; do
       [ -n "$antigo" ] || continue
+      tentados=$((tentados + 1))
       echo "  retencao: removendo $(basename "$antigo")"
-      rm -rf "$antigo"
-      removidos=$((removidos + 1))
+      # `rm -rf` SEM conferir o exit foi o que fez o diretorio root:root 700 do caso real
+      # escapar da retencao para sempre: o `rm` dava Permission denied, o contador subia e a
+      # rotina imprimia "removido(s)". Ausencia de erro nao e prova de remocao.
+      if rm -rf "$antigo" 2>/dev/null; then
+        removidos=$((removidos + 1))
+      elif [ -e "$antigo" ]; then
+        falhas_rm=$((falhas_rm + 1))
+        ko "retencao: NAO consegui remover $(basename "$antigo") (dono $(stat -c '%U:%G' "$antigo" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$antigo" 2>/dev/null || echo n/d), rodando como $(id -un)) — este artefato escapa da retencao"
+      else
+        removidos=$((removidos + 1))
+      fi
     done < <(find "$DEST" -maxdepth 1 -type d -name "tre_${amb}_*" -mtime +"$RETENCAO" 2>/dev/null)
-    ok "retencao aplicada ($RETENCAO dias; $removidos artefato(s) antigo(s) removido(s))"
+    if [ "$falhas_rm" -eq 0 ]; then
+      ok "retencao aplicada ($RETENCAO dias; $removidos de $tentados artefato(s) antigo(s) removido(s))"
+    else
+      ko "retencao $RETENCAO dias: $removidos de $tentados artefato(s) removido(s), $falhas_rm NAO removido(s) (o log nao pode chamar de removido o que continua no disco)"
+    fi
   else
     echo "PULADO retencao desativada (TRE_BACKUP_RETENCAO_DIAS=$RETENCAO)"
   fi
@@ -363,6 +443,10 @@ backup_ambiente() {
   COBERTOS=$((COBERTOS + 1))
   return 0
 }
+
+if [ "$DONO_EXPLICITO" = "0" ] && [ "$DONO_ALVO" != "$DONO_PADRAO" ]; then
+  echo "NOTA  usuario de servico padrao ('$DONO_PADRAO') nao existe nesta maquina — o dono do artefato sera quem executa ($DONO_ALVO); declare TRE_BACKUP_DONO para fixar outro"
+fi
 
 if [ "$AMBIENTE" = "todos" ]; then
   for amb in dev homolog prod; do backup_ambiente "$amb" todos; done
