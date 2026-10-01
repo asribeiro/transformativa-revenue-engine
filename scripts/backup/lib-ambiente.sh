@@ -177,3 +177,89 @@ tre_registrar_origem() {
   TRE_AMB_ORIGENS_USADAS="$TRE_AMB_ORIGENS_USADAS $servico"
   return 0
 }
+
+# =====================================================================================
+# Odoo do ambiente (card TRE-W2-E01-T01-F01) — banco PROPRIO + filestore.
+#
+# O Odoo nao reusa nada do trio acima: banco `odoo_dev` no container `pg-odoo-dev` e
+# filestore no volume `odoo-data-dev` (deploy/environments/dev.env, secao "Odoo do
+# ambiente"). Nem todo ambiente tem Odoo — ambiente que NAO declara nada de Odoo e
+# PULADO (nao e falha); ambiente que DECLARA Odoo e nao tem o container e FALHA
+# (ambiente provisionado sem backup e falha, mesma regra do trio).
+#
+# Precedencia (a primeira que existir manda), por ambiente <amb>:
+#   1. TRE_ODOO_PG_SERVICO_<AMB> / TRE_ODOO_PG_USER_<AMB> / TRE_ODOO_PG_DB_<AMB> /
+#      TRE_ODOO_FILESTORE_<AMB>   (<AMB> em MAIUSCULAS)
+#   2. ${TRE_ENV_DIR:-<raiz do checkout>/deploy/environments}/<amb>.env
+#      (chaves TRE_ODOO_PG_SERVICO / TRE_ODOO_PG_USER / TRE_ODOO_PG_DB / TRE_ODOO_FILESTORE)
+#
+# NAO existe passo "global" de proposito: uma unica variavel de Odoo atravessando os tres
+# ambientes em `backup-tre.sh todos` copiaria o banco do dev com o rotulo de homolog — o
+# mesmo defeito que a resolucao do trio por ambiente (t_1b2ab418) fechou.
+# =====================================================================================
+tre_resolver_odoo() {
+  local amb="${1:-}"
+  TRE_ODOO_NOME="$amb"; TRE_ODOO_SERVICO=""; TRE_ODOO_USUARIO=""; TRE_ODOO_BANCO=""
+  TRE_ODOO_FILESTORE=""; TRE_ODOO_DECLARADO=0; TRE_ODOO_FONTE=""; TRE_ODOO_ERRO=""
+  if [ -z "$amb" ]; then TRE_ODOO_ERRO="nome de ambiente vazio"; return 1; fi
+
+  local maiuscula arquivo
+  maiuscula="$(printf '%s' "$amb" | tr '[:lower:]' '[:upper:]')"
+  arquivo="$(tre_env_dir)/$amb.env"
+
+  local v_servico v_usuario v_banco v_fs
+  local f_servico="" f_usuario="" f_banco="" f_fs=""
+  v_servico="$(tre_valor_de "TRE_ODOO_PG_SERVICO_$maiuscula")"
+  v_usuario="$(tre_valor_de "TRE_ODOO_PG_USER_$maiuscula")"
+  v_banco="$(tre_valor_de "TRE_ODOO_PG_DB_$maiuscula")"
+  v_fs="$(tre_valor_de "TRE_ODOO_FILESTORE_$maiuscula")"
+
+  if [ -f "$arquivo" ]; then
+    local vals
+    if ! vals="$(. "$arquivo" >/dev/null 2>&1 && \
+         printf '%s\n%s\n%s\n%s\n' "${TRE_ODOO_PG_SERVICO:-}" "${TRE_ODOO_PG_USER:-}" \
+                                   "${TRE_ODOO_PG_DB:-}" "${TRE_ODOO_FILESTORE:-}")"; then
+      TRE_ODOO_ERRO="arquivo de ambiente invalido ou ilegivel: $arquivo"
+      return 1
+    fi
+    f_servico="$(printf '%s\n' "$vals" | sed -n 1p)"
+    f_usuario="$(printf '%s\n' "$vals" | sed -n 2p)"
+    f_banco="$(printf '%s\n' "$vals" | sed -n 3p)"
+    f_fs="$(printf '%s\n' "$vals" | sed -n 4p)"
+  fi
+
+  TRE_ODOO_SERVICO="${v_servico:-$f_servico}"
+  TRE_ODOO_USUARIO="${v_usuario:-${f_usuario:-odoo}}"
+  TRE_ODOO_BANCO="${v_banco:-${f_banco:-odoo_dev}}"
+  TRE_ODOO_FILESTORE="${v_fs:-${f_fs:-odoo-data-dev}}"
+  if [ -n "$TRE_ODOO_SERVICO" ]; then
+    TRE_ODOO_DECLARADO=1
+    if [ -n "$v_servico" ]; then
+      TRE_ODOO_FONTE="variavel TRE_ODOO_PG_SERVICO_$maiuscula"
+    else
+      TRE_ODOO_FONTE="arquivo $arquivo"
+    fi
+  fi
+  return 0
+}
+
+# Veredito do Odoo ja resolvido. Preenche TRE_ODOO_ESTADO = COBRIR | PULAR | FALHAR.
+tre_estado_odoo() {
+  TRE_ODOO_ESTADO=""; TRE_ODOO_MOTIVO=""
+  if [ -n "${TRE_ODOO_ERRO:-}" ]; then
+    TRE_ODOO_ESTADO="FALHAR"; TRE_ODOO_MOTIVO="$TRE_ODOO_ERRO"; return 0
+  fi
+  if [ "${TRE_ODOO_DECLARADO:-0}" = "0" ]; then
+    TRE_ODOO_ESTADO="PULAR"
+    TRE_ODOO_MOTIVO="ambiente '$TRE_ODOO_NOME' nao declara Odoo (sem TRE_ODOO_PG_SERVICO em $TRE_ODOO_FONTE${TRE_ODOO_FONTE:+ })"
+    return 0
+  fi
+  if tre_container_existe "$TRE_ODOO_SERVICO"; then
+    TRE_ODOO_ESTADO="COBRIR"
+    TRE_ODOO_MOTIVO="container '$TRE_ODOO_SERVICO' existe ($TRE_ODOO_FONTE)"
+  else
+    TRE_ODOO_ESTADO="FALHAR"
+    TRE_ODOO_MOTIVO="ambiente '$TRE_ODOO_NOME' DECLARA Odoo ($TRE_ODOO_FONTE) e o container '$TRE_ODOO_SERVICO' nao existe — Odoo declarado sem backup e FALHA, nao 'pulado'"
+  fi
+  return 0
+}

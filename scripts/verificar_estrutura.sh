@@ -128,5 +128,32 @@ else
   echo "OK    par do Odoo sem valor de senha"
 fi
 
+# Backup/restore do Odoo (TRE-W2-E01-T01-F01): os artefatos existem, estao versionados e
+# os que sao chamados direto (ou por outro script) tem bit de execucao. O par do ambiente
+# tem de carregar o trio do Odoo — sem ele `backup-tre.sh` pula o Odoo em silencio.
+for f in scripts/backup/verificar-odoo.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/backup-tre.sh scripts/backup/verificar-ultimo-backup.sh; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/backup/verificar-odoo.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/backup-tre.sh scripts/backup/verificar-ultimo-backup.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+if grep -q '^TRE_ODOO_PG_SERVICO=' deploy/environments/dev.env 2>/dev/null; then
+  echo "OK    trio do Odoo declarado em deploy/environments/dev.env"
+else
+  echo "FALHOU deploy/environments/dev.env nao declara TRE_ODOO_PG_SERVICO (o backup pularia o Odoo em silencio)"
+  FALHAS=$((FALHAS+1))
+fi
+if grep -q 'RESTORE_ODOO_OK' scripts/backup/verificar-odoo.sh 2>/dev/null; then
+  echo "OK    verificador do Odoo devolve veredito RESTORE_ODOO_OK/RESTORE_ODOO_FALHOU"
+else
+  echo "FALHOU scripts/backup/verificar-odoo.sh sem veredito (verificador sem resposta binaria e carimbo)"
+  FALHAS=$((FALHAS+1))
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

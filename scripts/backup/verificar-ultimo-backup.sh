@@ -81,6 +81,25 @@ PY
     ko "restore do ultimo backup de '$amb' REPROVADO"
   fi
 
+  # Odoo do ambiente (card TRE-W2-E01-T01-F01): o artefato que declara Odoo tem de passar
+  # pelo restore proprio — subir o Odoo contra o banco restaurado. Ambiente que declara
+  # Odoo e cujo artefato NAO tem o bloco do Odoo tambem e falha (backup pela metade).
+  if [ -s "$ultimo/odoo-manifest.txt" ]; then
+    if bash "$AQUI/verificar-odoo.sh" "$ultimo"; then
+      ok "restore do Odoo do ultimo backup de '$amb' aprovado"
+    else
+      ko "restore do Odoo do ultimo backup de '$amb' REPROVADO"
+    fi
+  else
+    tre_resolver_odoo "$amb" >/dev/null 2>&1 || true
+    tre_estado_odoo
+    if [ "$TRE_ODOO_ESTADO" = "COBRIR" ]; then
+      ko "ambiente '$amb' tem Odoo ($TRE_ODOO_MOTIVO) e o artefato mais recente NAO tem o bloco do Odoo — backup do ambiente esta pela metade"
+    else
+      echo "NOTA   artefato sem bloco do Odoo e o ambiente nao declara Odoo (nada a restaurar la)"
+    fi
+  fi
+
   # backup velho tambem e falha: se a rotina diaria parou, quero saber aqui
   if [ "${idade_h:-0}" != "?" ] && [ "${idade_h:-0}" -gt 48 ] 2>/dev/null; then
     ko "ultimo backup tem ${idade_h}h (> 48h) — a rotina de backup parou?"

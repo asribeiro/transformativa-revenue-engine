@@ -11,6 +11,20 @@
 #     manifest.txt              metadados da execucao (origem, versao, tamanho, indices, externo)
 #     pg_dump.err               stderr do pg_dump (vazio em caso de sucesso)
 #
+#   Quando o ambiente DECLARA Odoo (deploy/environments/<ambiente>.env, secao "Odoo do
+#   ambiente"), o MESMO artefato recebe tambem o Odoo (card TRE-W2-E01-T01-F01):
+#     odoo_dev.dump             dump -Fc do banco do Odoo (container proprio pg-odoo-dev)
+#     odoo_dev.dump.sha256
+#     odoo-contagens.txt        <tabela>|<linhas> do schema public do Odoo
+#     odoo-filestore.tar.gz     volume do filestore (odoo-data-dev) empacotado inteiro
+#     odoo-filestore.tar.gz.sha256
+#     odoo-manifest.txt         metadados do Odoo (imagem, digest, tamanhos, arquivos)
+#   Um Odoo por ambiente dentro do MESMO artefato de proposito: restaurar o dev no meio de
+#   um incidente precisa dos DOIS lados; dois artefatos em timers diferentes produziriam
+#   restauracao pela metade. `verificar-backup.sh` escolhe o dump do trio pelo `banco:` do
+#   manifesto (senao `ls *.dump | head -1` pegaria o do Odoo) e `verificar-odoo.sh` faz o
+#   restore do Odoo descartavel, subindo o Odoo contra o banco restaurado.
+#
 # Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB (globais — valem em chamada de UM
 #            ambiente), TRE_ENV_DIR, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
 #            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ.
@@ -61,6 +75,119 @@ sql_contagens() {
   uniao="$(printf '%s' "$uniao" | tr -d '\r' | sed '/^[[:space:]]*$/d')"
   [ -n "$uniao" ] || return 1
   docker exec "$servico" psql -U "$usuario" -d "$banco" -tAF'|' -c "$uniao ORDER BY 1"
+}
+
+# Contagens por tabela do Odoo (schema public inteiro). Mesma tecnica e mesmo motivo do
+# trio: o UNION ALL e montado DENTRO do SQL e `n_live_tup` nao e usado (depende de ANALYZE
+# e mente). `quote_ident` protege nome de tabela com maiuscula/espaco (o Odoo tem tabelas
+# como `ir_model_fields`, mas o quoting e barato e evita surpresa com modelo customizado).
+sql_contagens_odoo() {
+  local servico="$1" usuario="$2" banco="$3"
+  local uniao
+  uniao="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc \
+    "SELECT string_agg('SELECT '''||table_name||''' AS tabela, count(*)::bigint AS linhas FROM public.'||quote_ident(table_name), ' UNION ALL ' ORDER BY table_name) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")"
+  uniao="$(printf '%s' "$uniao" | tr -d '\r' | sed '/^[[:space:]]*$/d')"
+  [ -n "$uniao" ] || return 1
+  docker exec "$servico" psql -U "$usuario" -d "$banco" -tAF'|' -c "$uniao ORDER BY 1"
+}
+
+# ---------------------------------------------------------------------------------
+# Odoo do ambiente: banco PROPRIO (pg-odoo-dev/odoo_dev) + filestore (odoo-data-dev).
+# Nada do Odoo entra no dump do trio e vice-versa: sao bancos, containers e volumes
+# separados (docs/runbooks/odoo-dev.md §2).
+#
+# O filestore e empacotado pelo DOCKER (container efemero montando o volume), nao pelo
+# caminho do host: /var/lib/docker so e legivel por quem tem o socket, e o unit roda
+# como tre-deploy — ler `docker volume inspect` e copiar o caminho seria depender de um
+# detalhe do daemon que nao e contrato.
+#
+# Segredos: o dump NAO leva senha nenhuma do cofre — `/etc/tre/odoo-dev/{pg.env,odoo.conf}`
+# ficam de fora (o dump do banco traz o que o proprio Odoo guarda, nao a credencial de
+# infraestrutura). Ver docs/operations/gestao-de-secrets.md.
+# ---------------------------------------------------------------------------------
+backup_odoo_ambiente() {
+  local amb="$1" saida="$2"
+  local servico="$TRE_ODOO_SERVICO" usuario="$TRE_ODOO_USUARIO" banco="$TRE_ODOO_BANCO"
+  local volume="$TRE_ODOO_FILESTORE"
+  local imagem_aux="${TRE_BACKUP_IMAGEM_AUX:-${TRE_BACKUP_IMAGEM:-postgres:16}}"
+  local imagem="${TRE_ODOO_IMAGEM:-odoo:19.0}"
+  local digest="${TRE_ODOO_IMAGEM_DIGEST:-n/d}"
+  local man="$saida/odoo-manifest.txt"
+  local arq_fs="$saida/odoo-filestore.tar.gz"
+
+  echo "------------------------------------------------------------------"
+  echo "-- odoo do ambiente: $amb   servico: $servico   banco: $banco   filestore: $volume"
+
+  # 1. o servico responde?
+  if docker exec "$servico" pg_isready -U "$usuario" >/dev/null 2>&1; then
+    ok "odoo: postgres responde em '$servico'"
+  else
+    ko "odoo: postgres nao responde em '$servico' (backup do Odoo abortado para nao gerar artefato vazio)"
+    return 1
+  fi
+
+  # 2. dump do banco do Odoo (formato custom, igual ao do trio: restauravel e verificavel)
+  local versao_pg
+  versao_pg="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc 'SHOW server_version' 2>/dev/null | tr -d '[:space:]')"
+  if docker exec "$servico" pg_dump -U "$usuario" -d "$banco" -Fc \
+       >"$saida/$banco.dump" 2>"$saida/odoo-pg_dump.err"; then
+    ok "odoo: dump de $banco: $(du -h "$saida/$banco.dump" | cut -f1) (postgres $versao_pg)"
+  else
+    ko "odoo: pg_dump de $banco falhou: $(head -c 300 "$saida/odoo-pg_dump.err")"
+    return 1
+  fi
+  (cd "$saida" && sha256sum "$banco.dump" >"$banco.dump.sha256") \
+    && ok "odoo: sha256 do dump gravado" || ko "odoo: sha256 do dump falhou"
+
+  # 3. contagens por tabela (o que o restore vai comparar linha a linha)
+  local tabelas_odoo
+  tabelas_odoo="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'" 2>/dev/null | tr -d '[:space:]')"
+  if [ "${tabelas_odoo:-0}" = "0" ]; then
+    ko "odoo: banco '$banco' sem tabela nenhuma em public (base nao inicializada?) — este backup nao tem o que restaurar"
+  elif sql_contagens_odoo "$servico" "$usuario" "$banco" >"$saida/odoo-contagens.txt" \
+       && [ -s "$saida/odoo-contagens.txt" ]; then
+    ok "odoo: contagens: $(wc -l <"$saida/odoo-contagens.txt") tabelas, $(awk -F'|' '{s+=$2} END {print s+0}' "$saida/odoo-contagens.txt") linhas"
+  else
+    ko "odoo: nao consegui extrair as contagens por tabela de '$banco' (base tem $tabelas_odoo tabelas)"
+  fi
+
+  # 4. filestore: o volume inteiro (filestore do banco + sessoes + addons do data_dir)
+  if docker run --rm --entrypoint tar \
+       -v "$volume:/origem:ro" -v "$saida:/destino" \
+       "$imagem_aux" -czf "/destino/$(basename "$arq_fs")" -C /origem . \
+       >"$saida/odoo-filestore.err" 2>&1; then
+    ok "odoo: volume '$volume' empacotado ($(du -h "$arq_fs" | cut -f1))"
+  else
+    ko "odoo: falha ao empacotar o volume '$volume': $(head -c 300 "$saida/odoo-filestore.err" | tr '\n' ' ')"
+    return 1
+  fi
+  local bytes_fs arquivos_fs
+  bytes_fs="$(stat -c%s "$arq_fs" 2>/dev/null || echo 0)"
+  arquivos_fs="$(tar -tzf "$arq_fs" 2>/dev/null | grep -vc '/$' || true)"
+  (cd "$saida" && sha256sum "$(basename "$arq_fs")" >"$(basename "$arq_fs").sha256") \
+    && ok "odoo: sha256 do filestore gravado" || ko "odoo: sha256 do filestore falhou"
+
+  # 5. metadados do Odoo (em arquivo proprio; o manifesto principal o incorpora)
+  {
+    echo "odoo_servico: $servico"
+    echo "odoo_usuario: $usuario"
+    echo "odoo_banco: $banco"
+    echo "odoo_filestore_volume: $volume"
+    echo "odoo_imagem_restore: $imagem"
+    echo "odoo_imagem_digest: $digest"
+    echo "odoo_postgres: ${versao_pg:-n/d}"
+    echo "odoo_tabelas: $(wc -l <"$saida/odoo-contagens.txt" 2>/dev/null || echo 0)"
+    echo "odoo_linhas: $(awk -F'|' '{s+=$2} END {print s+0}' "$saida/odoo-contagens.txt" 2>/dev/null)"
+    echo "odoo_bytes_dump: $(stat -c%s "$saida/$banco.dump" 2>/dev/null || echo 0)"
+    echo "odoo_sha256_dump: $(cut -d' ' -f1 "$saida/$banco.dump.sha256" 2>/dev/null)"
+    echo "odoo_filestore_bytes: $bytes_fs"
+    echo "odoo_filestore_arquivos: $arquivos_fs"
+    echo "odoo_filestore_sha256: $(cut -d' ' -f1 "$arq_fs.sha256" 2>/dev/null)"
+    echo "odoo_segredos: fora do artefato (o dump nao leva /etc/tre/odoo-dev/*)"
+  } >"$man"
+  ok "odoo: manifesto gravado ($(basename "$man"))"
+  return 0
 }
 
 backup_ambiente() {
@@ -156,6 +283,24 @@ backup_ambiente() {
     "SELECT count(*) FROM pg_indexes WHERE schemaname='sales_intelligence'" 2>/dev/null | tr -d '[:space:]')"
   (cd "$saida" && sha256sum "$banco.dump" >"$banco.dump.sha256") && ok "sha256 gravado" || ko "sha256 falhou"
 
+  # 5b. Odoo do ambiente (banco proprio + filestore), quando o ambiente declara um.
+  # Ambiente que nao declara Odoo e PULADO; declarado sem container e FALHA (mesma regra
+  # do trio) — nunca "pulado" em silencio.
+  tre_resolver_odoo "$amb" || true
+  tre_estado_odoo
+  case "$TRE_ODOO_ESTADO" in
+    COBRIR)
+      echo "OK    odoo: $TRE_ODOO_MOTIVO"
+      backup_odoo_ambiente "$amb" "$saida" || FALHAS=$((FALHAS + 1))
+      ;;
+    PULAR)
+      echo "PULADO odoo: $TRE_ODOO_MOTIVO"
+      ;;
+    *)
+      ko "odoo: $TRE_ODOO_MOTIVO"
+      ;;
+  esac
+
   # 6. metadados
   {
     echo "ambiente: $amb"
@@ -172,6 +317,12 @@ backup_ambiente() {
     echo "sha256: $(cut -d' ' -f1 "$saida/$banco.dump.sha256" 2>/dev/null)"
     echo "retencao_dias: $RETENCAO"
     echo "segredos: fora do artefato (ver docs/operations/gestao-de-secrets.md)"
+    # bloco do Odoo, quando o ambiente tem um (card TRE-W2-E01-T01-F01)
+    if [ -s "$saida/odoo-manifest.txt" ]; then
+      grep -v '^$' "$saida/odoo-manifest.txt"
+    else
+      echo "odoo: ausente neste ambiente ($TRE_ODOO_MOTIVO)"
+    fi
   } >"$saida/manifest.txt"
   ok "manifesto gravado"
 

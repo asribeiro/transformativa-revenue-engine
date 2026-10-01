@@ -49,7 +49,15 @@ ok() { ITENS=$((ITENS + 1)); echo "OK    $*"; }
 ko() { ITENS=$((ITENS + 1)); FALHAS=$((FALHAS + 1)); echo "FALHOU $*"; }
 
 if [ -d "$ALVO" ]; then DIR="$ALVO"; else DIR="$(cd "$(dirname "$ALVO")" && pwd)"; fi
-DUMP="$(ls "$DIR"/*.dump 2>/dev/null | head -1)"
+# O artefato pode carregar DOIS *.dump (o do trio + odoo_dev.dump, card TRE-W2-E01-T01-F01):
+# `ls *.dump | head -1` devolveria o do Odoo em ordem alfabetica. O dump do trio e o que o
+# manifesto declara em `banco:`; sem manifesto, o glob ignora os dumps do Odoo.
+BANCO_ARTEFATO="$(awk -F': ' '/^banco:/{print $2; exit}' "$DIR/manifest.txt" 2>/dev/null | tr -d '[:space:]')"
+if [ -n "$BANCO_ARTEFATO" ] && [ -s "$DIR/$BANCO_ARTEFATO.dump" ]; then
+  DUMP="$DIR/$BANCO_ARTEFATO.dump"
+else
+  DUMP="$(ls "$DIR"/*.dump 2>/dev/null | grep -v '/odoo_' | head -1)"
+fi
 
 echo "=================================================================="
 echo "-- RESTORE  ambiente: $AMBIENTE   servico: $SERVICO   banco: $BANCO_ALVO"

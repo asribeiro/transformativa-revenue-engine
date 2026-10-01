@@ -21,10 +21,21 @@ if [ -z "$ALVO" ]; then
 fi
 if [ -d "$ALVO" ]; then
   DIR="$ALVO"
-  DUMP="$(ls "$DIR"/*.dump 2>/dev/null | head -1)"
+  # Com o Odoo no MESMO artefato existem DOIS *.dump (odoo_dev.dump e o do trio): `ls |
+  # head -1` pegaria o do Odoo (ordem alfabetica) e o comparativo seria do banco errado.
+  # O dump do trio e o que o manifesto declara em `banco:` (scripts/backup/backup-tre.sh).
+  BANCO_ARTEFATO="$(awk -F': ' '/^banco:/{print $2; exit}' "$DIR/manifest.txt" 2>/dev/null | tr -d '[:space:]')"
+  if [ -n "$BANCO_ARTEFATO" ] && [ -s "$DIR/$BANCO_ARTEFATO.dump" ]; then
+    DUMP="$DIR/$BANCO_ARTEFATO.dump"
+  else
+    DUMP="$(ls "$DIR"/*.dump 2>/dev/null | grep -v '/odoo_' | head -1)"
+  fi
+  # dumps do Odoo ficam para o verificador proprio (scripts/backup/verificar-odoo.sh)
+  ODOO_DUMP="$(ls "$DIR"/odoo*.dump 2>/dev/null | head -1)"
 else
   DIR="$(cd "$(dirname "$ALVO")" && pwd)"
   DUMP="$ALVO"
+  ODOO_DUMP=""
 fi
 
 IMAGEM="${TRE_BACKUP_IMAGEM:-postgres:16}"
