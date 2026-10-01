@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Pacote do modulo `transformativa_sales_ai`.
 #
-# A base (manifesto, versao, dependencias) e' do card TRE-W2-E03-T01. O primeiro conteudo
-# chegou no card TRE-W2-E05-T01: o pacote `models/` com `tf.process.opportunity`, a
-# oportunidade canonica do lado Odoo (Data Contract V1.0, secao 2).
+# A base (manifesto, versao, dependencias) e' do card TRE-W2-E03-T01. A base nasceu sem modelo de
+# proposito: cada card de customizacao acrescenta o SEU arquivo dentro de `models/` e importa a
+# SUA linha em `models/__init__.py`, mantendo este arquivo estavel.
 from . import models

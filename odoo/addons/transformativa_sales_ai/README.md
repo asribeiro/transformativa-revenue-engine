@@ -96,3 +96,22 @@ O aceite das ACLs roda por **`scripts/odoo/verificar-acl-modulo.sh`** (51 itens:
 suite do Odoo, as regras lidas no banco e a prova negativa independente
 `scripts/odoo/provar_acl_modulo.py`), com as duas provas negativas do próprio verificador em
 `--prova-de-dente`.
+## Conteúdo das customizações (a partir de `TRE-W2-E04-T01`)
+
+O "estado neste card" acima descreve o **card base** (`TRE-W2-E03-T01`): o módulo nasceu vazio de
+propósito. O conteúdo entra por card, cada um no seu arquivo — o que já existe:
+
+| Card | Arquivo | O que entra |
+|---|---|---|
+| `TRE-W2-E04-T01` | `models/res_partner.py` | `tf_cnpj`, `tf_domain`, `tf_linkedin_url` (identificadores fortes do contrato §5, os três **indexados**), `tf_company_id` (UUID canônico de `organizations.id`, com a forma do UUID conferida) e `tf_priority_score` (contrato §8) — runbook `docs/runbooks/res-partner-campos-dedup.md` |
+| `TRE-W2-E04-T02` | `models/crm_lead.py` (previsto) | campos de rastreio de `crm.lead` |
+| `TRE-W2-E05-T01` | `models/tf_process_opportunity.py` (previsto) | modelo canônico `tf.process.opportunity` |
+
+**Ponto de contato entre cards paralelos (hotspot declarado):** `__init__.py` (uma vez),
+`models/__init__.py`, `tests/__init__.py` e este README. Cada card acrescenta **uma linha** nesses
+arquivos e o seu próprio módulo de modelo/teste; a integração junta as linhas, não reescreve os
+arquivos.
+
+Testes deste conteúdo: `tests/test_res_partner_dedup.py` (7 testes, tag `post_install`), com o
+aceite item a item em `scripts/odoo/verificar-res-partner.sh` e a conferência de não divergência com
+o Data Contract V1.0 em `scripts/odoo/conferir_res_partner_no_contrato.py`.

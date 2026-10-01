@@ -456,6 +456,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   incluindo a acusação de **material alheio** na prova negativa; ACL plantada dando escrita em
   `res.users` ao grupo do vendedor → `ACL_FALHOU` com a superfície de ACL reprovando
   (`res.users, tf.process.opportunity`). `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`, exit 0.
+- **Campos de dedup e IDs canônicos em `res.partner` (`TRE-W2-E04-T01`)** — `models/res_partner.py`
+  acrescenta os **identificadores fortes** do contrato §5 (`tf_cnpj`, `tf_domain`,
+  `tf_linkedin_url`, os três **indexados**) e os campos do `canonical_ids.odoo_map` que apontam para
+  `res.partner` (`tf_company_id` = UUID canônico de `organizations.id`, com a **forma** do UUID
+  conferida, e `tf_priority_score`). Não normaliza identificador, não valida CNPJ e não cria `UNIQUE`
+  — o contrato manda *detectar e reportar* duplicidade (merge só com confiança ≥ 0,95), nunca recusar
+  o dado. 7 testes do Odoo em `tests/test_res_partner_dedup.py`, conferidor de não divergência
+  (`scripts/odoo/conferir_res_partner_no_contrato.py`, lê o `data_contract_v1.json` congelado por
+  AST) e aceite próprio (`scripts/odoo/verificar-res-partner.sh`) + runbook
+  `docs/runbooks/res-partner-campos-dedup.md`.
+- **Aceite de `res.partner` item a item (64 itens)**: modelo × contrato V1.0, instalação em banco
+  limpo, testes do Odoo, **catálogo do PostgreSQL** (colunas, tipos, índices btree), criação/consulta
+  de parceiro sintético pelo ORM (`odoo shell`, instrumento independente dos testes) e desinstalação —
+  tudo numa dupla descartável própria → `RESULTADO: RES_PARTNER_OK (64 itens, 0 falhas)`, exit 0.
+  Medido: `0 failed, 0 error(s) of 13 tests` com **7 testes deste card e 6 da base efetivamente
+  rodados**, índices btree reais (`res_partner__tf_*_index`), consulta por cada identificador com
+  `n=1` e identificador diferente com `n=0`, e o rollback removendo as 5 colunas e todos os índices
+  `tf_*` de `res_partner` com **0 resquício**.
+- **Dentes do aceite de `res.partner`** (`--prova-de-dente`, 3 provas, cada uma em cópia do módulo):
+  `tf_cnpj` sem `index=True` → `RES_PARTNER_FALHOU`, exit 1; `tf_domain` renomeado para `tf_dominio` →
+  `RES_PARTNER_FALHOU`, exit 1; teste plantado que falha → `1 failed` no relatório, `odoo
+  --test-enable exit 1`, exit 1.
 
 ### Security
 
@@ -513,9 +535,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `configparser.DuplicateOptionError: option 'admin_passwd' … already exists` (`MODULO_ODOO_FALHOU
   (24 itens, 3 falhas)`, exit 1) — conserto e a bateria inteira (manifesto + dentes + aceite)
   reexecutada depois de **qualquer** edição do verificador. Detalhe no runbook §8.
+- **Dois defeitos do aceite de `res.partner` (`TRE-W2-E04-T01`), achados executando e consertados**
+  (runbook §6): (1) `ir.model.fields.index` é **booleano** no Odoo 19 e o teste/o item do verificador
+  exigiam a string `btree` — a rodada 1 morreu com `1 failed … of 13 tests` e
+  `ir_model_fields.index de res.partner.tf_cnpj: 't' (esperado btree)`; o teste passou a exigir
+  índice declarado no ORM e o **tipo** btree continua provado no catálogo (`pg_indexes`); (2) o item
+  "nenhuma linha de teste FAIL:/ERROR:" estava ancorado no início da linha e imprimia **OK com um
+  teste reprovado** (o Odoo 19 escreve `… ERROR <banco> <módulo>: FAIL: TestX.test_y`) — mesma classe
+  do defeito D04 do verificador de estrutura; conserto com `grep -cE '(^| )(FAIL|ERROR): [A-Za-z_]'`,
+  provado no log da rodada 1 (padrão antigo 0 casamentos / padrão novo 1) e pelo dente 3.
+- **`'At least one test failed when loading the modules.'` é marcador vazio no Odoo 19**
+  (`TRE-W2-E04-T01`): medido — ele **não** aparece nem com teste reprovado. O item do aceite ficou só
+  como ausência (não pode dar falso OK) e os dentes reais do passo de testes são o **exit code**, o
+  **relatório do runner** e as **linhas `FAIL:`**.
 
 ### Notas de estado
 
+- **Módulo `transformativa_sales_ai` já tem conteúdo (`TRE-W2-E04-T01`)**: `res.partner` ganhou 5
+  campos (`tf_cnpj`, `tf_domain`, `tf_linkedin_url`, `tf_company_id`, `tf_priority_score`), sem view,
+  sem ACL e sem regra automática de merge. Enquanto o módulo não for publicado na cópia operacional
+  `/opt/tre/repo`, ele é medido pelo caminho do runbook `docs/runbooks/res-partner-campos-dedup.md`
+  (dupla descartável própria + cópia do card em `/opt/tre/dev/cards/t_adee6ad7/`), e **não** aparece
+  no `odoo-dev`.
 - **Rollback testado de verdade** (não só escrito): `TRE_ODOO_CONFIRMAR_REMOCAO=1 bash remover-odoo-dev.sh`
   derrubou containers, volumes do Odoo e segredos, com `pg-sales-dev` **intacto** (`running` ao fim); o
   verificador então reprovou o ambiente ausente e a **reinstalação limpa** voltou a passar 19/19.
