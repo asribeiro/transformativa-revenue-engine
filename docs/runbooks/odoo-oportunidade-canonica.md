@@ -107,6 +107,29 @@ por isso não aparece nos contadores acima.
 `EXIT_*=0` por alvo), `manifesto.out`, `aceite.out` (51 itens), `dentes.out` (dentes herdados do
 E03) e `logs-aceite/{1-instalacao,2-teste,3-desinstalacao,4-reinstalacao}.log`.
 
+### 4.1 Medição direta no banco (independente dos itens do verificador)
+
+O aceite conta itens `OK`/`FALHOU` e não mostra número. Para não aceitar "OK" como prova, o modelo foi
+medido **direto no banco**, numa dupla descartável própria, por
+`/opt/tre/dev/baterias/medicao-direta-e05t01.sh` (log bruto `medicao-direta.out`):
+
+| Medição (com o módulo instalado) | Resultado |
+|---|---|
+| tabela do modelo | `tf_process_opportunity` existe (1), **14 colunas** |
+| campos do modelo em `ir_model_fields` | **15** linhas com `model='tf.process.opportunity'` |
+| colunas do contrato gravadas | `tf_uuid:char`, `name:char`, `active:boolean`, `partner_id:many2one`, `company_id:many2one`, `currency_id:many2one`, `stage_id:many2one`, `expected_revenue:monetary`, `lost_reason_id:many2one` |
+| constraints no catálogo (`pg_constraint`) | `tf_process_opportunity_tf_uuid_uniq | u` (única) e FKs `partner_id`, `stage_id`, `lost_reason_id`, `company_id`, `currency_id` |
+| desinstalação (ORM) | `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled` e, lido no banco: **tabela=0, `ir_model_fields`=0, `ir_model_data`(módulo)=0**, `state=uninstalled` |
+
+Ou seja: não é só o teste do módulo dizendo que passou — a entidade existe no banco com as colunas,
+a unicidade do UUID e a FK do parceiro, e some inteira no rollback. A mesma medição rendeu o achado
+registrado como **`t_9e402411`** (`TRE-W2-E03-T01-D03`): com o módulo instalado,
+`ir_ui_view where model like 'transformativa_sales_ai%'` = 0 e `ir_model_fields where name like
+'transformativa_sales_ai%'` = 0 (e nenhuma tabela com o prefixo do módulo), porque em Odoo a tabela
+tem o nome do **modelo** e o item foi escrito com o nome do **módulo** — três dos quatro termos de
+resquício do passo 3 não têm superfície. Isso **não** invalida o aceite deste card (a leitura direta
+acima é a prova), mas o item do E03 não poderia acusar o resquício que promete acusar.
+
 ## 5. Provas negativas — os dentes
 
 **5.1 Dentes herdados do E03** (`--prova-de-dente`, 2 provas, cada uma em **cópia** do módulo):
@@ -227,18 +250,26 @@ Todos achados **executando** (nenhum por leitura) e cada conserto remedido com a
    (a linha real é prefixada). Conserto: `grep "FAIL: .*<teste-esperado>"` — o dente só conta como dente
    se **o teste declarado** cair. Medido depois: 3/3 `DENTE_OK`.
 
-**Nota de método:** os itens 2, 3 e 5 são a mesma lição em três lugares diferentes — padrão de leitura
-de log ancorado em formato de terceiro. É por isso que os defeitos 2 e 3 viraram card (e não só um
-conserto local): o próximo a escrever um item de aceite herda o registro.
+6. **Três dos quatro termos dos itens de resquício são código morto** (achado pela medição direta do
+   §4.1, não pela leitura): com o módulo instalado, `ir_ui_view where model like
+   'transformativa_sales_ai%'` = 0, `ir_model_fields where name like 'transformativa_sales_ai%'` = 0 e
+   nenhuma tabela com o prefixo do módulo (a tabela do modelo é `tf_process_opportunity`) — em Odoo a
+   régua tem de sair do nome do **modelo**, não do módulo. Registrado como defeito do artefato do E03:
+   card **`t_9e402411`** (`TRE-W2-E03-T01-D03`), pré-requisito do card de origem `t_c536ce86`.
+
+**Nota de método:** os itens 2, 3, 5 e 6 são a mesma lição em quatro lugares diferentes — **régua de
+verificação escrita com um padrão que não é o do dado real**. É por isso que os defeitos 2, 3 e 6
+viraram card (e não só um conserto local): o próximo a escrever um item de aceite herda o registro.
 
 ## 9. Pendências declaradas (não são deste card)
 
 - **Defeitos abertos nesta execução** (registrados como pré-requisitos do card de origem `t_c536ce86`,
   no modo retroativo — a origem já estava `done`): **`t_578a4e4d`** (`TRE-W2-E03-T01-D01`, item de aceite
-  código morto no Odoo 19) e **`t_5c4fc7ac`** (`TRE-W2-E03-T01-D02`, prova de dente sobrescrevendo os logs
-  do aceite). Nenhum dos dois bloqueia os critérios deste card — os itens que provam o aceite do E05
-  (exit code, relatório do runner, estado lido no banco, desinstalação) são independentes deles —, mas os
-  dois são conserto de **artefato do E03** e por isso são cards próprios, não edição silenciosa daqui.
+  código morto no Odoo 19), **`t_5c4fc7ac`** (`TRE-W2-E03-T01-D02`, prova de dente sobrescrevendo os logs
+  do aceite) e **`t_9e402411`** (`TRE-W2-E03-T01-D03`, itens de resquício medidos pelo nome do módulo).
+  Nenhum dos três bloqueia os critérios deste card — as provas do aceite do E05 (exit code, relatório do
+  runner, estado lido no banco, medição direta do §4.1) são independentes deles —, mas os três são
+  conserto de **artefato do E03** e por isso são cards próprios, não edição silenciosa daqui.
 - **Views (E06) e ACLs (E07)**: o modelo nasce sem as duas, de propósito. Sem regra de acesso, o
   Odoo registra aviso de "modelo sem regra de acesso" e só usuários com privilégio de sistema
   alcançam o modelo — é o estado esperado até o card E07 (que é dono da carteira × tenant).
