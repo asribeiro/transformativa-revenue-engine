@@ -101,7 +101,7 @@ banco=tre_e03_t01_modulo imagens=odoo:19.0+postgres:16`**, **exit 0**.
 |---|---|
 | **1 instalação em banco limpo** | banco **não existia** (dropado antes) → criado pelo Odoo do zero; `odoo --init exit 0`; 554 linhas de log, **0 ERROR/CRITICAL**, `'Modules loaded.'` presente; `ir_module_module.state = installed`; `latest_version = 19.0.1.0.0` == manifesto; `license = LGPL-3` == manifesto; dependências gravadas `base crm` == declaradas; todas instaladas; 0 módulo pendurado |
 | **2 teste do Odoo** | `odoo -u transformativa_sales_ai --test-enable exit 0`; `odoo.tests.result: 0 failed, 0 error(s) of 6 tests when loading database 'tre_e03_t01_modulo'`; 0 linha `FAIL:`/`ERROR:`; sem `'At least one test failed...'`; módulo segue `installed` |
-| **3 desinstalação** | `odoo shell` + ORM → `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled`; estado no banco `uninstalled`; **0 resquício** em `ir_model_data`/`ir_ui_view`/`ir_model_fields` e 0 tabela com prefixo do módulo |
+| **3 desinstalação** | `odoo shell` + ORM → `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled`; estado no banco `uninstalled`; **0 resquício** em `ir_model_data`/`ir_ui_view`/`ir_model_fields` e 0 tabela com prefixo do módulo — atenção: **esta medição é anterior ao defeito D03** e os três termos por *nome de pacote* mediam 0 mesmo com o módulo instalado; a régua corrigida (derivada do que o módulo registra) e a medição de agora estão na **§10** |
 | **4 reinstalação (idempotência)** | `odoo --init` (2ª vez) **exit 0**, 0 ERROR/CRITICAL, módulo `installed` de novo com `latest_version = 19.0.1.0.0` |
 | **limpeza / dev intocado** | banco descartável, `postgres` descartável, rede descartável e diretório de configuração removidos; **instância do dev com os mesmos 4 bancos antes e depois** (`odoo_dev, postgres, template0, template1`); `homolog`/`prod` com **0 arquivo** |
 
@@ -120,7 +120,9 @@ Scripts do aceite (também iguais nos dois lados): `verificar-modulo-odoo.sh 72d
 ## 5. Provas negativas — o aceite tem dentes
 
 `bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh --prova-de-dente` →
-**`RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`**, **exit 0**. Cada prova roda numa
+**`RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`**, **exit 0** — esta é a medição do card do
+E03; o defeito D03 acrescentou a **prova de dente 3** (resquício plantado): hoje são **3 provas**
+(`MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`), ver §10. Cada prova roda numa
 **cópia** do módulo (o módulo real não é tocado) e espera **reprovação**:
 
 | Prova | Mutação | Resultado medido |
@@ -273,3 +275,90 @@ dele existir.
 - **Ratificação da versão do Odoo (19.0)** pelo Anderson: herdada de `TRE-W2-E01-T01`.
 - **Homologação**: estágio 7 é do Anderson; este runbook entrega a evidência, não a aprovação.
   A verificação independente (estágio 6) é do perfil `tester`.
+
+## 10. Defeito D03 — a régua do resquício media pelo nome do **pacote** (`TRE-W2-E03-T01-D03`, card `t_9e402411`)
+
+Defeito encontrado durante a execução do card `TRE-W2-E05-T01` (`t_9c91ecce`), medindo o banco **com o
+primeiro modelo do módulo instalado** — o card do E03, que não tinha modelo nenhum, media "0 resquício"
+verdadeiro **por vacuidade**. Corrigido e remedido em 01/10/2026.
+
+**Sintoma (medido, com o módulo instalado):** os termos dos dois itens de resquício do **passo 3**
+mediam
+
+| termo da régua antiga | com o módulo instalado |
+|---|---|
+| `ir_model_data where module = '<módulo>'` | **17** (tem superfície: mede) |
+| `ir_ui_view where model like '<módulo>%'` | **0** — código morto |
+| `ir_model_fields where name like '<módulo>%'` | **0** — código morto |
+| `information_schema.tables where table_name like '<módulo>_%'` | **0** — código morto (a tabela do modelo é `tf_process_opportunity`) |
+
+… enquanto a superfície **real** do módulo era **1 tabela** (`tf_process_opportunity`, 14 colunas),
+**1 modelo** em `ir_model`, **15 campos** em `ir_model_fields` e 17 registros de `ir_model_data`. O
+passo 3 é o **rollback declarado** do card: aceitar como prova um item que não pode acusar enfraquece
+a garantia de limpeza.
+
+**Consequência medida (é o que fecha o defeito):** com o banco sujo de propósito — desinstalação real
+seguida do plantio do modelo (`ir_model`), da tabela do modelo, de um campo e de uma view, **nada com
+`ir_model_data` do módulo** — o verificador de antes (`72d00aa1…`) imprimiu `MODULO_ODOO_OK (51 itens,
+0 falhas)`, **exit 0**, com os dois itens de resquício em `OK`; o corrigido (`fa1f69f2…`) imprimiu
+`MODULO_ODOO_FALHOU (51 itens, 2 falha(s))`, **exit 1**:
+
+```
+FALHOU 3 resquicio(s) do modulo no banco depois da desinstalacao (ir_model_data=0 modelo(s)=1 campo(s)=1 view(s)=1)
+FALHOU 1 tabela(s) dos modelos do modulo sobreviveram a desinstalacao: tf_process_opportunity
+```
+
+**Causa raiz:** a régua foi escrita com o nome do **pacote** (`$MODULO`) — e em Odoo o nome da
+**tabela** é o nome do **modelo**; campo e view também nunca carregam o nome do módulo.
+
+**Correção (`scripts/odoo/verificar-modulo-odoo.sh`):** o passo 3 passa a **capturar a superfície
+enquanto o módulo está instalado** — antes de desinstalar, porque depois o `ir_model_data` do módulo
+já não existe e a régua ficaria vazia (seria a vacuidade de novo) — e mede o resquício contra **essas
+entidades**:
+
+- **modelos próprios** = `ir_model_data (module = <módulo>, model = 'ir.model')` **menos** os modelos
+  compartilhados com outro módulo (mesmo critério que o Odoo usa para decidir se apaga o modelo na
+  desinstalação). O filtro não é decorativo: medido em `odoo_dev` (leitura read-only) no módulo do core
+  `crm`, são **22** entradas `ir.model` em `ir_model_data`, das quais **8 compartilhadas**
+  (`res.partner`, `res.users`, `calendar.event`, `mail.activity`, `digest.digest`,
+  `ir.config_parameter`, `res.config.settings`, `utm_campaign`) — sem o filtro a régua acusaria
+  `res.partner` de resquício em qualquer módulo que estenda o parceiro;
+- **tabelas** = existência **medida** em `information_schema` para cada modelo próprio (nome derivado
+  do modelo, não suposto): `1 tabela` no E05, `tf_process_opportunity`;
+- **campos e views** = `ir_model_fields` / `ir_ui_view` com `model` nos modelos próprios.
+
+A superfície medida vai impressa em **INFO** (item sem superfície não prova nada) e os dois itens
+passaram a dizer o que medem. **Limite declarado:** ACLs, regras e constraints que não tenham
+`ir_model_data` do módulo não entram nesta régua.
+
+**Prova de dente (3ª):** `--prova-de-dente` ganhou o **dente 3** — um desinstalador que desinstala de
+verdade e **planta** o resquício (modelo + tabela + campo + view) logo depois; o sub-run tem de
+reprovar os **dois** itens de resquício e o dente confere isso item a item. Medido:
+`RESULTADO: MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, **exit 0**, com o dente 3 em
+`MODULO_ODOO_FALHOU (51 itens, 2 falha(s))` — **só** os dois itens de resquício (o passo 4 segue
+`OK`) — e `RESQUICIO_PLANTADO modelos=tf.process.opportunity` no log do plantio. Em módulo que **não
+declara `models/`** (o caso do E03 base) o dente 3 sai **explícito** como `NAO APLICAVEL` — não como
+`OK` silencioso, e não como falha de um módulo que legitimamente não registra entidade nenhuma.
+
+**Medições desta correção (VPS `vmi3619453`, dupla descartável própria, 01/10/2026):**
+
+| alvo | resultado |
+|---|---|
+| aceite com o módulo do E05 (tem modelo), régua corrigida | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — superfície medida: 17 dados, 1 modelo, 1 tabela, 15 campos, 0 views |
+| aceite com o módulo base do E03 (sem modelo) | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — superfície **0/0/0/0/0 impressa** (vacuidade visível, não silenciosa) |
+| aceite com o módulo do E05, régua **antiga** (`72d00aa1…`) | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — diff item a item contra o corrigido: **só os dois itens de resquício mudam**; o total segue **51 itens** (sem falso negativo) |
+| cenário com resquício plantado: régua antiga × corrigida | `MODULO_ODOO_OK (51 itens, 0 falhas)` × `MODULO_ODOO_FALHOU (51 itens, 2 falhas)` — acima |
+| `--prova-de-dente` | `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, exit 0 |
+| `verificar_estrutura.sh` / `secret_scan.sh` / `verificar_papeis.sh` no head corrigido | `PASS` / `PASS` / `PASS`, exit 0 |
+
+**Rastreio:** defeito aberto pelo card `t_9c91ecce` (`TRE-W2-E05-T01`) como pré-requisito do card
+`t_c536ce86` (`TRE-W2-E03-T01`); card do defeito `t_9e402411`. Evidência bruta em
+`/opt/tre/dev/evidencias/t_9e402411/`: `aceite-e05.out`, `aceite-e03.out`, `antes-limpo.out`,
+`dente.out`, `compara-antes-depois.out` e os `logs-*/`; sonda `baterias/d03/probe-d03.sh` e comparação
+`baterias/d03/compara-antes-depois-d03.sh` (orquestração, só na VPS). Verificação independente é do
+perfil `tester`.
+
+**Aprendizado (vale para os próximos módulos com modelo — E04, E07 — e para qualquer limpeza entre
+ambientes):** régua de resquício tem de ser derivada do que o módulo **registra**
+(modelos/tabelas/campos/views), nunca do nome do pacote — e medida **antes** da limpeza, senão a
+própria régua é apagada junto com o que ela deveria acusar.

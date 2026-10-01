@@ -26,12 +26,18 @@
 #   bash verificar-modulo-odoo.sh
 #   bash verificar-modulo-odoo.sh --apenas-manifesto
 #   bash verificar-modulo-odoo.sh --apenas-instalacao-e-teste
-#   bash verificar-modulo-odoo.sh --prova-de-dente      (duas mutacoes: versao e teste)
+#   bash verificar-modulo-odoo.sh --prova-de-dente      (tres provas: versao, teste, resquicio)
 #   bash verificar-modulo-odoo.sh --banco tre_outro_banco
 #
 # Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_BANCO, TRE_IMAGEM, TRE_IMAGEM_PG, TRE_PG_USER,
 # TRE_VERSAO_ESPERADA, TRE_SERIE_ESPERADA, TRE_LOG_DIR, TRE_DEV_PG_CT (conferencia do dev),
-# TRE_MANTER_BANCO=1 (nao limpa no fim).
+# TRE_DESINSTALADOR (desinstalador do passo 3 — o dente 3 passa um proprio), TRE_MANTER_BANCO=1
+# (nao limpa o banco no fim).
+#
+# REGUA DO RESQUICIO (passo 3, defeito TRE-W2-E03-T01-D03): os itens de resquicio sao medidos
+# contra as entidades que o modulo REGISTRA no banco (modelos/tabelas/campos/views lidos por
+# `ir_model_data` COM o modulo instalado) — nunca contra o nome do pacote, que em Odoo nao
+# aparece no nome da tabela (a tabela e o nome do MODELO: `tf_process_opportunity`).
 #
 # FORMA DE CHAMADA (defeito TRE-W2-E03-T01-D04): valem as duas — o nome simples, de dentro do
 # diretorio do script, e o caminho absoluto:
@@ -107,7 +113,7 @@ resumo() {
 }
 
 # ---------------------------------------------------------------------------
-# --prova-de-dente: o aceite tem dentes? duas mutacoes, cada uma em copia propria
+# --prova-de-dente: o aceite tem dentes? tres provas, cada uma em copia/banco propria
 #
 # LOG PROPRIO (defeito TRE-W2-E03-T01-D02, conserto): cada prova escreve num diretorio
 # seu, sob "$LOG_DIR/dente/", e o modo dente NAO escreve nem um arquivo no diretorio do
@@ -126,10 +132,11 @@ if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e03t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     DENTE_LOG_DIR="${LOG_DIR}/dente"
-    mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2"
+    mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2" "$DENTE_LOG_DIR/prova-3"
     DENTE_FALHAS=0
     GUARDA_FALHAS=0
     INVOCACAO_FALHAS=0
+    DENTE_PROVAS=0
     # Guarda fail-closed do proprio defeito D04: sem o caminho resolvido nao ha prova a fazer —
     # reprova com o motivo certo em vez de culpar os dentes do aceite.
     if [ ! -f "$EU" ]; then
@@ -156,6 +163,7 @@ if [ "$MODO" = "dente" ]; then
     else
         echo "FALHOU dente 1: a prova NAO produziu veredito nenhum (o sub-run de '$EU' falhou — sem linha RESULTADO:) — falha de INVOCACAO, nao 'item sem dente' (defeito TRE-W2-E03-T01-D04)"; INVOCACAO_FALHAS=$((INVOCACAO_FALHAS + 1))
     fi
+    DENTE_PROVAS=$((DENTE_PROVAS + 1))
 
     cabecalho "prova de dente 2: teste do Odoo que falha de proposito (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
@@ -195,13 +203,91 @@ PY
     else
         echo 'FALHOU dente 2: o item "nenhuma linha de teste FAIL:/ERROR:" NAO disparou com um teste reprovado — item sem dente'; DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
+    DENTE_PROVAS=$((DENTE_PROVAS + 1))
+
+    cabecalho "prova de dente 3: resquicio plantado no banco depois da desinstalacao (espera-se FALHOU)"
+    # Dente do rolamento contrario aos dois primeiros: la o modulo e mutado para reprovar; aqui o
+    # banco fica SUJO depois da desinstalacao (modelo/tabela/campo/view plantados, nada com
+    # `ir_model_data` do modulo) e quem tem de acusar sao os itens de resquicio do passo 3 — que
+    # antes deste defeito (D03) imprimiam OK sem poder ver tabela, campo ou view.
+    #
+    # A prova so existe onde ha entidade para acusar: se o modulo NAO declara `models/`, o dente
+    # sai como NAO APLICAVEL (explicito, com o motivo) — nao como OK silencioso nem como falha de
+    # um modulo que legitimamente nao registra entidade nenhuma.
+    if [ -d "$MODULO_DIR/models" ] && [ -n "$(ls -A "$MODULO_DIR"/models/*.py 2>/dev/null)" ]; then
+        cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
+        # desinstalador do dente = desinstalador REAL + prologo (captura os modelos proprios COM o
+        # modulo instalado) + epilogo (planta o resquicio depois de desinstalar de verdade)
+        {
+            cat <<'PY'
+# --- dente 3 do verificador: prologo (captura ANTES, com o modulo instalado) --------------
+# Depois da desinstalacao o `ir_model_data` do modulo nao existe mais, entao a lista de
+# modelos proprios tem de ser capturada aqui.
+import os
+
+MODULO = os.environ.get('TRE_MODULO', 'transformativa_sales_ai')
+_imd = env['ir.model.data'].sudo()  # noqa: F821
+RESQUICIO_MODELOS = [m.model for m in env['ir.model'].sudo().browse(  # noqa: F821
+    _imd.search([('module', '=', MODULO), ('model', '=', 'ir.model')]).mapped('res_id'))
+    if not _imd.search_count([('model', '=', 'ir.model'), ('res_id', 'in', m.ids),
+                              ('module', '!=', MODULO)])]
+print('DENTE3_MODELOS_PROPRIOS=%s' % (','.join(RESQUICIO_MODELOS) or 'nenhum'))
+PY
+            cat "$DESINSTALADOR"
+            cat <<'PY'
+
+# --- dente 3 do verificador: epilogo (planta o resquicio DEPOIS de desinstalar) ------------
+def _plantar_resquicio():
+    for modelo in RESQUICIO_MODELOS:
+        env.cr.execute(  # noqa: F821
+            'INSERT INTO ir_model (model, name, "order", state)'
+            " VALUES (%s, %s::jsonb, %s, %s)",
+            (modelo, '{"en_US": "Residuo plantado"}', 'model', 'base'))
+        env.cr.execute('SELECT id FROM ir_model WHERE model = %s', (modelo,))  # noqa: F821
+        modelo_id = env.cr.fetchone()[0]  # noqa: F821
+        env.cr.execute('CREATE TABLE IF NOT EXISTS "%s" (id serial primary key)'  # noqa: F821
+                       % modelo.replace('.', '_'))
+        env.cr.execute(  # noqa: F821
+            'INSERT INTO ir_ui_view (name, model, type, mode, priority, arch_db)'
+            " VALUES (%s, %s, 'form', 'primary', 16, '{}'::jsonb)",
+            ('resquicio plantado', modelo))
+        env.cr.execute(  # noqa: F821
+            'INSERT INTO ir_model_fields'
+            ' (name, model, model_id, field_description, ttype, state)'
+            ' VALUES (%s, %s, %s, %s::jsonb, %s, %s)',
+            ('tf_residuo_plantado', modelo, modelo_id, '{"en_US": "Residuo plantado"}',
+             'char', 'base'))
+    env.cr.commit()  # noqa: F821
+    print('RESQUICIO_PLANTADO modelos=%s' % (','.join(RESQUICIO_MODELOS) or 'nenhum'))
+
+
+_plantar_resquicio()
+PY
+        } >"$DENTE_DIR/desinstalar_com_resquicio.py"
+        D3="$(TRE_MODULO_DIR="$DENTE_DIR/m3" TRE_BANCO="${BANCO}_dente3" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-3" \
+              TRE_DESINSTALADOR="$DENTE_DIR/desinstalar_com_resquicio.py" bash "$EU" 2>&1)"
+        echo "$D3" >"$DENTE_LOG_DIR/dente-3-resquicio-plantado.out"
+        echo "$D3" | tail -4
+        PLANTIO="$(grep -h 'RESQUICIO_PLANTADO modelos=' "$DENTE_LOG_DIR/prova-3/3-desinstalacao.log" 2>/dev/null | tail -1)"
+        if [ -n "$PLANTIO" ] \
+           && echo "$D3" | grep -qE '^FALHOU [0-9]+ resquicio' \
+           && echo "$D3" | grep -qE '^FALHOU [0-9]+ tabela\(s\) dos modelos'; then
+            echo "OK    dente 3: resquicio plantado reprova os itens de resquicio e de tabela ($PLANTIO)"
+        else
+            echo "FALHOU dente 3: resquicio plantado NAO reprovou os itens de resquicio — a regua continua sem dente (plantio='$PLANTIO')"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1))
+        fi
+        DENTE_PROVAS=$((DENTE_PROVAS + 1))
+    else
+        echo "NAO APLICAVEL dente 3: o modulo em $MODULO_DIR nao declara models/ — sem modelo/tabela/campo/view o item de resquicio nao tem entidade para acusar"
+    fi
 
     echo '---'
     if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ] && [ "$INVOCACAO_FALHAS" -eq 0 ]; then
-        echo "RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
+        echo "RESULTADO: MODULO_ODOO_DENTE_OK ($DENTE_PROVAS provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
         exit 0
     fi
-    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite, $INVOCACAO_FALHAS falha(s) de invocacao) modulo=$MODULO"
+    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente de $DENTE_PROVAS, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite, $INVOCACAO_FALHAS falha(s) de invocacao) modulo=$MODULO"
     exit 1
 fi
 
@@ -249,6 +335,71 @@ odoo_shell_stdin() { # $1=log $2=banco $3=script python (lido de arquivo, nunca 
     echo $?
 }
 erros_no_log() { grep -cE '(^| )(ERROR|CRITICAL) ' "$1" 2>/dev/null || true; }
+
+# ---------------------------------------------------------------------------
+# regua do resquicio (defeito TRE-W2-E03-T01-D03)
+#
+# A regua NAO pode ser escrita com o nome do PACOTE ($MODULO): em Odoo o nome da TABELA e o nome
+# do MODELO (`tf.process.opportunity` -> `tf_process_opportunity`), e nem campo nem view carrega
+# o nome do modulo. Medido em 01/10/2026, com o modulo COM o primeiro modelo instalado:
+#   ir_model_data  where module = '<modulo>'      = 17  (tem superficie: mede)
+#   ir_ui_view     where model like '<modulo>%'   = 0   (codigo morto)
+#   ir_model_fields where name like '<modulo>%'   = 0   (codigo morto)
+#   tabelas com prefixo '<modulo>_'               = 0   (0 COM o modulo instalado)
+# Ou seja: os itens de resquicio do passo 3 podiam imprimir OK sem poder acusar tabela, campo ou
+# view — e o passo 3 e o rollback declarado do card.
+#
+# Aqui a regua e DERIVADA do que o modulo REGISTRA, medido no banco COM o modulo instalado:
+#   modelos proprios = ir_model_data (module=$MODULO, model='ir.model') MENOS os modelos
+#     compartilhados com outro modulo — mesmo criterio que o Odoo usa para decidir se apaga o
+#     modelo na desinstalacao (ex.: `res.partner`, que o `crm` registra mas sobrevive de
+#     proposito: acusa-lo seria falso positivo);
+#   tabela de cada modelo = EXISTENCIA MEDIDA em information_schema (nome derivado do modelo,
+#     nao suposto);
+#   views e campos = ir_ui_view / ir_model_fields com model nos modelos proprios.
+# A superficie medida vai impressa em INFO (item sem superficie nao prova nada) e a prova de
+# dente 3 planta resquicio no banco para mostrar que a regua corrigida acusa.
+# Limite declarado: entidades sem `ir_model_data` do modulo e que nao sejam modelo/tabela/campo/
+# view acima (ACLs, regras, constraints) nao entram nesta regua.
+# ---------------------------------------------------------------------------
+so_numero() { printf '%s' "$1" | grep -qE '^[0-9]+$'; }
+
+modelos_proprios_do_modulo() { # $1=banco (modulo INSTALADO) -> um modelo por linha
+    psql_bd "$1" "select m.model from ir_model_data d join ir_model m on m.id = d.res_id
+        where d.module = '$MODULO' and d.model = 'ir.model'
+          and not exists (select 1 from ir_model_data o where o.model = 'ir.model'
+                            and o.res_id = d.res_id and o.module <> '$MODULO')
+        order by 1"
+}
+
+tabelas_dos_modelos() { # $1=banco $2=modelos (linhas) -> as tabelas que EXISTEM, uma por linha
+    local modelo
+    while IFS= read -r modelo; do
+        [ -n "$modelo" ] || continue
+        psql_bd "$1" "select table_name from information_schema.tables
+            where table_schema = 'public' and table_name = replace('$modelo', '.', '_')"
+    done <<<"$2"
+}
+
+capturar_superficie_do_modulo() { # $1=banco COM o modulo instalado — preenche SUPERFICIE_*/LISTA_MODELOS
+    local lista
+    SUPERFICIE_MODELOS="$(modelos_proprios_do_modulo "$1")"
+    SUPERFICIE_TABELAS="$(tabelas_dos_modelos "$1" "$SUPERFICIE_MODELOS")"
+    SUPERFICIE_DATA="$(psql_bd "$1" "select count(*) from ir_model_data where module = '$MODULO'")"
+    SUPERFICIE_N_MODELOS="$(printf '%s\n' "$SUPERFICIE_MODELOS" | grep -c . || true)"
+    SUPERFICIE_N_TABELAS="$(printf '%s\n' "$SUPERFICIE_TABELAS" | grep -c . || true)"
+    LISTA_MODELOS=""
+    SUPERFICIE_MODELOS_REG=0
+    SUPERFICIE_CAMPOS=0
+    SUPERFICIE_VIEWS=0
+    if [ "$SUPERFICIE_N_MODELOS" -gt 0 ]; then
+        lista="$(printf '%s\n' "$SUPERFICIE_MODELOS" | sed "s/.*/'&'/" | paste -sd, -)"
+        LISTA_MODELOS="($lista)"
+        SUPERFICIE_MODELOS_REG="$(psql_bd "$1" "select count(*) from ir_model where model in $LISTA_MODELOS")"
+        SUPERFICIE_CAMPOS="$(psql_bd "$1" "select count(*) from ir_model_fields where model in $LISTA_MODELOS")"
+        SUPERFICIE_VIEWS="$(psql_bd "$1" "select count(*) from ir_ui_view where model in $LISTA_MODELOS")"
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # guardas do ambiente (fail-closed: sem ambiente medido, nao existe aceite)
@@ -467,6 +618,14 @@ if [ "$MODO" = "instalacao_teste" ]; then resumo; fi
 # passo 3 — desinstalacao (AC1)
 # ---------------------------------------------------------------------------
 cabecalho "passo 3/4 — desinstalacao"
+# A regua do resquicio e medida ANTES de desinstalar: depois da desinstalacao o proprio
+# `ir_model_data` do modulo (de onde saem os modelos/tabelas/campos/views) ja nao existe e a
+# regua ficaria vazia — era exatamente o defeito D03 (item que nao podia acusar nada).
+ESTADO_ANTES_DA_REGUA="$(psql_bd "$BANCO" "select state from ir_module_module where name = '$MODULO'")"
+capturar_superficie_do_modulo "$BANCO"
+info "regua do resquicio derivada do modulo em state='$ESTADO_ANTES_DA_REGUA': ${SUPERFICIE_DATA} registro(s) em ir_model_data, ${SUPERFICIE_N_MODELOS} modelo(s) proprio(s), ${SUPERFICIE_N_TABELAS} tabela(s) dos modelos, ${SUPERFICIE_CAMPOS} campo(s), ${SUPERFICIE_VIEWS} view(s)"
+[ -n "$SUPERFICIE_MODELOS" ] && info "modelos proprios medidos: $(printf '%s' "$SUPERFICIE_MODELOS" | tr '\n' ' ')"
+[ -n "$SUPERFICIE_TABELAS" ] && info "tabelas dos modelos medidas: $(printf '%s' "$SUPERFICIE_TABELAS" | tr '\n' ' ')"
 LOG_ATUAL="$LOG_DIR/3-desinstalacao.log"
 RC="$(odoo_shell_stdin "$LOG_ATUAL" "$BANCO" "$DESINSTALADOR")"
 info "odoo shell exit $RC (log: $LOG_ATUAL)"
@@ -477,12 +636,38 @@ grep -qE '(Traceback|DESINSTALACAO_FALHOU)' "$LOG_ATUAL" \
     || ok "log do shell sem traceback/recusa"
 ESTADO="$(psql_bd "$BANCO" "select state from ir_module_module where name = '$MODULO'")"
 [ "$ESTADO" = "uninstalled" ] && ok "ir_module_module.state = uninstalled" || falhou "estado no banco: '$ESTADO' (esperado uninstalled)"
-RESQUICOS="$(psql_bd "$BANCO" "select (select count(*) from ir_model_data where module = '$MODULO') + (select count(*) from ir_ui_view where model like '$MODULO%') + (select count(*) from ir_model_fields where name like '$MODULO%')")"
-[ "$RESQUICOS" = "0" ] && ok "nenhum resquicio do modulo no banco (ir_model_data/ir_ui_view/ir_model_fields)" \
-    || falhou "$RESQUICOS resquicio(s) do modulo no banco depois da desinstalacao"
-TABELAS_RESQUICOS="$(psql_bd "$BANCO" "select count(*) from information_schema.tables where table_name like '${MODULO}\_%'")"
-[ "$TABELAS_RESQUICOS" = "0" ] && ok "nenhuma tabela com prefixo do modulo no banco" \
-    || falhou "$TABELAS_RESQUICOS tabela(s) com prefixo do modulo"
+# resquicio medido contra a regua derivada acima (antes da desinstalacao), nao contra o nome do pacote
+RESQUICOS_DATA="$(psql_bd "$BANCO" "select count(*) from ir_model_data where module = '$MODULO'")"
+RESQUICOS_MODELOS_REG=0
+RESQUICOS_CAMPOS=0
+RESQUICOS_VIEWS=0
+if [ -n "$LISTA_MODELOS" ]; then
+    RESQUICOS_MODELOS_REG="$(psql_bd "$BANCO" "select count(*) from ir_model where model in $LISTA_MODELOS")"
+    RESQUICOS_CAMPOS="$(psql_bd "$BANCO" "select count(*) from ir_model_fields where model in $LISTA_MODELOS")"
+    RESQUICOS_VIEWS="$(psql_bd "$BANCO" "select count(*) from ir_ui_view where model in $LISTA_MODELOS")"
+fi
+if so_numero "$RESQUICOS_DATA" && so_numero "$RESQUICOS_MODELOS_REG" \
+   && so_numero "$RESQUICOS_CAMPOS" && so_numero "$RESQUICOS_VIEWS"; then
+    RESQUICOS_TOTAL=$((RESQUICOS_DATA + RESQUICOS_MODELOS_REG + RESQUICOS_CAMPOS + RESQUICOS_VIEWS))
+    if [ "$RESQUICOS_TOTAL" = "0" ]; then
+        ok "nenhum resquicio do modulo no banco (regua derivada das entidades do modulo — superficie instalada: ${SUPERFICIE_DATA} dado(s), ${SUPERFICIE_N_MODELOS} modelo(s), ${SUPERFICIE_CAMPOS} campo(s), ${SUPERFICIE_VIEWS} view(s))"
+    else
+        falhou "$RESQUICOS_TOTAL resquicio(s) do modulo no banco depois da desinstalacao (ir_model_data=$RESQUICOS_DATA modelo(s)=$RESQUICOS_MODELOS_REG campo(s)=$RESQUICOS_CAMPOS view(s)=$RESQUICOS_VIEWS)"
+    fi
+else
+    falhou "medicao de resquicio sem numero (dados='$RESQUICOS_DATA' modelos='$RESQUICOS_MODELOS_REG' campos='$RESQUICOS_CAMPOS' views='$RESQUICOS_VIEWS') — sem medicao nao ha aceite"
+fi
+TABELAS_RESQUICOS=0
+TABELAS_RESQUICOS_LISTA=""
+while IFS= read -r TABELA; do
+    [ -n "$TABELA" ] || continue
+    if [ "$(psql_bd "$BANCO" "select count(*) from information_schema.tables where table_schema = 'public' and table_name = '$TABELA'")" != "0" ]; then
+        TABELAS_RESQUICOS=$((TABELAS_RESQUICOS + 1))
+        TABELAS_RESQUICOS_LISTA="$TABELAS_RESQUICOS_LISTA $TABELA"
+    fi
+done <<<"$SUPERFICIE_TABELAS"
+[ "$TABELAS_RESQUICOS" = "0" ] && ok "nenhuma tabela dos modelos do modulo sobreviveu a desinstalacao (${SUPERFICIE_N_TABELAS} tabela(s) dos ${SUPERFICIE_N_MODELOS} modelo(s) do modulo medida(s) com o modulo instalado)" \
+    || falhou "$TABELAS_RESQUICOS tabela(s) dos modelos do modulo sobreviveram a desinstalacao:$TABELAS_RESQUICOS_LISTA"
 
 # ---------------------------------------------------------------------------
 # passo 4 — reinstalacao (AC1, idempotencia)
