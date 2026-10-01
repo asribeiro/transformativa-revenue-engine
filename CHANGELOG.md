@@ -695,3 +695,56 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `docs/runbooks/odoo-modulo-sales-ai.md` (dupla descartável própria com as imagens do par de dev) e a
   publicação na cópia operacional fica pendente. O aceite do card pede banco **limpo**, e o `odoo_dev`
   não é limpo (carrega o funil do `TRE-W2-E02-T01`).
+
+## [W3 — Integração] — 01/10/2026
+
+### Added
+
+- **API controlada do Odoo (`TRE-W3-E01-T01`, `t_e0489efc`)** — `POST /tf/api/v1/<operacao>` no
+  módulo `transformativa_sales_ai`: a porta única de leitura/escrita de objetos de negócio do Odoo
+  para a integração (doc 02 §3 — nada de escrita direta nas tabelas internas), com `auth='bearer'`
+  (chave de API do Odoo 19, resolvida pelo próprio Odoo antes do controlador) e CSRF desligado.
+  O que a torna **controlada** não é a autenticação: é a **política versionada**
+  (`api/politica_api.json`, dentro do módulo — logo versionada no repo **e** no artefato publicado),
+  que declara operação a operação o modelo alvo, os campos permitidos, os filtros/limites e a
+  exigência de `idempotency_key`. Não existe rota genérica de "execute qualquer modelo/método/campo":
+  fora da declaração a resposta é recusa nomeada (fail-closed). A **decisão** vive no motor
+  (`api/motor.py`, que **não importa `odoo`** de propósito, para ser exercitável sem subir Odoo) e a
+  **execução**, no controlador, pelo ORM e com as ACLs do dono da chave (nunca `sudo` no dado);
+  0 SQL nos arquivos da API (AC2). Operações declaradas nesta versão, ambas de leitura:
+  `sistema_capacidades` (fonte: sonda de saúde do consumidor, devolve a versão da política e as
+  operações declaradas) e `crm_registros_ler` (`res.partner` com os campos do E04-T01 e `crm.lead`
+  com o rastreio do E04-T02, só os campos declarados e com teto). Guarda de ambiente do ADR-005:
+  sem `tf.api.ambiente` declarado **e** permitido pela política a API recusa tudo (503); homologação
+  e produção exigem aprovação humana registrada (`tf.api.aprovacao`, formato
+  `card=…,aprovador=…,validade=AAAA-MM-DD`) — e o caminho "permite + aprovado" é medido em política
+  de teste, para provar que a guarda é **portão, não parede**. Rastreabilidade: **uma** linha
+  `TF_API_AUDIT {json}` por chamada, inclusive nas recusas, sem payload e sem token; resposta sempre
+  com `correlation_id`.
+  Aceite na VPS (dupla descartável própria, banco `tre_e01_t01_api`): **`API_CONTROLADA_OK (75 itens,
+  0 falhas)`**, exit 0 — inclui suíte pura do motor `MOTOR_API_OK (53 itens)`, instalação em banco
+  limpo, `0 failed, 0 error(s) of 82 tests` (32 testes novos + 50 dos cards W2, sem regressão),
+  **servidor HTTP real medido por `curl` de fora do processo** (401 sem token, 200 com envelope,
+  404/405/422/400 no caminho fechado; chave gerada na hora, arquivo 600, fora de `ps`, do stdout e do
+  log), auditoria lida do log do servidor (`8 linhas para 8 chamadas autenticadas`; sem token, sem
+  `Bearer`, sem payload) e ambiente do dev/homolog/prod medido antes e depois. Dentes:
+  **`API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)`** — política sem a operação reprova (404 no lugar
+  de 200); motor sem a checagem de campo declarado **vaza o campo `email`** na resposta; motor sem a
+  checagem de aprovação passa a atender produção sem aprovação; e o artefato real sai intacto
+  (guarda externa por sha256 de 29 arquivos). Runbook e detalhe item a item:
+  `docs/runbooks/odoo-api-controlada.md`.
+
+### Notas de estado
+
+- **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por
+  `idempotency_key` é do `TRE-W3-E02-T02` — aqui a chave é exigida, validada e registrada, e
+  **nenhuma operação de escrita entra na política real** antes dele (o caminho de escrita é medido
+  com política de teste, `tests/politicas/politica_de_teste.json`); cache de política, rate limit e
+  observabilidade durável são do `TRE-W3-E05-T01`. As operações de negócio (company/contact/
+  opportunity upsert e activity create) são dos cards `TRE-W3-E01-T02..T05`, que só precisam
+  **declarar** a operação na política (o mecanismo já está entregue e medido).
+- **Módulo segue não publicado em `/opt/tre/repo`** (pendência herdada do E03-T01): a API vive no
+  módulo, medido em dupla descartável própria; `homolog` e `prod` seguem sem arquivo e sem container.
+- **Revisão independente e homologação abertas**: quem entrega não homologa — o veredito deste card
+  é do estágio 6 (perfil `tester`) e a ratificação da versão 19.0/homologação (estágio 7) é do
+  Anderson.

@@ -412,3 +412,82 @@ sustenta 16 containers. Nada foi executado.
 - **Evidencia bruta (a revisao tem acesso proprio a VPS):** `/opt/tre/dev/e06t01-r2b/evidencias/` — `aceite.out` (sha256 `3cfa174f3e11…`, 83 itens + `VIEWS_OK`), `dente.out` (`6dc9291598db…`), `logs/{1-instalacao,2-teste,4-prova-independente,5-desinstalacao}.log` (`4ab0180c…`, `df45897e…`, `c239153d…`, `baf5f67f…`), `logs/dente/{dente-0-baseline.out,dente-1-sem-recorte.out,dente-2-view-fora-do-manifesto.out,baseline/,prova-1/,prova-2/}`, `logs-aceite.sha256` (`16ffa5ad…`), `rodada2.log`, `guarda-e-controles.log`, `controles/*.out`; copia local em `/opt/data/profiles/desenvolvedor/cache/scratch/e06t01-r2/`.
 - **Registro de processo (por que nao ha card de defeito novo):** as duas classes ja' tem card no board — D-02 em `t_5c4fc7ac` (`done`) e o fail-open do modo dente em `t_e1f62fae` (`done`) — e o rework foi pedido na revisao da rodada 1 do proprio card (`kanban_request_changes`), como no precedente do E04-T02 (rodada 2 na mesma branch, `e8bfe71`). O aprendizado de fim de onda (modo de prova negativa exige baseline verde + assinatura propria + diretorio de log proprio com guarda) esta na runbook §8.
 - Segredos: nenhum valor nesta entrada (senha da dupla descartavel gerada na VPS, arquivo 600 dono uid 100, removida com o diretorio temporario).
+
+## 2026-10-01 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T01 (card `t_e0489efc`): API controlada do Odoo, aceite + dentes
+
+- **Card e escopo:** `TRE-W3-E01-T01` — a **API controlada** do Odoo (`POST /tf/api/v1/<operacao>`),
+  primeira superfície HTTP do projeto dentro do Odoo e o caminho por onde o n8n vai escrever no CRM.
+  Entregue o **mecanismo e o portão** (política versionada, motor de decisão, controlador, suite de
+  aceite e verificador com dentes); as operações de negócio são dos cards `TRE-W3-E01-T02..T05`.
+- **Os 5 campos que o doc 11 §2 exigia e não detalhava** (DESENHO/ACCEPTANCE/TEST/ROLLBACK/RISK)
+  foram definidos **antes de escrever código**, registrados no comentário de abertura do card
+  (`comment_id 239`) e ficaram também em `docs/runbooks/odoo-api-controlada.md` §1–§5, conforme a
+  convenção da onda.
+- **Base do card:** branch `feature/TRE-W3-E01-T01` a partir de `origin/feature/TRE-W2-E06-T01`
+  (`b1bbddb`) — o head entregue mais completo do módulo (a API escreve em `res.partner`/`crm.lead` e
+  depende das ACLs do E07). `develop` não recebeu o módulo (segue só com `.gitkeep`).
+- **Artefato medido:** commit **`1a87f0e65835ce1156d8eb37d4ccb6e162e12350`**, publicado por
+  `git archive` sobre `ssh` (sem `scp`/`ssh -n`) em `/opt/tre/evid-t_e0489efc-r1/repo-v2`; sha256
+  dos arquivos sob teste registrado na saída do aceite (política `c0b3c44c…`, motor `6a3e52d1…`,
+  controlador `9a52f642…`, suíte `dd8dab0d…`, verificador `5b0b677f…`, suite pura `fcdcea9b…`).
+- **Aceite (na VPS, a partir de ARQUIVO):** `TRE_LOG_DIR=… bash scripts/odoo/verificar-api-controlada.sh`
+  → **`RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas)`, exit 0**. Medido passo a passo: **passo 0**
+  suite pura do motor `MOTOR_API_OK (53 itens, 0 falhas)`; **passo 1** banco `tre_e01_t01_api` nascendo
+  limpo, `odoo --init exit 0`, log sem `ERROR`/`CRITICAL`, `state=installed`; **passo 2** `0 failed,
+  0 error(s) of 82 tests` (as **32** da suíte nova aparecem nomeadamente no log do runner; piso 82 =
+  50 dos cards W2 + 32 novos — sem regressão); **passo 3** servidor HTTP real com `curl` de fora do
+  processo: 401 sem token, 401 com token inválido, 200 com envelope (`ok`, `politica_versao 1.0.0`,
+  `correlation_id` ecoado), **404** operação não declarada, **405** verbo GET, 200 leitura declarada
+  (`total=3`), **422** campo/operador/limite, **400** chave desconhecida, **404** escrita não
+  declarada; **passo 3b** `8 linhas TF_API_AUDIT para 8 chamadas autenticadas` (as outras 3 param no
+  Odoo antes do controlador), **sem token, sem `Bearer`, sem payload** na trilha e a chave ausente do
+  log do servidor; **passo 4** contrato: 1 rota, `auth='bearer'`, só POST, `csrf=False`, **0 SQL** nos
+  arquivos da API, motor sem `import odoo`; **limpeza**: banco/rede/dupla/`/tmp` removidos, dev com os
+  **mesmos 4 bancos** antes e depois, `/opt/tre/{homolog,prod}` com **0** arquivo.
+- **Provas de dente (na VPS):** `bash scripts/odoo/verificar-api-controlada.sh --prova-de-dente` →
+  **`RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)`, exit 0**: dente 1 (cópia da política
+  sem `sistema_capacidades`) → `FALHOU (61 itens, 5 falhas)` com a assinatura esperada
+  (`operacao 'sistema_capacidades' nao esta declarada na politica 1.0.0 (declaradas: crm_registros_ler)`
+  e 404 no lugar de 200); dente 2 (cópia do motor sem a checagem de campo declarado) → `FALHOU (61
+  itens, 3 falhas)` **com vazamento medido** do campo não declarado na resposta
+  (`{"registros": [{"id": 6, "email": "tf_api_integracao@tre.local"}, …]`); dente 3 (cópia do motor
+  sem a checagem de aprovação) → `MOTOR_API_FALHOU (53 itens, 1 falha)` no item de produção sem
+  aprovação; e a **guarda externa** por sha256 dos **29 arquivos** do módulo provou que o artefato
+  real saiu intacto (`800763cd…`). Cada dente confere antes que a mutação foi de fato aplicada.
+- **Defeitos encontrados e consertados nesta execução (6, todos em código meu — 3 no módulo/teste e
+  3 no próprio verificador; cada conserto remedido com a bateria inteira):** (1) `res.users.groups_id`
+  não existe no Odoo 19 (é `group_ids`) — quebrou o preparo da fase HTTP; (2) o teste de leitura de
+  `crm.lead` supunha visão de admin e o usuário de integração é **restrito** (só o lead dele): virou
+  item explícito de ACL, medindo também que o lead alheio **não** aparece; (3) `valores: {}` é
+  **400** `payload_invalido`, não 422 de campo obrigatório ausente; (4) `res.users.apikeys._generate`
+  **exige data de validade** no Odoo 19 (teto = `api_key_duration` do grupo, 1 dia por padrão) — 12h
+  em teste e preparo; (5) o diretório montado para o preparo tem de ser gravável pelo **uid 100** do
+  container `odoo:19.0`; (6) no verificador: resposta da última chamada referenciada por número fixo
+  (off-by-one que faria 3 itens medirem o arquivo errado), `grep -c` multi-arquivo devolvendo
+  `arquivo:0` (o item do marcador media sempre FALHOU) e a contagem de auditoria incluindo a chamada
+  405 (que o Odoo barra antes do controlador, logo sem trilha). As rodadas anteriores da mesma
+  execução (`aceite.out`, `aceite-final.out`, `aceite-v1.out`) ficaram na VPS com os FALHOU originais
+  — a rodada que mede o artefato entregue é a `v2`.
+- **Verificadores do projeto (no worktree do commit):** `bash scripts/verificar_estrutura.sh` →
+  `PASS (0 falhas)` RC=0; `bash scripts/secret_scan.sh` → `PASS` RC=0;
+  `bash scripts/verificar_papeis.sh` → `PASS (0 falhas)` RC=0. O `verificar_estrutura.sh` foi
+  estendido para exigir versionados os artefatos deste card (api/, controllers/, fixtures de política,
+  os 3 scripts de aceite e o runbook) e **executáveis** os dois scripts chamados direto.
+- **O que NÃO foi tocado (medido pelo próprio verificador):** `odoo-dev`, `pg-odoo-dev`,
+  `pg-sales-dev` e `proxy-dev` de pé; bancos do dev os **mesmos 4 antes e depois** (o aceite **não**
+  instala o módulo no `odoo_dev`); `/opt/tre/{homolog,prod}` com **0** arquivo antes e depois;
+  **0** container/rede/`/tmp` residual `e01t01-*`; `/opt/tre/repo` sem escrita (a cópia medida é
+  `/opt/tre/evid-t_e0489efc-r1/repo-v2`, um `git archive` do commit).
+- **Logs brutos (agente, na VPS):** `/opt/tre/evid-t_e0489efc-r1/` — `aceite-v2.out` (75 itens +
+  `API_CONTROLADA_OK`), `dente-v2.out` (`DENTE_OK (3 provas, 0 falhas)`), `logs-v2/`
+  (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`, `3b-servidor.log`) e
+  `logs-dente-v2/` (`dente-{1,2,3}-*.out` + `dente1/`, `dente2/`), além das rodadas anteriores.
+- **Segredos:** nenhum valor nesta entrada e nenhum no repositório (`secret_scan.sh` PASS). A chave
+  de API da fase HTTP nasceu **na VPS**, em arquivo 600 dentro do diretório descartável do preparo
+  (nunca em stdout, log, argumento ou artefato: o `curl` lê os cabeçalhos de um arquivo de
+  configuração 600, então o token não aparece nem em `ps`), e morreu com o diretório. A senha da
+  dupla descartável é gerada por `openssl rand` na hora, em arquivo 600.
+- **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
+  (perfil `tester`) e a ratificação da versão 19.0/homologação (estágio 7) é do Anderson. A
+  publicação do módulo na cópia operacional `/opt/tre/repo` (`deploy/publicar.sh`) segue como
+  pendência herdada do E03-T01.

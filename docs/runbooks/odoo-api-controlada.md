@@ -252,3 +252,53 @@ teste provam.
   hoje está publicado só o `.gitkeep` de `odoo/addons/`.
 - **Ratificação da versão 19.0 e homologação** (estágio 7): com o Anderson; a revisão independente
   deste card é do estágio 6 (perfil `tester`).
+
+---
+
+## §11 Aceite medido (rodada 1) — VPS do dev, 01/10/2026
+
+**Artefato medido:** commit `1a87f0e65835ce1156d8eb37d4ccb6e162e12350` (branch
+`feature/TRE-W3-E01-T01`, saída de `feature/TRE-W2-E06-T01`), publicado por `git archive` sobre
+`ssh` em `/opt/tre/evid-t_e0489efc-r1/repo-v2`. Identidade por sha256 dos arquivos sob teste:
+`api/politica_api.json c0b3c44c…`, `api/motor.py 6a3e52d1…`,
+`controllers/api_controlada.py 9a52f642…`, `tests/test_api_controlada.py dd8dab0d…`,
+`scripts/odoo/verificar-api-controlada.sh 5b0b677f…`,
+`scripts/odoo/testar_motor_api.py fcdcea9b…`.
+
+| Medição | Resultado |
+|---|---|
+| Suite pura do motor (sem Odoo) | `MOTOR_API_OK (53 itens, 0 falhas)` |
+| Instalação em banco limpo | `odoo --init exit 0`, log sem `ERROR`/`CRITICAL`, `state=installed` |
+| Suite do Odoo | `0 failed, 0 error(s) of 82 tests` (piso 82 = 50 dos cards W2 + 32 da suíte nova); os **32** testes da API aparecem no log |
+| HTTP externo (curl, fora do processo) | 401 sem token, 401 com token inválido, 200 com envelope (`ok`, `politica_versao 1.0.0`, `correlation_id` ecoado), 404 operação não declarada, 405 verbo errado, 200 leitura declarada (`total=3`), 422 campo/operador/limite, 400 chave desconhecida, 404 escrita não declarada |
+| Auditoria (AC7) | `8 linhas TF_API_AUDIT para 8 chamadas autenticadas` (as outras 3 param no Odoo antes do controlador: 2 sem token válido e 1 verbo errado); **sem** token, **sem** `Bearer`, **sem** payload na trilha |
+| Contrato (greps) | 1 rota, `auth='bearer'`, só POST, `csrf=False`, 0 SQL nos arquivos da API, motor sem `import odoo` |
+| Ambiente | dev com os **mesmos 4 bancos** antes e depois; `/opt/tre/{homolog,prod}` com **0** arquivo; banco/rede/dupla/`/tmp` descartáveis removidos |
+| **Aceite** | **`RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas)`, exit 0** |
+| **Dentes** | **`RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)`, exit 0** — dente 1 `FALHOU (61 itens, 5 falhas)` (a operação sumiu: 404 em vez de 200); dente 2 `FALHOU (61 itens, 3 falhas)` (o motor mutado **vazou `email`**, campo não declarado, na resposta); dente 3 `MOTOR_API_FALHOU (53 itens, 1 falha)` (produção sem aprovação passou a atender); guarda externa **`o artefato real nao foi tocado pelos dentes (29 arquivos, sha256 800763cd…)`** |
+
+Evidência bruta na VPS: `/opt/tre/evid-t_e0489efc-r1/{aceite-v2.out,dente-v2.out}` e
+`logs-v2/`, `logs-dente-v2/`. Logs de rodadas anteriores da mesma execução (achado de defeitos,
+antes das correções) ficam em `aceite.out`/`aceite-final.out`/`aceite-v1.out` — a rodada que mediu o
+artefato entregue é a `v2`.
+
+**Defeitos achados executando (6, todos em código meu; cada conserto remedido com a bateria
+inteira):** (1) `res.users.groups_id` não existe no Odoo 19 — é `group_ids`; (2) o teste da leitura
+de `crm.lead` supunha visão de admin e o usuário de integração (restrito) não via o lead alheio —
+virou item explícito de ACL; (3) `valores: {}` é 400 (`payload_invalido`), não 422 de campo
+obrigatório; (4) `res.users.apikeys._generate` exige data de validade; (5) o diretório do preparo
+precisa ser gravável pelo uid 100 do container; (6) três itens do próprio verificador mediam errado
+(resposta referenciada por número fixo — off-by-one; `grep -c` multi-arquivo; contagem de auditoria
+incluindo a chamada 405). Detalhe de cada um em §8.
+
+**Verificadores do projeto (no worktree do commit):** `verificar_estrutura.sh` → `PASS (0 falhas)`;
+`secret_scan.sh` → `PASS`; `verificar_papeis.sh` → `PASS (0 falhas)`. O `verificar_estrutura.sh` foi
+estendido para exigir versionados os artefatos deste card (api/, controllers/, fixtures de política,
+os três scripts de aceite e este runbook) e executáveis os dois scripts chamados direto.
+
+**O que este aceite NÃO cobre** (dito para não virar leitura otimista): não há rate limit, cache de
+política nem persistência durável de auditoria (E05-T01); a deduplicação por `idempotency_key` é do
+E02-T02 (aqui a escrita só é exercitada com política de teste); a âncora do artefato sob teste é o
+sha256 registrado acima, não uma comparação com o `.git` (a cópia na VPS é um `git archive`, sem
+repositório); e quem entrega não homologa — a revisão independente (estágio 6, perfil `tester`) e a
+ratificação da versão 19.0/homologação (estágio 7, Anderson) seguem abertas.
