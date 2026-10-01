@@ -188,6 +188,13 @@ PY
         printf '%s\n' "$ACEITE_ANTES" | sed 's/^/      antes:  /'
         printf '%s\n' "$ACEITE_DEPOIS" | sed 's/^/      depois: /'
     fi
+    # O item do log precisa de dente PROPRIO (aprendizado do defeito D01): o aceite reprovar nao
+    # basta — sem esta prova o item poderia voltar ao padrao morto e este dente seguiria OK.
+    if printf '%s\n' "$D2" | grep -q 'linha(s) de teste reprovado(a) no log'; then
+        echo 'OK    dente 2: o item do log de teste reprovado disparou (item com dente proprio)'
+    else
+        echo 'FALHOU dente 2: o item "nenhuma linha de teste FAIL:/ERROR:" NAO disparou com um teste reprovado — item sem dente'; DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    fi
 
     echo '---'
     if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ] && [ "$INVOCACAO_FALHAS" -eq 0 ]; then
@@ -438,9 +445,17 @@ fi
 grep -q 'At least one test failed when loading the modules\.' "$LOG_ATUAL" \
     && falhou "log traz 'At least one test failed when loading the modules.'" \
     || ok "log sem 'At least one test failed when loading the modules.'"
-FALHAS_TESTE="$(grep -cE '^(FAIL|ERROR): ' "$LOG_ATUAL" || true)"
+# DEFEITO CONSERTADO (card TRE-W2-E03-T01-D01, detectado pelo E05 com um teste reprovado de
+# proposito): no Odoo 19 a linha de reprovacao vem prefixada por `<hora> <pid> NIVEL <banco>
+# <logger>: `, ou seja `... odoo.addons.<modulo>.tests.<arquivo>: FAIL: TestX.test_y` — ela NUNCA
+# comeca com 'FAIL:'/'ERROR:'. O padrao antigo (`^(FAIL|ERROR): `) era codigo morto: imprimia OK
+# com um teste reprovado no log (mesma classe do defeito D04 do verificador de estrutura e do item
+# ja' consertado em scripts/odoo/verificar-res-partner.sh). Medido nos 21 logs de teste da VPS do
+# dev: o padrao antigo da' 0 em TODOS, inclusive nos que tem teste reprovado; o padrao novo da' 0
+# em todos os logs verdes (sem falso negativo) e 1 em cada log com teste reprovado.
+FALHAS_TESTE="$(grep -cE '(^| )(FAIL|ERROR): [A-Za-z_]' "$LOG_ATUAL" || true)"
 [ "$FALHAS_TESTE" = "0" ] && ok "nenhuma linha de teste 'FAIL:'/'ERROR:' no log" \
-    || falhou "$FALHAS_TESTE linha(s) de teste reprovado(a) no log"
+    || falhou "$FALHAS_TESTE linha(s) de teste reprovado(a) no log: $(grep -E '(^| )(FAIL|ERROR): [A-Za-z_]' "$LOG_ATUAL" | head -2 | tr '\n' ' ')"
 grep -q 'Modules loaded\.' "$LOG_ATUAL" && ok "log de teste com 'Modules loaded.'" \
     || falhou "log de teste sem 'Modules loaded.' (a execucao dos testes nao assentou)"
 ESTADO="$(psql_bd "$BANCO" "select state from ir_module_module where name = '$MODULO'")"
