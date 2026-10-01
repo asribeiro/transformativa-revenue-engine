@@ -412,6 +412,77 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
    `TRE_PG_SERVICO` global, que é justamente o que não escala para três ambientes. Timers seguem habilitados:
    `tre-backup.timer` próxima execução **01/10/2026 02:34 -03**, `tre-backup-verify.timer` **04/10/2026 04:00 -03**.
 
+## 7g. Evidência medida — 01/10/2026, o Odoo do dev dentro do artefato do ambiente (`TRE-W2-E01-T01-F01`, card `t_a5afde31`)
+
+Commit publicado **`e2b960b5bb79e5773a25fa3c594461a699ccf9d5`** (árvore `f10552201efe…`, digest
+`4f0c65390a54aa9df22a0871ae920935e5121795303e63145c2f9a9eb878a845`, 323 arquivos) em
+`root@169.58.24.102:/opt/tre/repo` às **13:54:33Z**, `--producao` declarado, **trava rearmada**
+(`lsattr -d` → `----i---------e-------`) e `--conferir` posterior `PUBLICACAO_OK … trava=travada`.
+Antes, a cópia estava idêntica ao commit `66c7152` (card `t_daca4bda`): a publicação é **avanço na
+própria linha** (branch nascida da `fix/t_daca4bda-enforcement` com `origin/develop` mergeado), e
+nenhuma publicação de outro card ficou de fora — `/opt/tre/.publicacoes.log` mostra a última
+publicação em `/opt/tre/repo` em `2026-09-30T23:42:48Z` (`66c7152`) e, depois dela, apenas
+`watchdog-reparo` do **mesmo** commit.
+
+1. **O que a rotina passou a gravar** (medido na cópia publicada, `backup-tre.sh dev`, artefato
+   `/opt/tre/backup/tre_dev_20261001T135513Z`, `BACKUP_OK` exit 0): `odoo_dev.dump` **2 487 524 B**
+   (sha256 `529cd429…`), `odoo-contagens.txt` com **281 tabelas / 26 213 linhas**,
+   `odoo-filestore.tar.gz` **115 082 B / 21 arquivos** (sha256 `521d4ece…`, volume `odoo-data-dev`
+   empacotado por container efêmero) e `odoo-manifest.txt` com `odoo_imagem_restore: odoo:19.0`,
+   `odoo_imagem_digest: sha256:77bac5cd…` e `odoo_segredos: fora do artefato (o dump nao leva
+   /etc/tre/odoo-dev/*)`. O dump do trio (`sales_intelligence.dump`, 35 428 B) e o `manifest.txt` do
+   ambiente seguem no **mesmo** diretório.
+2. **Prova de restore em alvo descartável** — `verificar-odoo.sh` →
+   `RESTORE_ODOO_OK (27 itens, 0 falhas)`: sha256 dos dois arquivos e **digest da imagem** conferidos
+   contra o manifesto; `pg_restore` num PostgreSQL descartável **sem porta publicada**; **281 tabelas
+   com as contagens batendo linha a linha**; módulo `base` instalado; filestore desempacotado com
+   `filestore/odoo_dev` e 21 arquivos; Odoo descartável respondendo **HTTP 200** em
+   `127.0.0.1:32774/web/login` (`Odoo Server 19.0-20260926`) e JSON-RPC respondendo; ao fim,
+   `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` **continuavam `running`**.
+3. **Verificação encadeada — o que o timer de domingo roda**, pela cópia publicada
+   (`verificar-ultimo-backup.sh todos`): `RESTORE_OK (11 itens, 0 falhas)` (trio) +
+   `RESTORE_ODOO_OK (27 itens, 0 falhas)` (Odoo), com `homolog`/`prod` **pulados** por não
+   provisionados → `VERIFICACAO_OK (3 itens)`, exit 0.
+4. **Destino externo (storage de objeto) com ida e volta lida** —
+   `rclone lsl contabo:tre-backup/prova-t_a5afde31/<artefato>` lista os 14 arquivos, incluindo
+   `odoo_dev.dump`, `odoo-filestore.tar.gz`, `odoo-contagens.txt` e `odoo-manifest.txt`;
+   `rclone cat …/odoo_dev.dump | sha256sum` = `529cd429…` e `rclone cat …/odoo-filestore.tar.gz |
+   sha256sum` = `521d4ece…`, **iguais** aos sha256 do manifesto local. O prefixo
+   `prova-t_a5afde31/` é prova, não backup de produção (mesma convenção do `prova-t03/`).
+5. **Negativos medidos (exit 1 em todos)** — (a) dump do Odoo **truncado** →
+   `RESTORE_ODOO_FALHOU (27 itens, 10 falhas)`, começando em `FALHOU sha256 do dump NAO confere` e
+   seguindo com `pg_restore` reprovando o arquivo, `tabelas em public: restaurado=0 backup=281`,
+   `modulo 'base' NAO esta instalado no banco restaurado` e `HTTP 500` no Odoo; (b) **filestore
+   removido** do artefato → `RESTORE_ODOO_FALHOU (26 itens, 5 falhas)` (`filestore ausente ou vazio`,
+   `arquivos do filestore: desempacotado=0 manifesto=21`, `diretorio filestore/odoo_dev AUSENTE`);
+   (c) dump truncado **sem** `.sha256` → mesma reprovação (nada de "restaurou sem erro" com banco
+   vazio).
+6. **Regressão do verificador do trio num artefato com DOIS `*.dump`** — `verificar-backup.sh` →
+   `RESTORE_OK (11 itens, 0 falhas)`: a escolha do dump passou a ser pelo **manifesto** (`banco:`), e
+   não por `ls *.dump | head -1` (que pegaria `odoo_dev.dump`).
+7. **Teste hermético da rotina** (`scripts/backup/teste-rotina-ambiente.sh`, dublê de `docker`, nenhum
+   container real tocado): `TESTE_OK (65 itens, 0 falhas)`, incluindo as seções novas **9b** (ambiente
+   que **declara** Odoo e cujo container **não existe** → `BACKUP_FALHOU`, com o manifesto gravando
+   `odoo: ausente neste ambiente` e sem `odoo-manifest.txt`) e **9c** (o verificador **reprova**
+   artefato pela metade: `backup do ambiente esta pela metade`).
+8. **Achado que decidiu o aceite (a)+(c):** rodando o ciclo com o `/etc/tre/backup.env` do timer
+   **antes** da publicação, a rotina imprimiu `PULADO odoo: ambiente 'dev' nao declara Odoo` — o
+   `TRE_ENV_DIR` do timer aponta para o `deploy/environments` **da cópia operacional**, então o bloco
+   `TRE_ODOO_*` só existe na rotina depois da publicação. Um "backup do Odoo em dev" medido só no
+   destino isolado estaria **aprovando a árvore, não a rotina**.
+9. **Rollback** — alvos de teste removidos (cópia isolada, artefatos de teste, dublês `docker`, redes e
+   containers `tre-verif-odoo-*`, nada disso sobrou: `0` container e `0` rede `tre-verif-odoo-*`);
+   **nenhum timer novo** foi instalado (a rotina usa os `tre-backup.timer`/`tre-backup-verify.timer`
+   que já existiam); trava da cópia seguiu armada; e a verificação encadeada rodou **de novo depois do
+   rollback** (`VERIFICACAO_OK (3 itens)`, exit 0, log `/opt/tre/rollback-evidencia-t_a5afde31.log`).
+   O ambiente ficou com os **mesmos ids de container** do início do card: `pg-sales-dev`
+   `396ace563710…` (criado e iniciado em `2026-09-30T17:05:15Z`, `restarts=0` — o mesmo par id/StartedAt
+   que o card `t_1b2ab418` registrou), `pg-odoo-dev` `c7cb12f75eb9…` (12:41:17Z, `restarts=0`) e
+   `odoo-dev` `12cf65a3c1c6…` (criado 12:42:29Z; iniciado 13:48:40Z — **antes** da publicação deste
+   card, `restarts=0`: reinício de fora, container não recriado). O artefato real
+   `tre_dev_20261001T135513Z` foi mantido; o artefato enganoso da primeira rodada (trio sem Odoo,
+   gravado quando a cópia ainda estava no commit antigo) foi **removido de propósito**, com registro.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
 - **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
@@ -519,6 +590,16 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   inventar um caminho destrutivo novo sem card.
 - **O filestore do Odoo não tem retenção própria:** vai e volta junto com o artefato do ambiente
   (mesma janela de 14 dias). Não há versionamento de anexo por dia.
+- **Publicação em produção declarada por worker, sob gate JEV — linha formal de aprovação pendente.**
+  Para o AC (a)/(c) valerem na rotina de verdade foi preciso publicar o commit `e2b960b5` na cópia
+  operacional com `--producao` (§7g item 8). A base foi o gate JEV do próprio card — aprovação humana
+  de **Anderson Ribeiro** (canal telegram, validade **2026-10-07**), `dec-4a54b3c39ce9cc52`,
+  `outcome: PASS`, `exige_aprovacao_humana: false` —, que é o que `deploy/publicar.sh` exige ("card e
+  aprovação registrados"). **O que fica declarado:** uma linha desta ação em
+  `docs/operations/registro-de-aprovacoes.md` **não foi escrita pelo worker** (linha de aprovação é do
+  humano, não de quem executa); se o dono entender que a publicação precisava de aprovação
+  específica, o revert é o caminho versionado (`publicar.sh --commit 66c7152 --producao`) + o artefato
+  do commit anterior que o watchdog já mantém em `/opt/tre/.publicacao-artefato`.
 
 ## 9. Armadilhas registradas (custaram tempo real)
 

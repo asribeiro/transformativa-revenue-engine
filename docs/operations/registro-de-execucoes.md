@@ -399,3 +399,64 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
 - **Logs brutos (agente):** `instalar-odoo-dev-3.out`, `aceite-1.out` (aceite 19/19 + mutacao da porta), `rollback-1.out`, `rollback-e-reinstalacao.out` (recusa do rollback + verificador pos-rollback + reinstalacao + aceite final), no scratch do perfil `devops`.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao/teste (estagio 6); a homologacao (estagio 7) e do Anderson, com esta evidencia na mao. A **ratificacao da versao escolhida** (19.0) tambem e dele, antes de homologacao/producao.
 - Segredos: nenhum valor nesta entrada.
+
+## 2026-10-01 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W2-E01-T01-F01 (card `t_a5afde31`): backup/restore do Odoo (banco + filestore) no artefato do ambiente
+
+- **Publicacao versionada pela via unica (agente, do worktree `feature/TRE-W2-E01-T01-F01`):**
+  `deploy/publicar.sh --commit e2b960b5 --card t_a5afde31 --producao` →
+  `PUBLICACAO_OK commit=e2b960b5bb79e5773a25fa3c594461a699ccf9d5 digest=4f0c65390a54aa9df22a0871ae920935e5121795303e63145c2f9a9eb878a845
+  arquivos=323 digest_antes=7cfeee18ce055de88be1ced4867b1d3784fd9dc53abf2cd30cf1baa8e9637ba5 trava=travada`
+  (13:54:33Z; `AVISO concorrencia: card t_daca4bda publicou 66c7152… antes deste card`). `--conferir`
+  depois: `PUBLICACAO_OK … conferido_em=root@169.58.24.102:/opt/tre/repo trava=travada`. Antes de
+  publicar, li `/opt/tre/.publicacoes.log`: a ultima escrita em `/opt/tre/repo` era `66c7152`
+  (30/09 23:42:48Z), o resto `watchdog-reparo` do mesmo commit — nenhum card ficou para tras.
+  **Base declarada da publicacao:** gate JEV do card, `dec-4a54b3c39ce9cc52`, aprovacao humana de
+  Anderson Ribeiro (telegram, validade 2026-10-07), `exige_aprovacao_humana: false`.
+- **Rotina pela copia publicada (o caminho do timer):** `bash /opt/tre/repo/scripts/backup/backup-tre.sh dev`
+  → `RESULTADO: BACKUP_OK (dev; 1 ambiente(s) coberto(s), 0 pulado(s))`, exit 0, artefato
+  `/opt/tre/backup/tre_dev_20261001T135513Z` com `odoo_dev.dump` 2487524 B (sha256 `529cd429…`),
+  `odoo-contagens.txt` 281 tabelas / 26213 linhas, `odoo-filestore.tar.gz` 115082 B / 21 arquivos
+  (sha256 `521d4ece…`), `odoo-manifest.txt` (`odoo_imagem_restore: odoo:19.0`,
+  `odoo_imagem_digest: sha256:77bac5cd…`, `odoo_segredos: fora do artefato`) e o dump do trio
+  (`sales_intelligence.dump`, 35428 B) no MESMO diretorio.
+- **Restore provado em alvo descartavel:** `verificar-odoo.sh <artefato>` →
+  `RESULTADO: RESTORE_ODOO_OK (27 itens, 0 falhas)` — `HTTP 200` em `127.0.0.1:32774/web/login`
+  (`Odoo Server 19.0-20260926`), 281 tabelas com contagens batendo linha a linha, modulo `base`
+  instalado, filestore com `filestore/odoo_dev` e 21 arquivos, JSON-RPC respondendo, e
+  `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev` seguindo `running` ao fim.
+- **Verificacao encadeada (o que o timer de domingo roda):**
+  `verificar-ultimo-backup.sh todos` pela copia publicada → `RESTORE_OK (11 itens, 0 falhas)` +
+  `RESTORE_ODOO_OK (27 itens, 0 falhas)`, `homolog`/`prod` pulados (nao provisionados) →
+  `RESULTADO: VERIFICACAO_OK (3 itens)`, exit 0.
+- **Destino externo com ida e volta lida:** `rclone lsl contabo:tre-backup/prova-t_a5afde31/<artefato>`
+  (14 objetos, incl. `odoo_dev.dump` e `odoo-filestore.tar.gz`); `rclone cat` dos dois + `sha256sum`
+  = `529cd429…` e `521d4ece…`, iguais aos sha256 do manifesto local. Prefixo `prova-t_a5afde31/`
+  (prova declarada, nao backup de producao).
+- **Negativos medidos (todos exit 1):** dump truncado → `RESTORE_ODOO_FALHOU (27 itens, 10 falhas)`
+  (`sha256 do dump NAO confere`, `tabelas em public: restaurado=0 backup=281`, `modulo 'base' NAO esta
+  instalado`, `HTTP 500`); filestore removido → `RESTORE_ODOO_FALHOU (26 itens, 5 falhas)`; dump
+  truncado sem `.sha256` → idem. `verificar-backup.sh` num artefato com DOIS `*.dump` →
+  `RESTORE_OK (11 itens, 0 falhas)`.
+- **Teste hermetico da rotina** (dublê de `docker`, nenhum container real tocado):
+  `RESULTADO: TESTE_OK (65 itens, 0 falhas)`, com as secoes novas 9b (Odoo declarado sem container →
+  `BACKUP_FALHOU`, manifesto grava `odoo: ausente neste ambiente`) e 9c (verificador reprova artefato
+  pela metade).
+- **Achado que decidiu o aceite:** com o `/etc/tre/backup.env` do timer e a copia ainda no commit
+  antigo, a rotina imprimiu `PULADO odoo: ambiente 'dev' nao declara Odoo` — o `TRE_ENV_DIR` aponta
+  para o `deploy/environments` da COPIA OPERACIONAL, entao o AC (a)/(c) so valem depois da publicacao.
+- **Rollback executado:** alvos de teste removidos (copia isolada `.teste-t_a5afde31*`, artefatos de
+  teste, `.teste-enforcement-local`, redes/containers `tre-verif-odoo-*` — `0` container e `0` rede de
+  teste ao fim); **nenhum timer novo** instalado; `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev` preservados
+  (mesmo id e `StartedAt` anterior a esta rodada); trava da copia seguindo armada
+  (`----i---------e-------`); artefato real mantido. O artefato enganoso da primeira rodada
+  (`tre_dev_20261001T135033Z`, trio sem Odoo, gravado quando a copia estava no commit antigo) foi
+  removido de proposito, com registro.
+- **O que NAO foi tocado:** `sales_intelligence`/`pg-sales-dev` (medido antes e depois), os segredos
+  `/etc/tre/odoo-dev/*` (nenhum valor sai da VPS; `odoo_segredos: fora do artefato`), `/opt/tre/{homolog,prod}`
+  (0 arquivo, 0 container), a UFW e os units do systemd.
+- **Logs brutos (agente, no workspace da tarefa):** `evidencia-t_a5afde31/{ciclo2.log,verif-odoo.log,negativos.log,negativos-n1.log,negativos-n2.log,negativos-n3.log,negativos-trio.log,ciclo-real.log,artefato-real-manifest.txt,artefato-real-odoo-manifest.txt}`;
+  na VPS, `/opt/tre/rollback-evidencia-t_a5afde31.log`.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao
+  independente (estagio 6); a homologacao e do Anderson. A linha formal de aprovacao da publicacao em
+  `docs/operations/registro-de-aprovacoes.md` fica declarada como pendencia (runbook §8).
+- Segredos: nenhum valor nesta entrada.
