@@ -370,7 +370,9 @@ class PortaPsql(PortaSQL):
 
     def executar(self, sql: str, permitir_remocao: bool = False) -> tuple:
         validar_sql(sql, permitir_remocao=permitir_remocao)
-        comando = self.prefixo + ["-v", "ON_ERROR_STOP=1", "-tA", "-F", "|"]
+        # `-q` evita que os carimbos de comando (BEGIN/COMMIT) poluam a saida; mesmo assim o
+        # agente confere o resultado LINHA a linha, porque a porta nao promete formato.
+        comando = self.prefixo + ["-v", "ON_ERROR_STOP=1", "-q", "-tA", "-F", "|"]
         try:
             p = subprocess.run(comando, input=sql, capture_output=True, text=True,
                                timeout=self.timeout)
@@ -741,7 +743,7 @@ class Scout:
                                 valores, evidencia))
                 if rc != 0:
                     raise PortaIndisponivel("ingestao falhou: %s" % (erro or saida))
-                if saida.strip() == "SUCCESS":
+                if "SUCCESS" in [l.strip() for l in saida.splitlines()]:
                     resultado["organization_id"] = organizacao_id
                     resultado["sync_event_id"] = sync_event_id
                 else:

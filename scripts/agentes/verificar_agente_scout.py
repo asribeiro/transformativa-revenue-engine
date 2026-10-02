@@ -654,6 +654,18 @@ def _ (ctx):
         "veredito=%s escritas=%d" % (r["veredito"], len(escritas))
 
 
+@item("sucesso-conta-mesmo-com-carimbo-de-comando-na-saida")
+def _ (ctx):
+    # A porta real (psql) imprime carimbos de comando junto do RETURNING. Confundir isso com
+    # replay ja custou uma rodada inteira de aceite: aqui a saida suja tem de dar CRIADA.
+    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "BEGIN\nSUCCESS\nCOMMIT\n", ""),
+                                    (0, "", "")], modulo=ctx.modulo)
+    agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
+    r = agente.processar(candidata(domain="nova-empresa.com.br"))
+    return (r["veredito"] == ctx.modulo.VER_CRIADA and r["organization_id"]
+            and r["sync_event_id"]), "veredito=%s motivos=%s" % (r["veredito"], r["motivos"])
+
+
 @item("candidata-invalida-nao-chega-a-insercao-no-fluxo")
 def _ (ctx):
     porta = PortaRoteiro(modulo=ctx.modulo)
