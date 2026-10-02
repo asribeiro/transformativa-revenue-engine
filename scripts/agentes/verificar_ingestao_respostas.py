@@ -186,10 +186,10 @@ def suite(mod, contrato) -> None:
     # Guard que existe mas nao e CHAMADO e verde decorativo: o item afirma que a auditoria esta LIGADA
     # no caminho de ingesta, antes de qualquer conexao.
     corpo_main = fonte.split("def main(", 1)[-1]
-    item("caminho de ingesta EXECUTA a auditoria da fonte antes de conectar",
-         "violacoes = auditar_fonte()" in corpo_main
-         and corpo_main.index("violacoes = auditar_fonte()") < corpo_main.index("consumir_caixa(config)"),
-         "auditoria nao esta ligada no main")
+    ligado = ('violacoes = auditar_fonte()\n    if violacoes:\n'
+              '        saida.evento(evento="ESCRITA_NO_CODIGO"') in corpo_main
+    item("caminho de ingesta EXECUTA a auditoria da fonte antes de conectar", ligado,
+         "auditoria nao esta ligada no caminho de ingesta do main")
 
     # 9. chave de idempotencia derivada da identidade da mensagem
     chave = mod.chave_de({"identidade_mensagem": "999:7"})
