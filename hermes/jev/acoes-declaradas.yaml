@@ -878,3 +878,14 @@ declaracoes:
       Nao ha credencial, nao ha dado de cliente e nao ha ato em producao neste card.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  # 02/10/2026 — defeito do roteador (casamento por prefixo no conceito de contato comercial).
+  # Execucao em dev, sem credencial e sem producao: reescrita do encaixe de conceito no roteador.
+  - card_id: t_7c57e910
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-02'
+    motivo: >-
+      Corrigir o casamento por prefixo no conceito de contato comercial do roteador (defeito medido
+      em t_c096e9a4): reduzir a tolerancia/exigir palavra inteira, com mutacao cobrindo os dois lados.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
