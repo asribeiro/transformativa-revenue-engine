@@ -17,6 +17,7 @@ O que já existe e quem entrega o quê:
 | Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | entregue |
 | Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
 | API controlada | `TRE-W3-E01-T01` | **neste card** |
+| Operação de escrita de negócio `oportunidade_upsert` (espelho da oportunidade no CRM) | `TRE-W3-E01-T04` | **neste card** |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
 
@@ -93,6 +94,13 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   que não escreve (e o `dry_run` na leitura, que descreve a consulta sem executá-la), a recusa
   `dry_run_nao_suportado` onde a política não aceita, upsert que cria uma vez e atualiza depois, a
   ACL do dono da chave valendo na leitura e a auditoria das duas linhas (`ok` e `recusado`).
+- `tests/test_oportunidade_upsert.py` (card W3-E01-T04, 27 testes, tag `post_install`): a operação
+  de escrita de negócio — declarada na política em vigor (lida do artefato), recusas nomeadas de
+  credencial/identidade/chave/payload, upsert que cria uma vez e atualiza depois (contagem por
+  identidade), atualização parcial, identidade pelo UUID (nunca pelo nome), fronteira de dono do
+  Odoo na recusa **e** no registro (`stage_id`/`expected_revenue`/`probability` etc. comparados
+  antes/depois), `dry_run` que descreve sem escrever, trilha sem payload, guarda de ambiente do
+  ADR-005 na escrita (503/503/200) e o vínculo/dono do lead medidos.
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -186,13 +194,14 @@ POST /tf/api/v1/<operacao>     Authorization: Bearer <chave de API do Odoo>
 | `api/motor.py` | Valida a chamada contra a política e monta o plano — **sem importar `odoo`**, para a decisão ser exercitável sem subir Odoo (`scripts/odoo/testar_motor_api.py`) |
 | `controllers/api_controlada.py` | UMA rota, UM verbo: não há rota genérica de "execute qualquer modelo/método/campo" (doc 02 §3). Executa o plano **pelo ORM** (as ACLs do dono da chave valem — não é `sudo`) e grava uma linha `TF_API_AUDIT` por chamada |
 
-Operações declaradas nesta versão da política (**só leitura** — as escritas de negócio entram por
-`TRE-W3-E01-T02..T05`, depois do motor de idempotência do `TRE-W3-E02-T02`):
+Operações declaradas nesta versão da política (**a leitura do E01-T01 e as escritas de negócio dos
+cards `TRE-W3-E01-T02..T05`, que entram uma a uma na MESMA política, com a `versao` subindo**):
 
 | Operação | O que faz |
 |---|---|
 | `sistema_capacidades` | Sonda de saúde do consumidor: devolve a versão da política e as operações declaradas, sem tocar modelo de negócio |
 | `crm_registros_ler` | Leitura controlada de `res.partner` (campos `tf_*` do E04-T01) e `crm.lead` (rastreio do E04-T02): só campos declarados, só filtros declarados, com teto |
+| `oportunidade_upsert` | Escrita de negócio: espelha a oportunidade canônica em `crm.lead` — cria na primeira chamada de um UUID e **atualiza** nas seguintes, sem duplicar; identidade por `tf_opportunity_id`; **não** escreve campo de dono do Odoo (`TRE-W3-E01-T04`) |
 
 Guarda de ambiente (ADR-005): sem `ir.config_parameter` `tf.api.ambiente` **declarado** e presente
 em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exigem aprovação humana
@@ -208,3 +217,34 @@ versão permite `dev` e só.
   (chave gerada na hora, arquivo 600, nunca em `ps`), auditoria lida do log do servidor, greps de
   contrato e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3
   mutações, cada uma **tem** de reprovar, com guarda externa do artefato por sha256).
+
+## Operação de escrita de negócio `oportunidade_upsert` (`TRE-W3-E01-T04`)
+
+Runbook do card: **`docs/runbooks/odoo-oportunidade-upsert.md`**. A operação entra por
+**declaração** na política (`api/politica_api.json` sobe de `1.0.0` para `1.1.0`) — nenhuma linha de
+controlador foi necessária: a receita do §9 do runbook da API controlada se confirmou.
+
+```http
+POST /tf/api/v1/oportunidade_upsert        Authorization: Bearer <chave de API>
+{"idempotency_key": "tre-...", "dry_run": false,
+ "parametros": {"valores": {"name": "...", "tf_opportunity_id": "<uuid>", "tf_priority_score": 82.5}}}
+```
+
+| Decisão | Porquê |
+|---|---|
+| identidade é o **UUID canônico** `tf_opportunity_id` (contrato §3) | nome não é identidade: dois leads homônimos continuam dois registros (medido) |
+| **fronteira de dono** (contrato §2): `stage_id`, `expected_revenue`, `probability`, `date_deadline`, `date_closed` **não** são escrevíveis | o funil é do time comercial; a API move o conhecimento sobre a oportunidade, nunca a posição dela nem o valor negociado. Campo de dono enviado = 422 `campo_nao_declarado`, nunca silêncio |
+| `tf_priority_tier` também não é escrevível | é `compute` de `tf_priority_score` (E04-T02) e acompanha o score sozinho |
+| `name` é obrigatório e `partner_id` é declarado | `crm.lead.name` é `compute` no Odoo 19 (só preenche quando vazio): sem `name` no payload o lead nasceria com nome computado pelo Odoo — fora do contrato do espelho |
+| o rastro (`tf_idempotency_key`, `tf_correlation_id`, `tf_last_sync_at`, `tf_last_event_type`) é **campo declarado**, escrito com o que o produtor manda | a chave do envelope vai para a trilha `TF_API_AUDIT`; quem garante não-duplicar é a identidade canônica (dedup por chave é o E02-T02) |
+
+- **Testes do Odoo:** `tests/test_oportunidade_upsert.py` (27 testes, tag `post_install`).
+- **Aceite:** `bash scripts/odoo/verificar-oportunidade-upsert.sh` (na VPS, **como root** — a dupla
+  descartável exige `chown` para o uid do container): suíte pura do motor, instalação em banco
+  limpo, suíte do Odoo com piso de testes, **servidor HTTP real com `curl` de fora do processo**
+  (cria/atualiza/repete, recusas, `dry_run`), **leitura por SQL** no banco (um registro por UUID,
+  espelho gravado, estágio/valor de dono intactos, dono do lead), auditoria lida do log do servidor,
+  guarda de ambiente do ADR-005 na escrita (com o servidor reiniciado **depois** da troca feita pelo
+  ORM) e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3 mutações,
+  cada uma **tem** de reprovar, com o item esperado conferido e harness **fail-closed**: prova que
+  não mede nada reprova).

@@ -230,8 +230,15 @@ dados = json.loads(texto)
 dados["operacoes"] = [op for op in dados["operacoes"] if op["nome"] != "oportunidade_upsert"]
 texto = json.dumps(dados, ensure_ascii=False, indent=2)
 ')"
-    if [ "$MUT1" = "MUTACAO_APLICADA" ] && ! grep -q 'oportunidade_upsert' "$DENTE_DIR/m1/api/politica_api.json"; then
-        echo 'OK    dente 1: mutacao aplicada (a operacao sumiu da copia da politica)'
+    DENTE1_AUSENTE="$(python3 - "$DENTE_DIR/m1/api/politica_api.json" <<'PY'
+import json, sys
+dados = json.load(open(sys.argv[1], encoding="utf-8"))
+sumiu = not any(op.get("nome") == "oportunidade_upsert" for op in dados.get("operacoes", []))
+print("AUSENTE" if sumiu else "PRESENTE")
+PY
+)"
+    if [ "$MUT1" = "MUTACAO_APLICADA" ] && [ "$DENTE1_AUSENTE" = "AUSENTE" ]; then
+        echo 'OK    dente 1: mutacao aplicada (a operacao sumiu da LISTA de operacoes da copia)'
     else
         echo "FALHOU dente 1: mutacao NAO foi aplicada na copia ($MUT1) — o dente mediria o artefato intacto"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
