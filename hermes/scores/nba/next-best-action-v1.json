@@ -1,0 +1,135 @@
+{
+  "agente": "nba",
+  "nome": "nba-v1",
+  "papel": "score_nba",
+  "versao": "1.0.0",
+  "card": "TRE-W5-E07-T01",
+  "onda": "W5",
+  "nba_version": "nba-v1",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#vocabularies.next_best_action — DONO DAS ACOES: RESEARCH_MORE, FIND_DECISION_MAKER, SEND_EMAIL, PREPARE_LINKEDIN, WAIT, FOLLOW_UP, CREATE_MEETING, NURTURE, DISQUALIFY. O codigo NAO carrega a lista de acoes em forma executavel: o vocabulario e lido do contrato a cada rodada",
+    "03_ARQUITETURA_DE_NEGOCIO.md §8 (Next Best Action) — os mesmos nove valores",
+    "docs/data/data_contract_v1.json#vocabularies.decision_role — DONO dos papeis de contato (Economic Buyer, Decision Maker, Influencer, Champion, User, Blocker, Unknown)",
+    "docs/data/data_contract_v1.json#vocabularies.recommendations.status + 12_CONTRATOS_E_GOVERNANCA.md §5 — os estados da recomendacao: OPEN, APPROVED, REJECTED, EXECUTED, EXPIRED, SUPERSEDED",
+    "04_PROJETO_FISICO_DE_DADOS.md §10 — DDL de `recommendations` (casa da recomendacao, colunas do contrato, nenhuma coluna nova)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §8 (W5) — score -> Tier -> Next Best Action; gate: 'score/tier/NBA gerados sem intervencao'",
+    "docs/data/DATA_CONTRACT_V1.md §8 — tiering (A+/A/B/C/Nurture) e a politica de validade do PRIORITY, respeitadas aqui por leitura do registro TIER",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §7 — idempotencia: idempotency_key, retry nao cria duplicata",
+    "12_CONTRATOS_E_GOVERNANCA.md §2 — o evento NEXT_BEST_ACTION_CHANGED (pg -> odoo) leva a acao para o Odoo; o outbox e do caminho de integracao (W3/W6)",
+    "12_CONTRATOS_E_GOVERNANCA.md §4 — human_approvals (PENDING/APPROVED/REJECTED/EXPIRED): quem executa a acao e o aval humano, nao o componente",
+    "hermes/scores/nba/politica-nba-v1.json — a TABELA DE DECISAO (regras, ordem, motivos, prazos)",
+    "card irmao TRE-W5-E06-T01 (tiering) — o registro TIER em sync_events e a ENTRADA deste card",
+    "card irmao TRE-W1-E04-T02 (entity_match_confidence) — precedente de persistir decisao em tabela ja governada, sem coluna nova"
+  ],
+  "entrada": {
+    "formato": "jsonl (opcional) OU --organizacao <uuid>",
+    "uma_organizacao_por_linha": true,
+    "campo_obrigatorio": ["organization_id"],
+    "descricao": "a fonte escolhe o SUJEITO da rodada. O dado NAO vem da fonte: no modo real tudo e lido do banco (sync_events TIER, research_runs, pain_hypotheses, signals, contacts, interactions). Em --planejar/--regras a fonte nem e lida.",
+    "leitura": "tier = ULTIMO sync_events (operation='TIER') da empresa; demais fatos = tabelas do schema sales_intelligence (somente leitura)"
+  },
+  "modelo": {
+    "nome": "nba-v1",
+    "status": "PROPOSTA_A_HOMOLOGAR",
+    "status_explicacao": "O VOCABULARIO das acoes e do Data Contract (nao e proposta). O que este card propoe e (a) a TABELA DE DECISAO — qual acao cada estado de evidencia produz e em que ordem — e (b) ONDE a recomendacao e persistida (recommendations + agent_runs). Homologacao e do Anderson (estagio 7).",
+    "tier_lido": "registro TIER do card TRE-W5-E06-T01 (sync_events, operation='TIER', source_version='tiering-v1')",
+    "fonte_das_acoes": "docs/data/data_contract_v1.json#vocabularies.next_best_action",
+    "regra": "primeira regra da politica que casa vence (ordem da lista e a decisao); nenhuma casando = ABSTEM",
+    "cobertura_das_acoes": "conferida a cada rodada: toda acao do vocabulario do contrato precisa ter regra na politica ou estar declarada em `nao_alcancadas`; acao da politica fora do vocabulario RECUSA (POLITICA_INCOERENTE)",
+    "empresa_sem_tier": "RECUSA (SEM_TIER): o proximo passo depende da prioridade ja decidida; sem registro TIER nada e gravado",
+    "deterministico": true,
+    "llm": "nenhum — a v1 e tabela de decisao declarada; nao ha chamada de modelo nem requisicao de rede",
+    "confianca": "NULL declarado: a regra e determinista e um numero em `confidence` fingiria calibracao que nao existe (lacuna)",
+    "persistencia": ["sales_intelligence.recommendations", "sales_intelligence.agent_runs"]
+  },
+  "persistencia": {
+    "tabelas_escritas": ["sales_intelligence.recommendations", "sales_intelligence.agent_runs"],
+    "registro": {
+      "tabela": "sales_intelligence.recommendations",
+      "recommendation_type": "NEXT_BEST_ACTION",
+      "action": "codigo da acao do Data Contract (vocabularies.next_best_action)",
+      "description": "descricao da regra vencedora (texto da politica)",
+      "rationale": "motivo + a evidencia lida (tier, registro TIER, pesquisa, dor, sinais, contatos, interacoes) + entrada_hash",
+      "confidence": "NULL (ver modelo.confianca)",
+      "priority": "prioridade declarada na regra vencedora",
+      "status": "OPEN (estado inicial de recommendations.status)",
+      "due_at": "NOW() + due_dias da regra",
+      "expires_at": "NOW() + validade_dias da regra",
+      "contact_id": "melhor contato de decisao contactavel (ordem dos papeis na politica); NULL se nao houver"
+    },
+    "supersessao": {
+      "regra": "a nova recomendacao SUPERSEDE as anteriores da empresa com status OPEN e recommendation_type='NEXT_BEST_ACTION' (status='SUPERSEDED', estado do doc 12 §5). Historico preservado: a recomendacao nunca e reescrita (nem o proprio STATUS_SUPERSEDIDA volta a OPEN).",
+      "excecao": "replay (mesma entrada) nao supera nada: o id e o mesmo e a linha fica como esta"
+    },
+    "auditoria": {
+      "tabela": "sales_intelligence.agent_runs",
+      "conteudo": "uma linha por empresa pedida (veredito + output com acao, regra, motivo, id da recomendacao, contato, prioridade, entrada_hash); a RECUSA e a ABSTENCAO tambem sao auditadas (REJECTED)"
+    },
+    "nao_escrito": {
+      "coluna_nova": "nao existe — criar coluna exige versao nova do contrato (governanca §10 + ADR-0004)",
+      "scores / organizations / demais tabelas": "leitura apenas; a guarda de escrita RECUSA INSERT/UPDATE/DELETE fora das duas tabelas e qualquer DDL",
+      "sync_events / outbox_events": "NAO escritos nesta v1: o evento NEXT_BEST_ACTION_CHANGED e do caminho de integracao (W3/W6)"
+    }
+  },
+  "idempotencia": {
+    "id": "uuid5(NAMESPACE_URL, 'nba-v1:<organization_id>:<entrada_hash>') — o id E a chave",
+    "entrada_hash": "sha256 canonico (JSON com chaves ordenadas) de: organizacao, nba_version, politica@versao, regra vencedora, acao, identidade do registro TIER lido (id/tier/tier_version), contato escolhido e os fatos citados pela regra vencedora (numericos entram como o RESULTADO da comparacao)",
+    "nao_entram_no_hash": ["o relogio da rodada", "o correlation_id", "o texto renderizado de motivo/descricao", "contadores como dias_desde_a_abordagem (entram como o resultado da comparacao: mesma condicao, mesmo id)"],
+    "regra": "mesma entrada => mesmo id => replay (nada novo, veredito JA_RECOMENDADA); evidencia nova => id novo => recomendacao NOVA com a anterior SUPERSEDED",
+    "prova_da_gravacao": "a contagem da linha DESTE id e lida na mesma transacao: 1 com ja_existia=0 = gravada agora; 0/1 com ja_existia=1 = replay"
+  },
+  "vereditos": {
+    "RECOMENDADA": "recomendacao gravada em recommendations (status OPEN) e auditada em agent_runs",
+    "JA_RECOMENDADA": "a mesma entrada ja tinha recomendacao: nada duplicado",
+    "RECUSADA": "empresa inexistente ou sem registro TIER: nada escrito em recommendations",
+    "ABSTEVE": "nenhuma regra da politica casou: nada escrito (ausencia de resposta e abstencao)",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "RECOMENDADA": "COMPLETED",
+    "JA_RECOMENDADA": "COMPLETED",
+    "RECUSADA": "REJECTED",
+    "ABSTEVE": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": ["sales_intelligence.recommendations", "sales_intelligence.agent_runs"],
+    "operacoes_permitidas": {
+      "sales_intelligence.recommendations": ["INSERT (a recomendacao)", "UPDATE (SO status OPEN -> SUPERSEDED da supersessao)", "DELETE (SO no --desfazer --confirmo)"],
+      "sales_intelligence.agent_runs": ["INSERT"]
+    },
+    "proibido": ["DDL", "escrita em scores, organizations, contacts, interactions, signals, pain_hypotheses, research_runs, sync_events, outbox_events, human_approvals", "UPDATE em agent_runs (auditoria append-only)", "DELETE fora do --desfazer --confirmo"]
+  },
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "ADR-005: nada nasce em producao; promocao exige card proprio com aprovacao humana registrada",
+    "planejar": "--planejar e --regras nao abrem conexao nenhuma (nenhuma porta e construida)"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "as recomendacoes gravadas pela rodada (ids ligados pelo output de agent_runs da correlacao)",
+    "dry_run": "padrao: informa quantas seriam apagadas e nao apaga",
+    "auditoria": "as linhas de agent_runs NAO sao apagadas: a rodada continua auditavel depois de desfeita"
+  },
+  "guardrails": {
+    "fail_closed": "sem porta de banco RECUSA; sem registro TIER RECUSA; politica/contrato incoerente RECUSA (exit 3); nenhuma regra casando ABSTEM; DDL e escrita fora das duas tabelas RECUSAM; prod RECUSA com exit 4",
+    "sem_llm": "model, tokens_input, tokens_output e estimated_cost ficam NULL na auditoria; confidence NULL na recomendacao",
+    "sem_execucao": "nada e enviado, agendado ou escrito no Odoo; a execucao da acao e do caminho de integracao + aval humano (doc 12 §2 e §4)"
+  },
+  "fora_do_card": [
+    "Execucao da acao (e-mail, LinkedIn, reuniao) e o Human Approval workflow — W6",
+    "Evento de outbox NEXT_BEST_ACTION_CHANGED e espelhamento no Odoo — W3/W6",
+    "Aceite E2E da cadeia W5 e o teste scoring/NBA — W5-E08-T01",
+    "Varredura de recomendacoes vencidas (status EXPIRED) e o ciclo APPROVED/EXECUTED — card proprio",
+    "Calibracao de confianca do NBA a partir do feedback de resposta — W6+"
+  ],
+  "lacunas": [
+    "A TABELA DE DECISAO (quais regras, em que ordem, com que motivo/prazos) e PROPOSTA deste card: o contrato define o VOCABULARIO das acoes, nao a politica de escolha",
+    "`confidence` fica NULL: a regra e determinista; numero ali fingiria calibracao (a calibracao depende do feedback de resposta, W6+)",
+    "A ligacao resposta<->contato que respondeu depende da classificacao de resposta do W6: aqui o sentimento vem de interactions.sentiment e o contato e o melhor decisor contactavel",
+    "A ordem das regras poe compliance (contatos bloqueados) e qualificacao (dor rejeitada) antes do tier: e uma escolha de politica, declarada e testada",
+    "O vencimento (status EXPIRED) e a transicao OPEN -> APPROVED/EXECUTED/REJECTED sao do workflow humano (doc 12 §4/§5), nao deste card: aqui grava-se expires_at e due_at"
+  ]
+}
