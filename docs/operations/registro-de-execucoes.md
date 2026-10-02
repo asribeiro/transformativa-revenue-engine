@@ -765,7 +765,7 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   `scripts/verificar_estrutura.sh` **aditivos** (nenhum arquivo existente alterado em logica: `git diff --stat`
   da base mostra so' as adicoes).
 - **Aceite (medicao real, banco e n8n DESCARTaveis, banco `tre_obs_263498525799`):** `RESULTADO: OBSERVABILIDADE_SYNC_OK (119 itens, 0 falhas) banco=tre_obs_263498525799 imagens=postgres:16+n8nio/n8n:latest workflow=/opt/tre/evid-t_0b77a689-r6/repo/n8n/workflows/TRE-observabilidade-sync.json` —
-  **OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens itens, 0 falhas** — com 8 estados semeados, cada metrica medida por **dois caminhos
+  **OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)** — com 8 estados semeados, cada metrica medida por **dois caminhos
   independentes** (`psql` direto e pelo workflow no n8n descartavel) e o **retrato das duas tabelas identico
   antes/depois** de uma rodada completa (somente-leitura provado em execucao real, nao por grep).
 - **Prova de dente:** `RESULTADO: OBSERVABILIDADE_SYNC_DENTE_OK (12/12 dentes cumpridos; juiz conferido; baseline nao mutado verde)` (INFO  resumo do dente: 12/12 dentes cumpridos; baseline=verde; juiz=conferido); baseline **nao mutado** verde
@@ -828,3 +828,39 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   `/opt/tre/evid-t_0b77a689-r6/logs-dente/` (baseline + 12 mutantes + saida de cada sub-run) na VPS.
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil `tester`)
   e a homologacao (**estagio 7**) e' do Anderson.
+
+## 2026-10-02 — worktree local (sem VPS, sem docker) — TRE-W3-E05-T01-D01 (card `t_c096e9a4`): 4 achados de precisao/robustez da revisao independente do `t_0b77a689`, corrigidos e medidos
+
+Origem: achados **nao bloqueantes** da revisao independente do card `t_0b77a689` (TRE-W3-E05-T01, branch
+`feature/TRE-W3-E05-T01`, head entregue `4a8cead`). Nenhum muda resultado medido — sao precisao de texto,
+divergencia contrato x codigo (nao alcancavel pelo SQL) e robustez da propria lente. Branch do conserto:
+`fix/TRE-W3-E05-T01-D01` (nascida de `4a8cead`); medicao 100% local (`python3` e `node` puros).
+
+- **ANTES (head entregue `4a8cead`), saida real:**
+  - item 1: `grep -n "saidas sinteticas" CHANGELOG.md` -> linhas 840 e 890 diziam `7 saidas sinteticas`;
+    o script do dente tem `controle_1.out`..`controle_8.out` (**8** distintos, 16 referencias).
+  - item 2: `grep -n "58 itens itens" docs/operations/registro-de-execucoes.md` -> linha 768:
+    `**OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens itens, 0 falhas**` (palavra duplicada, parentese sem fechar).
+  - item 3: `node` chamando a **funcao real** `linhaDeDetalheVazia` com `{tentativas: 1}` -> `true`;
+    `avaliarDetalhes` -> `linhas_vazias=1, total=0` (linha descartada em silencio) — contra a regra declarada
+    no contrato (`detalhes.linha_vazia.regra`: "Linha com QUALQUER campo preenchido e' dado").
+  - item 4: contrato com `limites: null` na metrica `fila_pendentes` -> a lente imprime
+    `FALHOU toda metrica que decide veredito declara alerta e critico` e **morre** com
+    `AttributeError: 'NoneType' object has no attribute 'get'` (linha 157), **sem** a linha `RESULTADO`
+    (rc 1, fail-closed, mas o resumo nao saia).
+- **CORRECAO:** `CHANGELOG.md` `7` -> `8 saidas sinteticas + 2 de sha256` (linha 840) e `8 saidas sinteticas`
+  (linha 890); `docs/operations/registro-de-execucoes.md` -> `(58 itens, 0 falhas)`;
+  `n8n/codigo/observabilidade-sync.js` -> `linhaDeDetalheVazia` passa a testar tambem `tentativas` (o contrato
+  prometia "QUALQUER campo"; a direcao escolhida preserva a garantia e e' **fail-closed**) e o workflow
+  derivado foi remontado pelo montador versionado; `scripts/n8n/conferir_observabilidade.py` -> nos dois pontos
+  de limiar, `(m.get("limites") or {})` no lugar de `m["limites"]`.
+- **DEPOIS (medido no worktree do conserto):** `python3 scripts/n8n/conferir_observabilidade.py` ->
+  `RESULTADO: OBSERVABILIDADE_LENTE_OK (118 itens, 0 falhas)` **exit 0**;
+  `node scripts/n8n/testar_observabilidade_sync.js` ->
+  `RESULTADO: OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)` **exit 0**; o montador **acusou** o workflow
+  defasado depois da mudanca do nucleo (`FALHOU workflow em disco DIVERGE do montado agora`, exit 1) e, remontado,
+  `OK workflow em disco == workflow montado agora` exit 0; `{tentativas: 1}` agora da
+  `linhaDeDetalheVazia=false`, `total=1`, `divergencias=["tipo_de_detalhe_nao_declarado:(vazio)"]` (e o
+  placeholder `{}` continua vazio); o mesmo controle do item 4 fecha
+  `RESULTADO: OBSERVABILIDADE_LENTE_FALHOU (118 itens, 4 falha(s))` **exit 1, sem traceback**.
+- **Nao e homologacao:** quem entrega nao homologa — a verificacao independente e' do estagio 6 (perfil `tester`).
