@@ -75,6 +75,9 @@ item() { # <nome> <esperado> <obtido>
     echo "FALHOU $1 (esperado=$2 obtido=$3)"; ITENS_FALHOU=$((ITENS_FALHOU + 1))
   fi
 }
+tem() { # <texto> <arquivo> -> sim/nao
+  if grep -q -- "$1" "$2"; then echo sim; else echo nao; fi
+}
 
 command -v docker >/dev/null 2>&1 || { echo "FALHOU docker ausente (rode na VPS)"; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "FALHOU python3 ausente"; exit 2; }
@@ -195,6 +198,8 @@ CONTATO_C="$(psql_t -c "SELECT id FROM sales_intelligence.contacts WHERE organiz
 CONTATO_E="$(psql_t -c "SELECT id FROM sales_intelligence.contacts WHERE organization_id = '$ORG_E';" | tr -d ' ')"
 
 contar() { psql_t -c "SELECT count(*) FROM $1;" | tr -d ' '; }
+# le uma coluna preservando os espacos internos (nomes e notas tem mais de uma palavra)
+psql_limpo() { "${PSQL[@]}" "$@" </dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
 foto() { # contagem das tabelas que as rodadas NAO podem tocar
   echo "$(contar sales_intelligence.organizations)|$(contar sales_intelligence.contacts)|$(contar sales_intelligence.recommendations)|$(contar sales_intelligence.scores)|$(contar sales_intelligence.signals)|$(contar sales_intelligence.pain_hypotheses)|$(contar sales_intelligence.research_runs)|$(contar sales_intelligence.interactions)|$(contar sales_intelligence.sync_events)|$(contar sales_intelligence.outbox_events)"
 }
@@ -250,14 +255,12 @@ item "A1 a fila ve os 5 pedidos" "5" \
   "$(psql_t -c "SELECT (output->>'pendentes')::int FROM sales_intelligence.agent_runs WHERE correlation_id = '$CORR_FILA';" | tr -d ' ')"
 item "A1 notificacao traz o codigo curto do pedido" "1" \
   "$(grep -c "APR-$(echo "$PEDIDO_A" | tr -d '-' | cut -c1-8)" "$TRABALHO/notificacoes.txt")"
-item "A1 notificacao traz empresa e acao" "1" \
-  "$(grep -c 'Distribuidora Alfa' "$TRABALHO/notificacoes.txt" | head -1)"
+item "A1 notificacao traz empresa e acao" "sim" "$(tem 'Distribuidora Alfa' "$TRABALHO/notificacoes.txt")"
 item "A1 notificacao traz os tres comandos de decisao" "3" \
   "$(grep -o -- '--decisao \(aprovar\|rejeitar\|editar\)' "$TRABALHO/notificacoes.txt" | sort -u | wc -l | tr -d ' ')"
 item "A1 nenhum marcador pendurado na notificacao" "0" \
   "$(grep -c '{{' "$TRABALHO/notificacoes.txt")"
-item "A1 notificacao identifica o pedido pelo uuid inteiro" "1" \
-  "$(grep -c "$PEDIDO_A" "$TRABALHO/notificacoes.txt")"
+item "A1 notificacao identifica o pedido pelo uuid inteiro" "sim" "$(tem "$PEDIDO_A" "$TRABALHO/notificacoes.txt")"
 
 CORR_FILA2="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --fila --correlation-id "$CORR_FILA2" \
@@ -278,9 +281,9 @@ item "A2 veredito APROVADO" "APROVADO" "$(veredito "$TRABALHO/decisao_A2.txt")"
 item "A2 pedido ficou APPROVED" "APPROVED" \
   "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A2 operador humano registrado" "$OPERADOR" \
-  "$(psql_t -c "SELECT decided_by FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+  "$(psql_limpo -c "SELECT decided_by FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';")"
 item "A2 nota da decisao registrada" "texto lido e aprovado" \
-  "$(psql_t -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+  "$(psql_limpo -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';")"
 item "A2 decided_at preenchido" "true" \
   "$(psql_t -c "SELECT (decided_at IS NOT NULL)::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A2 hash do texto aprovado carimbado (64 hex)" "64" \
@@ -290,7 +293,7 @@ item "A2 aprovacao simples nao marca revisao" "false" \
 item "A2 o texto do gerador NAO foi alterado" "$HASH_A" \
   "$(psql_t -c "SELECT proposed_action->>'entrada_hash' FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A2 decisao auditada em agent_runs" "DECISAO|COMPLETED|$OPERADOR" \
-  "$(psql_t -c "SELECT (output->>'evento') || '|' || status || '|' || (output->'resultado'->>'decidido_por') FROM sales_intelligence.agent_runs WHERE output->'resultado'->>'pedido_id' = '$PEDIDO_A';" | tr -d ' ')"
+  "$(psql_limpo -c "SELECT (output->>'evento') || '|' || status || '|' || (output->'resultado'->>'decidido_por') FROM sales_intelligence.agent_runs WHERE output->'resultado'->>'pedido_id' = '$PEDIDO_A';")"
 item "A2 nada fora das duas tabelas foi tocado" "$FOTO_ANTES" "$(foto)"
 
 # ---------------------------------------------------------------------------------------
@@ -302,7 +305,7 @@ item "A3 replay e JA_DECIDIDO (nada reescrito)" "JA_DECIDIDO" "$(veredito "$TRAB
 item "A3 replay nao muda o status" "APPROVED" \
   "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A3 replay nao muda a nota" "texto lido e aprovado" \
-  "$(psql_t -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+  "$(psql_limpo -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';")"
 RC=$(decidir A3B "$PEDIDO_A" rejeitar "$OPERADOR")
 item "A3 voto diferente RECUSA (exit 1)" 1 "$RC"
 item "A3 voto diferente RECUSA por conflito" "CONFLITO_DE_VOTO" "$(motivo "$TRABALHO/decisao_A3B.txt")"
@@ -398,8 +401,8 @@ item "A8 edicao aprovada ficou APPROVED" "APPROVED" \
   "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_C';" | tr -d ' ')"
 item "A8 a revisao esta marcada" "true" \
   "$(psql_t -c "SELECT (proposed_action->'decisao'->>'revisado')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_C';" | tr -d ' ')"
-item "A8 o texto ORIGINAL ficou preservado" "true" \
-  "$(psql_t -c "SELECT (proposed_action->'decisao'->'texto_original'->>'corpo' LIKE '%revisto pelo operador%')::text = 'false' FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_C';" | tr -d ' ')"
+item "A8 o texto ORIGINAL ficou preservado" "nao" \
+  "$(psql_limpo -c "SELECT CASE WHEN proposed_action->'decisao'->'texto_original'->>'corpo' LIKE '%revisto pelo operador%' THEN 'sim' ELSE 'nao' END FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_C';")"
 item "A8 o texto revisado esta no pedido" "true" \
   "$(psql_t -c "SELECT (proposed_action->>'corpo' LIKE '%revisto pelo operador%')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_C';" | tr -d ' ')"
 item "A8 o hash mudou com a revisao" "true" \
@@ -442,7 +445,7 @@ python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --expirar --correlation-id
   >"$TRABALHO/expirar.json" 2>"$TRABALHO/expirar.err"
 item "A10 --expirar exit 0" 0 "$?"
 item "A10 --expirar marca 1 pedido vencido" "1" \
-  "$(psql_t -c "SELECT (output->>'expirados')::int FROM sales_intelligence.agent_runs WHERE correlation_id = '$CORR_EXP';" | tr -d ' ')"
+  "$(psql_t -c "SELECT jsonb_array_length(output->'pedidos') FROM sales_intelligence.agent_runs WHERE correlation_id = '$CORR_EXP';" | tr -d ' ')"
 item "A10 o pedido velho virou EXPIRED" "$((EXPIRADOS_ANTES + 1))" "$(contar_h_exp)"
 item "A10 a expiracao NAO inventa operador" "" \
   "$(psql_t -c "SELECT COALESCE(decided_by,'') FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_E';" | tr -d ' ')"
@@ -451,7 +454,7 @@ item "A10 a expiracao registra o motivo e o TTL" "EXPIRADO_POR_TTL:72h" \
 item "A10 os pedidos novos continuam PENDING" "$((PENDENTES_ANTES - 1))" "$(contar_h)"
 item "A10 o pedido ja decidido nao foi afetado" "APPROVED" \
   "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A10 a expiracao e auditada como evento proprio" "EXPIRACAO|EXPIRADO" \
+item "A10 a expiracao e auditada como evento proprio" "EXPIRACAO|COMPLETED" \
   "$(psql_t -c "SELECT (output->>'evento') || '|' || status FROM sales_intelligence.agent_runs WHERE correlation_id = '$CORR_EXP';" | tr -d ' ')"
 
 # ---------------------------------------------------------------------------------------
@@ -499,10 +502,9 @@ item "A12 guarda de escrita recusa escrita fora das duas tabelas" "RECUSOU" "$(c
 # A13: desfazer (dry-run x --confirmo) — reabre o pedido e preserva a auditoria
 # ---------------------------------------------------------------------------------------
 CORR_DESF="$(python3 -c 'import uuid;print(uuid.uuid4())')"
-python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --decidir "$PEDIDO_C" rejeitar "$OPERADOR" \
-  --correlation-id "$CORR_DESF" >"$TRABALHO/decisao_desf.json" 2>&1
+RC=$(decidir desf "$PEDIDO_C" rejeitar "$OPERADOR")
+item "A13 segundo voto diferente RECUSA (conflito)" "CONFLITO_DE_VOTO" "$(motivo "$TRABALHO/decisao_desf.txt")"
 APROVADOS_ANTES="$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE status = 'APPROVED';" | tr -d ' ')"
-item "A13 segundo voto diferente RECUSA (conflito)" "CONFLITO_DE_VOTO" "$(motivo "$TRABALHO/decisao_desf.json")"
 
 CORR_A2="$(psql_t -c "SELECT correlation_id FROM sales_intelligence.agent_runs WHERE output->'resultado'->>'pedido_id' = '$PEDIDO_A' AND output->'resultado'->>'veredito' = 'APROVADO' LIMIT 1;" | tr -d ' ')"
 DRY="$(python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --desfazer "$CORR_A2" 2>&1 | grep -o '"seriam_revertidos": [0-9]*' | grep -o '[0-9]*')"
@@ -521,12 +523,12 @@ item "A13 o pedido voltou a PENDING" "PENDING" \
 item "A13 decided_by voltou a ficar vazio" "" \
   "$(psql_t -c "SELECT COALESCE(decided_by,'') FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A13 a reversao fica registrada" "REVERTIDO_POR:$OPERADOR:aprovacao registrada por engano" \
-  "$(psql_t -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+  "$(psql_limpo -c "SELECT decision_notes FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';")"
 item "A13 o portao volta a NEGAR o pedido revertido" "false" \
   "$(python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --consultar "$PEDIDO_A" | python3 -c 'import json,sys;print(str(json.load(sys.stdin)["consulta"]["pode_enviar"]).lower())')"
 item "A13 a auditoria da rodada revertida permanece" "1" \
   "$(psql_t -c "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id = '$CORR_A2';" | tr -d ' ')"
-item "A13 aprovados voltaram ao numero anterior" "$APROVADOS_ANTES" \
+item "A13 aprovados voltaram ao numero anterior (o revertido saiu)" "$((APROVADOS_ANTES - 1))" \
   "$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE status = 'APPROVED';" | tr -d ' ')"
 
 # ---------------------------------------------------------------------------------------

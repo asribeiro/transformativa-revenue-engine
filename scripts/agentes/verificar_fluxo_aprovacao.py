@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import ast
 import importlib.util
+import inspect
 import json
 import shutil
 import subprocess
@@ -219,6 +220,14 @@ def verificar(raiz: Path, caminho_modulo: Path, caminho_politica: Path, caminho_
     item("C5 a guarda de contato e lida da politica irma (um dono so)", True,
          carregado["politica_irma"]["guarda_de_contato"]["bloqueios_absolutos"] ==
          ["do_not_contact"])
+    # C6: o mapa de idempotencia da notificacao nao pode virar lista de listas (renotificaria em loop)
+    sql_notificacoes = modulo.sql_das_notificacoes()
+    item("C6 o sql das notificacoes agrega o ELEMENTO (nao o array da rodada)", True,
+         "jsonb_array_elements" in sql_notificacoes and "json_agg(elemento)" in sql_notificacoes
+         and "json_agg(r.output" not in sql_notificacoes)
+    item("C6 o leitor do mapa aceita lista de listas", ["a", "b"], modulo._achatar([["a"], "b"]))
+    item("C6 a leitura das notificacoes nao engole erro de banco", True,
+         "MOTIVO_PORTA_AUSENTE" in inspect.getsource(modulo.notificacoes_anteriores))
 
     # ----------------------------------------------------------------------- D escrita
     def guarda(sql, permitir_delete=False):
@@ -451,6 +460,9 @@ MUTACOES = [
     ("D18 marcador declarado sem valor deixa de ser conferido", "hermes/agents/outreach/approval_workflow.py",
      "        if marcador not in valores:", "        if False:",
      "E6 notificacao recusa marcador declarado sem valor"),
+    ("D21 o sql das notificacoes volta a agregar lista de listas", "hermes/agents/outreach/approval_workflow.py",
+     "json_agg(elemento)", "json_agg(r.output->'notificados')",
+     "C6 o sql das notificacoes agrega o ELEMENTO (nao o array da rodada)"),
     ("D19 contrato do componente perde as tabelas escritas",
      "hermes/agents/outreach/aprovacao-humana-v1.json",
      '"tabelas_escritas": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"]',

@@ -387,9 +387,14 @@ def sql_do_pedido(carregado: dict, pedido_id: str) -> str:
 
 
 def sql_das_notificacoes() -> str:
-    return (f"SELECT json_build_object('notificados', COALESCE(json_agg(output->'notificados'), "
-            f"'[]'::json)) FROM {TABELA_AGENT_RUNS} WHERE workflow = {lit(WORKFLOW)} "
-            f"AND output->>'evento' = {lit('NOTIFICACAO')};")
+    """Notificacoes ja feitas: achata os arrays de `output->'notificados'` numa lista unica.
+
+    `json_agg(output->'notificados')` produziria uma lista de LISTAS (uma por rodada) e o mapa de
+    idempotencia ficaria vazio — foi o que fez a fila renotificar todo mundo na segunda rodada.
+    """
+    return (f"SELECT json_build_object('notificados', COALESCE(json_agg(elemento), '[]'::json)) "
+            f"FROM {TABELA_AGENT_RUNS} r, jsonb_array_elements(r.output->'notificados') AS elemento "
+            f"WHERE r.workflow = {lit(WORKFLOW)} AND r.output->>'evento' = {lit('NOTIFICACAO')};")
 
 
 def linhas_de_json(saida: str) -> list[dict]:
@@ -585,16 +590,32 @@ def entrada_da_rodada(carregado: dict, ambiente: str, extras: dict | None = None
 # FILA / notificacao
 # ---------------------------------------------------------------------------------------
 def notificacoes_anteriores(prefixo: str) -> dict[str, str]:
-    """Mapa approval_id -> texto_hash ja notificado (idempotencia da notificacao)."""
-    rc, saida, _ = executar_sql(sql_das_notificacoes(), prefixo)
+    """Mapa approval_id -> texto_hash ja notificado (idempotencia da notificacao).
+
+    Fail-closed: se a consulta falhar, RECUSA a rodada. Renotificar o mesmo pedido a cada ciclo e
+    pior do que nao notificar — o operador receberia a mesma cobranca em loop.
+    """
+    rc, saida, erro = executar_sql(sql_das_notificacoes(), prefixo)
     if rc != 0:
-        return {}
+        raise RecusaDeDecisao(MOTIVO_PORTA_AUSENTE,
+                              f"nao consegui ler as notificacoes anteriores: {erro.strip()[:300]}")
     mapa: dict[str, str] = {}
     for linha in linhas_de_json(saida):
-        for item in linha.get("notificados") or []:
+        for item in _achatar(linha.get("notificados")):
             if isinstance(item, dict) and item.get("approval_id"):
                 mapa[str(item["approval_id"])] = str(item.get("texto_hash") or "")
     return mapa
+
+
+def _achatar(itens) -> list:
+    """Aceita lista de dicts ou lista de listas de dicts (json_agg aninhado nao passa calado)."""
+    plano: list = []
+    for item in itens or []:
+        if isinstance(item, list):
+            plano.extend(item)
+        else:
+            plano.append(item)
+    return plano
 
 
 def rodar_fila(carregado: dict, prefixo: str, ambiente: str, correlation_id: str,
