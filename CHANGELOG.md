@@ -1427,3 +1427,43 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Fora do card**: tier, Priority Score, Next Best Action, `valid_until`, evento `COMPANY_QUALIFIED`,
   espelhamento no Odoo (W3) e o aceite E2E da cadeia W5 (W5-E08). O aceite E2E da W4 continua medindo
   `scores` **vazio** — ele roda no banco descartável dele e nenhum agente da W4 escreve score.
+## [W5 — Scoring · Buying Signal Score v1] — 02/10/2026
+
+### Added
+
+- **Buying Signal Score v1 — o score `BUYING_SIGNAL`** (`TRE-W5-E03-T01`) — primeiro componente da W5:
+  transforma os `signals` do Signal Detector no número que o Data Contract §8 reserva desde o W0
+  (peso 0,25 do Priority Score) e que **nenhum** componente calculava. Fórmula V1 congelada como
+  `buying-signal-v1`: `pontos = peso_do_tipo × confiança × decaimento` (meia-vida por categoria),
+  agregada por **saturação** (`1 − ∏(1 − pontos)`) com **limite de 10 sinais** por empresa:
+  - `hermes/agents/buying_signal/buying_signal_score.py` — o componente (fórmula pura + SQL com
+    guarda de escrita + CLI `--planejar` / `--desfazer`), com `score_version` obrigatória, `inputs`
+    e `explanation` persistidos para reconstruir qualquer número, e `valid_until` de 30 dias;
+  - `hermes/agents/buying_signal/agente-buying-signal-v1.json` — contrato legível por máquina
+    (pesos por tipo, meia-vidas, limites, garantias, idempotência, lacunas);
+  - `docs/architecture/buying-signal-score-v1.md` — contrato com **ACCEPTANCE, TEST, ROLLBACK e RISK**
+    (campos exigidos pelo doc 11 §2 e não detalhados lá) e `docs/runbooks/buying-signal-score.md`.
+- **Guarda de escrita do score** — o componente escreve **apenas** em `scores`, `agent_runs` e
+  `sync_events`: `INSERT`/`UPDATE`/`DELETE` em `signals` ou `organizations` é **recusado**, e
+  `UPDATE` em `scores` é recusado **sempre** (score é histórico, não mutável). `DELETE` só no
+  `--desfazer` explícito, com `--confirmo`.
+- **Idempotência pela ENTRADA** — chave `score:BUYING_SIGNAL:<org>:<entrada_hash>` em
+  `sync_events.idempotency_key` (UNIQUE), com claim + INSERT ancorado + fechamento numa única
+  transação; a prova da gravação é o `COUNT` do score da rodada lido dentro da própria transação.
+
+### Fixed
+
+- **Dois defeitos medidos no aceite E2E** (não supostos — as duas suítes offline os cobrem agora):
+  1. **datas do psql** — o texto vem `2026-09-23 20:04:11+00` (fuso sem minutos) e a validação ISO
+     recusava a forma: **todos** os sinais eram descartados com `DATA_AUSENTE` e o score saía `0,00`.
+  2. **confiança `NULL` virava `''`** — o JSONB da leitura (`COALESCE(confidence::text,'')`) devolve
+     string vazia, e vazio era tratado como valor: o sinal era descartado com
+     `CONFIANCA_FORA_DA_FAIXA` em vez de usar a confiança padrão (0,5).
+- **Hash de idempotência não pode carregar os pontos** — o `entrada_hash` incluía `pontos`, que
+  dependem da idade do sinal e mudam a cada segundo: a chave mudava a cada rodada e **não havia
+  idempotência nenhuma** (o replay gravava linha nova). O material passou a usar a **identidade**
+  dos sinais (id, tipo) e os parâmetros da fórmula.
+- **Porta de banco própria** — a porta importada do detector aplicava a guarda **dele** (recusava
+  `scores`, corretamente do ponto de vista daquele agente): o componente passou a ter a sua porta
+  com o **mesmo transporte** psql e a guarda **deste** card. Guarda de um agente não vale como
+  guarda de outro.

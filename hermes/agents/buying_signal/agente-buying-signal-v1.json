@@ -1,0 +1,113 @@
+{
+ "agente": "buying_signal",
+ "papel": "score_calculation",
+ "versao": "1.0.0",
+ "workflow": "scoring-buying-signal",
+ "workflow_versao": "v1",
+ "card": "TRE-W5-E03-T01",
+ "onda": "W5",
+ "epico": "E03",
+ "titulo": "Buying Signal Score V1",
+ "depende_de": ["TRE-W4-E03-T01"],
+ "score_type": "BUYING_SIGNAL",
+ "score_version": "buying-signal-v1",
+ "formula": "1 - PROD(1 - peso_do_tipo * confianca * decaimento)",
+ "mede": "forca e atualidade dos sinais de mudanca/demanda da empresa (Data Contract V1.0, secao 8)",
+ "entrada": "signals ja gravados pelo Signal Detector (TRE-W4-E03-T01) para UMA organizations.id existente",
+ "saida": "uma linha em sales_intelligence.scores com score_type + score_version + inputs + explanation",
+ "persistencia": {
+  "tabela": "sales_intelligence.scores",
+  "escrita_permitida": [
+   "sales_intelligence.scores",
+   "sales_intelligence.agent_runs",
+   "sales_intelligence.sync_events"
+  ],
+  "leitura_declarada": [
+   "sales_intelligence.organizations",
+   "sales_intelligence.signals"
+  ],
+  "historico": "score nao e mutavel: recalcular INSERE linha nova; UPDATE em scores e recusado pela guarda",
+  "desfazer": "apaga SO os scores que a rodada criou (ancora em agent_runs.output.score_id), so com --confirmo"
+ },
+ "pesos_por_tipo": {
+  "ERP_CHANGE": 0.95,
+  "AI_INITIATIVE": 0.9,
+  "DIGITAL_TRANSFORMATION": 0.85,
+  "M_AND_A": 0.85,
+  "CRM_CHANGE": 0.8,
+  "FUNDING": 0.8,
+  "EFFICIENCY_PROGRAM": 0.75,
+  "NEW_EXECUTIVE": 0.7,
+  "COST_REDUCTION": 0.7,
+  "GROWTH": 0.65,
+  "TECH_ADOPTION": 0.6,
+  "HIRING": 0.6,
+  "REGULATORY_CHANGE": 0.55,
+  "NEW_PRODUCT": 0.55,
+  "NEW_LOCATION": 0.5,
+  "SERVICE_VOLUME": 0.5,
+  "PROCESS_COMPLEXITY": 0.45,
+  "CUSTOMER_COMPLAINT": 0.4
+ },
+ "meia_vida_dias": {
+  "TECNOLOGIA": 120,
+  "CORPORATIVO": 180,
+  "EXPANSAO": 150,
+  "EFICIENCIA": 240,
+  "PRESSAO_OPERACIONAL": 90,
+  "REGULATORIO": 300
+ },
+ "limite_sinais": 10,
+ "confianca_padrao": 0.5,
+ "validade_dias": 30,
+ "vocabulario_coberto": [
+  "AI_INITIATIVE",
+  "COST_REDUCTION",
+  "CRM_CHANGE",
+  "CUSTOMER_COMPLAINT",
+  "DIGITAL_TRANSFORMATION",
+  "EFFICIENCY_PROGRAM",
+  "ERP_CHANGE",
+  "FUNDING",
+  "GROWTH",
+  "HIRING",
+  "M_AND_A",
+  "NEW_EXECUTIVE",
+  "NEW_LOCATION",
+  "NEW_PRODUCT",
+  "PROCESS_COMPLEXITY",
+  "REGULATORY_CHANGE",
+  "SERVICE_VOLUME",
+  "TECH_ADOPTION"
+ ],
+ "regras_declaradas": [
+  "confianca ausente usa a confianca padrao (0.5) e o fato e registrado em inputs (confianca_padrao_usada)",
+  "data do evento futura nao decai (idade 0) e e registrada em inputs (data_futura)",
+  "sem event_date usa detected_at; sem nenhuma das duas o sinal e DESCARTADO com motivo DATA_AUSENTE",
+  "confianca fora de 0..1 e descartada com motivo CONFIANCA_FORA_DA_FAIXA",
+  "tipo fora do vocabulario fechado do contrato e RECUSA (ContratoDivergente), nao aviso",
+  "no maximo 10 sinais (os mais fortes) contribuem; o excedente fica em inputs.sinais_ignorados",
+  "sem sinal utilizavel o score e 0,00 com motivo SEM_SINAIS (ausencia de sinal e informacao, nao erro)",
+  "saturacao: o score nao passa de 100 por acumulo de sinais fracos",
+  "valid_until = calculated_at + 30 dias (validade declarada, nao inferida)"
+ ],
+ "garantias": [
+  "nao escreve em signals nem em organizations (guarda de escrita recusa)",
+  "nao faz UPDATE em scores: score historico",
+  "nao emite evento de outbox, nao chama Odoo/Titan/n8n",
+  "nao faz requisicao de rede e nao chama LLM: formula deterministica",
+  "nao escreve em producao (ADR-005): --ambiente dev|homolog; prod recusado com exit 4",
+  "--planejar calcula e NAO abre conexao de banco"
+ ],
+ "idempotencia": {
+  "chave": "score:BUYING_SIGNAL:<organizacao_id>:<entrada_hash>",
+  "onde": "sales_intelligence.sync_events.idempotency_key (UNIQUE)",
+  "comportamento": "mesma entrada (mesmos sinais e mesma formula) nao grava de novo: veredito JA_CALCULADO; sinais novos mudam o hash e geram linha nova",
+  "prova_da_gravacao": "COUNT do score da rodada dentro da propria transacao"
+ },
+ "lacunas": [
+  "a formula do BUYING_SIGNAL nao estava escrita no Data Contract V1.0 (que so fecha a formula do PRIORITY): este card congela o buying-signal-v1 e registra a formula para o contrato - a secao 8 do contrato precisa receber a formula na homologacao (mudanca documental, sem DDL nova)",
+  "a versao v1 nao usa relevancia/decay por sinal da coluna signals.relevance_score (escrita por outro card): o score e derivado SO de tipo, confianca e data",
+  "o peso por tipo e uma decisao de negocio do baseline: mudar peso gera nova score_version (buying-signal-v2), nunca edicao silenciosa"
+ ]
+}
