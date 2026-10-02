@@ -332,24 +332,29 @@ class TestAtividadeCriar(HttpCase):
         self.assertEqual(self._contagem_de_atividades(), antes)
 
     # ------------------------------------------------------------------ AC7 ACL do dono da chave
-    def test_16_usuario_sem_acesso_ao_documento_recusa_403(self):
-        """O `mail.activity.create` exige acesso ao DOCUMENTO ancorado — a API nao faz `sudo()`.
+    def test_16_usuario_sem_escrita_no_documento_recusa_403(self):
+        """O `mail.activity.create` exige acesso de ESCRITA ao DOCUMENTO ancorado — sem `sudo()`.
 
-        O parceiro abaixo e' um contato PRIVADO de outro usuario: a regra de registro de
-        `res.partner` tira do vendedor o direito de escrever nele e a criacao da atividade morre em
-        `AccessError` -> recusa nomeada 403, sem registro criado "por baixo".
+        A chave abaixo e' de um usuario com `base.group_user` (que da' LEITURA em `res.partner`) e
+        SEM os grupos de vendas: a criacao da atividade morre em `AccessError` -> recusa nomeada 403,
+        sem registro criado "por baixo". O caminho feliziro (item 3) prova o outro lado: com a ACL de
+        escrita, a MESMA ancora cria.
         """
-        alheio = self.env["res.partner"].create(
-            {
-                "name": "Contato privado de outro usuario",
-                "type": "private",
-                "user_id": self.env.ref("base.user_admin").id,
-            }
+        sem_escrita = new_test_user(
+            self.env,
+            login="tf_api_atividade_sem_escrita",
+            groups="base.group_user,%s.group_tf_sales_ai_user" % MODULO,
+        )
+        chave_sem_escrita = self.env["res.users.apikeys"].with_user(sem_escrita)._generate(
+            scope="rpc",
+            name="teste-atividade-criar-sem-escrita",
+            expiration_date=datetime.now() + timedelta(hours=12),
         )
         antes = self._contagem_de_atividades()
         resposta = self._criar(
-            self._valores_do_caso(res_id=alheio.id),
+            self._valores_do_caso(),
             chave_idempotencia="tre-e01-t05-teste-0016",
+            chave=chave_sem_escrita,
         )
         self.assertEqual(resposta.status_code, 403, resposta.text)
         self.assertEqual(self._codigo(resposta), "acesso_negado")

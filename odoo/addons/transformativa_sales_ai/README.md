@@ -18,9 +18,9 @@ O que já existe e quem entrega o quê:
 | Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
 | API controlada | `TRE-W3-E01-T01` | entregue |
 | Upsert de empresa pela API (`empresa_upsert`) | `TRE-W3-E01-T02` | entregue |
-| Upsert de contato pela API (`contato_upsert`) | `TRE-W3-E01-T03` | **neste card** |
-| API controlada | `TRE-W3-E01-T01` | **neste card** |
-| Operação de escrita de negócio `oportunidade_upsert` (espelho da oportunidade no CRM) | `TRE-W3-E01-T04` | **neste card** |
+| Upsert de contato pela API (`contato_upsert`) | `TRE-W3-E01-T03` | entregue |
+| Upsert de oportunidade pela API (`oportunidade_upsert`) | `TRE-W3-E01-T04` | entregue |
+| Criação de atividade pela API (`atividade_criar`) | `TRE-W3-E01-T05` | **neste card** |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
 
@@ -123,6 +123,16 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   Odoo na recusa **e** no registro (`stage_id`/`expected_revenue`/`probability` etc. comparados
   antes/depois), `dry_run` que descreve sem escrever, trilha sem payload, guarda de ambiente do
   ADR-005 na escrita (503/503/200) e o vínculo/dono do lead medidos.
+- `tests/test_atividade_criar.py` (card W3-E01-T05, 19 testes, tag `post_install`): a operação de
+  escrita de negócio `atividade_criar` — operação declarada nas capacidades (lendo a versão da
+  política do **próprio artefato**), **âncora fixa declarada** (`res_model` divergente e o id interno
+  `res_model_id` → 422, nada criado), `res_id` obrigatório, criação medida **no banco**
+  (`ir_model.model` + `res_id`, resumo/prazo/tipo/rastro do chamador e `create_uid` do dono da
+  chave), **ACL** (chave sem escrita no documento ancorado → 403 `acesso_negado`, nada criado),
+  `idempotency_key` ausente/fora do formato, `dry_run` que descreve sem criar, guarda de ambiente do
+  ADR-005 (503/503), trilha sem payload, e as **lacunas medidas**: sem identidade declarada (o
+  `identificador` escalar é recusado) e o replay da mesma chave ainda criando uma segunda atividade
+  (dedup é o `E02-T02`).
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -227,6 +237,7 @@ cards `TRE-W3-E01-T02..T05`, que entram uma a uma na MESMA política, com a `ver
 | `empresa_upsert` | **Escrita de negócio** (`TRE-W3-E01-T02`): upsert do parceiro-**empresa** em `res.partner` (`name`, `tf_company_id`, `tf_cnpj`, `tf_domain`, `tf_linkedin_url`, `tf_priority_score`), identidade declarada em `campos_de_identidade` (canônico → CNPJ → domínio → LinkedIn), `is_company` como **valor fixo** declarado e recusa `409 valor_ambiguo` quando os identificadores do pedido casam mais de um registro — runbook `docs/runbooks/odoo-empresa-upsert.md` |
 | `contato_upsert` | **Escrita de negócio** (`TRE-W3-E01-T03`): upsert do parceiro-**pessoa** (contato comercial) em `res.partner` (`name`, `email`, `is_company`, `function`, `phone`), identidade declarada em `campos_de_identidade` (**`email`** — o identificador natural que existe nos dois lados e é indexado pelo contrato §4), `is_company` como **valor fixo** declarado (`false`) e `409 valor_ambiguo` quando mais de um parceiro tem o mesmo e-mail. Os campos de opt-out/`legal_basis`/`preferred_channel` são do PostgreSQL (contrato §9) e **não** existem neste espelho: enviá-los é recusa nomeada — runbook `docs/runbooks/odoo-contato-upsert.md` |
 | `oportunidade_upsert` | Escrita de negócio: espelha a oportunidade canônica em `crm.lead` — cria na primeira chamada de um UUID e **atualiza** nas seguintes, sem duplicar; identidade por `tf_opportunity_id`; **não** escreve campo de dono do Odoo (`TRE-W3-E01-T04`) |
+| `atividade_criar` | **Criação** de negócio: cria a atividade comercial em `mail.activity` com a **âncora fixa** declarada (`res_model = res.partner`; o chamador não escolhe o modelo-alvo) e `res_id` obrigatório; `summary`/`date_deadline`/`activity_type_id` opcionais; rastro `tf_idempotency_key`/`tf_correlation_id` registrado na atividade; **sem identidade** (a ação é de criação — dedup por chave é o `E02-T02`, e a lacuna está medida) — runbook `docs/runbooks/odoo-atividade-criar.md` (`TRE-W3-E01-T05`) |
 
 Guarda de ambiente (ADR-005): sem `ir.config_parameter` `tf.api.ambiente` **declarado** e presente
 em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exigem aprovação humana
@@ -293,3 +304,41 @@ POST /tf/api/v1/oportunidade_upsert        Authorization: Bearer <chave de API>
   ORM) e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3 mutações,
   cada uma **tem** de reprovar, com o item esperado conferido e harness **fail-closed**: prova que
   não mede nada reprova).
+## Operação de escrita de negócio `atividade_criar` (`TRE-W3-E01-T05`)
+
+Runbook do card: **`docs/runbooks/odoo-atividade-criar.md`**. A operação entra por **declaração** na
+política (`api/politica_api.json` sobe de `1.2.0` para `1.3.0`) — a única superfície de CÓDIGO é a
+**tradução da âncora** em `models/mail_activity.py`, e ela existe por um defeito medido do Odoo 19
+(§1.2 do runbook): `res_model` é campo *related*, `store=True`, `readonly=True` e **sem inverse** —
+o ORM descarta em silêncio o valor do chamador e o `INSERT` morre na CHECK
+`mail_activity_check_res_id_is_set_if_model`.
+
+```http
+POST /tf/api/v1/atividade_criar        Authorization: Bearer *** de API>
+{"idempotency_key": "tre-...", "dry_run": false,
+ "parametros": {"valores": {"res_id": 42, "summary": "Ligar para o decisor",
+                            "date_deadline": "2026-10-10",
+                            "tf_idempotency_key": "tre-...", "tf_correlation_id": "tre-..."}}}
+```
+
+| Decisão | Porquê |
+|---|---|
+| a **âncora é valor fixo** declarado (`res_model = res.partner`) | o chamador não escolhe o modelo-alvo; divergência (inclusive pelo id interno `res_model_id`) é 422 nomeada, nunca escolha silenciosa. `res.partner` é o documento que **existe** no fluxo de fundação do E2E #001 (doc 08 §3 passos 13..15) |
+| a política declara o **NOME** do modelo, não o id de `ir.model` | id de banco muda de ambiente para ambiente; o módulo resolve o nome no `ir.model` **do banco em uso**, no `create` (o mesmo idioma do `default_get` do `mail.activity`) |
+| `summary`/`date_deadline`/`activity_type_id`/`user_id` declarados e **não** obrigatórios | o modelo tem default para todos; exigir id interno de `mail.activity.type` do consumidor externo seria identidade por suposição (contrato §5) |
+| a operação **não** declara identidade | a ação é `criar` — não há registro anterior a casar. Quem garante "não duplicar" é a dedup por chave (`E02-T02`), e a falta dela é **medida** no aceite (replay → 2 registros) |
+| `tf_idempotency_key`/`tf_correlation_id` gravados **na atividade** | rastro do produtor no próprio registro (padrão do `E04-T02` em `crm.lead`), além da trilha `TF_API_AUDIT` |
+| a criação passa pela **ACL do dono da chave** | o controlador não faz `sudo()` no dado: chave sem escrita no documento ancorado → 403 `acesso_negado` (medido com uma segunda chave, sem os grupos de venda) |
+| atividade ancorada em `crm.lead` **não** é servida | lacuna declarada e roteada: aceitar um **conjunto** de âncoras exige vocabulário novo no mecanismo de valor fixo (dono: `E02-T02`) |
+
+- **Testes do Odoo:** `tests/test_atividade_criar.py` (19 testes, tag `post_install`).
+- **Aceite:** `bash scripts/odoo/verificar-atividade-criar.sh` (na VPS, **como root** — a dupla
+  descartável exige `chown` para o uid do container): suíte pura do motor, instalação em banco
+  limpo, suíte do Odoo com piso de testes, **servidor HTTP real com `curl` de fora do processo**
+  (criação, recusas nomeadas, `dry_run`, replay medido, ACL), **leitura por SQL** no banco (a
+  atividade nasceu em `res.partner`/`res_id`, resumo/prazo/tipo/rastro, `create_uid` do dono da
+  chave), auditoria lida do log do servidor, guarda de ambiente do ADR-005 na escrita (com o servidor
+  reiniciado **depois** da troca feita pelo ORM) e limpeza com dev/homolog/prod medidos. Provas
+  negativas em `--prova-de-dente` (4 mutações — política sem a operação, política sem o valor fixo da
+  âncora, controlador sem o ramo de criação e **módulo sem a tradução da âncora** — cada uma **tem**
+  de reprovar, com o item esperado conferido e harness **fail-closed**).

@@ -760,6 +760,29 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (61/98/96 itens medidos por prova), com o artefato real intacto (sha256 de 29 arquivos). O harness
   de dentes é fail-closed: prova que não mede nada **reprova**.
 
+- **Operação de escrita de negócio `atividade_criar` na API controlada** (`TRE-W3-E01-T05`) —
+  a **atividade comercial** do Odoo (`mail.activity`) entra pela mesma porta única, por declaração
+  (`api/politica_api.json` sobe para `1.3.0`), com **uma** superfície de código: a **tradução da
+  âncora** em `models/mail_activity.py` (+ o import em `models/__init__.py` e a dependência `mail` no
+  manifesto). A âncora é **valor fixo** da política (`res_model = res.partner`): o chamador **não**
+  escolhe o modelo-alvo (divergência, inclusive pelo id interno `res_model_id`, é 422 nomeada) e
+  `res_id` é obrigatório. A operação **não** declara identidade — a ação é `criar` e quem garante não
+  duplicar é a dedup por chave (`E02-T02`), cuja ausência é **medida** no aceite (replay da mesma
+  chave → 2 registros). O rastro `tf_idempotency_key`/`tf_correlation_id` fica **gravado na
+  atividade**, além da trilha `TF_API_AUDIT`; a criação passa pela **ACL do dono da chave** (403
+  `acesso_negado` com chave sem escrita no documento ancorado — medido com uma segunda chave).
+  **Defeito medido do Odoo 19 que justifica o código:** `res_model` é campo *related*, `store=True`,
+  `readonly=True` e **sem inverse** — o ORM descarta em silêncio o valor do chamador e o `INSERT`
+  morre na CHECK `mail_activity_check_res_id_is_set_if_model`; a política declara o **nome** do
+  modelo (id de `ir.model` é id de banco, não vai para artefato versionado) e o módulo resolve o
+  nome no `ir.model` do banco em uso. **Reconciliação da onda:** a política em vigor passa a declarar
+  a forma de identidade por **lista ordenada** (`campos_de_identidade`, do `E01-T02`) e os leitores do
+  artefato (suíte pura do motor, verificador do `E01-T04`, itens de contrato) foram ajustados para a
+  forma em vigor — a declaração do `E01-T04` nasceu na forma singular por ter sido construída em ramo
+  paralelo. Artefatos: `tests/test_atividade_criar.py` (19 testes),
+  `scripts/odoo/verificar-atividade-criar.sh` (aceite + **4** dentes fail-closed, incluindo um sobre a
+  tradução da âncora) e `docs/runbooks/odoo-atividade-criar.md`.
+
 - **Upsert de empresa pela API controlada (`TRE-W3-E01-T02`, `t_cdc21b43`)** — a **primeira operação de
   escrita de negócio** da porta única: `empresa_upsert` entra declarada em `api/politica_api.json`
   (versão da política **1.0.0 → 1.1.0**) para escrever em `res.partner` os campos `name`,

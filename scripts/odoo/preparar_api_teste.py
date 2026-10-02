@@ -16,7 +16,13 @@ O QUE ELE FAZ (e por que cada coisa):
   4. commita.
 
 Variaveis de ambiente lidas (com padrao): TRE_API_AMBIENTE (dev), TRE_API_USUARIO (tf_api_integracao),
-TRE_API_ARQUIVO_CHAVE (/preparo/chave.txt).
+TRE_API_ARQUIVO_CHAVE (/preparo/chave.txt), TRE_API_GRUPOS (os grupos do usuario de integracao).
+
+`TRE_API_GRUPOS` existe para o aceite do card TRE-W3-E01-T05 (AC7): a prova de ACL precisa de uma
+chave de usuario SEM escrita no documento ancorado (`base.group_user` da' LEITURA em `res.partner` e
+os grupos de vendas dao' ESCRITA) — sem essa prova, "a API respeita a ACL" seria afirmacao sem
+medicao. O padrao continua sendo o dos cards anteriores: quem nao passa a variavel nao muda de
+comportamento.
 """
 
 import os
@@ -26,11 +32,11 @@ AMBIENTE = os.environ.get("TRE_API_AMBIENTE", "dev")
 LOGIN = os.environ.get("TRE_API_USUARIO", "tf_api_integracao")
 ARQUIVO_CHAVE = os.environ.get("TRE_API_ARQUIVO_CHAVE", "/preparo/chave.txt")
 
-GRUPOS = ",".join([
+GRUPOS = os.environ.get("TRE_API_GRUPOS", ",".join([
     "base.group_user",
     "transformativa_sales_ai.group_tf_sales_ai_user",
     "sales_team.group_sale_salesman",
-])
+]))
 
 ICP = env["ir.config_parameter"].sudo()  # noqa: F821 - `env` vem do `odoo shell`
 ICP.set_param("tf.api.ambiente", AMBIENTE)
