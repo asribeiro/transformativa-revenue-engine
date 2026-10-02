@@ -47,6 +47,11 @@ UUID_A = "11111111-2222-4333-8444-555555555555"
 UUID_B = "66666666-7777-4888-8999-000000000000"
 UUID_C = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 UUID_D = "dddddddd-eeee-4fff-8000-111111111111"
+# UUIDs proprios do item de identidade (nomes iguais de proposito) e do dry-run em registro
+# existente: nao reaproveitam os das outras provas (cada prova mede o que ela mesma semeia).
+UUID_E = "14141414-3636-4767-8787-929292929292"
+UUID_F = "15151515-3737-4868-8787-939393939393"
+UUID_G = "16161616-3838-4979-8787-949494949494"
 
 
 @tagged("post_install", "-at_install")
@@ -81,12 +86,20 @@ class TestOportunidadeUpsert(HttpCase):
 
     # ------------------------------------------------------------------ utilidades
     def _post(self, operacao, corpo, chave="__padrao__"):
+        """POST de verdade na rota.
+
+        `method="POST"` e' explicito de proposito: sem ele, `url_open` com corpo vazio (ou
+        `json={}`) vira GET e o Odoo responde **405 Method Not Allowed** — barrado no roteador,
+        ANTES do controlador (nao mede nada do item). Defeito medido na rodada 1 desta suite.
+        """
         cabecalhos = {}
         if chave != "__sem__":
             cabecalhos["Authorization"] = "Bearer %s" % (
                 self.chave if chave == "__padrao__" else chave
             )
-        return self.url_open("/tf/api/v1/%s" % operacao, json=corpo, headers=cabecalhos)
+        return self.url_open(
+            "/tf/api/v1/%s" % operacao, json=corpo, headers=cabecalhos, method="POST"
+        )
 
     def _codigo(self, resposta):
         self.assertIn(resposta.status_code, range(400, 600), resposta.text)
@@ -120,12 +133,21 @@ class TestOportunidadeUpsert(HttpCase):
 
     # ------------------------------------------------------------------ AC1 operacao declarada
     def test_01_sem_token_recusa_401(self):
-        resposta = self._post("oportunidade_upsert", {}, chave="__sem__")
+        """Sem token nao ha' operacao: o item chega na rota e a autenticacao o barra.
+
+        Corpo com `parametros` de proposito: corpo vazio vira GET e o roteador responde 405 antes
+        de qualquer autenticacao (medido na rodada 1) — o item mediria a coisa errada.
+        """
+        resposta = self._post(
+            "oportunidade_upsert",
+            {"parametros": {"valores": {"name": "Sem token", "tf_opportunity_id": UUID_A}}},
+            chave="__sem__",
+        )
         self.assertEqual(resposta.status_code, 401, resposta.text)
 
     def test_02_operacao_aparece_nas_capacidades_como_escrita(self):
         """A declaracao e' lida do ARTEFATO (nao de literal no teste): o que se cobra e' a coerencia."""
-        resposta = self._post("sistema_capacidades", {})
+        resposta = self._post("sistema_capacidades", {"correlation_id": "tre-e01-t04-capacidades"})
         self.assertEqual(resposta.status_code, 200, resposta.text)
         corpo = resposta.json()
         self.assertEqual(corpo["politica_versao"], self.politica["versao"])
@@ -220,6 +242,7 @@ class TestOportunidadeUpsert(HttpCase):
                 "tf_score_version": "v1",
                 "tf_next_best_action": "FOLLOW_UP",
                 "tf_correlation_id": "tre-e01-t04-http-correl-1",
+                "tf_idempotency_key": "tre-e01-t04-http-0008",
                 "tf_last_sync_at": "2026-10-02 03:00:00",
                 "tf_last_event_type": "OPPORTUNITY_RECOMMENDED",
             },
@@ -281,22 +304,32 @@ class TestOportunidadeUpsert(HttpCase):
         self.assertEqual(leads.tf_priority_score, 54.0)
 
     def test_12_casa_pelo_uuid_e_nao_pelo_nome(self):
+        """NOMES iguais nao sao identidade: quem casa e' o UUID canonico (contrato §3).
+
+        As duas sementes nascem PELA PROPRIA API (nao pelo ORM da suite): a conexao que serve a
+        requisicao HTTP so' enxerga o que esta' commitado, entao semente de teste nao commitada
+        seria invisivel e o item mediria outra coisa (defeito medido na rodada 1).
+        """
         mesmo_nome = "Oportunidade de nome repetido"
-        primeira = self.env["crm.lead"].create(
-            {"name": mesmo_nome, "type": "opportunity",
-             "tf_opportunity_id": "12121212-3434-4565-8787-909090909090"}
+        primeira = self._upsert(
+            {"name": mesmo_nome, "type": "opportunity", "tf_opportunity_id": UUID_E},
+            "tre-e01-t04-http-0012a",
         )
-        segunda = self.env["crm.lead"].create(
-            {"name": mesmo_nome, "type": "opportunity",
-             "tf_opportunity_id": "13131313-3535-4656-8787-919191919191"}
+        segunda = self._upsert(
+            {"name": mesmo_nome, "type": "opportunity", "tf_opportunity_id": UUID_F},
+            "tre-e01-t04-http-0012b",
         )
+        self.assertNotEqual(primeira["ids"], segunda["ids"], "dois UUIDs viraram o mesmo registro")
         self._upsert(
-            {"name": "So' a segunda muda",
-             "tf_opportunity_id": segunda.tf_opportunity_id},
-            "tre-e01-t04-http-0012",
+            {"name": "So' a segunda muda", "tf_opportunity_id": UUID_F},
+            "tre-e01-t04-http-0012c",
         )
-        self.assertEqual(primeira.name, mesmo_nome, "o upsert casou pelo NOME, nao pelo UUID")
-        self.assertEqual(segunda.name, "So' a segunda muda")
+        self.assertEqual(
+            self._lead(UUID_E).name, mesmo_nome, "o upsert casou pelo NOME, nao pelo UUID"
+        )
+        self.assertEqual(self._lead(UUID_F).name, "So' a segunda muda")
+        self.assertEqual(len(self._lead(UUID_E)), 1)
+        self.assertEqual(len(self._lead(UUID_F)), 1)
 
     # ------------------------------------------------------------------ AC4 fronteira de dono
     def test_13_campo_de_estagio_recusado_422(self):
@@ -331,22 +364,37 @@ class TestOportunidadeUpsert(HttpCase):
         self.assertEqual(resposta.status_code, 422, resposta.text)
         self.assertEqual(self._codigo(resposta), "campo_nao_declarado")
 
-    def test_16_upsert_do_espelho_nao_toca_estagio_nem_valor(self):
-        estagio = self.env["crm.stage"].search([], limit=1)
-        lead = self.env["crm.lead"].create(
-            {"name": "Oportunidade do funil", "type": "opportunity",
-             "tf_opportunity_id": UUID_A, "stage_id": estagio.id, "expected_revenue": 15000.0}
+    def test_16_upsert_do_espelho_nao_toca_os_campos_de_dono_do_odoo(self):
+        """A fronteira do contrato §2 medida no REGISTRO, nao so' na recusa do payload.
+
+        O lead tem de nascer pela API (semente de teste nao commitada e' invisivel para a conexao
+        que serve o HTTP). Compara-se o registro INTEIRO antes e depois do segundo upsert: o que o
+        espelho toca sao os campos que ele declara.
+        """
+        DONOS = ["stage_id", "expected_revenue", "probability", "date_deadline", "date_closed",
+                 "user_id", "team_id", "partner_id"]
+        self._upsert(
+            {"name": "Oportunidade do funil", "type": "opportunity", "tf_opportunity_id": UUID_A,
+             "tf_priority_score": 40.0, "tf_next_best_action": "WAIT"},
+            "tre-e01-t04-http-0016a",
         )
+        lead = self._lead(UUID_A)
+        self.assertEqual(len(lead), 1)
+        antes = lead.read(DONOS)[0]
+        self.assertTrue(antes["stage_id"], "o lead nasceu sem estagio — medicao vazia (dono: Odoo)")
+        self.assertEqual(antes["expected_revenue"], 0.0)
         self._upsert(
             {"name": "Oportunidade do funil (espelho)", "tf_opportunity_id": UUID_A,
              "tf_priority_score": 77.0, "tf_next_best_action": "CREATE_MEETING"},
-            "tre-e01-t04-http-0016",
+            "tre-e01-t04-http-0016b",
         )
         lead.invalidate_recordset()
-        self.assertEqual(lead.stage_id, estagio, "o espelho mexeu no ESTAGIO (dono: Odoo)")
-        self.assertEqual(lead.expected_revenue, 15000.0, "o espelho mexeu no VALOR (dono: Odoo)")
+        depois = lead.read(DONOS)[0]
+        self.assertEqual(depois, antes, "o espelho tocou em campo de dono do Odoo")
+        self.assertEqual(lead.name, "Oportunidade do funil (espelho)")
         self.assertEqual(lead.tf_priority_score, 77.0)
         self.assertEqual(lead.tf_next_best_action, "CREATE_MEETING")
+        self.assertEqual(len(self._lead(UUID_A)), 1)
 
     def test_17_tier_acompanha_o_score_do_espelho(self):
         self._upsert(
@@ -380,24 +428,37 @@ class TestOportunidadeUpsert(HttpCase):
         self.assertEqual((antes, depois), (0, 0))
 
     def test_19_dry_run_em_lead_existente_descreve_sem_alterar(self):
-        self.env["crm.lead"].create(
-            {"name": "Existe", "type": "opportunity", "tf_opportunity_id": UUID_D}
+        """Com o registro existente, o dry-run descreve a ATUALIZACAO e nao escreve nada."""
+        criado = self._upsert(
+            {"name": "Existe", "type": "opportunity", "tf_opportunity_id": UUID_G},
+            "tre-e01-t04-http-0019a",
         )
         resposta = self._post(
             "oportunidade_upsert",
-            {"idempotency_key": "tre-e01-t04-http-0020", "dry_run": True,
-             "parametros": {"valores": {"name": "Nao deve entrar", "tf_opportunity_id": UUID_D}}},
+            {"idempotency_key": "tre-e01-t04-http-0019b", "dry_run": True,
+             "parametros": {"valores": {"name": "Nao deve entrar", "tf_opportunity_id": UUID_G}}},
         )
         self.assertEqual(resposta.status_code, 200, resposta.text)
-        self.assertEqual(resposta.json()["dados"]["acao_efetiva"], "atualizar")
-        self.assertEqual(self._lead(UUID_D).name, "Existe")
+        dados = resposta.json()["dados"]
+        self.assertEqual(dados["acao_efetiva"], "atualizar")
+        self.assertEqual(dados["id"], criado["ids"][0])
+        self.assertEqual(dados["atualizaria"], ["name"])
+        self.assertEqual(self._lead(UUID_G).name, "Existe")
 
     def test_20_envelope_traz_chave_e_correlacao(self):
+        """O envelope ecoa o que o chamador mandou e o rastro declarado chega no espelho.
+
+        `tf_idempotency_key` e' campo DECLARADO: vai no `valores` (quem preenche e' o produtor do
+        fato). A chave do ENVELOPE nao e' escrita no CRM por conta propria — ela entra na trilha de
+        auditoria (item AC7), que e' onde replay/retry e' investigado (dedup e' do E02-T02).
+        """
         resposta = self._post(
             "oportunidade_upsert",
             {"idempotency_key": "tre-e01-t04-http-0021",
              "correlation_id": "tre-e01-t04-http-correl-2",
-             "parametros": {"valores": {"name": "Envelope", "tf_opportunity_id": UUID_A}}},
+             "parametros": {"valores": {"name": "Envelope", "tf_opportunity_id": UUID_A,
+                                        "tf_idempotency_key": "tre-e01-t04-http-0021",
+                                        "tf_correlation_id": "tre-e01-t04-http-correl-2"}}},
         )
         self.assertEqual(resposta.status_code, 200, resposta.text)
         corpo = resposta.json()
