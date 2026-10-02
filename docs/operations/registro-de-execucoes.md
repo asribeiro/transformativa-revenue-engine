@@ -874,3 +874,227 @@ Rodada executada em 02/10, 03h20 a 04h55 UTC (00h20 a 01h55 na VPS, -03).
   vivem em arquivos `600` dentro do diretório descartável `700` e morrem com ele.
 - **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
   (perfil `tester`) e a homologação (estágio 7) é do Anderson.
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E02-T01 (card `t_ba84b412`): consumidor de outbox em n8n (fila -> porta unica da API controlada)
+
+- **Escopo entregue:** o consumidor da fila `sales_intelligence.outbox_events` declarado em **quatro
+  artefatos versionados** — contrato `n8n/contracts/outbox-consumer.v1.json` (esquema 1, versao 1.0.0),
+  nucleo `n8n/codigo/nucleo-outbox-consumer.js` (JS puro: roda em `node` e no Code node), dois SQL
+  (`n8n/sql/ler-pendentes.sql` so leitura; `n8n/sql/registrar-resultado.sql` grava estado do evento +
+  linha de `sync_events` **na mesma transacao**) — e o workflow `n8n/workflows/TRE-outbox-consumer.json`
+  **derivado** deles pelo montador `scripts/n8n/montar_workflow.py` (nucleo e contrato embutidos byte a
+  byte; workflow nasce inativo; `--conferir` reprova divergencia). O consumidor so alcanca o Odoo pela
+  **porta unica** (`POST /tf/api/v1/<operacao>`); grep estrutural reprova XML-RPC, `execute_kw`,
+  `/jsonrpc`, `psycopg` e `res_partner` dentro do workflow.
+- **Leitura e escrita separadas (single-writer):** a fila e' lida por
+  `status = ANY(ARRAY['PENDING','RETRY'])` com `LIMIT` declarado no contrato; a **unica** mutacao e' o
+  `registrar-resultado.sql` (UPDATE do evento + INSERT da trilha, uma transacao). Nenhum caminho do
+  nucleo faz UPDATE na tabela da fila.
+- **Defeito 1 (achado pelo aceite, corrigido):** o no HTTP do workflow nao declarava
+  `authentication: genericCredentialType` + `genericAuthType: httpHeaderAuth` — o n8n **nao enviava** a
+  credencial e a API respondia `401 use an API Key with a Bearer ...`. Correcao: credencial declarada
+  pelo **id/nome** (nunca valor — o valor e' lido pelo preparo e morre com o diretorio), item
+  estrutural exigindo o tipo, item no aceite medindo o header e **sonda independente** da chave
+  (`dry_run`, 200) para separar "chave invalida" de "n8n nao mandou o header".
+- **Defeito 2 (achado pelo aceite, corrigido na raiz — vale para o produto, nao so para o teste):** o
+  no HTTP disparava o lote **em paralelo**: dois eventos da MESMA identidade na mesma leva chegavam a
+  API antes de o primeiro commitar, a busca de identidade da API nao via o registro vizinho e o
+  resultado eram **dois parceiros para a mesma empresa** (`acao_efetiva:"criar"` nas duas respostas,
+  E1/E2 com **2 ms** de intervalo na auditoria do servidor — contra 13 linhas de auditoria medidas onde
+  se esperava 3). Correcao: entrega **serializada** (`batching.batchSize = 1` + intervalo **declarados
+  no contrato** e lidos pelo montador), item no aceite medindo o intervalo entre E1 e E2 (**217 ms**
+  medidos no artefato final, duas ordens de grandeza acima do piso paralelo) e item de negocio exigindo
+  **um** parceiro com o `name` **atualizado** pelo segundo evento. Limite declarado no runbook: a
+  serializacao protege **dentro** de uma instancia de n8n; concorrencia entre instancias (sem
+  `FOR UPDATE SKIP LOCKED`) fica como card proprio antes de escalar.
+- **Outros defeitos do harness (rodadas 2..8), todos corrigidos:** contagem de auditoria sem base
+  (a sonda da chave audita — passou a ser **delta** de uma base medida antes do ciclo 1); verificacao do
+  id estavel do workflow dependia do formato de `list:workflow` (trocada por `export:workflow --id`);
+  `podar()` vs `limpar()` confundidos na leitura de campos do parceiro (whitespace do `psql`); `chown`
+  errado para o uid do container no preparo; `odoo_ci()` precisa de `--stop-after-init
+  --log-level=info` (senao a instalacao do modulo pendura); `secret_scan.sh` chamado do diretorio
+  errado; controle do juiz dos dentes com 2 saidas sinteticas julgadas errado (fail-closed: o juiz
+  devolvia `MUTACAO_SEM_DENTE`/`NAO_CONTA` onde o controle esperava `DENTE_CUMPRIDO`).
+- **Aceite (artefato final, sobre copia byte a byte na VPS):** `OUTBOX_CONSUMER_OK (81 itens,
+  0 falhas)`, exit 0 — trio descartavel proprio (postgres:16 + odoo:19.0 + n8nio/n8n:latest, banco
+  `tre_e02_outbox`, rede propria; **sem tocar** no dev/homolog/prod, medido antes e depois). Inclui:
+  suite pura do nucleo `NUCLEO_CONSUMIDOR_OK (87 itens)`; lente estrutural `CONTRATO_WORKFLOW_OK (55
+  itens)`; 7 eventos de fila no ciclo 1 medidos item a item (valido / atualizacao da mesma identidade /
+  sem `event_version` / fora do contrato / sem `name` / sem identidade / identidade ambigua na API);
+  Odoo **parado** -> `RETRY`, `attempts=1`, trilha `FAILED`; Odoo de volta -> o retry entrega
+  (`PROCESSED`, `attempts=2`, **uma** linha de trilha, **um** parceiro); evento no teto ->
+  `DEAD_LETTER` **sem** chamada e **sem** escrita; sonda da chave 200 em `dry_run`; chamadas
+  autenticadas por delta de auditoria (3 no ciclo 1, 4 no total); `sha256` dos 5 artefatos fixado no
+  inicio e reconferido no fim.
+- **Dentes (prova de que o aceite tem dentes):** `OUTBOX_CONSUMER_DENTE_OK` — as 4 mutações
+  nomeadas (`sem_validacao_de_envelope`, `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`,
+  `mapeamento_trocado`) saíram **`DENTE_CUMPRIDO`** (o item esperado reprovou em cada sub-run) e o
+  **juiz dos dentes** foi conferido por 4 saídas sintéticas (mutação sem efeito → `MUTACAO_SEM_DENTE`,
+  mutação cumprida → `DENTE_CUMPRIDO`, ambiente quebrado → `NAO_CONTA`, âncora quebrada → `NAO_CONTA`).
+  O juiz é o que separa "dente" de "ambiente quebrado" — sem ele, um aceite abortado passaria por
+  prova. Nesta rodada ele próprio reprovou antes de valer (2 de 4 saídas sintéticas julgadas errado)
+  e foi corrigido antes de emitir veredito.
+- **Lição registrada (a mesma do E01-T02, agora com o item consertado):** o veredito do dente depende
+  de o **texto do item** existir tanto no ramo `OK` quanto no ramo `falhou`. Os itens E3/E8/E9/E1
+  passaram a repetir o rótulo estável no ramo de falha (com o diagnóstico entre parênteses) — sem
+  isso o juiz devolve "âncora quebrada" e o dente vira falso vermelho.
+- **Verificadores do projeto (no worktree):** `bash scripts/verificar_estrutura.sh` ->
+  `PASS (0 falhas)`; `bash scripts/secret_scan.sh` -> `PASS (nenhum segredo versionado)`. O
+  `verificar_estrutura.sh` foi estendido para exigir versionados os 12 artefatos deste card (contrato,
+  nucleo, 2 SQL, workflow, montador, lente, suite pura, mutador, massa ambigua, harness e runbook) e
+  com permissao de execucao para os 4 scripts.
+- **Segredos:** nenhum valor nesta entrada e nenhum valor no repositorio. A chave da API nasceu na VPS
+  em arquivo `600` no diretorio descartavel do preparo, lida pelo n8n por arquivo de configuracao, e
+  morreu com o diretorio. O contrato referencia a credencial **apenas** por id/nome.
+- **Limpeza medida:** 0 container e 0 rede `e02t01-*` no fecho (verificado por mim no servidor, item
+  a item: `docker ps -a`/`docker network ls`) + diretório do preparo removido. Ressalva registrada: a
+  rodada **`--manter`** (v5, usada para post-mortem de um defeito) preserva de propósito o diretório do
+  preparo — e ele contém a chave da API em claro; resíduo encontrado no fecho deste card e removido
+  (`rmtree`), com o aviso agora no runbook §5. O diretório default de **logs**
+  (`/tmp/verificacao-outbox-consumer`) fica de propósito para leitura posterior. Os containers do dev
+  (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pé o tempo todo.
+- **Arvore medida:** commit `0eaae57` deste branch (`feature/TRE-W3-E02-T01`) — os 5 artefatos
+  derivados foram medidos com os `sha256` do proprio aceite, e o commit seguinte a ele acrescenta
+  **apenas documentacao** (este registro e o runbook §5), conferivel por
+  `git diff --name-only 0eaae57 HEAD`.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+### Rodada 2 — revisao independente pediu mudancas: 3 defeitos do proprio artefato de teste, corrigidos e remedidos (commit `38b539f`)
+
+A revisao da rodada 1 (`tester`, parecer em `evidencia/PARECER-t_ba84b412-r1.md`) **reproduziu o aceite
+verde na base do revisor** (`OUTBOX_CONSUMER_OK`, 81 itens, 0 falhas, EXIT=0; dentes 4/4; controle
+externo proprio mostrando 2 parceiros ao remover a serializacao) e reprovou **o artefato de teste
+entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
+
+1. **BLOQUEANTE — `--prova-de-dente` fail-open (verde sem medir dente nenhum).** O laco so imprimia o
+   veredito de cada dente e o script fechava com `OUTBOX_CONSUMER_DENTE_OK (...)` + `exit 0`
+   **incondicionalmente**; o contador `FALHAS` e o controle do juiz nunca eram lidos naquele ramo.
+   Reproducao do revisor: `TRE_IMAGEM=odoo:nao-existe-9.9 ... --prova-de-dente` -> 4x `NAO_CONTA` +
+   `DENTE_OK` + `EXIT=0`. **Correcao (fail-closed):** (a) sub-run **NAO mutado** (baseline) tem de ficar
+   verde **antes** de contar dente; (b) os vereditos vao para **arquivo** (o laco roda em subshell) e a
+   agregacao roda fora dele; (c) qualquer veredito que nao seja `DENTE_CUMPRIDO`
+   (`NAO_CONTA`/`MUTACAO_SEM_DENTE`/`MUTACAO_NAO_APLICADA`), baseline vermelho ou juiz com falta fecha
+   com `OUTBOX_CONSUMER_DENTE_FALHOU` + `exit 1`. Remedido na VPS: `OUTBOX_CONSUMER_DENTE_OK (4/4
+   dentes cumpridos; juiz conferido; baseline nao mutado verde)` **EXIT=0**, com o baseline medindo
+   `OUTBOX_CONSUMER_OK (81 itens, 0 falhas)`; e o **mesmo controle do revisor** agora fecha
+   `OUTBOX_CONSUMER_DENTE_FALHOU (baseline NAO mutado nao ficou verde; 4 sem dente de 4)` **EXIT=1**.
+2. **Afirmacao falsa no registro (sha256 "reconferido no fim" que nao existia).** O harness so imprimia
+   os sha256 nas guardas (2 linhas de impressao, no inicio). **Correcao:** item que **fixa** o sha256
+   dos 5 artefatos nas guardas + item que **reconfere** no fecho, com juiz proprio de 2 saidas sinteticas
+   (`controle do juiz do sha256`) para o item nao ser vacuO. Medido de verdade, com adulteracao real: um
+   controle externo (fora do card) adiciona uma linha a `n8n/sql/ler-pendentes.sql` **no meio** da
+   medicao e o aceite fecha `OUTBOX_CONSUMER_FALHOU (81 itens, 1 falha)` **EXIT=1** com
+   `FALHOU sha256 dos 5 artefatos MUDOU durante a medicao` e os dois digests lado a lado; na rodada
+   limpa o item imprime `OK ... reconferido no fecho: identico ao fixado nas guardas`.
+3. **ADVISORY — item morto na lente estrutural** ("nenhum host literal no workflow"): reprovava apenas
+   o loopback, entao passava com qualquer outro host literal (medido pelo revisor com
+   `http://host-literal.example:8069/...` gravado no workflow). **Correcao:** o item passou a medir o
+   texto **inteiro** do workflow (fora do parametro `url` das portas) **e** o proprio parametro `url` da
+   porta unica. Controles meus: 2 mutantes (host cravado dentro do parametro `url`; host cravado fora das
+   portas) -> `FALHOU` nos **2/2**, versionado -> `OK` (2 itens de lente a mais reprovados nos mutantes,
+   como esperado, por o workflow divergir do montado).
+
+- **Identidade do que foi medido (na VPS, copia propria do commit):** `/opt/tre/e02t01-r2/repo` =
+  `git archive 38b539f`. Os **5 artefatos sob teste NAO mudaram** de sha256 em relacao a rodada 1
+  (contrato `3ee87a10...d7b7`, nucleo `be765699...f986`, ler `9234b566...dfb2`, registrar
+  `0eac7d7a...d017`, workflow `82212ffd...78e2`) — mudaram so os dois artefatos de teste
+  (`scripts/n8n/verificar-outbox-consumer.sh` `cb643d11...375f`;
+  `scripts/n8n/conferir_contrato_e_workflow.py` `f5d974df...3ad0`).
+- **Aceite remedido:** `OUTBOX_CONSUMER_OK (**83 itens, 0 falhas**)` **EXIT=0** (banco `tre_e02t01_r2`,
+  trio descartavel proprio; 83 = 81 da rodada 1 + os 2 itens novos de sha256). Inclui
+  `NUCLEO_CONSUMIDOR_OK (87 itens)` e `CONTRATO_WORKFLOW_OK (55 itens)`; entregas em SERIE
+  (**E1 -> E2 com 188 ms**; piso paralelo 2 ms); chamadas autenticadas por delta de auditoria = 4; dev
+  com os MESMOS bancos antes/depois; `/opt/tre/{homolog,prod}` com 0 arquivo; 0 container e 0 rede
+  `e02t01-*` no fecho e nenhum `/tmp/dente-e02t01-*` residual.
+- **Controles meus da rodada 2 (fora do card):** (a) fail-open: mesmo cenario do revisor (imagem
+  inexistente) -> `DENTE_FALHOU` + exit 1 (na VPS e localmente); (b) dente do item de sha256:
+  adulteracao real no meio da medicao -> 1 falha exatamente nesse item, exit 1; (c) dente do item de host
+  literal: 2 mutantes reprovados 2/2, versionado OK; (d) juizes conferidos por saidas sinteticas
+  (dente: 4; sha256: 2).
+- **Verificadores do projeto (no worktree, commit `38b539f`):** `verificar_estrutura.sh` PASS (0
+  falhas); `secret_scan.sh` PASS (nenhum segredo versionado); `verificar_papeis.sh` PASS (0 falhas).
+- **Arvore medida:** commit `38b539f` deste branch; o commit seguinte acrescenta **apenas documentacao**
+  (este registro, o runbook §5 e o CHANGELOG) — conferivel por `git diff --name-only 38b539f HEAD`.
+- **Nota:** o diretorio `/tmp/verificacao-outbox-consumer` que existe na VPS e' residuo **da rodada 1**
+  (01/10 23:10-23:40 UTC, ja' declarado); a rodada 2 gravou em `/opt/tre/e02t01-r2/logs-*`.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card segue com o estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E02-T02 (card `t_3bde06ab`): dedup por `idempotency_key` no consumidor de outbox (replay por chave)
+
+- **O que foi entregue:** o consumidor do `TRE-W3-E02-T01` ganhou o **dedup por chave**. O contrato
+  `n8n/contracts/outbox-consumer.v1.json` passa a **1.1.0** com o bloco `dedup` (criterio de replay,
+  ordem da decisao, status final, `incrementa_tentativas: 0`); o nucleo ganhou a decisao **REPLAY**
+  (chave ja' entregue) e os helpers `chavesDoLote` / `trilhaPorChave` / `registroDeReplay` /
+  `chaveDoEvento`; dois SQL novos — `n8n/sql/ler-trilha.sql` (**uma** consulta por lote, somente
+  SELECT) e `n8n/sql/registrar-replay.sql` (finaliza o evento **reaproveitando** a trilha, com guarda
+  fail-closed `EXISTS ... t.status='COMPLETED'`); o workflow derivado ganhou os nos `Chaves do lote`,
+  `Ler trilha (chaves entregues)` (**`alwaysOutputData`**: sem ele o ciclo sem chave entregue mataria a
+  cadeia), `Decisao: replay?` e `Registrar replay (outbox)`. O caminho do replay **nao tem no de HTTP
+  alcancavel** — a lente mede que so' o ramo de entrega alimenta a porta unica.
+- **Identidade do que foi medido (na VPS, copia propria do working tree do card):** `/opt/tre/e02t02-r3`
+  = commit `bdd2aea`; o commit seguinte acrescenta **apenas documentacao** (este registro e o
+  CHANGELOG) — conferivel por `git diff --name-only bdd2aea HEAD`. O proprio aceite
+  (`scripts/n8n/verificar-outbox-consumer.sh`) tem **o mesmo sha256** no worktree e na VPS
+  (`36907773e110782b...`): a medicao e' do script entregue (a rodada anterior, `/opt/tre/e02t02-r2`,
+  media `bd144122...`, antes do conserto da ancora descrito abaixo). Os **7 artefatos sob teste**
+  (fixados nas guardas e **reconferidos no fecho**): contrato `2b4d9cef...c13af8`,
+  nucleo `91ad375a...a5657f2`, ler-pendentes `9234b566...797ddfb2` e registrar-resultado
+  `0eac7d7a...1472d017` (**inalterados** desde o T01), ler-trilha `8d788e78...eea0ef86`,
+  registrar-replay `fc438d0a...80f14ec30` e workflow `9393b3dc...5de7e30c`.
+- **Aceite:** `OUTBOX_CONSUMER_OK (**97 itens, 0 falhas**)` **EXIT=0** (banco `tre_e02_outbox`, trio
+  descartavel proprio postgres+odoo+n8n), incluindo `CONTRATO_WORKFLOW_OK (93 itens, 0 falhas)` e
+  `NUCLEO_CONSUMIDOR_OK (124 itens, 0 falhas)`.
+- **Ciclo 5 (o que este card mede, evento a evento):** E1 (chave ja' entregue, trilha `COMPLETED`) e E7
+  (trilha `REFUSED`) voltam a fila com os **IDs originais** -> E1 vira **REPLAY** (`PROCESSED`,
+  `attempts` inalterado em 1, `last_error` nulo) e E7 **volta a ser entregue** e e' recusado de novo
+  (`DEAD_LETTER/2` com `valor_ambiguo`). O ciclo com **2 eventos na fila chamou a API UMA vez** (so' o
+  E7). O replay **nao escreveu no CRM** (1 parceiro, `name` e `score` da entrega original preservados),
+  **nao criou linha na trilha** (9 linhas antes e depois) e a linha do E1 e' a **mesma** (mesmo `id`,
+  mesmo `completed_at` e mesma resposta `acao_efetiva=criar`); a trilha do E7 continua **1 linha
+  `REFUSED`** (o upsert do retry nao duplica). Total de chamadas autenticadas do aceite = **5** (E1, E2,
+  E7, retry do E8 e o E7 do ciclo 5). Demais medicoes do T01 preservadas: entregas em SERIE (**E1 -> E2
+  com 192 ms**; piso paralelo medido 2 ms) e 7 eventos PENDING medidos no ciclo 1.
+- **Prova de dente:** `OUTBOX_CONSUMER_DENTE_OK (**6/6** dentes cumpridos; baseline nao mutado verde;
+  juiz conferido)` **EXIT=0** — as 4 mutacoes herdadas (`sem_validacao_de_envelope`,
+  `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`, `mapeamento_trocado`) e **2 novas deste
+  card**: `sem_consulta_de_trilha` (a consulta da chave some do lote) reprova `E1 reenfileirado` e
+  `guarda_de_sucesso_afrouxada` (o nucleo aceita trilha de QUALQUER status) reprova
+  `E7 (chave na trilha como REFUSED)`. Os juizes continuam conferidos por saidas sinteticas (dente: 4;
+  sha256: 2).
+- **Defeito achado pelo proprio aceite e corrigido na raiz:** na primeira rodada do dente (copia
+  `/opt/tre/e02t02-r2`) o dente `guarda_de_sucesso_afrouxada` saiu **`NAO_CONTA (ancora quebrada)`**: a
+  ancora do juiz (`E7 (chave na trilha como REFUSED)`) existia **so'** na mensagem de sucesso do item, e
+  a mensagem de reprovacao dizia outra coisa — o dente nao media nada. Reproduzi o mutante a mao (log
+  `/tmp/gda.out` na VPS: `FALHOU E7 esperava DEAD_LETTER/2 com valor_ambiguo (...), medido
+  RETRY/1/recusa_da_api:valor_ambiguo`), alinhei as duas mensagens no item e remedi: **6/6**. A mesma
+  reproducao mostrou o **segundo cinto**: com a guarda do nucleo afrouxada o evento **nao** e'
+  finalizado nem reentregue (a guarda `EXISTS` do `registrar-replay.sql` casa zero linhas e o evento
+  fica `RETRY`, sem sucesso inventado) — o dano e' medido pelo item, nao varrido.
+- **Residuo:** 0 container e 0 rede `e02t02-*` no fecho e 0 diretorio `/tmp/dente-e02t02-*` (o extrator
+  do dente limpa os seus). O `/tmp/verificacao-outbox-consumer` que existe na VPS e' residuo **da
+  rodada 1 do T01** (01/10, ja' declarado) — nao e' desta medicao.
+- **Verificadores do projeto:** `secret_scan.sh` PASS (nenhum segredo versionado), rodado no worktree do
+  card **e** na copia da VPS; a lente estrutural e a suite do nucleo rodam **dentro** do aceite
+  (`CONTRATO_WORKFLOW_OK 93`, `NUCLEO_CONSUMIDOR_OK 124`).
+- **Evidencia guardada:** `/tmp/e02t02-r3-full.log`, `/tmp/e02t02-r3-dente.log` na VPS e
+  `aceite-logs/` (`0-estrutural.out`, `0b-nucleo.out`, `8-ciclo5.out`, `sha256-antes/depois.txt`,
+  `8-secret-scan.log`); anexados ao card.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card vai para o estagio 6 (perfil
+  `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — repositorio TRE (worktree local `t_a1bed5fa`, sem uso da VPS) — TRE-W3-E02-T02-D01: os dois SQL do dedup por chave entram no verificador de estrutura (defeito `t_a1bed5fa`)
+
+- **Objeto do defeito:** `scripts/verificar_estrutura.sh` nao conhecia nenhum dos dois artefatos novos do `TRE-W3-E02-T02` — `grep -c 'ler-trilha\|registrar-replay'` = **0** no head `a38585d` e `git log --oneline -S'ler-trilha.sql' -- scripts/verificar_estrutura.sh` **vazio** (nunca entrou). O bloco do consumidor de outbox foi criado pelo `TRE-W3-E02-T01` (commit `0eaae57`) para a classe "existe **E** esta versionado"; sem os dois na lista, o verificador (rodado por outras trilhas/CI) imprime `PASS` mesmo se eles sumirem da arvore versionada. Achado de **cobertura**, nao de comportamento: a lente estrutural do card (`scripts/n8n/conferir_contrato_e_workflow.py`, `is_file()` nos caminhos declarados pelo contrato) e o aceite (sha256 dos 7 artefatos) ja' ancoravam a entrega.
+- **Correcao (branch `fix/TRE-W3-E02-T02-D01`, commit `a5c3a1f`, nascido de `a38585d`):** os dois caminhos entram na lista do bloco do consumidor de outbox, **um por linha** (o aceite da classe mede `grep -c`, que conta **linhas**: os dois na mesma linha contariam 1). Blob `ff192ad4…`, sha256 do arquivo `103842cc6ca5cfcaab70f66473ae95bdb3d6d16efe79e8c200a6d2d905e66d5c`, modo `100755` no indice e no disco (inalterado); nenhuma outra linha do arquivo mudou (9 insercoes, 3 remocoes — o comentario do bloco e as duas linhas) e a lista de executaveis **nao** foi tocada (os dois sao `.sql`, 644).
+- **Controle do defeito (o script ANTES do fix):** com o script anterior (`git show HEAD:scripts/verificar_estrutura.sh`, sha256 `9c4562560ca6d8c39419b799d8c7ee8d9f6f2d0559c9739174a4a440190c6175`) e `n8n/sql/ler-trilha.sql` **ausente** da arvore → `RESULTADO: PASS (0 falhas)`, **exit 0** (e **0** ocorrencia de `ler-trilha` na saida) — o gate era cego, com a saida bruta guardada (`10-ctrl-defeito-antes-do-fix-arquivo-ausente.out`). Este e' o controle que a revisao do `tester` pediu: sem ele o item nao prova nada.
+- **Prova negativa (depois do fix; cada mutacao desfeita e remedida, uma saida bruta por linha em `evidencia/` do card):** N-verde `bash scripts/verificar_estrutura.sh` → `RESULTADO: PASS (0 falhas)`, **exit 0** (153 `OK`, 0 `FALHOU`), com `OK versionado n8n/sql/ler-trilha.sql` e `OK versionado n8n/sql/registrar-replay.sql` (`02-verde.out`); **N1** (ausencia) `n8n/sql/ler-trilha.sql` movido para fora da arvore → `FALHOU ausente n8n/sql/ler-trilha.sql` + `RESULTADO: FALHOU (1)`, **exit 1**, restaurado → `PASS (0 falhas)` exit 0 (`11-neg-N1-ausente.out`, `12-neg-N1-restaurado.out`); **N2** (nao versionado) `git rm --cached n8n/sql/registrar-replay.sql` (o arquivo segue no disco) → `FALHOU nao versionado n8n/sql/registrar-replay.sql (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)` + `FALHOU (1)`, **exit 1**, `git reset --` → `PASS (0 falhas)` exit 0 (`13-neg-N2-nao-versionado.out`, `14-neg-N2-restaurado.out`). Estado do indice no fim: so' `scripts/verificar_estrutura.sh` modificado.
+- **Aceite do card:** `grep -c 'ler-trilha\|registrar-replay' scripts/verificar_estrutura.sh` → **2** (linhas 193 e 194 do arquivo corrigido).
+- **Verificadores do projeto no worktree do fix (comando + exit code):** `bash scripts/verificar_estrutura.sh` → `PASS (0 falhas)` exit 0; `bash scripts/secret_scan.sh` → `PASS (nenhum segredo versionado)` exit 0; `bash scripts/verificar_papeis.sh` → `PASS (0 falhas)` exit 0; `python3 scripts/verificar_contrato_dados.py` → `PASS (26 itens, 0 falhas)` exit 0; `bash -n scripts/verificar_estrutura.sh` exit 0.
+- **Integracao (hotspot `scripts/verificar_estrutura.sh`; cherry-pick isolado de `a5c3a1f` em worktrees descartaveis, removidos no fim):** sobre `feature/TRE-W3-E05-T01` (ponta `a38585d`, **com** os dois SQL do T02) → `PICK_EXIT=0`, **0 conflito**, `grep -c` = 2, `RESULTADO: PASS (0 falhas)` exit 0. Sobre `origin/feature/TRE-W3-E02-T01` (`522f6b6`, **sem** os dois SQL do T02) → cherry-pick **limpo** (0 conflito) e o verificador reprova `FALHOU ausente n8n/sql/ler-trilha.sql` + `FALHOU ausente n8n/sql/registrar-replay.sql` (`RESULTADO: FALHOU (2)`, exit 1) — **esperado e medido**: o aceite pede deteccao de **ausencia**, entao a lista e' por arquivo do card e so' fecha na arvore que tem a entrega do T02; **nao** e' conflito de integracao. Limite conhecido declarado: o commit `a5c3a1f` **nao** deve ser aplicado isolado em arvore anterior ao T02.
+- **O que NAO foi tocado:** a VPS (**nenhum** comando nesta correcao — e' mudanca de gate no repo), `/opt/tre/repo` e `/opt/tre/{homolog,prod}`, os artefatos do T02 (nenhum arquivo de `n8n/` ou `scripts/n8n/` foi editado), nenhum banco, nenhum container.
+- **Aprendizado:** bloco de gate que lista artefato por card so' vale na arvore onde a entrega do card esta — e a vizinhanca se mede (cherry-pick isolado), nao se supoe; o controle do defeito (script anterior + arquivo ausente → `PASS`) e' o que separa "o gate consertou" de "o gate sempre olhou".
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste defeito e' do estagio 6 (perfil `tester`); a homologacao (estagio 7) e' do Anderson. A origem (`TRE-W3-E02-T02`, card `t_3bde06ab`) so' fecha de vez com este defeito resolvido.
+- Segredos: nenhum valor nesta entrada.
+
+---

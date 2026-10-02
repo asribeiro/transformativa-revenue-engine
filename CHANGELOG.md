@@ -811,6 +811,108 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (versão literal da política e lista fechada de operações) foram reescritos para **ler o próprio
   artefato** — a próxima operação de negócio não os quebra de novo. Runbook:
   `docs/runbooks/odoo-empresa-upsert.md`.
+- **Consumidor de outbox em n8n (`TRE-W3-E02-T01`)** — o caminho de consumo da fila
+  `sales_intelligence.outbox_events` até a escrita de negócio no CRM, **só** pela porta única
+  (`POST /tf/api/v1/<operacao>`, doc 06 §7): nada de XML-RPC, SQL no Odoo ou tabela interna. O
+  consumidor é declarado em quatro artefatos versionados — **contrato** (`n8n/contracts/outbox-consumer.v1.json`:
+  envelope, eventos aceitos, mapeamento evento→campos da política, operação destino, teto de
+  tentativas, classificação HTTP, credenciais por id/nome, entrega serializada), **núcleo em JS puro**
+  (`n8n/codigo/nucleo-outbox-consumer.js`, roda em node **e** no Code node) e dois SQL
+  (`n8n/sql/ler-pendentes.sql` só leitura, `status = ANY(...)` + `LIMIT` do contrato;
+  `n8n/sql/registrar-resultado.sql` grava estado do evento **e** linha de `sync_events` na **mesma
+  transação** — o consumidor nunca escreve na tabela da fila, quem escreve é este SQL). O
+  **workflow** (`n8n/workflows/TRE-outbox-consumer.json`) é **derivado** deles pelo montador
+  (`scripts/n8n/montar_workflow.py`), com o núcleo e o contrato embutidos **byte a byte** nos nós de
+  código; a lente estrutural (`scripts/n8n/conferir_contrato_e_workflow.py`, **55 itens**) reprova
+  divergência entre contrato, núcleo, SQL e workflow, e o workflow nasce **inativo**. Comportamento
+  (contrato §6): evento sem `event_version` é **RECUSADO sem chamada**; `event_type` fora do contrato,
+  identidade ausente ou campo exigido ausente são recusados com motivo nomeado; teto de 3 tentativas
+  → `DEAD_LETTER` **sem nova chamada**; falha transitória → `RETRY` com motivo em `last_error` **e** na
+  trilha; recusa definitiva da API (409 `valor_ambiguo`) → `DEAD_LETTER` com o código do erro.
+  **Dois defeitos foram achados pelo próprio aceite e corrigidos na raiz:** (1) sem
+  `authentication`/`genericAuthType` no nó HTTP o n8n **ignora** a credencial e o pedido saía sem
+  `Authorization` (401 da API) — agora há item que mede o header e uma sonda independente da chave;
+  (2) o nó HTTP disparava o lote **em paralelo** e dois eventos da MESMA identidade criavam **dois
+  parceiros** (E1/E2 com **2 ms** de intervalo na auditoria do servidor, `acao_efetiva:"criar"` nas
+  duas respostas) — a entrega passou a ser **serializada** (batch 1 + intervalo declarados no
+  contrato) e o segundo evento passou a **atualizar** o mesmo parceiro (**217 ms** medidos). Aceite na
+  VPS, sobre cópia byte a byte, em trio descartável próprio (postgres + odoo + n8n, banco
+  `tre_e02_outbox`): **`OUTBOX_CONSUMER_OK (81 itens, 0 falhas)`**, exit 0 — inclui a suíte pura do
+  núcleo **`NUCLEO_CONSUMIDOR_OK (87 itens)`** e os 55 estruturais, 7 eventos de fila no ciclo 1
+  medidos item a item, Odoo **parado** → `RETRY`/`attempts=1`/trilha `FAILED`, Odoo de volta → o retry
+  entrega (`PROCESSED`/`attempts=2`, **uma** linha de trilha, **um** parceiro), evento no teto →
+  `DEAD_LETTER` sem chamada e sem escrita, sonda de chave (200 em `dry_run`), chamadas autenticadas
+  contadas por **delta** da auditoria, segredo fora do versionado e ambiente medido antes/depois.
+  Dentes: **`OUTBOX_CONSUMER_DENTE_OK`** — 4 mutações nomeadas
+  (`sem_validacao_de_envelope`, `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`,
+  `mapeamento_trocado`), cada uma com veredito **`DENTE_CUMPRIDO`** (o item que a mutação quebra
+  reprovou), e o juiz dos dentes conferido por 4 saídas sintéticas (mutação sem efeito, mutação
+  cumprida, ambiente quebrado, âncora quebrada) — sem isso, ambiente quebrado viraria "dente
+  cumprido". Runbook: `docs/runbooks/n8n-outbox-consumer.md`.
+- **Dedup por chave no consumidor de outbox (`TRE-W3-E02-T02`)** — a fila deixou de poder produzir duas vezes
+  o mesmo efeito: a **chave de idempotência** derivada do evento (`outbox:<id>:<event_type>`) é consultada na
+  **trilha** antes da decisão (uma consulta por lote) e o evento cuja chave já tem linha `COMPLETED` vira
+  **REPLAY** — não chama a porta única, **não** incrementa `attempts`, **não** cria linha de trilha (a linha
+  existente é reaproveitada: mesmo `id`, mesmo `completed_at`, mesma resposta) e **não** reescreve o registro no
+  CRM (mesma chave = mesmo efeito). Chave com trilha `FAILED`/`REFUSED` **não** autoriza replay — o evento volta
+  a ser entregue (falha transitória pode não ter escrito nada; recusa é do evento, não da chave). Artefatos:
+  contrato **1.1.0** (bloco `dedup`: critério de replay, ordem da decisão, status final), núcleo com a decisão
+  REPLAY, dois SQL novos (`n8n/sql/ler-trilha.sql` — uma consulta por lote, só leitura;
+  `n8n/sql/registrar-replay.sql` — finaliza o evento reaproveitando a trilha, com guarda fail-closed
+  `EXISTS ... status='COMPLETED'`) e o nó de trilha com **`alwaysOutputData`** (sem ele o ciclo sem chave
+  entregue mataria a cadeia). O caminho do replay **não** tem nó de HTTP alcançável — a lente mede que só o
+  ramo de entrega alimenta a porta única. Aceite na VPS, sobre cópia própria do working tree: `OUTBOX_CONSUMER_OK
+  (**97 itens, 0 falhas**)` exit 0 — lente estrutural **93 itens**, suíte do núcleo **124 itens** — com o ciclo 5
+  medindo: os dois eventos de volta à fila com os **IDs originais** → **2 eventos na fila e UMA chamada** à API,
+  a trilha com as **mesmas 9 linhas** antes e depois, e o parceiro do CRM com `name` e score da entrega original
+  preservados. Dentes: `OUTBOX_CONSUMER_DENTE_OK (6/6)` (`sem_consulta_de_trilha` e
+  `guarda_de_sucesso_afrouxada` são os dois novos). Runbook: `docs/runbooks/n8n-outbox-consumer.md` §3, §4.4 e §5.
+
+### Fixed
+
+- **Os dois SQL do dedup por chave ficaram fora do verificador de estrutura (`TRE-W3-E02-T02-D01`, defeito
+  `t_a1bed5fa`)** — o bloco do consumidor de outbox em `scripts/verificar_estrutura.sh` listava os `n8n/*` do
+  `TRE-W3-E02-T01` e **não** foi estendido quando o T02 acrescentou `n8n/sql/ler-trilha.sql` (consulta da
+  trilha pelas chaves do lote) e `n8n/sql/registrar-replay.sql` (estado final do replay, guarda fail-closed
+  `EXISTS ... 'COMPLETED'`): `grep -c 'ler-trilha\|registrar-replay'` = **0** no head `a38585d` e
+  `git log -S'ler-trilha.sql'` naquele arquivo **vazio** — o verificador (rodado por outras trilhas/CI)
+  imprimia `PASS` com os dois fora da árvore versionada. Corrigido **onde o gate vive**: os dois caminhos
+  entram na lista, **um por linha** (`grep -c` → **2**; o aceite da classe conta linhas, e os dois na mesma
+  linha contariam 1), sem tocar na lista de executáveis (são `.sql`, `644`). A entrega do T02 não mudou —
+  nenhum arquivo de `n8n/` ou `scripts/n8n/` foi editado. Medido com **controle do defeito** (script anterior
+  + `ler-trilha.sql` ausente → `PASS (0 falhas)`, exit 0: o gate era cego) e com **dois dentes** no script
+  corrigido, cada mutação desfeita e remedida: **ausência** (`FALHOU ausente n8n/sql/ler-trilha.sql` +
+  `FALHOU (1)` exit 1) e **não versionado** (`git rm --cached …` → `FALHOU nao versionado …` exit 1); verde
+  de volta em `PASS (0 falhas)` exit 0. Verificadores do projeto no worktree do fix: estrutura, segredos,
+  papéis e contrato de dados, todos exit 0. Cherry-pick isolado do commit `a5c3a1f` (nascido de `a38585d`)
+  sobre árvore que contém o T02: **0 conflito** e `PASS (0 falhas)` exit 0; em árvore anterior ao T02 o gate
+  reprova por ausência — que é exatamente o comportamento pedido.
+
+- **Âncora de dente do dedup apontava só para a mensagem de sucesso (`TRE-W3-E02-T02`)** — na primeira rodada
+  do `--prova-de-dente`, o dente `guarda_de_sucesso_afrouxada` saía `NAO_CONTA (âncora quebrada)`: o item do E7
+  dizia uma coisa quando passava e outra quando reprovava, e o juiz do dente casa a âncora nas **duas** linhas
+  (`OK` e `FALHOU`) — o dente não media nada. Reproduzido o mutante à mão na VPS (`FALHOU E7 esperava
+  DEAD_LETTER/2 com valor_ambiguo ..., medido RETRY/1/recusa_da_api:valor_ambiguo`), alinhadas as duas
+  mensagens do item e remedido: `OUTBOX_CONSUMER_DENTE_OK (6/6 dentes cumpridos; baseline verde)`. A mesma
+  reprodução mediu o **segundo cinto**: com a guarda do núcleo afrouxada o evento **não** é finalizado nem
+  reentregue (a guarda `EXISTS` do `registrar-replay.sql` casa zero linhas e o evento fica `RETRY`) — o dano
+  aparece no item, sem sucesso inventado.
+
+- **Prova de dente e lente estrutural do consumidor de outbox (`TRE-W3-E02-T01`, rodada 2)** — o modo
+  `--prova-de-dente` do aceite fechava com `OUTBOX_CONSUMER_DENTE_OK` e **exit 0 incondicionalmente**: o
+  veredito de cada dente era apenas impresso e o contador de falhas do juiz nunca era lido naquele ramo,
+  então um ambiente quebrado (imagem inexistente) imprimia 4x `NAO_CONTA` e saía **verde** (fail-open —
+  *verde que não pode ficar vermelho não é medição*). Agora o modo é **fail-closed**: sub-run **não
+  mutado** (baseline) verde obrigatório antes de contar dente, vereditos agregados por mutação
+  (`DENTE_CUMPRIDO`), e qualquer outro veredito / baseline vermelho / juiz com falta fecha com
+  `OUTBOX_CONSUMER_DENTE_FALHOU` + exit 1. O item de integridade deixou de ser **afirmação no registro**:
+  o `sha256` dos 5 artefatos é **fixado** nas guardas e **reconferido** no fecho (com juiz próprio),
+  medido com adulteração real de um artefato no meio da medição. E o item *"nenhum host literal no
+  workflow"* da lente estrutural, que era **código morto** (reprovava apenas o loopback), passou a medir o
+  texto inteiro do workflow **e** o parâmetro `url` da porta única (2 mutantes próprios reprovam; o
+  versionado passa). Aceite remedido na VPS, sobre cópia própria do commit: `OUTBOX_CONSUMER_OK (83 itens,
+  0 falhas)` exit 0 e `OUTBOX_CONSUMER_DENTE_OK (4/4 dentes cumpridos; baseline verde)` exit 0 — e o
+  controle do revisor (imagem inexistente) agora fecha `DENTE_FALHOU` + exit 1.
 
 - **Upsert de contato pela API controlada (`TRE-W3-E01-T03`, `t_e6e3b0b3`)** — a operação de escrita
   do **contato comercial** (pessoa), pela qual o consumidor espelha o evento `DECISION_MAKER_FOUND`
