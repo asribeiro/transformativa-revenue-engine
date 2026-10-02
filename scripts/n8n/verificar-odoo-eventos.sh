@@ -203,7 +203,7 @@ prova_de_dente() {
     controle_do_juiz
 
     info "baseline (workflow NAO mutado) — o dente so' conta com baseline verde"
-    TRE_LOG_DIR="$LOG_DIR/dente-baseline" TRE_BANCO="${BANCO}_base${SUFIXO}" \
+    TRE_LOG_DIR="$LOG_DIR/dente-baseline" \
         bash "$0" --apenas-consumo >"$LOG_DIR/dente-baseline.out" 2>&1
     if grep -q '^RESULTADO: EVENTOS_ODOO_PG_OK' "$LOG_DIR/dente-baseline.out"; then
         ok "baseline do dente ficou VERDE (sem mutacao, o aceite passa)"
@@ -225,7 +225,6 @@ prova_de_dente() {
         local copia="$LOG_DIR/mutado-$nome.json"
         if python3 "$MUTADOR" --mutacao "$nome" --saida "$copia" >"$LOG_DIR/mutacao-$nome.out" 2>&1; then
             TRE_WORKFLOW="$copia" TRE_LOG_DIR="$LOG_DIR/dente-$nome" \
-                TRE_BANCO="${BANCO}_m${i}${SUFIXO}" \
                 bash "$0" --apenas-consumo >"$LOG_DIR/dente-$nome.out" 2>&1
             local veredito; veredito="$(juizo_do_dente "$LOG_DIR/dente-$nome.out" "$esperado")"
             if [ "$veredito" = "DENTE_CUMPRIDO" ]; then
