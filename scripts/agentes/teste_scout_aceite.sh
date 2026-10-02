@@ -203,23 +203,37 @@ rodar_aceite() { # <rotulo>
   item "rodada2-sync-events-zero" "0" "$(contagem "SELECT count(*) FROM sales_intelligence.sync_events WHERE request_payload->>'correlation_id'='$CORR_R2';")"
   item "rodada2-uma-unica-nova-alpha" "1" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations WHERE domain='nova-alpha.com.br';")"
 
+  # ---- rodada 3: a MESMA chave reapresentada com a organizacao ausente -------------------
+  # Cenario real de concorrencia/retentativa: o claim do sync_event ja existe, mas a consulta
+  # de identidade nao acha a organizacao (ela foi removida/renomeada depois do sync). Sem o
+  # `ON CONFLICT (idempotency_key) DO NOTHING` o reenvio estoura UNIQUE e vira ERRO; com a
+  # guarda, e replay silencioso — nao duplica e nao marca sucesso de criacao.
+  psql_t -c "DELETE FROM sales_intelligence.organizations WHERE domain = 'nova-alpha.com.br';" >/dev/null
+  rodar_scout "$TRABALHO/r5.json" --ambiente dev --correlation-id "$CORR_R4" \
+    --fonte "$FONTE" --prefixo "$PREFIXO" > "$TRABALHO/r5.out" 2>&1
+  item "rodada3-exit-0" "0" "$?"
+  item "rodada3-sem-erro" "0" "$(veredito_do_relatorio "$TRABALHO/r5.json" ERRO)"
+  item "rodada3-nao-duplica" "4" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
+  item "rodada3-ja-existe-cinco" "5" "$(veredito_do_relatorio "$TRABALHO/r5.json" JA_EXISTE)"
+  item "rodada3-sem-novo-claim" "0" "$(contagem "SELECT count(*) FROM sales_intelligence.sync_events WHERE request_payload->>'correlation_id'='$CORR_R4';")"
+
   # ---- guarda de ambiente (ADR-005) e modo sem banco ------------------------------
   rodar_scout "$TRABALHO/r3.json" --ambiente prod --correlation-id "$CORR_R3" \
     --fonte "$FONTE" --prefixo "$PREFIXO" > "$TRABALHO/r3.out" 2>&1
   item "prod-recusado-exit-4" "4" "$?"
-  item "prod-nao-escreveu-organizacao" "5" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
+  item "prod-nao-escreveu-organizacao" "4" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
   item "prod-nao-registrou-execucao" "0" "$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R3';")"
   python3 "$SCOUT_PY" --raiz "$RAIZ" --planejar --fonte "$FONTE" \
     --prefixo "docker exec -i container-que-nao-existe psql -U ninguem -d nada" \
     > "$TRABALHO/r4.out" 2>&1
   item "planejar-exit-0-sem-conectar" "0" "$?"
-  item "planejar-nao-escreveu" "5" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
+  item "planejar-nao-escreveu" "4" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
 
   # ---- desfazer -------------------------------------------------------------------
   rodar_scout "$TRABALHO/dry.json" --desfazer "$CORR_R1" --ambiente dev \
     --prefixo "$PREFIXO" > "$TRABALHO/dry.out" 2>&1
   item "desfazer-dry-run-exit-0" "0" "$?"
-  item "desfazer-dry-run-nao-apagou" "5" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
+  item "desfazer-dry-run-nao-apagou" "4" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations;")"
   rodar_scout "$TRABALHO/del.json" --desfazer "$CORR_R1" --ambiente dev --confirmo \
     --prefixo "$PREFIXO" > "$TRABALHO/del.out" 2>&1
   item "desfazer-confirmo-exit-0" "0" "$?"
