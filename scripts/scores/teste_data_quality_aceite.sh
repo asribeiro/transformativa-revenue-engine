@@ -333,7 +333,7 @@ MUTACOES=(
   "prod-passa-a-ser-aceito|    def conferir_ambiente(self) -> str:|    def conferir_ambiente(self) -> str:\n        return self.ambiente|prod-recusado-com-exit-4"
   "identidade-sem-normalizar-a-forma-guardada|if bruto and normalizadores[tipo](bruto) == valor:|if bruto and bruto == valor:|fonte-forte-escreve-uma-medicao"
   "versao-errada-no-insert|, {versao},|, 'v9.9',|linhas-com-tipo-e-versao-do-score"
-  "confiabilidade-sem-pesquisa|        \"pesquisa_existente\": Decimal(1) if concluidas else Decimal(\"0\"),|        \"pesquisa_existente\": Decimal(1),|valor-org3-magra-e-0"
+  "confiabilidade-sem-pesquisa|        \"pesquisa_existente\": Decimal(1) if concluidas else Decimal(0),|        \"pesquisa_existente\": Decimal(1),|valor-org3-magra-e-0"
 )
 
 prova_de_dente() {
