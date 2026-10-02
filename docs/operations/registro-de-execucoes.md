@@ -587,6 +587,13 @@ docker daemon, entao toda execucao vira esta linha):**
   de **um** elemento (o caso desta operacao) o parametro era **aceito e descartado em silencio**
   (medido: HTTP 200 com o parametro ignorado). Passou a decidir pela **forma da declaracao**:
   `400 payload_invalido` nomeado, com item na suite pura do motor e item HTTP no aceite.
+- **Rodada final, sobre o commit congelado:** o aceite e os dentes rodaram de novo sobre o
+  `git archive` do commit desta branch (`88323c4`, extraido em `/opt/tre/rev-t_e6e3b0b3-r4`), com os
+  **11 arquivos da entrega conferidos por `sha256`** entre o worktree e a copia da VPS (**11/11
+  iguais**) e o modulo byte a byte identico ao da rodada 3 (mesmo `sha256` de politica, motor, suite e
+  verificador nas arvores r3 e r4): `CONTATO_UPSERT_OK (110 itens, 0 falhas)` e
+  `CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)`, com a guarda
+  externa do dente confirmando o artefato real intacto (30 arquivos, `sha256` `97feb79b...`).
 - **Limpeza medida:** 0 container, 0 rede e 0 diretorio `/tmp` residual do aceite (`e01t03-*`); os 4
   containers do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pe o tempo todo;
   `/opt/tre/homolog` e `/opt/tre/prod` com 0 arquivo antes e depois.

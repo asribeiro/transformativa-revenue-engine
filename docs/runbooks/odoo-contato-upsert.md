@@ -401,18 +401,33 @@ ORM); auditoria **do log do servidor** (**15 linhas para 15 chamadas autenticada
 `Bearer`, **sem nenhum e-mail do payload**); greps de contrato (1 rota, `auth='bearer'`, só `POST`,
 0 SQL na API, motor sem `import odoo`, política lida do próprio artefato).
 
-**Prova de dente.** Ver §3 para o desenho. O veredito válido desta rodada está registrado no
-`dente.out` de `/opt/tre/evid-t_e6e3b0b3-dente/`: as 3 provas têm de reprovar o item que quebram e os
-2 controles têm de ser reportados como *dente inconclusivo* / *mutação sem dente* — com a guarda
-externa confirmando que o **artefato real** não foi tocado (mesmo `sha256` antes e depois das
-mutações).
+**Rodada 4 — o commit congelado, remedido.** O aceite e a prova de dente rodaram de novo sobre o
+**`git archive` do commit** desta branch (`88323c4`, extraído em `/opt/tre/rev-t_e6e3b0b3-r4`), com os
+**11 arquivos da entrega conferidos por `sha256`** entre o worktree e a cópia da VPS — **11/11
+iguais**; e os arquivos do módulo são **byte a byte** os mesmos da rodada que produziu os dentes
+(mesmo `sha256` da política, do motor, da suíte e do verificador nas árvores `r3` e `r4`). Saída:
+`CONTATO_UPSERT_OK (110 itens, 0 falhas)` e `CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do
+próprio harness, 0 falhas)`. Registros: `aceite.out` em `/opt/tre/evid-t_e6e3b0b3-r4/` e `dente.out`
+em `/opt/tre/evid-t_e6e3b0b3-r4-dente/`.
+
+**Prova de dente (veredito).** As 3 provas reprovaram o item que cada mutação quebra — dente 1
+(política sem a operação): "`contato_upsert` não declarada como escrita com chave" e o aceite cai
+junto (`96 itens, 34 falhas`); dente 2 (controlador sem o portão de ambiguidade): "código de recusa
+errado (ambiguidade)"; dente 3 (motor sem aplicar o valor fixo): "o valor fixo declarado **não** foi
+aplicado na atualização (`is_company='t'`)". Os 2 controles do harness foram reportados como
+*inconclusivo* (sub-run que reprova por ambiente **não** conta como dente — não é fail-open) e
+*mutação sem dente*, e a **guarda externa** confirmou o artefato real intacto (`30 arquivos`, mesmo
+`sha256` `97feb79b…` antes e depois das mutações).
 
 **Registros brutos (na VPS, em `/opt/tre/evid-t_e6e3b0b3-r*/`):** `aceite-r1.out` (47 falhas, o
-defeito do harness preservado), `aceite.out` da rodada r3 (110 itens, 0 falhas — o artefato final) e
-os logs por etapa (`1-instalacao.log`, `2-teste.log`, `3-preparo.log`, `3-http.log`, `3d-http.log`,
-`4-contrato.log`). Nenhum valor de segredo em nenhum deles: a chave da API nasce **na VPS**, em
-arquivo `600` dentro do diretório descartável do preparo, é lida pelo `curl` por arquivo de
-configuração (nunca em `ps`, argumento ou log) e morre com o diretório.
+defeito do harness preservado), `aceite-r2.out` (6 falhas, a etiqueta do `psql`), `aceite.out` da
+rodada **r3** (110 itens, 0 falhas) e `aceite.out` da rodada **r4** (a mesma saída, medida no
+`git archive` do commit), com os logs por etapa (`1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+`3-http.log`, `3d-http.log`, `4-contrato.log`); os dentes em `dente.out` das árvores `-dente` (r3) e
+`-r4-dente` (r4), com `dente1/`, `dente2/`, `dente3/` e os controles em cada uma. Nenhum valor de
+segredo em nenhum deles: a chave da API nasce **na VPS**, em arquivo `600` dentro do diretório
+descartável do preparo, é lida pelo `curl` por arquivo de configuração (nunca em `ps`, argumento ou
+log) e morre com o diretório.
 
 **O que o aceite NÃO toca (medido):** nada em `/opt/tre/{homolog,prod}` (0 arquivo antes e depois),
 o `odoo-dev`/`pg-odoo-dev` de pé (a dupla do aceite é própria, `e01t03-*`, criada e removida na
