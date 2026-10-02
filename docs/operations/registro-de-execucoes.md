@@ -618,7 +618,16 @@ docker daemon, entao toda execucao vira esta linha):**
 - **Segredos:** nenhum valor nesta entrada e nenhum valor no repositorio. A chave da API nasceu na VPS
   em arquivo `600` no diretorio descartavel do preparo, lida pelo n8n por arquivo de configuracao, e
   morreu com o diretorio. O contrato referencia a credencial **apenas** por id/nome.
-- **Limpeza medida:** 0 container, 0 rede e 0 diretorio `/tmp` residual do aceite (`e02t01-*`); os
-  containers do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pe o tempo todo.
+- **Limpeza medida:** 0 container e 0 rede `e02t01-*` no fecho (verificado por mim no servidor, item
+  a item: `docker ps -a`/`docker network ls`) + diretório do preparo removido. Ressalva registrada: a
+  rodada **`--manter`** (v5, usada para post-mortem de um defeito) preserva de propósito o diretório do
+  preparo — e ele contém a chave da API em claro; resíduo encontrado no fecho deste card e removido
+  (`rmtree`), com o aviso agora no runbook §5. O diretório default de **logs**
+  (`/tmp/verificacao-outbox-consumer`) fica de propósito para leitura posterior. Os containers do dev
+  (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pé o tempo todo.
+- **Arvore medida:** commit `0eaae57` deste branch (`feature/TRE-W3-E02-T01`) — os 5 artefatos
+  derivados foram medidos com os `sha256` do proprio aceite, e o commit seguinte a ele acrescenta
+  **apenas documentacao** (este registro e o runbook §5), conferivel por
+  `git diff --name-only 0eaae57 HEAD`.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.

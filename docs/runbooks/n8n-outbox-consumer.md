@@ -133,7 +133,7 @@ O teto de tentativas volta a contar do zero — é uma decisão consciente de op
 `bash scripts/n8n/verificar-outbox-consumer.sh` mede, num **trio descartável próprio**
 (postgres + odoo + n8n criados e destruídos na hora, banco `tre_e02_outbox`):
 
-* lente estrutural (50 itens) e suite do núcleo (87 itens), incluindo o código **embutido** no workflow;
+* lente estrutural (55 itens) e suite do núcleo (87 itens), incluindo o código **embutido** no workflow;
 * 7 eventos de fila no ciclo 1 (válido, atualização da mesma identidade, sem versão, fora do
   contrato, sem `name`, sem identidade, identidade ambígua) com o estado final medido item a item;
 * Odoo **parado** → falha transitória (`RETRY`, `attempts=1`, trilha `FAILED`); Odoo de volta →
@@ -145,6 +145,13 @@ O teto de tentativas volta a contar do zero — é uma decisão consciente de op
 incrementar `attempts`, sem teto, com o mapeamento trocado) e exige que **o item que aquela
 mutação quebra** reprove. O juiz do dente é testado com saídas sintéticas (senão ambiente quebrado
 viraria "dente cumprido").
+
+Modos: `--apenas-codigo` (estático, sem containers), `--apenas-consumo` (o trio + os ciclos) e
+`--manter`. **`--manter` preserva de propósito o trio e o diretório do preparo — e esse diretório
+contém a chave da API em claro** (`chave.txt`) enquanto existir: é modo de depuração, e o diretório
+tem de ser removido no fecho (`ls -d /tmp/verificacao-outbox-*`). Sem `--manter`, containers, rede e
+diretório do preparo saem no fim (medido: 0 resíduo). Os **logs** ficam em `TRE_LOG_DIR` (default
+`/tmp/verificacao-outbox-consumer`) de propósito, para leitura posterior.
 
 ## 6. Limites conhecidos (o que este card não resolve)
 
