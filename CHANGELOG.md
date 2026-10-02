@@ -1680,3 +1680,58 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `inputs` (defesa em profundidade) — o dente passou a fixar o canônico por inteiro;
 - as mutações que quebram o contrato de pesos/colunas **nem carregam**: o `__init__` recusa antes de
   qualquer medição, e isso virou dente de **carga** (recusar é o comportamento esperado).
+
+## [W5 — Scoring + NBA · Next Best Action v1] — 02/10/2026
+
+**Card:** TRE-W5-E07-T01 (baseline V1.1.0, base `feature/TRE-W5-E06-T01`) ·
+**O que é:** lê a **evidência já existente** (o registro `TIER` do card irmão, pesquisa, hipóteses de
+dor, sinais, contatos, interações) e decide o **próximo passo** da empresa por uma **tabela de decisão
+declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
+
+### Added
+
+- **Next Best Action v1** (`hermes/scores/nba/nba.py`) — o **vocabulário das ações** é **lido do Data
+  Contract** (`vocabularies.next_best_action`: RESEARCH_MORE, FIND_DECISION_MAKER, SEND_EMAIL,
+  PREPARE_LINKEDIN, WAIT, FOLLOW_UP, CREATE_MEETING, NURTURE, DISQUALIFY) e **nenhuma ação, papel de
+  decisão ou id de regra existe em forma executável no código** (itens `C1`..`C3` por AST); a
+  **tabela de decisão** vive na política do card (`politica-nba-v1.json`, 12 regras, ordem = decisão):
+  compliance → qualificação → tier → estado do funil (pesquisa, resposta, abordagem, decisor).
+- **Persistência na casa que o contrato já governa:** `recommendations`
+  (`recommendation_type='NEXT_BEST_ACTION'`, `action` do vocabulário, `status='OPEN'`, `priority`/
+  `due_at`/`expires_at` da regra, `contact_id` do melhor decisor alcançável) + `agent_runs`
+  (auditoria, **inclusive da recusa e da abstenção**). **Nenhuma coluna nova**, nenhum DDL, nenhum
+  evento de outbox (o `NEXT_BEST_ACTION_CHANGED` é do caminho de integração, W3/W6) e **nada
+  executado** — executar a ação exige o aval humano (doc 12 §4).
+- **Idempotência por conteúdo:** o `id` da recomendação é `uuid5(nba-v1, org:entrada_hash)` — mesma
+  entrada, mesmo id (replay `JA_RECOMENDADA`, nada duplicado); evidência nova gera recomendação nova e
+  a anterior volta para `SUPERSEDED` (doc 12 §5), com o histórico preservado. Relógio e
+  `correlation_id` **não** entram no hash; contadores entram como o resultado da comparação.
+- **Fail-closed:** empresa **sem registro `TIER` RECUSA** (`SEM_TIER`) sem gravar — o próximo passo
+  depende da prioridade já decidida e o componente não adivinha tier; **nenhuma regra casando ABSTEM**
+  (`SEM_REGRA`) e nada é gravado; política/contrato incoerente **RECUSA com exit 3**; `prod` recusado
+  com exit 4 (ADR-005); `--planejar`/`--regras` não abrem conexão.
+- **Suíte offline** (`scripts/scores/verificar_nba.py`) — **69 itens / 0 falhas** e autoteste com
+  **7/7 mutações** detectadas, cada uma pelo item esperado.
+- **Aceite E2E** (`scripts/scores/teste_nba_aceite.sh`) — PostgreSQL descartável `pg-nba-acc`
+  (removido pelo próprio aceite): `ACEITE_NBA_001_OK (79 OK / 0 FALHOU)` com **6 dentes**, cada um
+  reprovando o item esperado (supersessão desligada, id não-determinístico, checagem de tier
+  desligada, primeira regra vencendo sempre, ordem invertida, contato bloqueado ignorado).
+- **Docs do card:** `docs/architecture/next-best-action-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/next-best-action.md`; portão da W5 (`scripts/verificar_estrutura.sh`) cobre os
+  artefatos.
+
+### Changed
+
+- **Portão de estrutura da W5** (`scripts/verificar_estrutura.sh`) passa a exigir os artefatos do NBA
+  (código, contrato do card, política, exemplos, suíte, aceite executável, arquitetura e runbook).
+
+### Lacunas declaradas (proposta a homologar — decisão do dono)
+
+- A **tabela de decisão** (regras, ordem, prazos) é proposta deste card: o contrato define o
+  **vocabulário** das ações, não a política de escolha.
+- `confidence` fica **NULL** declarado: a regra é determinística e um número ali fingiria calibração
+  (a calibração depende do feedback de resposta, W6+).
+- O vínculo resposta↔contato que respondeu depende da classificação de resposta do W6; aqui o
+  sentimento vem de `interactions.sentiment`.
+- `EXPIRED`/`APPROVED`/`EXECUTED` são do workflow humano (doc 12 §4/§5): aqui gravam-se `due_at` e
+  `expires_at`.

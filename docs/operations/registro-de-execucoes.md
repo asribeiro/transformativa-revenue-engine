@@ -2118,3 +2118,64 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   a casa física do tier (contrato 1.1: `organizations.tier` ou `score_type='TIER'`) e a política de
   ausência (sem PRIORITY ⇒ sem tier).
 - Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E07-T01: Next Best Action v1 (aceite E2E em PostgreSQL descartável)
+
+- **Objeto:** o NBA (`hermes/scores/nba/nba.py`) lê a evidência do banco (o registro **`TIER`** do card
+  irmão em `sync_events`, mais `research_runs`, `pain_hypotheses`, `signals`, `contacts`,
+  `interactions`) e decide o próximo passo pela **tabela de decisão declarada**
+  (`hermes/scores/nba/politica-nba-v1.json`, 12 regras — o **vocabulário das ações** é lido do Data
+  Contract), gravando em `sales_intelligence.recommendations`
+  (`recommendation_type='NEXT_BEST_ACTION'`, `status='OPEN'`) + `agent_runs`. **Não escreve em score,
+  tier, contato, interação nem `sync_events`**, não cria coluna, não emite evento de outbox e não
+  executa a ação.
+- **Comandos reais (na VPS, árvore em `/opt/tre/nba-e07t01-r1/repo`):**
+  `python3 scripts/scores/verificar_nba.py --raiz "$PWD"` →
+  `RESULTADO: VERIFICACAO_NBA_OK (69 itens, 0 falhas)`; `--autoteste` →
+  `RESULTADO: AUTOTESTE OK (7/7 mutações detectadas, cada uma pelo item esperado)`;
+  `bash scripts/scores/teste_nba_aceite.sh --raiz "$PWD" --prova-de-dente` →
+  **`== ACEITE 79 OK / 0 FALHOU`** + `ACEITE_NBA_001_OK`, **EXIT=0**, com os **6 dentes** reprovando
+  **o item esperado**: `sem-supersessao` (A10 anterior SUPERSEDED), `sem-idempotencia` (A2 replay:
+  continua 1 recomendação), `sem-checagem-de-tier` (A6 sem TIER RECUSADA), `primeira-regra-sempre`
+  (A1 ação SEND_EMAIL na saída), `ordem-invertida` (A3 B → WAIT), `contato-bloqueado-ignorado`
+  (A3 F → NURTURE por compliance).
+- **Valores conferidos no banco (container descartável `pg-nba-acc`, `postgres:16`, migration 0001 do
+  zero):** empresa com tier A+ e decisor com e-mail → **SEND_EMAIL** (`R12`), `OPEN`, prioridade 2,
+  `due_at`/`expires_at` gravados, `contact_id` do decisor, `confidence` **NULL** e auditoria
+  `COMPLETED` sem LLM (modelo/tokens/custo nulos); replay → `JA_RECOMENDADA` com **1** recomendação
+  (nada duplicado); cada estado de evidência produziu a ação esperada — **WAIT** (abordada ontem),
+  **FOLLOW_UP** (5 dias sem resposta), **CREATE_MEETING** (resposta positiva), **NURTURE** por
+  `TIER_NURTURE` e por `COMPLIANCE_SEM_CANAL`, **DISQUALIFY** (dor rejeitada sem sinal),
+  **RESEARCH_MORE** (sem pesquisa), **FIND_DECISION_MAKER** (contato que não é decisor, `contact_id`
+  nulo), **PREPARE_LINKEDIN** (decisor sem e-mail); evidência nova → recomendação **nova** com a
+  anterior **SUPERSEDED** (2 no histórico, 1 aberta, SEND_EMAIL preservada); empresa sem registro TIER
+  → `RECUSADA SEM_TIER` com **0** recomendação e auditoria `REJECTED`; fantasma → recusada sem gravar;
+  desfazer dry-run **11→11** e `--confirmo` **11→10**, com a auditoria preservada.
+- **Nada tocado fora de `recommendations`/`agent_runs`:** contagens e impressão digital do registro
+  TIER idênticas antes/depois; **0** linha em `scores`, **0** `sync_events` novo, **0** `outbox_events`;
+  `contacts`, `interactions` e `organizations` intactos.
+- **Ambiente:** apenas os containers descartáveis `pg-nba-acc` e `pg-nba-dente` (mutações), **removidos
+  pelo próprio aceite** (`docker ps -a | grep nba` = **0** ao fim); `pg-sales-dev`, `pg-odoo-dev`,
+  `odoo-dev` e `proxy-dev` **intactos**; **nada em produção** (`prod` recusado, exit 4, sem escrita).
+- **Código sob teste na VPS = o versionado:** `sha256` conferido dos dois lados — `nba.py
+  f06ecb5bb1814906f22581be7a6894b44373772f513229e1ec61003e745ded03`, `verificar_nba.py
+  67d5856568d5b826a062e9ff53cbfb202387519b7073ff7a3bd3d17f8d7d1a72`, `teste_nba_aceite.sh
+  bb9479cf78e346c3ab3f9fe677e0082a1c11f4c0515ba0f01592a9f8e93fc93c`.
+- **Defeitos do próprio instrumento, encontrados por medição e corrigidos nesta rodada:**
+  1. a rodada 1 do aceite fechou **73 OK / 5 FALHOU** — as cinco eram do instrumento, não do código:
+     o item do replay conferia `gravados=0` quando o campo correto é `ja_existia=1` (a contagem da linha
+     do próprio id é 1 no replay); dois itens contavam a string `SEM_TIER`/`ORGANIZACAO_NAO_ENCONTRADA`
+     **duas vezes** (linha de saída + relatório JSON) e passaram a mirar a linha de veredito; o item de
+     interações comparava com a contagem tomada **antes** da interação que a própria seção A10 cria; e
+     faltava **auditar a recusa** — a recusa não gravava `agent_runs`, então o componente passou a
+     auditar `RECUSADA`/`ABSTEVE` (`REJECTED`), como já fazia o tiering;
+  2. o dente `sem-checagem-de-tier` reprovou **nada** na rodada 2: a âncora `if not fatos.get("tier"):`
+     aparecia **duas vezes** no módulo e a mutação pegava a ocorrência de `decidir` (a guarda de
+     `rodar_organizacao` seguia de pé) — o código passou a escrever as duas guardas em formas distintas
+     (`fatos.get("tier") in (None, "")` na função pura) e a mutação voltou a morder o item esperado;
+  3. o dente `contato-bloqueado-ignorado` falhou por **âncora ausente** (a mutação citava duas linhas
+     que o SQL real tem quebradas) — a âncora passou a ser a linha única do `WHERE` e o dente mordeu.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Ficam **propostos**: a
+  tabela de decisão (regras, ordem e prazos) e o `confidence` NULL (calibração é do W6+).
+- Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.

@@ -375,7 +375,7 @@ sem-idempotencia|return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{NBA_VERSION}:{orga
 sem-checagem-de-tier|if not fatos.get("tier"):|if False:|A6 sem TIER RECUSADA
 primeira-regra-sempre|if all(avaliar_condicao(fatos, c) for c in regra["quando"]):|if True:|A1 acao SEND_EMAIL na saida
 ordem-invertida|for regra in politica["regras"]:|for regra in list(politica["regras"])[::-1]:|A3 B abordada ontem -> WAIT (R08)
-contato-bloqueado-ignorado|c.email IS NOT NULL AND c.do_not_contact IS NOT TRUE|TRUE AND TRUE|A3 F contato bloqueado -> NURTURE (R01)
+contato-bloqueado-ignorado|AND c.do_not_contact IS NOT TRUE AND c.opt_out_email IS NOT TRUE),|AND TRUE AND TRUE),|A3 F contato bloqueado -> NURTURE (R01)
 LISTA
   rm -rf "$D"
 fi
