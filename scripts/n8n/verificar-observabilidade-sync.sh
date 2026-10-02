@@ -683,7 +683,8 @@ rodada_do_estado D && {
     confere_valor dead_letter_total "" 1 "estado D: o dead-letter esta' contado (dead_letter_total=1)"
     confere_valor dead_letter_sem_motivo "" 0 "estado D: o dead-letter TEM motivo (dead_letter_sem_motivo=0)"
     confere_valor trilha_recusas "" 1 "estado D: a recusa nomeada esta' na trilha (trilha_recusas=1)"
-    confere_relatorio 'CNPJ invalido \(HTTP 422\)' "estado D: o relatorio mostra o MOTIVO do dead-letter (contagem sem motivo nao e observabilidade)"
+    # padrao BRE: parentese e' LITERAL sem barra; `\(` seria agrupamento (o grep antigo nao mordia aqui)
+    confere_relatorio 'CNPJ invalido (HTTP 422)' "estado D: o relatorio mostra o MOTIVO do dead-letter (contagem sem motivo nao e observabilidade)"
     confere_relatorio 'outbox_dead_letter' "estado D: o detalhe do dead-letter esta' na secao declarada do relatorio"
     confere_relatorio 'outbox_dead_letter (1)' "estado D: o dead-letter aparece UMA vez na lista (a consulta de detalhes roda uma vez por rodada, nao uma por linha de metrica)"
 }
