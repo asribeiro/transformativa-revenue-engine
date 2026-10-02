@@ -77,7 +77,8 @@
 #
 # Variaveis: TRE_WORKFLOW (consumidor sob teste), TRE_MODULO_DIR, TRE_BANCO (banco do
 # Odoo), TRE_BANCO_SI (banco do contrato), TRE_IMAGEM/_PG/_N8N, TRE_LOG_DIR,
-# TRE_PG_USER, TRE_DEV_PG_CT, TRE_DEV_HOMOLOG_PROD, TRE_MANTER_BANCO.
+# TRE_PG_USER, TRE_DEV_PG_CT, TRE_DEV_HOMOLOG_PROD, TRE_MANTER_BANCO,
+# TRE_DENTE_DIR (diretorio da evidencia do dente) e TRE_MANTER_DENTE=0 (limpa essa evidencia).
 #
 # Saida: um item por linha (OK / FALHOU / DECLARADO), resumo em uma linha e exit code:
 #   0 = aceite cumprido · 1 = falhou / nao deu para medir · 2 = uso errado
@@ -308,12 +309,16 @@ juizo_do_dente() { # $1=saida do sub-run  $2=trecho do item esperado
 }
 controle_do_juiz() {
     local dir="$1" certos=0
+    # Saidas sinteticas: o juiz tem de julgar cada uma pelo que ela E', nao pelo que seria
+    # confortavel. c1 = o item caiu (dente morde) · c2 = o item passou (mutacao sem dente) ·
+    # c3 = a saida nao tem item nenhum (nao chegou a medir) · c4 = a saida tem itens, mas nao a
+    # ancora declarada (ancora quebrada).
     printf 'FALHOU    organizacao da ACME na fonte da verdade\n' >"$dir/c1.out"
     printf 'OK        repetir o evento NAO duplica: 0 chamada nova\n' >"$dir/c2.out"
     printf 'INFO      guardas do ambiente\ndocker responde\n' >"$dir/c3.out"
     printf 'OK        outro item qualquer\nFALHOU    terceiro item\n' >"$dir/c4.out"
-    [ "$(juizo_do_dente "$dir/c1.out" 'organizacao da ACME')" = "MUTACAO_SEM_DENTE" ] && certos=$((certos + 1))
-    [ "$(juizo_do_dente "$dir/c2.out" 'repetir o evento NAO duplica')" = "DENTE_CUMPRIDO" ] && certos=$((certos + 1))
+    [ "$(juizo_do_dente "$dir/c1.out" 'organizacao da ACME')" = "DENTE_CUMPRIDO" ] && certos=$((certos + 1))
+    [ "$(juizo_do_dente "$dir/c2.out" 'repetir o evento NAO duplica')" = "MUTACAO_SEM_DENTE" ] && certos=$((certos + 1))
     case "$(juizo_do_dente "$dir/c3.out" 'organizacao da ACME')" in NAO_CONTA*) certos=$((certos + 1));; esac
     case "$(juizo_do_dente "$dir/c4.out" 'organizacao da ACME')" in NAO_CONTA*) certos=$((certos + 1));; esac
     if [ "$certos" -eq 4 ]; then ok "controle do juiz do dente (4 saidas sinteticas julgadas certo)"
@@ -321,8 +326,20 @@ controle_do_juiz() {
 }
 
 if [ "$MODO" = "dente" ]; then
-    DENTE_DIR="$(mktemp -d /tmp/dente-e06t01-XXXXXX)"
-    trap 'rm -rf "$DENTE_DIR"' EXIT
+    # O diretorio dos sub-runs E' a evidencia do dente (saida de cada sub-run mutado, a mutacao
+    # aplicada e o resultado do juiz). Por default ele e' PRESERVADO: `TRE_MANTER_DENTE=0` manda
+    # limpar, e `TRE_DENTE_DIR` aponta para o diretorio de evidencia da rodada.
+    if [ -n "${TRE_DENTE_DIR:-}" ]; then
+        DENTE_DIR="$TRE_DENTE_DIR"
+        mkdir -p "$DENTE_DIR"
+    else
+        DENTE_DIR="$(mktemp -d /tmp/dente-e06t01-XXXXXX)"
+    fi
+    if [ "${TRE_MANTER_DENTE:-1}" = "1" ]; then
+        trap 'printf "INFO      evidencia do dente preservada em %s\n" "$DENTE_DIR"' EXIT
+    else
+        trap 'rm -rf "$DENTE_DIR"' EXIT
+    fi
     cabecalho "--prova-de-dente: o E2E tem dentes?"
     controle_do_juiz "$DENTE_DIR"
     FALHAS_JUIZ=$FALHAS

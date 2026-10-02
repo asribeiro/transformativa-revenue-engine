@@ -47,6 +47,10 @@ bash scripts/e2e/verificar-e2e-foundation-001.sh --manter
 Modos: `--apenas-codigo` (so' os gates e as lentes/suites das 4 portas) · `--apenas-cenario` (o
 cenario, sem os gates; e' o que os sub-runs do dente usam) · `--prova-de-dente` · `--manter`.
 
+O modo `--prova-de-dente` grava a evidencia dos sub-runs em `TRE_DENTE_DIR` (por default, um
+diretorio novo em `/tmp` que **nao** e' apagado no fim): ali ficam a saida de cada sub-run mutado, a
+mutacao aplicada e o veredito do juiz. `TRE_MANTER_DENTE=0` manda limpar.
+
 **Requer**: docker com as imagens `odoo:19.0`, `postgres:16` e `n8nio/n8n:latest`; `openssl`, `curl`,
 `python3`; o repositorio em disco (o script descobre a raiz a partir do proprio caminho). Roda no
 host do board (VPS), nunca dentro de container sem docker.
