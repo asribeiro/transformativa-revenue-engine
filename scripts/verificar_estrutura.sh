@@ -254,5 +254,17 @@ for f in scripts/n8n/verificar-reconciliacao.sh scripts/n8n/montar_workflow_reco
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# E2E Foundation #001 (TRE-W3-E06-T01): o aceite que encadeia as quatro portas da onda num unico
+# trio descartavel — se este artefato sumir, some a unica medicao ponta a ponta da fundacao.
+for f in scripts/e2e/verificar-e2e-foundation-001.sh docs/runbooks/e2e-foundation-001.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/e2e/verificar-e2e-foundation-001.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

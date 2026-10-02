@@ -1054,3 +1054,32 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   silenciosa).
 - **Revisao independente e homologacao abertas (`TRE-W3-E05-T01`)**: quem entrega nao homologa — o veredito deste
   card e' do estagio 6 (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## [W3 — Integração · E2E Foundation #001] — 02/10/2026
+
+### Added
+
+- **Aceite E2E Foundation #001** (`TRE-W3-E06-T01`) — o cenario do doc 08 §3 medido **ponta a ponta num
+  unico trio descartavel** (postgres + Odoo + n8n), encadeando as cinco portas da onda W3:
+  - `scripts/e2e/verificar-e2e-foundation-001.sh` + `docs/runbooks/e2e-foundation-001.md`: organizacao
+    canonica na fonte da verdade → evento no outbox → consumidor n8n → `empresa_upsert` pela porta unica
+    (com o ID devolvido pelo Odoo de volta no `response_payload` da trilha) → `contato_upsert` →
+    `atividade_criar` → reconciliacao (E04) e observabilidade (E05) no MESMO trio → repetir o evento sem
+    duplicata (`REPLAY`) → `fail-closed` em evento sem `event_version`;
+  - **prova de dente fail-closed**: baseline NAO mutado tem de ficar verde antes das 3 mutacoes nomeadas
+    (mutador versionado do `TRE-W3-E02-T02`), e cada dente so' conta se o item declarado reprovar no
+    sub-run mutado (`NAO_CONTA`/`MUTACAO_SEM_DENTE`/baseline vermelho fecham `DENTE_FALHOU`).
+- **Base consolidada da onda W3** (`TRE-W3-E06-T01`) — as cinco branches da onda entram juntas na base do
+  E2E (`E01-T05` + `E02-T02` + `E03-T01` + `E04-T01` + `E05-T01`), com as duas listas de artefatos dos
+  cards de n8n no mesmo `scripts/verificar_estrutura.sh`; a base congelada e' a de
+  `feature/TRE-W3-E06-T01` (commit do merge registrado em `docs/operations/registro-de-execucoes.md`).
+
+### Notas de estado
+
+- **Escopo declarado do E2E**: cobre os passos 1..3 e 11..19 do doc 08 §3 mais o sentido Odoo -> PG pela
+  porta de ingestao. Os passos 4..10 (research, signals, scores, tier, pain, recommendation) sao dos cards
+  `W4-*`/`W5-*` e aparecem no aceite como linha `DECLARADO` — nunca como `OK`.
+- **Lacunas declaradas do E2E**: cenario unitario (nao mede volume nem concorrencia), imagem `odoo:19.0`
+  (nao cobre customizacao de instancia) e reprocesso operacional (tem aceite proprio no `TRE-W3-E02-T02`).
+- **Revisao independente e homologacao abertas** (`TRE-W3-E06-T01`): quem entrega nao homologa — o veredito
+  deste card e' do estagio 6 (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
