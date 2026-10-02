@@ -73,7 +73,7 @@ uma linha e exit code (`0` = cumprido, `1` = falhou ou nao deu para medir, `2` =
 | 2 | servidor da porta unica + chave em arquivo `600` + **sonda** `dry_run` autenticada `HTTP 200` | a sonda prova que a credencial vale antes do cenario: senao o aceite mediria 401 como se fosse contrato |
 | 3 | n8n descartavel: cofre com postgres/API/token da porta, os **4 workflows** importados e exportaveis pelo `id` estavel, o da ingestao **ativo** | o webhook de producao so' existe com o workflow ativo — importar e nao ativar da' 404 e mascara o teste |
 | B | organizacao da ACME na fonte da verdade (`organizations`) com UUID canonico + evento `COMPANY_QUALIFIED` no `outbox_events` | e' o passo 1..3, 11 do doc 08 medido no banco, nao na narrativa |
-| C | consumidor entrega pela porta unica: **um** `res.partner` com `tf_company_id` = UUID (nome, CNPJ, dominio, `is_company` do evento), evento `PROCESSED`, trilha `postgres->odoo` `UPSERT` `COMPLETED`, **o ID devolvido pelo Odoo dentro do `response_payload`**, a ponta no PG (`organizations.odoo_partner_id`) registrada com o MESMO id, e chamada autenticada real na auditoria | AC5: o ID que o Odoo devolve tem de voltar para a trilha e fechar a ida-e-volta; sem isso o espelho nao tem chave |
+| C | consumidor entrega pela porta unica: **um** `res.partner` com `tf_company_id` = UUID (nome, CNPJ, dominio, `is_company` do evento), evento `PROCESSED`, trilha `postgres->odoo` `UPSERT` `COMPLETED`, **o ID devolvido pelo Odoo dentro do `response_payload`**, a ponta no PG (`organizations.odoo_partner_id`) registrada **pelo harness** com o MESMO id lido da trilha (a coluna **nao** e' escrita por porta da fundacao — o item diz isso), e chamada autenticada real na auditoria | AC5: o ID que o Odoo devolve tem de voltar para a trilha e fechar a ida-e-volta; sem isso o espelho nao tem chave |
 | D | `contato_upsert` pela porta (2x pela **mesma identidade**): 1 registro, `is_company=false`, rastro na auditoria | AC4/AC6: identidade forte nao duplica no CRM |
 | E | `atividade_criar` ancorada no parceiro do contato, com `tf_idempotency_key`; 1 registro, `res_id` conferido | AC4: a atividade existe e aponta para o registro certo |
 | F | reconciliacao (E04) rodando **no mesmo trio**: veredito `OK` e **0 divergencia** | prova que o dado que o E2E acabou de gravar e' coerente entre as duas pontas |
@@ -106,12 +106,27 @@ Qualquer outro veredito (`NAO_CONTA`, `MUTACAO_SEM_DENTE`, `MUTACAO_NAO_APLICADA
 fecha `DENTE_FALHOU`. Dai' a regra de redacao: o item que uma mutacao deve reprovar tem o **mesmo
 trecho** nos dois ramos (ok e falhou).
 
+**Rotulo do `NAO_CONTA`:** quando o sub-run **nao chega a medir** o cenario (imagem ausente, trio que
+nao sobe, guardas do ambiente), o veredito nomeia **`ambiente quebrado`** — nunca `ancora quebrada`,
+que acusaria erro de redacao do item e apontaria o suspeito errado (o irmao E05 faz o mesmo desde
+`a58c0a7`). O passo 0 tambem confere o **contrario**: o self-check das ancoras garante que cada
+mutacao tem o seu trecho nos **dois** ramos do item, entao `ancora quebrada` de verdade e' pega antes
+de gastar uma rodada de dente.
+
+**Registro da sonda do webhook:** no passo G a sonda (`sonda-webhook.js`) imprime `HTTP <status> …`
+quando o n8n responde e `HTTP_ERRO …` quando o `fetch` falha. O item de registro so' aceita uma
+**resposta HTTP real (2xx/4xx)** e nunca o `404` de rota inexistente — `HTTP_ERRO` **nao** conta como
+porta registrada.
+
 ## 5. Operacao — o que sobra depois da rodada
 
 - **Nao toca o ambiente**: o trio (container de postgres, container do Odoo, container do n8n, rede)
   e' descartavel e some no fim; o diretorio de trabalho (`/tmp/e2e-foundation-XXXXXX`, modo `700`)
-  guarda senha, chave e token e e' removido junto. `--manter` preserva tudo para investigacao — e
-  nesse caso o operador apaga na mao.
+  guarda senha, chave e token e e' removido junto. Rodada **interrompida** (Ctrl-C, deploy no meio)
+  nao passa pelo `trap` de limpeza e deixa a sobra para tras — por isso o inicio da rodada **remove os
+  `/tmp/e2e-foundation-*` que nao sao de rodada viva** (cada rodada grava o proprio PID em `.pid`, o
+  padrao de nome e' unico por rodada). `--manter` preserva tudo para investigacao — e nesse caso o
+  operador apaga na mao.
 - **Nao toca o dev**: a instancia `pg-odoo-dev` e' medida antes e depois (lista de bancos) quando
   esta' de pe; `homolog`/`prod` sao conferidos por contagem de arquivos. Nenhum arquivo e' escrito
   la'.

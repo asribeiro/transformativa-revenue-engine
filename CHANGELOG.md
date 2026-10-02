@@ -1074,6 +1074,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   cards de n8n no mesmo `scripts/verificar_estrutura.sh`; a base congelada e' a de
   `feature/TRE-W3-E06-T01` (commit do merge registrado em `docs/operations/registro-de-execucoes.md`).
 
+### Fixed
+
+- **Achados de medicao/higiene da revisao r1 do E2E Foundation #001** (`TRE-W3-E06-T01`, achados do card
+  `t_01ebaaad`, branch `fix/t_01ebaaad-achados-e06-r1`, commit `80121c4`) — quatro correcoes que **nao** mudam
+  o veredito aprovado (139 itens/0 falhas e dente 3/3 remedidos), mas tiram a imprecisao do artefato:
+  - o item da **ida-e-volta** passa a dizer que a ponta no PG e' registrada **pelo harness** com o id lido
+    da trilha (a coluna nao e' escrita por porta da fundacao — o que o runbook §6.5 ja declarava);
+  - o item **"porta de ingestao registrada no n8n"** deixa de aceitar "qualquer saida != 404": exige uma
+    **resposta HTTP real (2xx/4xx)** e recusa o `HTTP_ERRO` de conexao (funcao `webhook_esta_registrado`);
+  - o juiz do `--prova-de-dente` passa a nomear **`ambiente quebrado`** (imagem ausente, trio que nao sobe)
+    em vez de `ancora quebrada`, que acusava erro de redacao do item — mesma decisao do irmao E05 (`a58c0a7`),
+    com o controle sintetico **c5** no `controle_do_juiz`;
+  - o inicio da rodada **remove as sobras `/tmp/e2e-foundation-*` de rodadas interrompidas** (que guardam
+    senha/chave/token em modo `700` e escapam do `trap` de limpeza), preservando rodadas vivas pelo `.pid`.
+
 ### Notas de estado
 
 - **Escopo declarado do E2E**: cobre os passos 1..3 e 11..19 do doc 08 §3 mais o sentido Odoo -> PG pela

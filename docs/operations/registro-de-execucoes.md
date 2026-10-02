@@ -1297,3 +1297,72 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   arquivo); (5) falha de gate do passo 0 nao aborta mais o cenario (snapshot de falhas antes do trio).
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil
   `tester`) e a homologacao (**estagio 7**) e' do Anderson.
+
+---
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — achados de medicao/higiene da revisao r1 do E2E Foundation #001 (card `t_01ebaaad`, origem `TRE-W3-E06-T01` / `t_fcbe3d7d`)
+
+- **Objeto:** os **4 achados NAO bloqueantes** da revisao independente rodada 1 do `TRE-W3-E06-T01` (a entrega
+  foi **APROVADA**; nada aqui muda o veredito). Branch `fix/t_01ebaaad-achados-e06-r1`, nascida do head
+  aprovado `bf31cb1`; commit de codigo **`80121c4`**. As quatro correcoes sao de **medicao/rotulo/higiene** —
+  nenhum comportamento medido foi alterado.
+- **Base medida:** clone proprio na VPS de `80121c4` (`/opt/tre/t_01ebaaad/repo`, `git bundle` transferido por
+  `ssh` **sem `-n`**, `sha256` do bundle identico entre os dois lados), worktree limpo. `sha256` do script sob
+  teste **`63df6584e090abd34f79dc0db3439a4b421e6b5e0edc40b1a136608cc531be07`** (git == clone da VPS; o do
+  entregue aprovado era `4f7f0e34…` — ver o diff item a item abaixo).
+- **Achado 1 [medicao] — item da ida-e-volta escrito pelo proprio aceite.** O item
+  `a ponta no PG registra o MESMO id que o Odoo devolveu (ida-e-volta fechada)` era **escrito pelo proprio
+  harness** (linhas 822-833) e so' entao medido; o texto fazia crer que uma porta da fundacao mediu a escrita.
+  Passa a dizer `ponta do vinculo no PG registrada PELO HARNESS com o id lido da trilha (a coluna nao e'
+  escrita por porta da fundacao; ida-e-volta fechada)` — coerente com o runbook §6.5 (e o §3, linha do passo C,
+  perdeu a mesma ambiguidade). Medido no aceite completo: `aceite.out` linha 112.
+- **Achado 2 [medicao] — "porta de ingestao registrada" aceitava `HTTP_ERRO`.** O item considerava registrada
+  **qualquer** saida diferente de `HTTP 404`, inclusive `HTTP_ERRO …` (falha de conexao do `fetch`) — uma porta
+  que nem responde passaria. A decisao virou a funcao `webhook_esta_registrado`, que exige uma **resposta HTTP
+  real (2xx/4xx)** e recusa `404` e `HTTP_ERRO`. Prova: probe local `probe-juiz.sh` que **extrai a funcao do
+  proprio script sob teste** e a exercita — `HTTP 200`/`HTTP 400` -> registrado; `HTTP 404`, `HTTP_ERRO`, saida
+  vazia e `HTTP 500` -> nao registrado; e a regra ANTIGA aceitaria o `HTTP_ERRO` (o furo fechado):
+  `RESULTADO_PROBE: 8 itens, 0 falha(s)`, **rc=0**. No caminho real o item continua passando: `aceite.out`
+  linha 138 `OK porta de ingestao registrada no n8n (respondeu HTTP real; deixou de responder 404)`.
+- **Achado 3 [cosmetico] — ambiente quebrado era rotulado "ancora quebrada".** Com a imagem do Odoo ausente o
+  juiz dizia `NAO_CONTA (ancora quebrada: …)`, apontando erro de redacao do item quando o suspeito era o
+  ambiente. Agora `ambiente_quebrado` reconhece as falhas de guarda/trio/n8n e o veredito nomeia o ambiente
+  (mesma decisao do irmao E05, `a58c0a7`), com o controle sintetico **c5** no `controle_do_juiz`. Medido:
+  dente positivo -> `OK controle do juiz do dente (5 saidas sinteticas: … ambiente quebrado nomeado)` e
+  `E2E_FOUNDATION_001_DENTE_OK (3/3 dentes cumpridos; juiz conferido; baseline nao mutado verde)` **rc=0**;
+  controle negativo `TRE_IMAGEM=odoo:nao-existe-9.9 --prova-de-dente` -> cada mutacao
+  `NAO_CONTA (ambiente quebrado: imagem odoo:nao-existe-9.9 ausente (nada a medir))`,
+  `RESULTADO: E2E_FOUNDATION_001_DENTE_FALHOU (baseline NAO mutado nao ficou verde; 0/3)` **rc=1** (fail-closed
+  preservado — o fail-open do `t_fa9db205` nao reincide).
+- **Achado 4 [higiene/documental] — sobra de rodada interrompida com senha/token.** O runbook §5 dizia que o
+  diretorio `/tmp/e2e-foundation-XXXXXX` e' removido junto, mas rodada **interrompida** deixa a sobra (o
+  `trap limpeza EXIT` so' roda em saida normal): a VPS tinha `/tmp/e2e-foundation-pJJmzw` (modo 700 root,
+  `odoo.conf` 600 + `pg.env` + `token.txt`, de 02/10 05:54 UTC). O inicio da rodada agora **remove as sobras
+  `/tmp/e2e-foundation-*` que nao sao de rodada viva** (cada rodada grava o proprio PID em `.pid`; rodada viva
+  fica de fora) e o runbook §5 declara isso. Medido: `aceite.out` linha 62
+  `INFO sobra de rodada interrompida removida: /tmp/e2e-foundation-pJJmzw`; ao fim da bateria
+  `ls -lad /tmp/e2e-foundation-*` -> `(nenhuma sobra)`.
+- **Aceite remedido (o aceite nao quebrou):** `TRE_BANCO=tre_a01_20261002` e `TRE_LOG_DIR` proprio ->
+  `RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas, 2 passo(s) declarado(s) fora do escopo)` **rc=0**
+  (`aceite.out` sha256 `c94eeb5380c23a02671b7b2e3df1d4bce4ed127058fe687670ad55e9c78b8d79`);
+  `--apenas-codigo` -> `E2E_FOUNDATION_001_OK (9 itens, 0 falhas)` **rc=0** (`codigo.out` sha256
+  `dc4db45e1886e3d044481b60bf95b27822a67df90348bdffc1d2322fd9deed11`); `--prova-de-dente` -> baseline
+  **130 itens** verde e `E2E_FOUNDATION_001_DENTE_OK (3/3)` **rc=0** (`dente.out` sha256
+  `da7cd50a0ddfd1b828e224525b168c0372f306c5bc7dc98e659943df6785b784`); controle negativo **rc=1**
+  (`neg.out` sha256 `ff228b3048ecc5026ce7e2fc0900cf6a3f2ff86f7d4013b536d60838a26d1a64`); console do runner
+  `3d9046fbe6e4428e6b6fa06b62c1693571c599b66590d03a83eaf8a8536d22fa`. **Diff item a item** do entregue
+  aprovado (`/opt/tre/evid-t_fcbe3d7d-r2/aceite.out`) x o corrigido, normalizado o rotulo de ambiente:
+  **141 itens nos dois**, e as **unicas** diferencas de conteudo sao os **dois textos** consertados (ponta do
+  vinculo e porta de ingestao), a linha `INFO` da sobra removida e o nome do banco/sufixo dos containers
+  descartaveis — **nenhum item mudou de veredito**.
+- **O que NAO foi tocado:** o comportamento medido (SQL, nucleos, workflows, contratos, migration e testes do
+  modulo); `/opt/tre/repo` (copia operacional), `dev`, `homolog` e `prod` (o proprio aceite mede isso no passo
+  K). Residuo do aceite: containers/rede `tre-e06-*` destruidos pela propria limpeza; ficam como evidencia
+  `/opt/tre/t_01ebaaad/` (clone, consoles, logs) e os anexos do card.
+- **Aprendizado:** o defeito nao estava na porta nem no consumidor — estava no **juiz**: item que aceita
+  "!= 404", rotulo que aponta o suspeito errado, texto que sugere medicao que nao houve. Correcao de juiz
+  pede **controle negativo proprio**: o `c5` sintetico e a rodada com imagem ausente provam o rotulo, do mesmo
+  jeito que o `HTTP_ERRO` no probe prova o furo da porta.
+- **Verificacao independente:** quem entrega nao homologa — o veredito e' do **estagio 6** (perfil `tester`)
+  e a homologacao (**estagio 7**) e' do Anderson.
+- Segredos: nenhum valor nesta entrada.
