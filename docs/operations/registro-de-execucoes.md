@@ -874,3 +874,36 @@ Rodada executada em 02/10, 03h20 a 04h55 UTC (00h20 a 01h55 na VPS, -03).
   vivem em arquivos `600` dentro do diretório descartável `700` e morrem com ele.
 - **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
   (perfil `tester`) e a homologação (estágio 7) é do Anderson.
+
+## 2026-10-02 — repositorio TRE (worktree local `t_40f57544`, sem uso da VPS) — TRE-W3-E03-T01-D02 (card `t_40f57544`): o runbook passa a declarar o colapso da chave derivada de conteudo, a lacuna que o cabecalho do modelo ja' citava
+
+- **Objeto do defeito (documental, severidade baixa):** o cabecalho de `odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py` (decisao 2, linha 34 do head `a4c9e0e` / do commit medido `597f2dd`) declara a LACUNA e afirma *"e esta' declarado no runbook"*, mas o runbook `docs/runbooks/odoo-eventos-para-pg.md` **nao declarava nada disso**: `grep -c 'colaps'` = **0** no head. O ponteiro apontava para o vazio (achado pela revisao independente do `t_85cb2838`, estagio 6, perfil `tester`). O que estava descrito no runbook era a chave (`idempotency_key` derivada do conteudo, §3.1 item 2, e o `ON CONFLICT ... DO NOTHING`, §3.2 item 7), **nao** o efeito colateral dela.
+- **Causa raiz:** o cabecalho foi escrito citando uma declaracao que nunca foi escrita no runbook — prosa de ponteiro sem verificador que a resolvesse (nenhum script do repo le o conteudo de `docs/runbooks/*.md`; `scripts/verificar_estrutura.sh` so' olha existencia/versionamento).
+- **Correcao (branch `fix/TRE-W3-E03-T01-D02`, commit `db816bd`, nascido de `a4c9e0e`):** opcao **1** do card — um bullet novo fecha a §6 do runbook (Armadilhas aprendidas neste card) declarando que a chave derivada do CONTEUDO do fato faz dois fatos DISTINTOS de payload identico colapsarem por desenho (o segundo nao vira linha na fila do Odoo nem na trilha e o remetente o trata como ja' entregue: `SENT` no ciclo, `duplicado: true` na porta), o que isso implica na leitura da trilha (ausencia **nao** e' perda de dado) e o que **nao** fazer para "consertar" (chave aleatoria por envio quebra a idempotencia do retry, contrato §6 regra 2). Blob `986863bd4b2ba1b93ec922dc178e8488cdfed283` (sha256 `1fd20210af04518d3dbb449710c92defdb998151396e4f7db2b13844dc4d0c88`), arquivo de **213 → 224 linhas** (11 insercoes, 0 remocoes). **O `.py` NAO foi tocado** — com a lacuna declarada no runbook, o ponteiro do cabecalho passa a ser verdadeiro (era o criterio da opcao 1).
+- **Dente (antes/depois; a saida bruta e' a evidencia do aceite, guardada em `evidencia/dente-antes-depois.out` no card):**
+
+```
+$ git show HEAD:docs/runbooks/odoo-eventos-para-pg.md | grep -n colaps   # ANTES do fix (head a4c9e0e)
+rc=1  (1 = nenhum match, o runbook NAO declarava)
+
+$ git show HEAD:docs/runbooks/odoo-eventos-para-pg.md | grep -c colaps   # ANTES
+0
+
+$ grep -n colaps docs/runbooks/odoo-eventos-para-pg.md                    # DEPOIS do fix
+214:* **A chave derivada de CONTEÚDO colapsa dois fatos distintos de payload idêntico** (lacuna
+221:  ausência como perda de dado: é o colapso declarado, o que faz o reenvio do MESMO fato não duplicar
+rc=0
+
+$ grep -c colaps docs/runbooks/odoo-eventos-para-pg.md                    # DEPOIS
+2
+
+$ grep -n "declarado no runbook" odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py
+34:     colapsam por desenho — e' o preco da chave derivada de conteudo, e esta' declarado no runbook.
+```
+
+- **Aceite do card:** `grep -n 'colaps' docs/runbooks/odoo-eventos-para-pg.md` >= 1 → **2** (linhas 214 e 221 do arquivo corrigido), com `git diff --name-only` = **`docs/runbooks/odoo-eventos-para-pg.md`** (unico arquivo do conserto; o registro entra no commit seguinte).
+- **Verificadores do projeto no worktree do fix (comando + exit code):** `bash scripts/verificar_estrutura.sh` → `RESULTADO: PASS (0 falhas)` exit 0; `bash scripts/secret_scan.sh` → `RESULTADO: PASS (nenhum segredo versionado)` exit 0; `bash scripts/verificar_papeis.sh` → `RESULTADO: PASS (0 falhas)` exit 0; `python3 scripts/verificar_contrato_dados.py` → `RESULTADO: PASS (26 itens, 0 falhas)` exit 0. Saidas brutas em `evidencia/verificadores.out`, `evidencia/secret_scan.out`, `evidencia/papeis.out` e `evidencia/contrato.out`.
+- **O que NAO foi tocado:** nenhum arquivo de `n8n/` ou `scripts/n8n/`, nenhum teste, nenhuma migracao, nenhum `.py` do modulo, nenhum banco, nenhum container, nenhum comando na VPS, `/opt/tre/repo` e `/opt/tre/{homolog,prod}` intactos — o desenho (chave derivada de conteudo + `UNIQUE`) esta' correto e nao mudou.
+- **Aprendizado:** afirmacao de documentacao que aponta para outro documento ("esta' declarado no runbook") e' um ponteiro e envelhece/mente em silencio — o defeito **nao** foi achado por verificador nenhum, so' por leitura cruzada na revisao; quando a lacuna e' declarada em prosa no codigo, ou o documento apontado declara a mesma lacuna, ou o ponteiro aponta para si mesmo. Vale a mesma licao do D04-D01/t_26be11c7: ponteiro sem verificador e' promessa, nao registro.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste defeito e' do estagio 6 (perfil `tester`) e a homologacao (estagio 7) e' do Anderson. A origem (`TRE-W3-E03-T01`, card `t_85cb2838`) so' fecha de vez com este defeito resolvido.
+- Segredos: nenhum valor nesta entrada.
