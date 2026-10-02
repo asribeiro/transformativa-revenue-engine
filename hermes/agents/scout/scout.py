@@ -117,9 +117,27 @@ EXIT_USO = 2
 EXIT_RECUSOU_AMBIENTE = 4
 EXIT_FONTE = 5
 
-RAIZ_PADRAO = Path(__file__).resolve().parents[3]
 CONTRATO_DADOS_PADRAO = "docs/data/data_contract_v1.json"
 CONTRATO_AGENTE_PADRAO = "hermes/agents/scout/agente-scout-v1.json"
+
+
+def descobrir_raiz_padrao() -> Path:
+    """Raiz do repo por MARCADOR — nunca pela profundidade do arquivo.
+
+    O agente tem de importar de QUALQUER diretorio: as copias mutadas dos verificadores vivem
+    em diretorio raso (as vezes `/tmp`), onde `Path(__file__).resolve().parents[3]` estoura
+    `IndexError` ja na importacao (medido na revisao independente, TMPDIR=/tmp). Aqui a raiz e
+    o primeiro ancestral que contem o contrato do agente; o diretorio de trabalho entra como
+    segunda tentativa, porque a copia sob teste nao esta na arvore do repo.
+    """
+    for base in (Path(__file__).resolve().parent, Path.cwd()):
+        for pasta in (base,) + tuple(base.parents):
+            if (pasta / CONTRATO_AGENTE_PADRAO).is_file():
+                return pasta
+    return Path.cwd()
+
+
+RAIZ_PADRAO = descobrir_raiz_padrao()
 
 
 class RecusaDeAmbiente(Exception):
@@ -323,14 +341,27 @@ _ESCRITA = (
     ("delete", re.compile(r"\bDELETE\s+FROM\s+([A-Za-z_][\w\.]*)", re.I)),
 )
 _DDL = re.compile(r"\b(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|COMMENT\s+ON)\b", re.I)
+_LITERAL = re.compile(r"'(?:[^']|'')*'")
+
+
+def _sem_literais(sql: str) -> str:
+    """A instrucao SEM o conteudo dos literais — so o codigo SQL.
+
+    Nome de empresa nao e instrucao: um literal ('Drop Solucoes Ltda', 'Create Tecnologia ME')
+    fazia a guarda recusar candidate legitima como se fosse DDL (medido na revisao
+    independente). O contrato proibe DDL e escrita fora do declarado; quem escreve dado e o
+    `lit()`, que escapa apostrofo dobrando — entao a varredura olha o codigo, nao a prosa.
+    """
+    return _LITERAL.sub("''", sql)
 
 
 def validar_sql(sql: str, permitir_remocao: bool = False) -> None:
     """Fail-closed: recusa DDL e escrita fora do declarado (as 4 tabelas do agente)."""
-    if _DDL.search(sql):
+    codigo = _sem_literais(sql)
+    if _DDL.search(codigo):
         raise GuardaDeEscritaViolada("DDL nao e permitido ao agente Scout")
     for operacao, padrao in _ESCRITA:
-        for tabela in padrao.findall(sql):
+        for tabela in padrao.findall(codigo):
             if tabela.lower() not in TABELAS_PERMITIDAS:
                 raise GuardaDeEscritaViolada("escrita em tabela nao declarada: %s" % tabela)
             if operacao in ("update", "delete") and tabela == TABELA_ORGANIZACOES:
@@ -732,9 +763,15 @@ class Scout:
                 pass
             elif veredito == VER_REVISAO:
                 aprovacao_id = str(uuid.uuid4())
-                self.porta_sql().executar(sql_pedir_revisao(aprovacao_id, candidata,
-                                                      resultado["motivos"][0], casadas,
-                                                      self.correlation_id))
+                rc_rev, saida_rev, erro_rev = self.porta_sql().executar(
+                    sql_pedir_revisao(aprovacao_id, candidata, resultado["motivos"][0],
+                                      casadas, self.correlation_id))
+                if rc_rev != 0:
+                    # Fail-closed: sem a linha em human_approvals a ambiguidade NAO foi
+                    # reportada — entao nao se pode dizer REVISAO_IDENTIDADE (medido na
+                    # revisao independente: rc=1 nas duas escritas e o agente dizia tudo certo).
+                    raise PortaIndisponivel("fila humana nao registrada: %s"
+                                            % (erro_rev or saida_rev))
                 resultado["human_approval_id"] = aprovacao_id
             elif veredito == VER_JA_EXISTE:
                 resultado["organization_id"] = casadas[0]["organization_id"]
@@ -766,10 +803,24 @@ class Scout:
         fim = self.relogio()
         saida = {k: v for k, v in resultado.items() if k != "organizacoes_casadas"}
         status = STATUS_AGENT_RUNS[resultado["veredito"]]
-        self.porta_sql().executar(sql_registrar_execucao(
+        rc_run, saida_run, erro_run = self.porta_sql().executar(sql_registrar_execucao(
             run_id, self.correlation_id, resultado.get("organization_id"), status,
             entrada, saida, inicio, fim, resultado.get("erro")))
+        if rc_run != 0:
+            # Fail-closed: a execucao NAO pode ser reportada como concluida quando a propria
+            # auditoria nao foi escrita (mesmo espirito do guardrail de ambiente e do JEV).
+            resultado["veredito"] = VER_ERRO
+            resultado["motivos"] = list(resultado.get("motivos") or []) + \
+                ["AUDITORIA_NAO_REGISTRADA: %s" % (erro_run or saida_run)]
+            resultado["erro"] = {"tipo": "PortaIndisponivel",
+                                 "mensagem": "auditoria nao registrada: %s"
+                                             % (erro_run or saida_run)}
+            resultado["auditoria_registrada"] = False
+            resultado["agent_run_id"] = run_id
+            resultado["status_agent_runs"] = STATUS_AGENT_RUNS[VER_ERRO]
+            return resultado
         resultado["agent_run_id"] = run_id
+        resultado["auditoria_registrada"] = True
         resultado["status_agent_runs"] = status
         return resultado
 
