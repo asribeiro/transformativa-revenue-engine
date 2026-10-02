@@ -578,7 +578,7 @@ docker daemon, entao toda execucao vira esta linha):**
 - **Dentes (rodada 1, o artefato real):** `CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio
   harness, 0 falhas)` — politica sem a operacao reprova o item de AC1 e o aceite cai junto (96 itens,
   34 falhas); controlador sem o portao de ambiguidade deixa o `409` de ser exigido (96 itens, 4
-  falhas); motor sem aplicar o valor fixo deixa o registro-empresa como empresa (96 itens, 4 falhas).
+  falhas); motor sem aplicar o valor fixo deixa o registro-empresa como empresa (96 itens, 1 falha).
   Os 2 controles (sub-run que reprova por ambiente e mutacao inocua) foram reportados como
   **inconclusivo** / **mutacao sem dente**, e a guarda externa confirmou o **mesmo** `sha256` do modulo
   antes e depois das mutacoes.
@@ -606,3 +606,46 @@ docker daemon, entao toda execucao vira esta linha):**
   configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T03-D01 (card `t_1062ccc0`): correcao **documental** do registro e do runbook §11 (defeito achado pela revisao independente do T03)
+
+**O que este card e':** defeito **documental**, achado pela revisao independente (estagio 6, perfil
+`tester`) do `TRE-W3-E01-T03`. **Nenhum arquivo de codigo muda** — o artefato de comportamento
+aprovado (`88323c4`) segue intacto e esta correcao entra **depois** dele, como commit documental no
+branch `feature/TRE-W3-E01-T03` (o card preve esse caminho e pede que o runbook §11 cite o commit
+medido, o que ele passou a fazer).
+
+- **Item 1 — numero medido errado no registro (unico erro factual):** a frase do dente 3 trazia o
+  numero do dente 2 (`96 itens, 4 falha(s)`); passou a `(96 itens, 1 falha)`. Medido por mim, por SSH
+  na VPS, nos **dois** `dente.out` do proprio autor e na reproducao da revisao:
+  `dente-1-sem-operacao.out` -> `RESULTADO: CONTATO_UPSERT_FALHOU (96 itens, 34 falha(s))
+  banco=tre_e01_t03_contato_d1`; `dente-2-sem-portao.out` -> `(96 itens, 4 falha(s))
+  banco=..._d2`; `dente-3-sem-valor-fixo.out` -> `(96 itens, 1 falha(s)) banco=..._d3`. Os dentes 1 e 2
+  estavam corretos e **nao** foram tocados.
+- **Item 2 — lista de logs de etapa inexistentes no runbook §11:** `3-http.log`, `3d-http.log` e
+  `4-contrato.log` nao existem em arvore nenhuma de evidencia (`find /opt/tre -name '3-http.log' -o
+  -name '3d-http.log' -o -name '4-contrato.log'` -> `0`), e o proprio harness nao os escreve. Os logs
+  de etapa que ele realmente escreve (medidos no entregue) sao `0-motor-puro.out`, `1-instalacao.log`,
+  `2-teste.log`, `3-preparo.log`, `3b-servidor.log`, `3d-preparo-homolog.log`, `3d-servidor.log` — e
+  foi essa a lista que passou a valer no runbook. Os tres nomes errados **saem** de la' (a conferencia
+  do card os procura no runbook e espera 0); o registro deles fica **aqui**.
+- **Item 3 — enumeracao incompleta dos arquivos da entrega (mesma §11):** a frase listava 9 dos 11
+  arquivos conferidos por `sha256`; passou a nomear os **11** — faltavam
+  `docs/operations/registro-de-execucoes.md` e `scripts/odoo/testar_motor_api.py`.
+- **Convencao da casa (citar o commit medido):** o §11 passou a nomear o commit medido (`88323c4`) e a
+  registrar que esta correcao entra depois dele, sem tocar codigo; os `sha256` citados na secao sao os
+  do commit medido, e os dois arquivos tocados aqui divergem por construcao (eram justamente os que
+  carregavam as duas afirmacoes erradas).
+- **Conferencia depois do conserto (os greps do card, medidos nesta rodada):** no registro de
+  execucoes, a frase do dente 3 deixou de trazer o numero do dente 2 (agora mede `(96 itens, 1 falha)`)
+  e a do dente 2 segue intacta (`96 itens, 4 falha(s)`) — o padrao que o card manda conferir casa uma
+  linha so'; no runbook, **0** ocorrencias dos tres nomes de log removidos e **presentes** as linhas
+  com os logs reais (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+  `3b-servidor.log`, `3d-preparo-homolog.log`, `3d-servidor.log`).
+- **Diff:** so' `.md` — `git diff --name-only` = `docs/operations/registro-de-execucoes.md`,
+  `docs/runbooks/odoo-contato-upsert.md`.
+- **Publicacao para conferencia externa:** o commit documental e' publicado por `git archive` em
+  `/opt/tre/rev-t_1062ccc0-d01` (copia do commit, sem build e sem Odoo), para quem quiser conferir
+  fora do worktree.
+- **Verificacao independente:** quem conserta nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`); a homologacao (estagio 7) e' do Anderson.

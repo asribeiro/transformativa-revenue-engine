@@ -355,11 +355,15 @@ A receita do `odoo-empresa-upsert.md` §9 continua valendo, com o que este card 
 
 ## §11 Aceite medido (VPS do dev, 02/10/2026)
 
-O artefato é o **commit desta branch** (`feature/TRE-W3-E01-T03`), cuja base é o commit aprovado do
-E01-T02 (`8439f7b`). O que roda na VPS é uma cópia **byte a byte** dele: o worktree foi enviado por
-`tar` para `/opt/tre/rev-t_e6e3b0b3-r1..r3` e os arquivos da entrega (política, motor,
-`tests/__init__.py`, a suíte nova, o verificador próprio, o verificador estrutural, README, CHANGELOG
-e este runbook) foram conferidos por `sha256` contra o worktree.
+O artefato medido é o **commit congelado** `88323c4` desta branch (`feature/TRE-W3-E01-T03`), cuja
+base é o commit aprovado do E01-T02 (`8439f7b`). O que roda na VPS é uma cópia **byte a byte** dele: o
+worktree foi enviado por `tar` para `/opt/tre/rev-t_e6e3b0b3-r1..r3` e os **11 arquivos da entrega** —
+política (`odoo/addons/transformativa_sales_ai/api/politica_api.json`), motor (`…/api/motor.py`),
+`tests/__init__.py`, a suíte nova (`…/tests/test_contato_upsert.py`), o verificador próprio
+(`scripts/odoo/verificar-contato-upsert.sh`), a suíte pura do motor (`scripts/odoo/testar_motor_api.py`),
+o verificador estrutural (`scripts/verificar_estrutura.sh`), README (`…/transformativa_sales_ai/README.md`),
+`CHANGELOG.md`, o registro de execuções (`docs/operations/registro-de-execucoes.md`) e este runbook —
+foram conferidos por `sha256` contra o worktree (**11/11 iguais**).
 
 **Rodada 1 — o aceite não podia autenticar (e o defeito era do harness, não da API).**
 ```
@@ -422,8 +426,9 @@ aplicado na atualização (`is_company='t'`)". Os 2 controles do harness foram r
 **Registros brutos (na VPS, em `/opt/tre/evid-t_e6e3b0b3-r*/`):** `aceite-r1.out` (47 falhas, o
 defeito do harness preservado), `aceite-r2.out` (6 falhas, a etiqueta do `psql`), `aceite.out` da
 rodada **r3** (110 itens, 0 falhas) e `aceite.out` da rodada **r4** (a mesma saída, medida no
-`git archive` do commit), com os logs por etapa (`1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
-`3-http.log`, `3d-http.log`, `4-contrato.log`); os dentes em `dente.out` das árvores `-dente` (r3) e
+`git archive` do commit), com os logs por etapa (`0-motor-puro.out`, `1-instalacao.log`,
+`2-teste.log`, `3-preparo.log`, `3b-servidor.log`, `3d-preparo-homolog.log`, `3d-servidor.log`); os
+dentes em `dente.out` das árvores `-dente` (r3) e
 `-r4-dente` (r4), com `dente1/`, `dente2/`, `dente3/` e os controles em cada uma. Nenhum valor de
 segredo em nenhum deles: a chave da API nasce **na VPS**, em arquivo `600` dentro do diretório
 descartável do preparo, é lida pelo `curl` por arquivo de configuração (nunca em `ps`, argumento ou
@@ -432,3 +437,16 @@ log) e morre com o diretório.
 **O que o aceite NÃO toca (medido):** nada em `/opt/tre/{homolog,prod}` (0 arquivo antes e depois),
 o `odoo-dev`/`pg-odoo-dev` de pé (a dupla do aceite é própria, `e01t03-*`, criada e removida na
 rodada) e **0** container ou rede residual ao fim.
+
+**Correção documental (card de defeito `TRE-W3-E01-T03-D01`, achado pela revisão independente do
+estágio 6).** As medições desta seção são do commit `88323c4`; esta correção entra **depois** dele, no
+mesmo branch, e **não** toca arquivo de código — política, motor, suíte, verificadores, README e
+CHANGELOG seguem byte a byte os medidos nas rodadas `r3`/`r4`. Dois registros foram corrigidos por não
+baterem com os logs brutos: (a) o número de falhas do **dente 3**, que é **1** (`96 itens, 1 falha(s)`
+nos dois `dente.out` do autor e na reprodução da revisão) — o `4` é o número do **dente 2**; e (b) a
+lista dos **logs de etapa**, que trazia três nomes de arquivo que nunca existiram em árvore nenhuma de
+evidência — a lista passou a ser a que o harness realmente escreve (os sete acima). Os `sha256` citados
+nesta seção são os do commit medido: os **dois** arquivos mexidos aqui (este runbook e
+`docs/operations/registro-de-execucoes.md`) divergem por construção, porque eram exatamente os que
+carregavam as duas afirmações erradas. Os nomes removidos e as saídas cruas da conferência estão na
+entrada deste card no `registro-de-execucoes.md`.
