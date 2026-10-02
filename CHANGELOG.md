@@ -733,9 +733,41 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   checagem de aprovação passa a atender produção sem aprovação; e o artefato real sai intacto
   (guarda externa por sha256 de 29 arquivos). Runbook e detalhe item a item:
   `docs/runbooks/odoo-api-controlada.md`.
+- **Operação de escrita de negócio `oportunidade_upsert` na API controlada** (`TRE-W3-E01-T04`) —
+  o espelho da oportunidade canônica entra pela **mesma porta única**, por **declaração** (nenhuma
+  linha de controlador): `api/politica_api.json` sobe para `1.1.0` com a operação (`tipo: escrita`,
+  modelo `crm.lead`, `acao: upsert`, identidade `tf_opportunity_id`, `name` obrigatório,
+  `idempotency_key` exigida, `dry_run` aceito). A **fronteira de dono** do contrato §2 é o desenho:
+  estágio, valor, probabilidade e datas do funil **não** são escrevíveis (422 `campo_nao_declarado`,
+  nunca silêncio) e `tf_priority_tier` é derivado do score. O rastro (`tf_idempotency_key`,
+  `tf_correlation_id`, `tf_last_sync_at`, `tf_last_event_type`) é campo **declarado**, escrito com o
+  que o produtor manda; a chave do envelope entra na trilha `TF_API_AUDIT`. Os testes do `E01-T01`
+  deixaram de fixar a lista de operações — os itens que falam dela passam a ler o **próprio
+  artefato** (âncora `ANCORA:ITEM_DATADO`), para cada card da onda acrescentar a sua sem quebrar o
+  anterior. Artefatos: `tests/test_oportunidade_upsert.py` (27 testes),
+  `scripts/odoo/verificar-oportunidade-upsert.sh` (aceite + 3 dentes **fail-closed**) e
+  `docs/runbooks/odoo-oportunidade-upsert.md`.
+  Aceite na VPS (dupla descartável própria, banco `tre_e01_t04_oportunidade`):
+  **`OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)`**, exit 0 — suíte pura `MOTOR_API_OK (68 itens)`,
+  `0 failed, 0 error(s) of 109 tests` (27 novos, sem regressão), **servidor HTTP real medido por
+  `curl` de fora do processo** (cria/atualiza/repete; `stage_id` e `expected_revenue` de dono do Odoo
+  **idênticos antes e depois**, lidos por SQL; dois leads homônimos continuam dois registros e o
+  upsert pelo UUID de um não toca o outro), **18 linhas de auditoria para 18 chamadas autenticadas**
+  (sem token, sem `Bearer`, sem payload — nem o payload plantado) e a guarda do ADR-005 na escrita
+  medida com o ambiente trocado **pelo ORM** e o servidor reiniciado depois da troca. Dentes:
+  **`OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas)`** — política sem a operação, motor sem a
+  checagem de campo na escrita e controlador sem o upsert por identidade reprovam **o item esperado**
+  (61/98/96 itens medidos por prova), com o artefato real intacto (sha256 de 29 arquivos). O harness
+  de dentes é fail-closed: prova que não mede nada **reprova**.
 
 ### Notas de estado
 
+- **As escritas de negócio passam a entrar na política real** a partir do `TRE-W3-E01-T04`: a
+  operação `oportunidade_upsert` já está declarada na `1.1.0`. A nota do `E01-T01` ("nenhuma
+  operação de escrita entra na política real antes do motor de idempotência") descreve o estado
+  daquele card; aqui "não duplicar" vem da **identidade canônica** (o UUID) e a chave de
+  idempotência é exigida, validada e registrada na trilha — a deduplicação por chave segue sendo do
+  `TRE-W3-E02-T02`.
 - **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por
   `idempotency_key` é do `TRE-W3-E02-T02` — aqui a chave é exigida, validada e registrada, e
   **nenhuma operação de escrita entra na política real** antes dele (o caminho de escrita é medido

@@ -239,4 +239,101 @@ escrever. Códigos de recusa (envelope de erro com `codigo`):
 
 ## §9 Aceite medido — VPS do dev, 02/10/2026
 
-_(preenchido depois da rodada que mediu o commit entregue)_
+**Nota de procedência:** a rodada `r7` mediu o commit `c0a248b` — **código, suíte e verificador**.
+As seções abaixo são o registro dessa rodada, escritas depois dela: no commit final, os artefatos
+medidos (política, motor, controlador, suíte do Odoo, suíte pura e verificador) têm **exatamente o
+mesmo `sha256`**; o único arquivo que passa a existir depois da medição é este runbook, e o próprio
+verificador confere os `sha256` na abertura de cada rodada (passo "guardas do ambiente").
+
+**Commit medido:** `c0a248b590a983fc9a2d5e6b1b719285bd58a13b` (`feature/TRE-W3-E01-T04`), publicado
+por `git archive` do próprio commit em `/opt/tre/evid-t_8b2ed1b7-r7/repo`. O `sha256` dos arquivos
+sob teste foi conferido **entre o repositório local e a cópia medida** (idênticos) —
+`api/politica_api.json dccf10a7…`, `api/motor.py 6a3e52d1…`, `controllers/api_controlada.py
+9a52f642…`, `tests/test_oportunidade_upsert.py 3e06561f…`, `scripts/odoo/verificar-oportunidade-upsert.sh
+2c69b3cc…`, `scripts/odoo/testar_motor_api.py 054fec83…`. `motor.py` e `api_controlada.py` têm o
+**mesmo sha256 do E01-T01** — mede-se, no artefato, que este card não mexeu no motor nem no
+controlador.
+
+### Aceite (execução completa, como root na VPS)
+
+```
+RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas) — exit 0
+```
+
+| fase | medido |
+| --- | --- |
+| passo 0 — suíte pura do motor | `MOTOR_API_OK (68 itens, 0 falhas)` — inclui a validação fail-closed da política nova |
+| passo 1 — instalação em banco limpo | banco `tre_e01_t04_oportunidade` criado pelo Odoo, `ir_module_module.state = installed` |
+| passo 2 — suíte do Odoo (`--test-enable`) | **`0 failed, 0 error(s) of 109 tests`** (piso 109) e os **27 testes** desta suíte presentes no log |
+| passo 3 — HTTP real por `curl` (consumidor externo) | 401 sem token e com token inválido; `sistema_capacidades` 200 com a operação declarada como `escrita` e a versão `1.1.0` da política em vigor; **cria** (200, `acao_efetiva=criar`) e **atualiza** (200, mesmo `id`); recusas nomeadas (`campo_nao_declarado` para `stage_id`/`expected_revenue`/`tf_priority_tier`, `campo_obrigatorio_ausente` sem UUID, `valor_invalido` com UUID torto, `idempotency_key_ausente`/`idempotency_key_invalida`, `payload_invalido`, `operacao_nao_declarada` 404); recusas **não** criaram registro |
+| passo 3b — leitura por SQL no banco | 1 registro por UUID (mesmo depois de 3 chamadas); espelho com `name`, `tf_idempotency_key`, `tf_correlation_id`, `tf_next_best_action`; **`stage_id` e `expected_revenue` de dono do Odoo idênticos antes/depois**; ninguém casou por nome (dois leads homônimos = dois registros, e o upsert pelo UUID do segundo não tocou o primeiro); o lead nasce sob o usuário de integração |
+| passo 3c — auditoria no log do servidor | **18 linhas `TF_API_AUDIT` para 18 chamadas autenticadas** (as 2 sem token válido param antes do controlador e não geram trilha); a trilha carrega operação/ação/código/`correlation_id`; **sem** chave, **sem** `Bearer`, **sem** payload (nem o payload plantado, que é medido de volta na resposta) |
+| passo 3d — guarda de ambiente na escrita (ADR-005) | ambiente trocado para `homologacao` **pelo ORM**, servidor **reiniciado depois** da troca → `503 ambiente_nao_permitido` e **nada escrito** |
+| passo 4 — contrato (greps) | 1 rota, `auth='bearer'`, só POST, 0 SQL na API, motor puro, operação declarada como escrita upsert por `tf_opportunity_id`, fronteira de dono sem campo do Odoo e sem derivado |
+| limpeza e ambientes | banco/containers/rede descartáveis removidos; instância do dev com os **mesmos 4 bancos** antes e depois; `homolog`/`prod` sem nenhum arquivo |
+
+### Dentes (harness **fail-closed**, `--prova-de-dente`)
+
+```
+RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas) — exit 0
+```
+
+| prova | mutação (em cópia própria do módulo) | medido |
+| --- | --- | --- |
+| dente 1 | política **sem** a operação `oportunidade_upsert` | `FALHOU (108 itens, 47 falhas)` — o item esperado (`capacidades: declaracao inesperada da operacao`) reprova, com **61 itens medidos** e a escrita virando `404 operacao_nao_declarada` |
+| dente 2 | motor **sem** a checagem de campo declarado na escrita | `FALHOU (108 itens, 10 falhas)` — o item `campo de ESTAGIO do dono Odoo` reprova (**98 itens medidos**) |
+| dente 3 | controlador **sem** o upsert por identidade (cria sempre) | `FALHOU (108 itens, 12 falhas)` — o item `segunda chamada nao atualizou` reprova (**96 itens medidos**): duas linhas com o mesmo UUID, e a terceira chamada é recusada com `valor_ambiguo` (a API não escolhe registro por conta própria) |
+| guarda externa | — | o artefato **real** saiu intacto: 29 arquivos, `sha256 2f95f8827576e95658e007bc809c36519fc368a7fb1499e39d4e64a95738a6cd` |
+
+Cada prova confere **antes** que a mutação foi aplicada na cópia, **roda** o aceite de verdade e
+exige que **o item esperado** esteja entre os reprovados — prova que mede pouco (< 20 itens),
+prova cujo aceite não reprova, ou prova que reprova por outro motivo **reprova o harness**.
+
+### Defeitos encontrados e consertados nas rodadas anteriores (todos em código meu)
+
+1. **Rodada 1 — verificador rodado como usuário comum:** o `chown` do `odoo.conf` para o uid do
+   container falha, o arquivo fica ilegível para o `odoo` (uid 100) e a instalação cai
+   (`Connection to the database failed`, 13 falhas). O aceite exige root na VPS (§3); ficou escrito
+   para não custar rodada de novo.
+2. **Rodada 2 — 7 testes reprovados, 3 causas:** (a) `url_open` com `json={}` **vira GET** e o
+   roteador responde `405` antes do controlador (2 itens não mediam nada) → `method="POST"`
+   explícito; (b) **semente criada pelo ORM da suíte é invisível** para a conexão que serve o HTTP
+   (transação não commitada) e o upsert criava outro registro (3 itens mediam o oposto) → semear
+   pela própria API; (c) `tf_idempotency_key` é campo **declarado** escrito com o valor enviado, não
+   preenchido pelo envelope (2 itens).
+3. **Rodada 3 — 19 itens reprovados por um defeito do próprio verificador:** o extrator de campo
+   (`campo()`) não carregava o JSON (`d` indefinido), então **toda** comparação de campo voltava
+   vazia; junto, o corpo de criação do verificador não enviava `tf_idempotency_key` (o item de SQL
+   media um campo que nunca foi enviado).
+4. **Rodadas 1–3 dos dentes — dois defeitos meus no harness:** conferir a ausência da operação por
+   `grep` no arquivo da política (a `descricao` citava o nome → falso `FALHOU`) e apontar como item
+   esperado o rótulo do **OK** em vez do rótulo do **FALHOU** ("reprovou por outro motivo"). Ambos
+   consertados; **a rodada que mede o artefato entregue é a `r7`**.
+
+### Logs brutos (agente, na VPS)
+
+`/opt/tre/evid-t_8b2ed1b7-r7/` — `aceite.out` (125 itens + `OPORTUNIDADE_UPSERT_OK`), `dente.out`
+(`DENTE_OK (3 provas, 0 falhas)`), `logs-aceite/` (`0-motor-puro.out`, `1-instalacao.log`,
+`2-teste.log`, `3-preparo.log`, `3b-servidor.log`) e `logs-dente/` (`dente-{1,2,3}-*.out`). As
+rodadas anteriores (`r1`..`r6`) ficam na VPS com os `FALHOU` originais — inclusive a `r1`, que
+documenta o defeito de execução como usuário comum, e a `r5`, com o harness de dentes ainda
+defeituoso.
+
+### Segredos
+
+Nenhum valor nesta seção e nenhum no repositório (`scripts/secret_scan.sh` → `PASS`). A chave de API
+da fase HTTP nasce **na VPS**, em arquivo `600` dentro do diretório descartável do preparo — nunca
+em stdout, log, argumento ou artefato — e morre com o diretório. A chave do passo 3d é gerada do
+mesmo jeito depois da troca de ambiente.
+
+### Verificadores do projeto (no worktree do commit)
+
+`bash scripts/verificar_estrutura.sh` → `PASS (0 falhas)`; `bash scripts/secret_scan.sh` → `PASS`;
+`bash scripts/verificar_papeis.sh` → `PASS (0 falhas)`; `python3 scripts/odoo/testar_motor_api.py` →
+`MOTOR_API_OK (68 itens, 0 falhas)`. O `verificar_estrutura.sh` foi estendido para exigir
+**versionados** a suíte nova e este runbook, e **executável** o verificador do card.
+
+### Verificação independente
+
+Quem entrega não homologa: o veredito deste card é do **estágio 6** (perfil `tester`) e a
+ratificação da versão 19.0 / homologação (estágio 7) é do **Anderson**.
