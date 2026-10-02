@@ -143,10 +143,10 @@ done
 ITENS=0
 FALHAS=0
 SUFIXO="$$-$RANDOM"
-PG_TMP="e02t01-pg-$SUFIXO"
-API_TMP="e02t01-api-$SUFIXO"
-N8N_TMP="e02t01-n8n-$SUFIXO"
-NET_TMP="e02t01-net-$SUFIXO"
+PG_TMP="e02t02-pg-$SUFIXO"
+API_TMP="e02t02-api-$SUFIXO"
+N8N_TMP="e02t02-n8n-$SUFIXO"
+NET_TMP="e02t02-net-$SUFIXO"
 DESC_DIR=""
 API_CT=""
 N8N_HOME=""
@@ -281,7 +281,7 @@ controle_do_juiz_sha() { # o item de sha256 nao pode ser vacuO: 2 saidas sinteti
 }
 
 if [ "$MODO" = "dente" ]; then
-    DENTE_DIR="$(mktemp -d /tmp/dente-e02t01-XXXXXX)"
+    DENTE_DIR="$(mktemp -d /tmp/dente-e02t02-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     cabecalho "--prova-de-dente: o aceite tem dentes?"
     controle_do_juiz "$DENTE_DIR"
@@ -552,7 +552,7 @@ fi
 # Sem esta sonda, um 401 no ciclo nao distingue "a chave nao vale" de "o n8n nao mandou o cabecalho".
 # A sonda usa a MESMA imagem do n8n (node + fetch): mesma pilha que vai entregar, sem o workflow.
 cat >"$DESC_DIR/sonda.json" <<JSON
-{"idempotency_key":"outbox:$E9:SONDA","correlation_id":"sonda-aceite-e02t01",
+{"idempotency_key":"outbox:$E9:SONDA","correlation_id":"sonda-aceite-e02t02",
  "dry_run":true,"parametros":{"modelo":"res.partner","valores":{"name":"Sonda do aceite","tf_company_id":"$E9","tf_domain":"sonda.example"}}}
 JSON
 cat >"$DESC_DIR/sonda.js" <<'JS'
