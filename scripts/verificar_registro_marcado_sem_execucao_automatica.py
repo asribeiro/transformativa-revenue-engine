@@ -88,7 +88,6 @@ ACOES = (
 )
 
 ITENS: list[tuple[str, bool]] = []
-ITENS_ANTES = 0
 
 
 def item(descricao: str, ok: bool, detalhe: str = "") -> None:
@@ -408,6 +407,13 @@ def checar(roteador=roteador_padrao, gate=None) -> None:
 
 # ---------------------------------------------------------------------------
 # Autoteste por mutacao: cada protecao removida tem de reprovar a suite
+#
+# DENTE HONESTO + CONTROLE NEGATIVO (defeito [fail-open] do card `t_99796978`, medido na
+# verificacao independente do card `t_75bedc5e`): a reprovacao so conta se a suite reprovar
+# POR ITEM (`[FALHA]`); excecao vira `[BURACO]`, nunca dente. E antes de aceitar qualquer
+# dente, a MESMA arvore temporaria roda com o modulo INTACTO e tem de dar 0 falhas e
+# nenhuma excecao — o controle que prova que a arvore esta fiel (sem ele, a arvore quebrada
+# entrega 8/8 verdes de graca).
 # ---------------------------------------------------------------------------
 def _carregar_modulo(caminho: pathlib.Path, nome: str):
     spec = importlib.util.spec_from_file_location(nome, caminho)
@@ -464,6 +470,55 @@ def _copia_mutada(origem: pathlib.Path, destino: pathlib.Path, antigo: str, novo
     if antigo not in texto:
         raise RuntimeError(f"ancora ausente em {origem.name}: {antigo!r}")
     destino.write_text(texto.replace(antigo, novo, 1), encoding="utf-8")
+
+
+def _rodar_checar(roteador, gate) -> tuple[bool, list[str], str | None]:
+    """(reprovou por ITEM, itens reprovados, excecao).
+
+    DENTE HONESTO (defeito do card `t_99796978`): EXCECAO NAO E DENTE. Uma arvore
+    temporaria quebrada faz TODA mutacao estourar (`PoliticaInvalida`: politica ausente) e
+    o laco antigo contava isso como "mutacao reprovada" — 8/8 verdes com a arvore sabotada,
+    medido. Quem detecta a mutacao e a suite reprovando POR ITEM (`[FALHA]`); a excecao sai
+    no terceiro campo para o chamador acusar `[BURACO]` em vez de dar o dente de graca.
+    """
+    antes = len(ITENS)
+    buffer = io.StringIO()
+    reprovou = False
+    excecao = None
+    try:
+        with contextlib.redirect_stdout(buffer):
+            checar(roteador=roteador, gate=gate)
+        reprovou = "FALHA" in buffer.getvalue()
+    except Exception as erro:  # nao conta como dente — ver docstring
+        excecao = f"{type(erro).__name__}: {erro}"
+    itens_da_rodada = list(ITENS[antes:])
+    del ITENS[antes:]
+    return reprovou, [d for d, ok in itens_da_rodada if not ok], excecao
+
+
+def _controle_negativo(area: pathlib.Path, arquivo: pathlib.Path, destino: pathlib.Path,
+                       indice: int) -> tuple[bool, str]:
+    """A MESMA arvore temporaria com o modulo INTACTO: exige 0 falhas e nenhuma excecao.
+
+    E o controle que prova que a arvore temporaria esta FIEL — que os caminhos que o
+    roteador/gate carregam por `__file__` existem e resolvem. Sem ele o fail-open e
+    invisivel: no dia em que a lista de links de `_arvore_da_mutacao` divergir do que o
+    modulo carrega, as N mutacoes passam a reprovar por EXCECAO e o autoteste segue verde.
+    Medido no card `t_99796978` com `_criar_links` sabotado (return imediato): 8/8 PASS,
+    exit 0, o mesmo falso-verde que o card `t_c21fc474` veio eliminar.
+    """
+    try:
+        destino.write_text(arquivo.read_text(encoding="utf-8"), encoding="utf-8")
+        if arquivo == CAMINHO_DO_ROTEADOR:
+            intacto = _carregar_modulo(destino, f"router_intacto_{indice}")
+            reprovou, falhas, excecao = _rodar_checar(intacto, None)
+        else:
+            intacto = _carregar_modulo(destino, f"gate_intacto_{indice}")
+            reprovou, falhas, excecao = _rodar_checar(roteador_padrao, intacto)
+    except Exception as erro:  # nem carregar o modulo intacto da arvore: arvore quebrada
+        return False, f"carregamento/execucao do modulo intacto falhou: {type(erro).__name__}: {erro}"
+    return (not reprovou and not falhas and excecao is None), \
+        f"falhas={len(falhas)} excecao={excecao}"
 
 
 def mutacoes() -> list:
@@ -523,40 +578,58 @@ def mutacoes() -> list:
 
 def autoteste() -> int:
     detectadas = 0
+    buracos: list[str] = []
     entradas = mutacoes()
     for indice, (nome, arquivo, antigo, novo) in enumerate(entradas, start=1):
         with tempfile.TemporaryDirectory(prefix=f"jev-registro-mut-{indice}-") as temporario:
             area = pathlib.Path(temporario)
             destino, links = _arvore_da_mutacao(area, arquivo)
+            _criar_links(area, links)
+            # CONTROLE NEGATIVO antes de aceitar qualquer dente desta arvore: com o modulo
+            # INTACTO na MESMA arvore temporaria a suite tem de dar 0 falhas e nenhuma
+            # excecao. Se nao der, a arvore nao esta fiel e nenhum 8/8 medido nela vale.
+            fiel, detalhe_controle = _controle_negativo(area, arquivo, destino, indice)
+            if fiel:
+                print(f"  [OK] controle negativo — modulo INTACTO na arvore temporaria: "
+                      f"0 falhas, sem excecao (mutacao {indice})")
+            else:
+                buracos.append(f"controle negativo falhou (mutacao {indice}: {nome}) — "
+                               f"{detalhe_controle}")
+                print(f"  [BURACO] controle negativo — a arvore temporaria NAO esta fiel "
+                      f"(mutacao {indice}: {nome}) — {detalhe_controle}")
             try:
                 _copia_mutada(arquivo, destino, antigo, novo)
             except RuntimeError as erro:
+                buracos.append(f"mutacao nao aplicavel: {nome} — {erro}")
                 print(f"  [BURACO] mutacao nao aplicavel: {nome} — {erro}")
                 continue
-            _criar_links(area, links)
             roteador_mutado, gate_mutado = roteador_padrao, None
             if arquivo == CAMINHO_DO_ROTEADOR:
                 roteador_mutado = _carregar_modulo(destino, f"router_mut_{indice}")
             else:
                 gate_mutado = _carregar_modulo(destino, f"gate_mut_{indice}")
-            buffer = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buffer):
-                    checar(roteador=roteador_mutado, gate=gate_mutado)
-                reprovou = "FALHA" in buffer.getvalue()
-            except Exception:
-                reprovou = True  # mutacao que quebra a suite tambem conta como detectada
-            finally:
-                del ITENS[-ITENS_ANTES:]
-            detectadas += 1 if reprovou else 0
-            print(f"  [{'OK' if reprovou else 'BURACO'}] mutacao reprovada: {nome}")
+            reprovou, falhas, excecao = _rodar_checar(roteador_mutado, gate_mutado)
+            if reprovou and excecao is None:
+                detectadas += 1
+                print(f"  [OK] mutacao reprovada por ITEM ({len(falhas)} item(ns)): {nome}")
+            elif excecao is not None:
+                buracos.append(f"mutacao NAO reprovada por ITEM — a suite quebrou por "
+                               f"EXCECAO: {nome} — {excecao}")
+                print(f"  [BURACO] mutacao NAO reprovada por ITEM — a suite quebrou por "
+                      f"EXCECAO (nao e dente): {nome} — {excecao}")
+            else:
+                buracos.append(f"mutacao sobreviveu (nenhum item reprovou): {nome}")
+                print(f"  [BURACO] mutacao NAO reprovada (nenhum [FALHA]) — o mutante "
+                      f"sobrevive: {nome}")
     total = len(entradas)
-    print(f"AUTOTESTE: {detectadas}/{total} mutacoes reprovadas")
-    return 0 if detectadas == total else 1
+    print(f"AUTOTESTE: {detectadas}/{total} mutacoes reprovadas por ITEM "
+          f"({len(buracos)} buraco(s))")
+    for buraco in buracos:
+        print(f"  -> BURACO: {buraco}")
+    return 0 if detectadas == total and not buracos else 1
 
 
 def main() -> int:
-    global ITENS_ANTES
     parser = argparse.ArgumentParser()
     parser.add_argument("--autoteste", action="store_true")
     args = parser.parse_args()
@@ -567,7 +640,6 @@ def main() -> int:
     for d in falhas:
         print(f"  -> {d}")
     if args.autoteste:
-        ITENS_ANTES = len(ITENS)
         if autoteste():
             print("RESULTADO FINAL: FALHOU (autoteste com buraco)")
             return 1
