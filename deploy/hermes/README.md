@@ -72,3 +72,38 @@ A suíte não precisa das edições aplicadas em `/opt/hermes`: ela monta um **o
 patcheado por `PYTHONPATH`. O board de teste é temporário (`HERMES_KANBAN_HOME`) e o `hermes` que o
 despachante spawna é um binário falso — **nenhum worker de verdade nasce**. Quando o adaptador já está
 instalado, a suíte também confere que a cópia instalada é byte a byte a versionada aqui.
+
+---
+
+# Segundo encaixe: ARQUIVO QUENTE (card `TRE-W3-E01-T03-D01`)
+
+Mesmo mecanismo, outro ponto de decisão: aqui o kernel passa a olhar **arquivo** antes de pôr um card em
+voo, não só dependência e prioridade. Regra e formato da declaração:
+[`docs/kanban/hotspot-de-arquivo.md`](../../docs/kanban/hotspot-de-arquivo.md).
+
+| Arquivo | Papel |
+|---|---|
+| `kanban_hotspot_gate.py` | adaptador instalado como `/opt/hermes/hermes_cli/kanban_hotspot_gate.py`. Lê o `HOTSPOT:` do corpo, compara os caminhos com os cards em voo e registra `hotspot_wait` (uma vez por espera distinta). |
+| `editar_core_do_hotspot.py` | aplica/reverte as **6 edições ancoradas** (`claim_task`, `_dispatch_lane_task`, `DispatchResult`, `_TICK_ACTIVITY_FIELDS`, `kanban_ops` JSON e texto). Idempotente, backup datado, `compile()` antes de escrever, `--check` para relatar. |
+| `aplicar_hotspot.sh` | casca do operador (root). |
+
+As âncoras foram escolhidas **fora** das regiões que as 7 edições do gate JEV usam: os dois encaixes
+convivem, cada editor continua idempotente e nenhum "acha" que o outro não está aplicado.
+
+```bash
+# configurar (o dono liga quando quiser; sem isto o encaixe é inerte)
+#   kanban: { hotspot_gate: true, hotspot_gate_boards: [transformativa-revenue-engine] }
+# aplicar o código (OPERADOR, root)
+bash deploy/hermes/aplicar_hotspot.sh
+bash deploy/hermes/aplicar_hotspot.sh --check
+bash deploy/hermes/aplicar_hotspot.sh --reverter
+# reiniciar o despachante para ele carregar o kernel novo
+
+# suíte (não precisa de root nem da instalação)
+/opt/hermes/.venv/bin/python scripts/verificar_hotspot_gate.py     # 41 itens
+```
+
+A suíte reproduz o defeito de origem (encaixe desligado: dois irmãos que declaram o mesmo arquivo sobem
+no mesmo tick), prova a correção (um por arquivo em voo, liberado quando o detentor fecha), a ausência
+de falso positivo nos corpos reais do lote, o caminho único (claim manual também é recusado), a mutação
+(kernel sem as edições volta a deixar os dois subirem) e o **rollback** do editor, byte a byte.
