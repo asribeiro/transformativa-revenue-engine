@@ -24,9 +24,12 @@ O QUE ESTA SUITE NAO PROVA (declarado, para nao vender mais do que mede):
   * que o token nao vaza para o log — isso e' item do verificador, no log bruto do container;
   * que o consumidor externo (n8n/curl) funciona — idem, fase de HTTP externo do verificador;
   * deduplicacao por chave de idempotencia (card TRE-W3-E02-T02) — aqui a chave e' exigida e
-    validada; o motor de dedup nao existe ainda e a politica real nao declara escrita.
+    validada; o motor de dedup nao existe ainda. As operacoes de ESCRITA de negocio entram na
+    politica pelos cards TRE-W3-E01-T02..T05 (a primeira foi `oportunidade_upsert`, E01-T04); os
+    itens desta suite que falam da LISTA de operacoes leem o proprio artefato (ANCORA:ITEM_DATADO).
 """
 
+import json
 from datetime import date, datetime, timedelta
 
 from odoo.modules.module import get_module_path
@@ -123,10 +126,16 @@ class TestApiControlada(HttpCase):
         self.assertTrue(corpo["ok"])
         self.assertEqual(corpo["operacao"], "sistema_capacidades")
         self.assertEqual(corpo["ambiente"], "dev")
-        self.assertEqual(corpo["politica_versao"], "1.0.0")
+        # ANCORA:ITEM_DATADO — a versao da politica e a LISTA de operacoes sao lidas do proprio
+        # artefato, nao fixadas aqui: cada card da onda W3-E01 (E01-T02..T05) acrescenta a sua
+        # operacao de negocio e sobe a versao. O item que nao expira e' a COERENCIA entre o que a
+        # politica declara e o que a API serve (cobrar o literal reprovava o card seguinte).
+        with open(self.politica_real, encoding="utf-8") as fh:
+            politica = json.load(fh)
+        self.assertEqual(corpo["politica_versao"], politica["versao"])
         self.assertTrue(corpo["correlation_id"])
         nomes = [op["nome"] for op in corpo["dados"]["capacidades"]["operacoes"]]
-        self.assertEqual(sorted(nomes), ["crm_registros_ler", "sistema_capacidades"])
+        self.assertEqual(sorted(nomes), sorted(op["nome"] for op in politica["operacoes"]))
         self.assertEqual(corpo["dados"]["capacidades"]["ambientes_permitidos"], ["dev"])
 
     def test_07_correlation_id_do_chamador_e_ecoado(self):

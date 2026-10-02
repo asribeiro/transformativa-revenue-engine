@@ -1,7 +1,7 @@
 {
   "esquema": "1",
-  "versao": "1.0.0",
-  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. Card TRE-W3-E01-T01. Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa. As operacoes de NEGOCIO (company/contact/opportunity upsert e activity create) sao declaradas pelos cards TRE-W3-E01-T02..T05; as operacoes de escrita nao entram aqui antes do motor de idempotencia (TRE-W3-E02-T02).",
+  "versao": "1.1.0",
+  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. Card TRE-W3-E01-T01 (a porta unica) e TRE-W3-E01-T04 (a operacao de escrita de NEGOCIO da oportunidade canonica, `oportunidade_upsert`). Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa. As demais operacoes de negocio (company/contact upsert e activity create) sao declaradas pelos cards TRE-W3-E01-T02/T03/T05. A deduplicacao por `idempotency_key` (retry/replay: mesma chave = mesmo efeito) e' do card TRE-W3-E02-T02; aqui a chave e' exigida, validada e registrada, e a garantia de 'nao duplicar' vem da IDENTIDADE declarada no `campo_de_identidade` (UUID canonico, contrato §3).",
   "ambientes_permitidos": ["dev"],
   "padroes": {
     "idempotency_key": "^[A-Za-z0-9._:-]{8,128}$",
@@ -82,6 +82,37 @@
       "requer_idempotency_key": false,
       "aceita_dry_run": true,
       "somente_leitura": true
+    },
+    {
+      "nome": "oportunidade_upsert",
+      "tipo": "escrita",
+      "descricao": "Espelha a OPORTUNIDADE CANONICA do sales_intelligence no CRM (card TRE-W3-E01-T04): cria o lead na primeira vez e ATUALIZA nas seguintes, sem duplicar. Identidade pelo UUID canonico da oportunidade (`crm.lead.tf_opportunity_id`, contrato §3 e `canonical_ids.odoo_map`), gerado pelo produtor do fato ANTES de qualquer chamada externa — casa pelo ID, nunca por nome (nome nao e identidade). FRONTEIRA DE DONO (contrato §2): o PostgreSQL e' dono de empresa/sinais/research/scores; o ODOO e' dono de estagio, valor, won/lost, atividade, reuniao e proposta. Por isso esta operacao declara SO o espelho de inteligencia (scores, vocabulario de proxima melhor acao, rastreio de sincronizacao) e os campos de apresentacao (`name`, `type`, `partner_id`) — os campos de dono do Odoo (ex.: `stage_id`, `expected_revenue`, `probability`, `date_deadline`) NAO estao declarados: envia-los e' recusa nomeada (422 `campo_nao_declarado`), nunca 'ignorado em silencio'. `tf_priority_tier` tambem NAO e' escrevivel: e' derivado de `tf_priority_score` (compute store do TRE-W2-E04-T02) e acompanha o score sozinho. A deduplicacao por `idempotency_key` (retry/replay) e' do card TRE-W3-E02-T02: aqui a chave e' exigida, validada e registrada, e a garantia de 'nao duplicar' vem da IDENTIDADE canonica.",
+      "modelos": {
+        "crm.lead": {
+          "campos": [
+            "name",
+            "type",
+            "partner_id",
+            "tf_opportunity_id",
+            "tf_priority_score",
+            "tf_icp_score",
+            "tf_automation_fit_score",
+            "tf_buying_signal_score",
+            "tf_data_quality_score",
+            "tf_score_version",
+            "tf_next_best_action",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_sync_at",
+            "tf_last_event_type"
+          ],
+          "campos_obrigatorios": ["name"],
+          "campo_de_identidade": "tf_opportunity_id",
+          "acao": "upsert"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
     }
   ]
 }

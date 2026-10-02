@@ -599,8 +599,14 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
     VERSAO_OK="$(campo_json "$ULTIMA_RESPOSTA" politica_versao)"
     CORREL_OK="$(campo_json "$ULTIMA_RESPOSTA" correlation_id)"
     [ "$VALOR_OK" = "True" ] && ok "envelope de sucesso com ok=true" || falhou "resposta 200 sem ok=true"
-    [ "$VERSAO_OK" = "1.0.0" ] && ok "envelope traz a versao da politica (1.0.0)" \
-        || falhou "envelope sem politica_versao (veio '$VERSAO_OK')"
+    # ANCORA:ITEM_DATADO — a versao da politica e a LISTA de operacoes sao lidas do PROPRIO
+    # artefato sob teste, nunca fixadas aqui: cada card da onda W3-E01 (E01-T02..T05) acrescenta a
+    # sua operacao de negocio na mesma politica e sobe a versao. O item que NAO expira e' a
+    # coerencia entre o que a politica declara e o que a API serve.
+    VERSAO_ESPERADA="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['versao'])" \
+        "$MODULO_DIR/api/politica_api.json")"
+    [ "$VERSAO_OK" = "$VERSAO_ESPERADA" ] && ok "envelope traz a versao da politica em vigor ($VERSAO_OK)" \
+        || falhou "envelope sem a versao da politica em vigor (veio '$VERSAO_OK', esperado '$VERSAO_ESPERADA')"
     [ "$CORREL_OK" = "tre-e01-t01-http-1" ] && ok "correlation_id do chamador ecoado na resposta" \
         || falhou "correlation_id nao ecoado (veio '$CORREL_OK')"
     OPERACOES_DECLARADAS="$(python3 -c "
@@ -608,9 +614,14 @@ import json, sys
 dados = json.load(open(sys.argv[1]))
 print(','.join(sorted(op['nome'] for op in dados['dados']['capacidades']['operacoes'])))
 " "$ULTIMA_RESPOSTA")"
-    [ "$OPERACOES_DECLARADAS" = "crm_registros_ler,sistema_capacidades" ] \
+    OPERACOES_DA_POLITICA="$(python3 -c "
+import json, sys
+dados = json.load(open(sys.argv[1], encoding='utf-8'))
+print(','.join(sorted(op['nome'] for op in dados['operacoes'])))
+" "$MODULO_DIR/api/politica_api.json")"
+    [ "$OPERACOES_DECLARADAS" = "$OPERACOES_DA_POLITICA" ] \
         && ok "a API declara exatamente as operacoes da politica ($OPERACOES_DECLARADAS)" \
-        || falhou "operacoes servidas diferentes da politica: $OPERACOES_DECLARADAS"
+        || falhou "operacoes servidas diferentes da politica: '$OPERACOES_DECLARADAS' x '$OPERACOES_DA_POLITICA'"
     api_post "operacao nao declarada" "404" "parceiro_criar" '{}'
     [ "$(campo_json "$ULTIMA_RESPOSTA" codigo)" = "operacao_nao_declarada" ] \
         && ok "recusa de operacao nao declarada nomeia o codigo" || falhou "codigo de recusa errado"
