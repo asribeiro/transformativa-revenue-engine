@@ -518,3 +518,14 @@ declaracoes:
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  - card_id: t_1ac3e5a8
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W4 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
