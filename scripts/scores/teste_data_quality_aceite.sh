@@ -65,7 +65,9 @@ done
 # Contagem por ARQUIVO, nao por variavel: `ciclo` roda dentro de `$( )` (subshell) e atribuicao
 # feita la' morre com o subshell — medido: a primeira versao imprimia "0 itens, 0 falhas" e saia com
 # exit 0 mesmo com item reprovado. Item que nao conta e' item que nao existe.
-ARQUIVO_ITENS=""
+# O caminho fica no ESCOPO GLOBAL: `ciclo` roda em subshell e a atribuicao feita la' dentro nao
+# volta — medido (o veredito lia um caminho vazio depois de 35 itens verdes). O subshell so TRUNCA.
+ARQUIVO_ITENS="$TRABALHO/itens.txt"
 item() { # <nome> <esperado> <obtido>
   if [ "$2" = "$3" ]; then
     echo "OK     $1 ($3)"; printf 'OK|%s\n' "$1" >> "$ARQUIVO_ITENS"
@@ -228,7 +230,6 @@ PY
 # CICLO — a medicao completa do aceite (usada uma vez e repetida por mutacao na prova de dente)
 # ---------------------------------------------------------------------------------------
 ciclo() {
-  ARQUIVO_ITENS="$TRABALHO/itens.txt"
   : > "$ARQUIVO_ITENS"
   local v
 
