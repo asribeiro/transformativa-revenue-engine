@@ -727,7 +727,12 @@ class BuyingSignalScore:
     def _consultar(self, sql: str, permitir_remocao: bool = False) -> list:
         if self.porta is None:
             raise PortaIndisponivel("nenhuma porta de banco configurada")
-        codigo, saida, erro = self.porta.executar(sql, permitir_remocao=permitir_remocao)
+        try:
+            codigo, saida, erro = self.porta.executar(sql, permitir_remocao=permitir_remocao)
+        except Exception as exc:  # a porta é importada: a exceção dela é OUTRA classe
+            if type(exc).__name__ == "PortaIndisponivel":
+                raise PortaIndisponivel(str(exc))
+            raise
         if codigo != 0:
             raise PortaIndisponivel("psql saiu com %d: %s" % (codigo, erro.strip()[:400]))
         return [linha for linha in saida.splitlines() if linha.strip()]
@@ -936,6 +941,11 @@ def main(argv=None) -> int:
     except GuardaDeEscritaViolada as exc:
         print("GUARDA_VIOLADA %s" % exc)
         return EXIT_FALHOU
+    except Exception as exc:  # a porta importada levanta a exceção DELA: trata pelo nome
+        if type(exc).__name__ in ("PortaIndisponivel", "ContratoDivergente"):
+            print("FALHOU %s" % exc)
+            return EXIT_FALHOU
+        raise
     if args.relatorio:
         Path(args.relatorio).write_text(json.dumps(relatorio, ensure_ascii=False, indent=1),
                                         encoding="utf-8")

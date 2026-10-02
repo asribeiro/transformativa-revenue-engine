@@ -400,7 +400,7 @@ def _empresa_ausente(modulo, raiz, agora_iso, porta):
 # Prova de dente: mutacao tem de REPROVAR o item esperado
 # ---------------------------------------------------------------------------------------
 MUTACOES = (
-    ("peso-de-tipo-zero", [('"HIRING": 0.6,', '"HIRING": 0.0,')],
+    ("peso-de-tipo-zero", [('"HIRING": 0.60,', '"HIRING": 0.0,')],
      "vocabulario: todo peso dentro de (0, 1]"),
     ("limite-de-sinais-infinito", [("LIMITE_SINAIS = 10", "LIMITE_SINAIS = 1000")],
      "limite: excedente registrado"),
