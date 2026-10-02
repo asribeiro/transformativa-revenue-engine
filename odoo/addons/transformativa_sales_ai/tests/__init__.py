@@ -20,3 +20,7 @@ from . import test_oportunidade_upsert
 
 # Card TRE-W3-E01-T05 (`t_cb615018`): aceite da operacao de escrita de negocio `atividade_criar`.
 from . import test_atividade_criar
+
+# Card TRE-W3-E03-T01 (`t_85cb2838`): aceite da FILA de eventos Odoo->PostgreSQL (deteccao do fato,
+# envelope/idempotencia e remetente pela porta unica, com porta HTTP de verdade no teste).
+from . import test_eventos_odoo_pg

@@ -1,3 +1,6 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_tf_process_opportunity_user,"tf.process.opportunity: vendedor da carteira (le, cria, escreve; nao apaga)",model_tf_process_opportunity,group_tf_sales_ai_user,1,1,1,0
 access_tf_process_opportunity_manager,"tf.process.opportunity: gestor do tenant (le, cria, escreve, apaga)",model_tf_process_opportunity,group_tf_sales_ai_manager,1,1,1,1
+access_tf_evento_outbox_user,"tf.evento.outbox: vendedor da carteira (le e reenvia; nao cria nem apaga)",model_tf_evento_outbox,group_tf_sales_ai_user,1,1,0,0
+access_tf_evento_outbox_manager,"tf.evento.outbox: gestor do tenant (le, reenvia e reenfileira; nao cria nem apaga)",model_tf_evento_outbox,group_tf_sales_ai_manager,1,1,0,0
+access_tf_evento_outbox_system,"tf.evento.outbox: administrador do sistema (le e opera; a EMISSAO e' do modulo, via sudo)",model_tf_evento_outbox,base.group_system,1,1,0,0

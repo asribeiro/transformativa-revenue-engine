@@ -1,0 +1,145 @@
+{
+  "esquema": "1",
+  "versao": "1.0.0",
+  "id": "odoo-events-ingest",
+  "titulo": "Porta unica de ingestao dos eventos Odoo -> PostgreSQL — card TRE-W3-E03-T01",
+  "descricao": "Declaracao da PORTA por onde os eventos do Odoo entram no PostgreSQL: um webhook do n8n (POST /webhook/tre/odoo-eventos) que valida o envelope do contrato, recusa com motivo NOMEADO o que nao esta' declarado e grava a trilha em sales_intelligence.sync_events — de forma idempotente pela chave (UNIQUE do contrato), de modo que reenvio nao cria linha duplicada. Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-ingest-eventos.js), o SQL (n8n/sql/ingerir-evento.sql, n8n/sql/registrar-recusa.sql) e o workflow (n8n/workflows/TRE-odoo-events-ingest.json) sao montados/verificados a partir deste contrato. Fora da declaracao a resposta e' RECUSA (fail-closed): evento que o contrato nao cobre nunca e' ignorado em silencio.",
+  "autoridade": {
+    "fonte": [
+      "docs/data/DATA_CONTRACT_V1.md §6 (envelope unico do evento, lista Odoo -> PostgreSQL e regras de integracao 1..5)",
+      "docs/data/DATA_CONTRACT_V1.md §4 (sync_events: colunas e papel de trilha de sincronizacao e idempotencia)",
+      "doc 06 §6-8 (eventos Odoo -> PostgreSQL, idempotencia, retry limitado, dead-letter, reconciliacao)",
+      "doc 02 §3 (Outbox Pattern, idempotency key, polling so' para reconciliacao)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "a EMISSAO do fato no Odoo e o REMETENTE com retry/dead-letter sao do proprio modulo (odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py) — este card entrega os dois lados, mas a decisao de retry do produtor e' medida no lado Odoo",
+      "materializar o evento em tabela de NEGOCIO do PostgreSQL (ex.: `interactions`) NAO esta' no contrato V1 (nao ha' tabela de historico de funil): aqui o evento entra na TRILHA com o payload integral, e a materializacao e' derivavel de quem precisar",
+      "dedup da entrega do OUTRO sentido (PG -> Odoo) e' do card TRE-W3-E02-T02",
+      "reconciliacao diaria (entidades esperadas, IDs cruzados, pendentes) e' do card TRE-W3-E04-T01",
+      "rate limit, cache, auditoria duravel e observabilidade da sincronizacao sao do card TRE-W3-E05-T01",
+      "publicar/ativar o webhook na instancia n8n de dev/homolog/producao e' passo de OPERADOR; o workflow nasce inativo"
+    ]
+  },
+  "porta": {
+    "descricao": "a UNICA entrada de eventos Odoo -> PostgreSQL: o webhook do n8n. O modulo do Odoo nao tem driver de banco, nao tem SQL e nao conhece o schema `sales_intelligence` (conferido por lente estrutural nos dois lados)",
+    "rota": "/webhook/tre/odoo-eventos",
+    "caminho_do_remetente": "/webhook/tre/odoo-eventos",
+    "metodo": "POST",
+    "autenticacao": "header X-Tre-Ingest-Token (credencial do tipo httpHeaderAuth do cofre do n8n; o valor nunca esta' no versionado). Token errado e' recusado pela propria porta (HTTP 403) antes de qualquer escrita",
+    "corpo": "o ENVELOPE do evento, JSON puro (ver `envelope`)",
+    "resposta": {
+      "aceito": "HTTP 200 {\"aceito\": true, \"duplicado\": <bool>, \"sync_event_id\": \"<uuid>\", \"event_type\": \"<evento>\"}",
+      "recusado": "HTTP 422 {\"aceito\": false, \"motivo\": \"<motivo nomeado>\", \"sync_event_id\": \"<uuid>\", \"event_type\": \"<evento|null>\"}",
+      "nao_autorizado": "HTTP 403 do proprio webhook (token ausente/errado) — nada e' escrito"
+    }
+  },
+  "envelope": {
+    "campos_obrigatorios": ["event_type", "event_version", "timestamp", "payload"],
+    "campos_das_regras_de_integracao": ["idempotency_key", "correlation_id"],
+    "versoes_suportadas": ["1.0"],
+    "ordem_da_validacao": [
+      "corpo_objeto",
+      "event_type_presente",
+      "event_type_declarado",
+      "event_version_presente",
+      "event_version_suportada",
+      "timestamp_presente",
+      "payload_objeto",
+      "idempotency_key_presente",
+      "idempotency_key_formato",
+      "campos_exigidos",
+      "identidade_canonica"
+    ],
+    "motivos_de_recusa": {
+      "corpo_objeto": "corpo_invalido",
+      "event_type_presente": "evento_ausente",
+      "event_type_declarado": "evento_fora_do_contrato",
+      "event_version_presente": "envelope_sem_versao",
+      "event_version_suportada": "versao_nao_suportada",
+      "timestamp_presente": "timestamp_ausente",
+      "payload_objeto": "payload_ausente",
+      "idempotency_key_presente": "idempotency_key_ausente",
+      "idempotency_key_formato": "idempotency_key_invalida",
+      "campos_exigidos": "campo_exigido_ausente:<campo>",
+      "identidade_canonica": "identidade_invalida:<campo>"
+    },
+    "regra": "contrato §6 regra 5: evento sem `event_version` (ou com versao desconhecida) e' RECUSADO — nao se interpreta versao por suposicao"
+  },
+  "eventos": [
+    {
+      "event_type": "STAGE_CHANGED",
+      "modelo_origem": "crm.lead",
+      "exigidos": ["lead_id", "estagio_anterior", "estagio_novo"]
+    },
+    {
+      "event_type": "OPPORTUNITY_WON",
+      "modelo_origem": "crm.lead",
+      "exigidos": ["lead_id", "valor"]
+    },
+    {
+      "event_type": "OPPORTUNITY_LOST",
+      "modelo_origem": "crm.lead",
+      "exigidos": ["lead_id"]
+    },
+    {
+      "event_type": "DEAL_VALUE_CHANGED",
+      "modelo_origem": "crm.lead",
+      "exigidos": ["lead_id", "valor_anterior", "valor_novo"]
+    },
+    {
+      "event_type": "LOSS_REASON_RECORDED",
+      "modelo_origem": "crm.lead",
+      "exigidos": ["lead_id", "motivo"]
+    },
+    {
+      "event_type": "ACTIVITY_COMPLETED",
+      "modelo_origem": "mail.activity",
+      "exigidos": ["atividade_id", "documento"]
+    },
+    {
+      "event_type": "MEETING_CREATED",
+      "modelo_origem": "calendar.event",
+      "exigidos": ["reuniao_id", "nome"]
+    }
+  ],
+  "trilha": {
+    "tabela": "sales_intelligence.sync_events",
+    "source_system": "odoo",
+    "target_system": "postgres",
+    "operation": "o proprio `event_type` do envelope",
+    "entity_type": "o `modelo_origem` declarado do evento (`crm.lead`, `mail.activity`, `calendar.event`)",
+    "entity_id": "o ID canonico do contrato §3 quando ele viaja no payload: `payload.oportunidade_id`, senao `payload.organizacao_id`, senao NULL (evento sem identidade canonica continua sendo trilha — a lacuna fica visivel, nao se inventa UUID)",
+    "source_version": "o `event_version` do envelope",
+    "request_payload": "o envelope integral (o payload do fato e' derivavel da trilha)",
+    "status": {
+      "aceito": "COMPLETED",
+      "recusado": "REFUSED"
+    },
+    "unicidade": "sync_events.idempotency_key e' UNIQUE no contrato: a ingestao e' `ON CONFLICT DO NOTHING` pela chave, de modo que reenvio/retry NAO cria linha duplicada — a porta responde `duplicado: true`",
+    "chave_de_idempotencia": {
+      "derivacao": "vem do ENVELOPE (`idempotency_key`), derivada do FATO pelo produtor (`odoo:<event_type>:<modelo>:<res_id>:<sha1 do conteudo>`)",
+      "recusa_sem_chave": "envelope sem chave e' recusado ANTES da trilha; a linha de recusa (que existe para a falha ser VISIVEL, contrato §6 regra 3) usa a chave `odoo:recusado:<fnv1a do corpo>` — hash NAO criptografico, so' para nomear a recusa de forma reprodutivel",
+      "formato": "^[A-Za-z0-9._:-]{8,255}$"
+    }
+  },
+  "retry": {
+    "teto_de_tentativas": 3,
+    "onde_vive": "no PRODUTOR (modulo do Odoo). A porta nao retenta nada: ela aceita (200) ou recusa (422) uma vez e responde. Quem decide tentar de novo e' o remetente, com teto e dead-letter proprios",
+    "regra": "a idempotencia pela chave e' o que permite o retry sem duplicata (contrato §6 regra 2)"
+  },
+  "classificacao_http": {
+    "sucesso": "2xx (aceito, com ou sem duplicata)",
+    "recusa_definitiva": "422 (envelope/payload fora da declaracao) — retry nao conserta dado malformado",
+    "nao_autorizado": "403 (token ausente/errado, pelo proprio webhook)",
+    "falha_transitoria": "5xx / falha de transporte — o produtor retenta (teto 3) e o teto vira DEAD_LETTER no lado Odoo"
+  },
+  "segredos": {
+    "regra": "o token da porta e a credencial do banco vivem no cofre do n8n, importados fora do versionado (docs/operations/gestao-de-secrets.md); o workflow aponta credencial por id/nome, nunca por valor. O lado Odoo le base/token de `ir.config_parameter` (configuracao de ambiente, nunca do artefato versionado)"
+  },
+  "credenciais": {
+    "postgres": {"tipo": "postgres", "id": "tre-dev-postgres", "nome": "TRE dev — sales_intelligence"},
+    "token_da_porta": {"tipo": "httpHeaderAuth", "id": "tre-dev-ingest-token", "nome": "TRE dev — token do ingestor de eventos (X-Tre-Ingest-Token)"},
+    "regra": "o versionado carrega ID e NOME (contrato de importacao), nunca o valor; quem cria a credencial e' o passo de operador/harness, lendo o segredo de arquivo 600"
+  }
+}

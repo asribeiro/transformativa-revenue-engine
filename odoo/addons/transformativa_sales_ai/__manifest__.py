@@ -56,6 +56,10 @@ medido em dev; homologacao e producao exigem aprovacao humana registrada.
         # campos de rastreio). O `crm` ja' traz o `mail`, mas dependencia de modelo herdado se
         # declara: dependencia implicita e' a que quebra quando o de cima mudar.
         'mail',
+        # Card TRE-W3-E03-T01 (`t_85cb2838`): o detector de REUNIAO CRIADA herda `calendar.event`
+        # (o `crm` ja' depende de `calendar` por causa de `crm.lead.calendar_event_ids`, mas
+        # dependencia de modelo herdado se declara — mesma regra do `mail` acima).
+        'calendar',
     ],
     'data': [
         # Grupos, regras de registro (carteira × tenant) e ACLs do modelo do módulo.
@@ -68,6 +72,9 @@ medido em dev; homologacao e producao exigem aprovacao humana registrada.
         'views/tf_process_opportunity_views.xml',
         'views/res_partner_views.xml',
         'views/crm_lead_views.xml',
+        # Card TRE-W3-E03-T01 (`t_85cb2838`): a AGENDA da entrega dos eventos Odoo->PostgreSQL
+        # (nasce INATIVA — ver o cabecalho do proprio arquivo e o runbook odoo-eventos-para-pg.md).
+        'data/ir_cron_tf_eventos.xml',
     ],
     'demo': [],
     'installable': True,
