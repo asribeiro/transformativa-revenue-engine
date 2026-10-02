@@ -491,3 +491,70 @@ sustenta 16 containers. Nada foi executado.
   (perfil `tester`) e a ratificação da versão 19.0/homologação (estágio 7) é do Anderson. A
   publicação do módulo na cópia operacional `/opt/tre/repo` (`deploy/publicar.sh`) segue como
   pendência herdada do E03-T01.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T01-D01 (card `t_fa9db205`): conserto do instrumento de dente e remediação
+
+- **Card e escopo:** `TRE-W3-E01-T01-D01` — **defeito retroativo** do card `t_e0489efc` (API
+  controlada do Odoo), registrado pela revisão independente (estágio 6, perfil `tester`, rodada 1):
+  o modo `--prova-de-dente` do verificador era **fail-open**. O conserto é **só do instrumento** —
+  `scripts/odoo/verificar-api-controlada.sh`, o controle novo `scripts/odoo/teste-dente-confere.sh`,
+  o registro do verificador (`scripts/verificar_estrutura.sh`), o runbook (§3 e §12), o CHANGELOG e
+  esta entrada. **Nenhum arquivo do módulo Odoo foi tocado.**
+- **Base do card:** branch `fix/TRE-W3-E01-T01-D01` a partir de `afab91c` (tip de
+  `feature/TRE-W3-E01-T01`), publicada por `git archive` sobre `ssh` em
+  `/opt/tre/rev-t_fa9db205-d01` (script `bfed5e1f…`; o entregue era `5b0b677f…`).
+- **Fail-open reproduzido por mim, mesmo comando e mesma VPS (antes, script entregue `5b0b677f…`):**
+  `TRE_IMAGEM=odoo:nao-existe-9999 TRE_IMAGEM_PG=postgres:nao-existe-9999 bash
+  scripts/odoo/verificar-api-controlada.sh --prova-de-dente` → dentes 1 e 2 `FALHOU imagem
+  odoo:nao-existe-9999 ausente (nada a medir)` / `RESULTADO: API_CONTROLADA_FALHOU (2 itens, 1
+  falha(s))` (aborto de guarda) e ainda assim **`API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)`,
+  `EXIT_ANTES=0`** (`/opt/tre/rev-t_fa9db205-d01/antes-sabotado.out`).
+- **Depois (script `bfed5e1f…`), ambiente sabotado:** os dentes 1 e 2 medem **2 itens** (piso do modo
+  61) → `FALHOU dente 1/2: o sub-run mediu 2 itens (piso do modo: 61) — aborto na guarda de ambiente
+  nao e' medicao` → **`RESULTADO: API_CONTROLADA_DENTE_FALHOU (2 prova(s) sem dente…)`, exit 1**
+  (`/opt/tre/rev-t_fa9db205-d01/sabotado.out`).
+- **Depois, ambiente saudável:** `DENTE_OK (3 provas, 0 falhas)`, exit 0, com os **itens nomeados**:
+  dente 1 `API_CONTROLADA_FALHOU (61 itens, 5 falhas)` com `operacao declarada
+  (sistema_capacidades) -> HTTP 404`; dente 2 `(61 itens, 3 falhas)` com `campo nao declarado ->
+  HTTP 200` (campo `email` no corpo); dente 3 `MOTOR_API_FALHOU (53 itens, 1 falha)` com `producao
+  permitida mas sem aprovacao -> NAO recusou` (`saudavel.out`).
+- **Regressão do aceite (mesma rodada):** `API_CONTROLADA_OK (75 itens, 0 falhas)`, `EXIT_ACEITE=0`,
+  com `MOTOR_API_OK (53 itens, 0 falhas)`, `0 failed, 0 error(s) of 82 tests`, `8 linhas TF_API_AUDIT
+  para 8 chamadas autenticadas`, 0 `Bearer` e 0 payload na trilha.
+- **Aceite → dente na mesma sessão (a evidência do aceite não é mais tocada):** `TRE_LOG_DIR=<dir do
+  aceite> --prova-de-dente` → `DENTE_OK (3 provas, 0 falhas)`, e a guarda imprime `5 log(s) de passo
+  do aceite … com sha256 identico depois das provas`; `diff` dos sha256 dos 5 logs antes/depois →
+  `LOGS_DO_ACEITE_IDENTICOS` (`encadeado.out`).
+- **Âncora do artefato reprodutível (achado 4 do card, consertado):** `28 arquivos versionados, sha256
+  `85e6cbc95f91797f71f74e4f1269891b801d22984696ceba408ceb2ccb33f9f2`` — **idêntico** no worktree
+  (`git ls-files`), numa cópia solta (`find`, sem `.git`) e no `git archive` da VPS. Antes: 29
+  arquivos (`api/__pycache__` gerado pela própria execução) e um valor por publish. O aceite terminou
+  sem deixar `__pycache__` no módulo publicado (`PYTHONDONTWRITEBYTECODE=1` no passo 0).
+- **Controle do predicado (no worktree do agente, sem Docker):** `bash
+  scripts/odoo/teste-dente-confere.sh` extrai a função `dente_confere` **do próprio verificador** e a
+  exercita: `DENTE_CONFERE_OK (7 itens, 0 falhas)`, exit 0 — medição completa com o item certo passa;
+  aborto (2 itens), log de passo ausente, falha por outro item, sub-run sem rótulo e sub-run que
+  passou **reprovam**. Controle negativo da guarda de logs: com o dente 3 de volta escrevendo no
+  diretório do aceite, a guarda reprova (`o modo dente mexeu num log de passo do aceite`); com o
+  script real e um log do aceite no diretório, a guarda **não** reprova.
+- **Reprodução local do fail-open (container do agente, sem daemon Docker):** script entregue
+  (`5b0b677f…`) → dentes 1 e 2 abortam com **1 item** (`FALHOU docker nao responde`) e o harness
+  imprime `API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)`, exit 0; script consertado (`bfed5e1f…`) →
+  `API_CONTROLADA_DENTE_FALHOU …`, exit 1, com dente 3 medindo 53 itens e o item esperado.
+- **Verificadores do projeto (worktree do commit):** `bash scripts/verificar_estrutura.sh` → `PASS
+  (0 falhas)` rc=0 (inclui o controle novo como versionado **e** executável); `bash
+  scripts/secret_scan.sh` → `PASS`; `bash scripts/verificar_papeis.sh` → `PASS (0 falhas)`.
+- **O que NÃO foi tocado (medido):** dev com os **mesmos 4 bancos** (`odoo_dev, postgres, template0,
+  template1`) antes e depois em todas as rodadas; `/opt/tre/{homolog,prod}` com **0** arquivo; **0**
+  container/rede/`/tmp` residual `e01t01-*`; `/opt/tre/repo` sem escrita (a cópia medida é um `git
+  archive` em `/opt/tre/rev-t_fa9db205-d01` e a do autor da revisão, `/opt/tre/rev-t_e0489efc-r1`, foi
+  usada só em leitura, para rodar o script **entregue** no cenário sabotado).
+- **Logs brutos (agente, na VPS):** `/opt/tre/rev-t_fa9db205-d01/` — `antes-sabotado.out`,
+  `sabotado.out`, `saudavel.out`, `encadeado.out`, `logs-saudavel/`, `logs-saudavel/dente/prova-{1,2,3}/`
+  (`1-instalacao.log`, `3-preparo.log`, `3b-servidor.log`, `0-motor-puro.out`), `logs-aceite/`,
+  `logs-aceite.sha-antes`/`logs-aceite.sha-depois`.
+- **Segredos:** nenhum valor nesta entrada e nenhum no repositório (`secret_scan.sh` PASS). A chave de
+  API das rodadas HTTP nasceu na VPS, em arquivo 600 dentro do diretório descartável do preparo, e
+  morreu com ele (mesmo desenho do card de origem).
+- **Verificação independente:** quem entrega não homologa — o conserto vai para o estágio 6 (perfil
+  `tester`); a homologação (estágio 7) segue com o Anderson.

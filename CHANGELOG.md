@@ -734,6 +734,37 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (guarda externa por sha256 de 29 arquivos). Runbook e detalhe item a item:
   `docs/runbooks/odoo-api-controlada.md`.
 
+### Fixed
+
+- **Instrumento de aceite da API controlada: `--prova-de-dente` era fail-open (`TRE-W3-E01-T01-D01`,
+  `t_fa9db205` — defeito retroativo achado pela revisão independente do card `t_e0489efc`, que foi
+  aprovado; o defeito era do instrumento, não da evidência)** — cada dente decidia "mordeu" por
+  `grep -q 'RESULTADO: …_FALHOU'` no sub-run, então **qualquer** falha valia como prova, inclusive um
+  aborto da guarda de ambiente. Medido com `TRE_IMAGEM=odoo:nao-existe-9999
+  TRE_IMAGEM_PG=postgres:nao-existe-9999`: os dentes 1 e 2 abortavam depois de **2 itens** (nenhuma
+  chamada HTTP, nenhuma instalação) e o harness ainda imprimia
+  `API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)` com exit 0. Conserto no verificador: o dente só passa
+  quando o sub-run **terminou no `FALHOU` esperado** *e* **mediu** (nº de itens ≥ piso do modo —
+  `TRE_PISO_ITENS_HTTP=61` em `--apenas-http`, `TRE_PISO_ITENS_MOTOR=53` na suíte pura — *e* logs de
+  passo no diretório da prova) *e* o **item esperado está entre os reprovados**, por assinatura
+  nomeada (dente 1 `operacao declarada (sistema_capacidades) -> HTTP 404`; dente 2
+  `campo nao declarado -> HTTP 200`/campo vazado; dente 3 `producao permitida mas sem aprovacao ->
+  NAO recusou`). O sub-run passou a ser rotulado (`TRE_ORIGEM_DENTE=N`) e imprime
+  `ORIGEM_DENTE=… itens=… falhas=…`, exigida na conferência. Remedido na VPS: ambiente sabotado →
+  **`DENTE_FALHOU`/exit 1** ("mediu 2 itens (piso 61) — aborto na guarda de ambiente nao e' medicao");
+  ambiente saudável → `DENTE_OK (3 provas, 0 falhas)`/exit 0 com os três itens nomeados (61/5, 61/3,
+  `MOTOR_API_FALHOU` 53/1); aceite completo sem regressão em `API_CONTROLADA_OK (75 itens, 0 falhas)`.
+- **Logs e âncora do dente (mesma família do `TRE-W2-E03-T01-D02` e do achado 4 do D01)** — cada prova
+  mede agora em `$TRE_LOG_DIR/dente/prova-N`: nada do dente escreve no diretório de logs do aceite
+  (antes o dente 3 sobrescrevia o `0-motor-puro.out` do aceite), com guarda **nominal** dos 5 logs de
+  passo (sha256 antes/depois); e a guarda externa passou a cobrir **só os arquivos versionados** do
+  módulo (`PYTHONDONTWRITEBYTECODE=1` no passo 0; `__pycache__` fora), tornando o sha256
+  **reprodutível** — `85e6cbc9…`, 28 arquivos, idêntico no worktree, numa cópia solta e no
+  `git archive` (antes: 29 arquivos e um valor por publish). Controle do predicado versionado em
+  `scripts/odoo/teste-dente-confere.sh` (7 itens; extrai a função do próprio verificador e reprova
+  aborto, log ausente, item errado, falta de rótulo e sub-run que passou). Detalhe em
+  `docs/runbooks/odoo-api-controlada.md` §12.
+
 ### Notas de estado
 
 - **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por
