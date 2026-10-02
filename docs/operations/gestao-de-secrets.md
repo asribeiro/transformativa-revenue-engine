@@ -38,6 +38,15 @@ Nada de valor real em `.env.example` — ali só existem **nomes** de variáveis
 
 Regra derivada do brief: o **Hermes Sales AI não altera código nem faz deploy de produção**.
 
+**Consequência medida no canal outbound (`TRE-W6-E01-T01`):** como o Dev Harness não recebe
+credencial Titan, a configuração do SMTP não é provada contra o provedor em `dev`. A prova de
+desenvolvimento usa um **sink SMTP local descartável** (`scripts/integracoes/sink-smtp-dev.py`, em
+`127.0.0.1`) e o componente **recusa host real em `dev`** (`HOST_NAO_E_DEV`), remetente fora do
+domínio de dev (`REMETENTE_NAO_DEV`) e destino fora desse domínio (`DESTINO_NAO_PERMITIDO`). A prova
+contra `smtp.titan.email` é de **homolog**, com a credencial do Sales AI no cofre, a lista explícita
+`TRE_TITAN_DESTINOS_PERMITIDOS` e `TRE_TITAN_APROVACAO_HUMANA` registrada em
+`docs/operations/registro-de-aprovacoes.md`; `--ambiente prod` é recusado (exit 4, ADR-005).
+
 ## 4. Inventário (nomes, nunca valores)
 
 Hoje presentes no ambiente: `GITHUB_TOKEN` (rotacionado em 29/09/2026), credenciais dos provedores de LLM,
