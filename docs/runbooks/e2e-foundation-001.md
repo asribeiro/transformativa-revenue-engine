@@ -69,7 +69,7 @@ uma linha e exit code (`0` = cumprido, `1` = falhou ou nao deu para medir, `2` =
 | 2 | servidor da porta unica + chave em arquivo `600` + **sonda** `dry_run` autenticada `HTTP 200` | a sonda prova que a credencial vale antes do cenario: senao o aceite mediria 401 como se fosse contrato |
 | 3 | n8n descartavel: cofre com postgres/API/token da porta, os **4 workflows** importados e exportaveis pelo `id` estavel, o da ingestao **ativo** | o webhook de producao so' existe com o workflow ativo — importar e nao ativar da' 404 e mascara o teste |
 | B | organizacao da ACME na fonte da verdade (`organizations`) com UUID canonico + evento `COMPANY_QUALIFIED` no `outbox_events` | e' o passo 1..3, 11 do doc 08 medido no banco, nao na narrativa |
-| C | consumidor entrega pela porta unica: **um** `res.partner` com `tf_company_id` = UUID (nome, CNPJ, dominio, `is_company` do evento), evento `PROCESSED`, trilha `postgres->odoo` `UPSERT` `COMPLETED`, **o ID devolvido pelo Odoo dentro do `response_payload`**, e chamada autenticada real na auditoria | AC5: o ID que o Odoo devolve tem de voltar para a trilha; sem isso o espelho nao tem chave |
+| C | consumidor entrega pela porta unica: **um** `res.partner` com `tf_company_id` = UUID (nome, CNPJ, dominio, `is_company` do evento), evento `PROCESSED`, trilha `postgres->odoo` `UPSERT` `COMPLETED`, **o ID devolvido pelo Odoo dentro do `response_payload`**, a ponta no PG (`organizations.odoo_partner_id`) registrada com o MESMO id, e chamada autenticada real na auditoria | AC5: o ID que o Odoo devolve tem de voltar para a trilha e fechar a ida-e-volta; sem isso o espelho nao tem chave |
 | D | `contato_upsert` pela porta (2x pela **mesma identidade**): 1 registro, `is_company=false`, rastro na auditoria | AC4/AC6: identidade forte nao duplica no CRM |
 | E | `atividade_criar` ancorada no parceiro do contato, com `tf_idempotency_key`; 1 registro, `res_id` conferido | AC4: a atividade existe e aponta para o registro certo |
 | F | reconciliacao (E04) rodando **no mesmo trio**: veredito `OK` e **0 divergencia** | prova que o dado que o E2E acabou de gravar e' coerente entre as duas pontas |
@@ -129,3 +129,9 @@ trecho** nos dois ramos (ok e falhou).
    customizacoes de instancia, nem a versao de banco do ambiente de producao.
 4. **Reprocesso operacional** (reprocessar dead-letter depois de corrigir a causa, ligar/desligar
    cron do consumidor): e' passo de operacao, tem o seu aceite proprio no card `E02-T02`.
+5. **A ponta do vinculo no PG (`organizations.odoo_partner_id`) nao e' escrita por nenhuma porta da
+   fundacao**: o consumidor escreve a fila (`outbox_events`) e a trilha (`sync_events`) e devolve o ID
+   na trilha; `organizations` e' da esteira de negocio (W4/W5). O aceite registra essa ponta com o ID
+   que veio na trilha (passo 17 do doc 08) e **mede a ida-e-volta** — a reconciliacao (E04) acusa
+   `id_cruzado_sem_volta_no_pg` justamente quando ela falta. Quem escrever essa coluna na esteira de
+   negocio tem de escrever o MESMO id que a trilha guardou.

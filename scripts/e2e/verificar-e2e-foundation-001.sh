@@ -395,7 +395,7 @@ sem_consulta_de_trilha|repetir o evento NAO duplica|sem a consulta da trilha o e
     exit 0
 fi
 
-if [ "$MODO" = "completo" ]; then
+if [ "$MODO" = "completo" ] || [ "$MODO" = "codigo" ]; then
     passo_codigo
 fi
 
@@ -681,11 +681,13 @@ subir_n8n() {
     echo "$pronto"
 }
 if n8n_cli update:workflow --id="$ID_INGESTAO" --active=true >"$LOG_DIR/3-ativar.log" 2>&1 \
-        && grep -qi 'true' "$LOG_DIR/3-ativar.log"; then
+        && n8n_cli export:workflow --id="$ID_INGESTAO" --output=/home/node/ativo.json >"$LOG_DIR/3-ativar-export.log" 2>&1 \
+        && grep -q '"active":[[:space:]]*true' "$N8N_HOME/ativo.json"; then
     ok "workflow da porta de ingestao ATIVADO (o webhook de producao so' existe ativo)"
 else
     falhou "nao consegui ativar o workflow da porta de ingestao (ver $LOG_DIR/3-ativar.log)"
 fi
+rm -f "$N8N_HOME/ativo.json"
 if [ "$FALHAS" -gt 0 ]; then resumo; fi
 
 # ---------------------------------------------------------------------------
@@ -758,6 +760,18 @@ if [ -n "$ID_PARCEIRO" ] && [ "$(limpar "$(odoo_db "select count(*) from res_par
     ok "o Odoo devolveu o ID do registro e ele esta no response_payload da trilha"
 else
     falhou "o ID devolvido pelo Odoo nao foi medido no response_payload (obtido: ${ID_PARCEIRO:-vazio})"
+fi
+# Doc 08 §3 passo 17 (PG registra sync): a ponta do vinculo no lado PostgreSQL. Nenhuma porta da
+# fundacao escreve esta coluna (o consumidor escreve a FILA e a TRILHA; `organizations` e' da
+# esteira de negocio, W4/W5) — o aceite registra a ponta com o ID que veio na trilha e MEDE a
+# ida-e-volta depois. Lacuna declarada no runbook.
+if [ -n "$ID_PARCEIRO" ]; then
+    si "update sales_intelligence.organizations set odoo_partner_id=$ID_PARCEIRO, updated_at=now() where id='$ORG'" >/dev/null 2>&1
+fi
+if [ -n "$ID_PARCEIRO" ] && [ "$(limpar "$(si "select odoo_partner_id from sales_intelligence.organizations where id='$ORG'")")" = "$ID_PARCEIRO" ]; then
+    ok "a ponta no PG registra o MESMO id que o Odoo devolveu (ida-e-volta fechada)"
+else
+    falhou "a ponta no PG nao registra o id devolvido pelo Odoo (medido: '$(limpar "$(si "select coalesce(odoo_partner_id::text,'-') from sales_intelligence.organizations where id='$ORG'")")')"
 fi
 if [ "$(limpar "$(auditoria_total)")" -gt "$BASE_AUDITORIA" ]; then
     ok "houve chamada autenticada real na porta unica (auditoria: $(limpar "$(auditoria_total)") linhas)"
@@ -841,7 +855,10 @@ cabecalho "passo F - reconciliacao PostgreSQL x Odoo no mesmo trio (card E04-T01
 executar_workflow "$ID_RECONCILIACAO" "$LOG_DIR/F-reconciliacao"
 [ "$RC_EXEC" = "0" ] && ok "job de reconciliacao executou (exit 0)" \
     || falhou "job de reconciliacao terminou com exit $RC_EXEC (ver $LOG_DIR/F-reconciliacao.out)"
-python3 "$LEITOR_RECONCILIACAO" "$LOG_DIR/F-reconciliacao.out" >"$LOG_DIR/F-reconciliacao.valores" 2>"$LOG_DIR/F-reconciliacao.leitor"
+python3 "$LEITOR_RECONCILIACAO" "$LOG_DIR/F-reconciliacao.out" >"$LOG_DIR/F-reconciliacao.valores" 2>"$LOG_DIR/F-reconciliacao.leitor" || true
+[ "$(valor_de "$LOG_DIR/F-reconciliacao.valores" leitura)" = "ok" ] \
+    && ok "o resultado da rodada de reconciliacao foi legivel" \
+    || falhou "o resultado da rodada de reconciliacao NAO foi legivel (ver $LOG_DIR/F-reconciliacao.leitor)"
 [ "$(valor_de "$LOG_DIR/F-reconciliacao.valores" veredito)" = "OK" ] \
     && ok "reconciliacao: veredito OK na mesma rodada do E2E" \
     || falhou "reconciliacao: veredito '$(valor_de "$LOG_DIR/F-reconciliacao.valores" veredito)' (esperado OK)"
@@ -944,6 +961,11 @@ executar_workflow "$ID_OBSERVABILIDADE" "$LOG_DIR/H-observabilidade"
 python3 "$LEITOR_N8N" "$LOG_DIR/H-observabilidade.out" "$LOG_DIR/H-observabilidade.wf" \
     >"$LOG_DIR/H-observabilidade.resumo" 2>"$LOG_DIR/H-observabilidade.leitura" || true
 VEREDITO_OBS="$(sed -n 's/^veredito=//p' "$LOG_DIR/H-observabilidade.resumo" | head -1)"
+if [ -s "$LOG_DIR/H-observabilidade.wf.valores" ]; then
+    ok "a rodada de observabilidade entregou as metricas declaradas ($(wc -l <"$LOG_DIR/H-observabilidade.wf.valores" | tr -d ' ') linhas de medicao)"
+else
+    falhou "a rodada de observabilidade nao entregou medicao (ver $LOG_DIR/H-observabilidade.leitura)"
+fi
 [ "$VEREDITO_OBS" = "OK" ] \
     && ok "observabilidade: veredito OK na rodada saudavel do E2E" \
     || falhou "observabilidade: veredito '${VEREDITO_OBS:-ilegivel}' (esperado OK)"
