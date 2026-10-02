@@ -181,11 +181,17 @@ else
   echo "OK    manifesto do modulo sem valor de senha"
 fi
 
-# Artefatos do consumidor de outbox em n8n (TRE-W3-E02-T01) existem E estao versionados: o
-# workflow e' artefato DERIVADO (contrato + nucleo + SQL) e sem estes arquivos o aceite do card
-# poderia passar na VPS por arquivo que nunca entrou no repo.
+# Artefatos do consumidor de outbox em n8n (TRE-W3-E02-T01 e TRE-W3-E02-T02) existem E estao
+# versionados: o workflow e' artefato DERIVADO (contrato + nucleo + SQL) e sem estes arquivos o aceite
+# do card poderia passar na VPS por arquivo que nunca entrou no repo.
+# DEFEITO CORRIGIDO (card t_a1bed5fa, revisao independente do TRE-W3-E02-T02): o T02 acrescentou
+# dois SQL (dedup por chave) e nao estendeu esta lista — o gate imprimia PASS com eles fora da arvore
+# versionada. Um arquivo por linha de proposito: o aceite da classe mede `grep -c` (linhas, nao
+# ocorrencias) e os dois na mesma linha contariam 1.
 for f in n8n/contracts/outbox-consumer.v1.json n8n/codigo/nucleo-outbox-consumer.js \
          n8n/sql/ler-pendentes.sql n8n/sql/registrar-resultado.sql \
+         n8n/sql/ler-trilha.sql \
+         n8n/sql/registrar-replay.sql \
          n8n/workflows/TRE-outbox-consumer.json scripts/n8n/montar_workflow.py \
          scripts/n8n/conferir_contrato_e_workflow.py scripts/n8n/testar_nucleo_consumidor.js \
          scripts/n8n/mutar_workflow.py scripts/n8n/preparar_massa_ambigua.py \
