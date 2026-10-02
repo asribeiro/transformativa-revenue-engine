@@ -453,6 +453,7 @@ info "arquivos em homolog/prod antes: $HOMOLOG_PROD_ANTES"
 # ---------------------------------------------------------------------------
 # trio descartavel proprio
 # ---------------------------------------------------------------------------
+FALHAS_ANTES_DO_TRIO="$FALHAS"
 cabecalho "trio descartavel proprio (postgres + odoo + n8n)"
 DESC_DIR="$(mktemp -d /tmp/e2e-foundation-XXXXXX)"
 chmod 700 "$DESC_DIR"
@@ -493,7 +494,7 @@ for _ in $(seq 1 30); do
     sleep 2
 done
 [ "$PRONTO" = "1" ] && ok "postgres descartavel aceitando conexao" || falhou "postgres descartavel nao ficou pronto"
-if [ "$FALHAS" -gt 0 ]; then resumo; fi
+if [ "$FALHAS" -gt "$FALHAS_ANTES_DO_TRIO" ]; then resumo; fi
 
 limpeza() {
     if [ "$MANTER" = "1" ]; then
@@ -529,7 +530,7 @@ RC="$(odoo_ci "$LOG_DIR/1-instalacao.log" -d "$BANCO" -i "$MODULO" --without-dem
 MODULO_ESTADO="$(limpar "$(odoo_db "select state from ir_module_module where name='$MODULO'")")"
 [ "$MODULO_ESTADO" = "installed" ] && ok "modulo $MODULO esta installed no banco descartavel" \
     || falhou "modulo nao ficou installed (estado: ${MODULO_ESTADO:-?})"
-if [ "$FALHAS" -gt 0 ]; then resumo; fi
+if [ "$FALHAS" -gt "$FALHAS_ANTES_DO_TRIO" ]; then resumo; fi
 
 # ---------------------------------------------------------------------------
 # passo 2 — servidor do Odoo (porta unica), chave da API e sonda
@@ -688,7 +689,7 @@ else
     falhou "nao consegui ativar o workflow da porta de ingestao (ver $LOG_DIR/3-ativar.log)"
 fi
 rm -f "$N8N_HOME/ativo.json"
-if [ "$FALHAS" -gt 0 ]; then resumo; fi
+if [ "$FALHAS" -gt "$FALHAS_ANTES_DO_TRIO" ]; then resumo; fi
 
 # ---------------------------------------------------------------------------
 # passo B — cenario: ACME na fonte da verdade + evento no outbox
