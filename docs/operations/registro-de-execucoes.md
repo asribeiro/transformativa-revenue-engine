@@ -692,3 +692,66 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   (01/10 23:10-23:40 UTC, ja' declarado); a rodada 2 gravou em `/opt/tre/e02t01-r2/logs-*`.
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card segue com o estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E02-T02 (card `t_3bde06ab`): dedup por `idempotency_key` no consumidor de outbox (replay por chave)
+
+- **O que foi entregue:** o consumidor do `TRE-W3-E02-T01` ganhou o **dedup por chave**. O contrato
+  `n8n/contracts/outbox-consumer.v1.json` passa a **1.1.0** com o bloco `dedup` (criterio de replay,
+  ordem da decisao, status final, `incrementa_tentativas: 0`); o nucleo ganhou a decisao **REPLAY**
+  (chave ja' entregue) e os helpers `chavesDoLote` / `trilhaPorChave` / `registroDeReplay` /
+  `chaveDoEvento`; dois SQL novos — `n8n/sql/ler-trilha.sql` (**uma** consulta por lote, somente
+  SELECT) e `n8n/sql/registrar-replay.sql` (finaliza o evento **reaproveitando** a trilha, com guarda
+  fail-closed `EXISTS ... t.status='COMPLETED'`); o workflow derivado ganhou os nos `Chaves do lote`,
+  `Ler trilha (chaves entregues)` (**`alwaysOutputData`**: sem ele o ciclo sem chave entregue mataria a
+  cadeia), `Decisao: replay?` e `Registrar replay (outbox)`. O caminho do replay **nao tem no de HTTP
+  alcancavel** — a lente mede que so' o ramo de entrega alimenta a porta unica.
+- **Identidade do que foi medido (na VPS, copia propria do working tree do card):** `/opt/tre/e02t02-r3`
+  = commit `bdd2aea`; o commit seguinte acrescenta **apenas documentacao** (este registro e o
+  CHANGELOG) — conferivel por `git diff --name-only bdd2aea HEAD`. O proprio aceite
+  (`scripts/n8n/verificar-outbox-consumer.sh`) tem **o mesmo sha256** no worktree e na VPS
+  (`36907773e110782b...`): a medicao e' do script entregue (a rodada anterior, `/opt/tre/e02t02-r2`,
+  media `bd144122...`, antes do conserto da ancora descrito abaixo). Os **7 artefatos sob teste**
+  (fixados nas guardas e **reconferidos no fecho**): contrato `2b4d9cef...c13af8`,
+  nucleo `91ad375a...a5657f2`, ler-pendentes `9234b566...797ddfb2` e registrar-resultado
+  `0eac7d7a...1472d017` (**inalterados** desde o T01), ler-trilha `8d788e78...eea0ef86`,
+  registrar-replay `fc438d0a...80f14ec30` e workflow `9393b3dc...5de7e30c`.
+- **Aceite:** `OUTBOX_CONSUMER_OK (**97 itens, 0 falhas**)` **EXIT=0** (banco `tre_e02_outbox`, trio
+  descartavel proprio postgres+odoo+n8n), incluindo `CONTRATO_WORKFLOW_OK (93 itens, 0 falhas)` e
+  `NUCLEO_CONSUMIDOR_OK (124 itens, 0 falhas)`.
+- **Ciclo 5 (o que este card mede, evento a evento):** E1 (chave ja' entregue, trilha `COMPLETED`) e E7
+  (trilha `REFUSED`) voltam a fila com os **IDs originais** -> E1 vira **REPLAY** (`PROCESSED`,
+  `attempts` inalterado em 1, `last_error` nulo) e E7 **volta a ser entregue** e e' recusado de novo
+  (`DEAD_LETTER/2` com `valor_ambiguo`). O ciclo com **2 eventos na fila chamou a API UMA vez** (so' o
+  E7). O replay **nao escreveu no CRM** (1 parceiro, `name` e `score` da entrega original preservados),
+  **nao criou linha na trilha** (9 linhas antes e depois) e a linha do E1 e' a **mesma** (mesmo `id`,
+  mesmo `completed_at` e mesma resposta `acao_efetiva=criar`); a trilha do E7 continua **1 linha
+  `REFUSED`** (o upsert do retry nao duplica). Total de chamadas autenticadas do aceite = **5** (E1, E2,
+  E7, retry do E8 e o E7 do ciclo 5). Demais medicoes do T01 preservadas: entregas em SERIE (**E1 -> E2
+  com 192 ms**; piso paralelo medido 2 ms) e 7 eventos PENDING medidos no ciclo 1.
+- **Prova de dente:** `OUTBOX_CONSUMER_DENTE_OK (**6/6** dentes cumpridos; baseline nao mutado verde;
+  juiz conferido)` **EXIT=0** — as 4 mutacoes herdadas (`sem_validacao_de_envelope`,
+  `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`, `mapeamento_trocado`) e **2 novas deste
+  card**: `sem_consulta_de_trilha` (a consulta da chave some do lote) reprova `E1 reenfileirado` e
+  `guarda_de_sucesso_afrouxada` (o nucleo aceita trilha de QUALQUER status) reprova
+  `E7 (chave na trilha como REFUSED)`. Os juizes continuam conferidos por saidas sinteticas (dente: 4;
+  sha256: 2).
+- **Defeito achado pelo proprio aceite e corrigido na raiz:** na primeira rodada do dente (copia
+  `/opt/tre/e02t02-r2`) o dente `guarda_de_sucesso_afrouxada` saiu **`NAO_CONTA (ancora quebrada)`**: a
+  ancora do juiz (`E7 (chave na trilha como REFUSED)`) existia **so'** na mensagem de sucesso do item, e
+  a mensagem de reprovacao dizia outra coisa — o dente nao media nada. Reproduzi o mutante a mao (log
+  `/tmp/gda.out` na VPS: `FALHOU E7 esperava DEAD_LETTER/2 com valor_ambiguo (...), medido
+  RETRY/1/recusa_da_api:valor_ambiguo`), alinhei as duas mensagens no item e remedi: **6/6**. A mesma
+  reproducao mostrou o **segundo cinto**: com a guarda do nucleo afrouxada o evento **nao** e'
+  finalizado nem reentregue (a guarda `EXISTS` do `registrar-replay.sql` casa zero linhas e o evento
+  fica `RETRY`, sem sucesso inventado) — o dano e' medido pelo item, nao varrido.
+- **Residuo:** 0 container e 0 rede `e02t02-*` no fecho e 0 diretorio `/tmp/dente-e02t02-*` (o extrator
+  do dente limpa os seus). O `/tmp/verificacao-outbox-consumer` que existe na VPS e' residuo **da
+  rodada 1 do T01** (01/10, ja' declarado) — nao e' desta medicao.
+- **Verificadores do projeto:** `secret_scan.sh` PASS (nenhum segredo versionado), rodado no worktree do
+  card **e** na copia da VPS; a lente estrutural e a suite do nucleo rodam **dentro** do aceite
+  (`CONTRATO_WORKFLOW_OK 93`, `NUCLEO_CONSUMIDOR_OK 124`).
+- **Evidencia guardada:** `/tmp/e02t02-r3-full.log`, `/tmp/e02t02-r3-dente.log` na VPS e
+  `aceite-logs/` (`0-estrutural.out`, `0b-nucleo.out`, `8-ciclo5.out`, `sha256-antes/depois.txt`,
+  `8-secret-scan.log`); anexados ao card.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card vai para o estagio 6 (perfil
+  `tester`) e a homologacao (estagio 7) e' do Anderson.

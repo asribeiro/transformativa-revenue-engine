@@ -800,8 +800,36 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   reprovou), e o juiz dos dentes conferido por 4 saídas sintéticas (mutação sem efeito, mutação
   cumprida, ambiente quebrado, âncora quebrada) — sem isso, ambiente quebrado viraria "dente
   cumprido". Runbook: `docs/runbooks/n8n-outbox-consumer.md`.
+- **Dedup por chave no consumidor de outbox (`TRE-W3-E02-T02`)** — a fila deixou de poder produzir duas vezes
+  o mesmo efeito: a **chave de idempotência** derivada do evento (`outbox:<id>:<event_type>`) é consultada na
+  **trilha** antes da decisão (uma consulta por lote) e o evento cuja chave já tem linha `COMPLETED` vira
+  **REPLAY** — não chama a porta única, **não** incrementa `attempts`, **não** cria linha de trilha (a linha
+  existente é reaproveitada: mesmo `id`, mesmo `completed_at`, mesma resposta) e **não** reescreve o registro no
+  CRM (mesma chave = mesmo efeito). Chave com trilha `FAILED`/`REFUSED` **não** autoriza replay — o evento volta
+  a ser entregue (falha transitória pode não ter escrito nada; recusa é do evento, não da chave). Artefatos:
+  contrato **1.1.0** (bloco `dedup`: critério de replay, ordem da decisão, status final), núcleo com a decisão
+  REPLAY, dois SQL novos (`n8n/sql/ler-trilha.sql` — uma consulta por lote, só leitura;
+  `n8n/sql/registrar-replay.sql` — finaliza o evento reaproveitando a trilha, com guarda fail-closed
+  `EXISTS ... status='COMPLETED'`) e o nó de trilha com **`alwaysOutputData`** (sem ele o ciclo sem chave
+  entregue mataria a cadeia). O caminho do replay **não** tem nó de HTTP alcançável — a lente mede que só o
+  ramo de entrega alimenta a porta única. Aceite na VPS, sobre cópia própria do working tree: `OUTBOX_CONSUMER_OK
+  (**97 itens, 0 falhas**)` exit 0 — lente estrutural **93 itens**, suíte do núcleo **124 itens** — com o ciclo 5
+  medindo: os dois eventos de volta à fila com os **IDs originais** → **2 eventos na fila e UMA chamada** à API,
+  a trilha com as **mesmas 9 linhas** antes e depois, e o parceiro do CRM com `name` e score da entrega original
+  preservados. Dentes: `OUTBOX_CONSUMER_DENTE_OK (6/6)` (`sem_consulta_de_trilha` e
+  `guarda_de_sucesso_afrouxada` são os dois novos). Runbook: `docs/runbooks/n8n-outbox-consumer.md` §3, §4.4 e §5.
 
 ### Fixed
+
+- **Âncora de dente do dedup apontava só para a mensagem de sucesso (`TRE-W3-E02-T02`)** — na primeira rodada
+  do `--prova-de-dente`, o dente `guarda_de_sucesso_afrouxada` saía `NAO_CONTA (âncora quebrada)`: o item do E7
+  dizia uma coisa quando passava e outra quando reprovava, e o juiz do dente casa a âncora nas **duas** linhas
+  (`OK` e `FALHOU`) — o dente não media nada. Reproduzido o mutante à mão na VPS (`FALHOU E7 esperava
+  DEAD_LETTER/2 com valor_ambiguo ..., medido RETRY/1/recusa_da_api:valor_ambiguo`), alinhadas as duas
+  mensagens do item e remedido: `OUTBOX_CONSUMER_DENTE_OK (6/6 dentes cumpridos; baseline verde)`. A mesma
+  reprodução mediu o **segundo cinto**: com a guarda do núcleo afrouxada o evento **não** é finalizado nem
+  reentregue (a guarda `EXISTS` do `registrar-replay.sql` casa zero linhas e o evento fica `RETRY`) — o dano
+  aparece no item, sem sucesso inventado.
 
 - **Prova de dente e lente estrutural do consumidor de outbox (`TRE-W3-E02-T01`, rodada 2)** — o modo
   `--prova-de-dente` do aceite fechava com `OUTBOX_CONSUMER_DENTE_OK` e **exit 0 incondicionalmente**: o
