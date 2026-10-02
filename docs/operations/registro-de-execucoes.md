@@ -1712,8 +1712,11 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   merge de `feature/TRE-W4-E05-T01` (Contact Research) — conflitos em `CHANGELOG.md`,
   `docs/operations/registro-de-execucoes.md` e `scripts/verificar_estrutura.sh`, resolvidos por **UNIÃO**
   (as duas seções); merge em `875baaa`, aceite em `552a250`, passo 0 + dente por vínculo em `a521caa`,
-  detecção do passo 0 + sha256 na evidência em `e15d4d6`, CHANGELOG em `22a39ef` (head medido
-  **`22a39ef`**).
+  detecção do passo 0 + sha256 na evidência em `e15d4d6`. **Versão do aceite medida: `e15d4d6`** (sha256
+  do arquivo `c789934e84af0b25555d53bace2fd29fda8a237bf13746b57029f4a21b5d90d7`, conferido na VPS antes
+  do run); o **código sob teste** (os cinco agentes) está inalterado desde `875baaa` — sha256 dos cinco
+  fontes = `65af917603a8be90cf89d09bf692abf32c6fdf673c5303c6aaad3d4a91c11323`, fixado na própria saída do
+  run.
 - **Aceite completo (agente):** `scripts/e2e/verificar-e2e-sales-intelligence.sh` no clone
   `/opt/tre/e06t01-si-r1`, container descartável `pg-e2e-si-acc` (postgres:16) →
   **`ACEITE_E2E_SALES_INTELLIGENCE_001_OK (76 itens, 0 falhas)`**, exit 0. **Passo 0** no mesmo run: as
