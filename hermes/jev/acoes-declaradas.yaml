@@ -861,3 +861,20 @@ declaracoes:
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+  # 02/10/2026 — DEFEITO [cobertura] do E03-T01: 17 artefatos novos fora da rede de
+  # estrutura do verificador. A ALTERACAO ESTRUTURAL nao e decidida por maquina: foi
+  # decidida pelo dono (opcao C, hibrida) e esta registrada em ADR + registro de aprovacoes.
+  # O que resta ao card e IMPLEMENTACAO em dev, sem credencial e sem producao.
+  - card_id: t_c77ca273
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-02'
+    motivo: >-
+      Implementar a decisao de arquitetura JA tomada pelo dono (opcao C, hibrida) para a cobertura
+      do verificador de estrutura: descoberta automatica dos artefatos da arvore versionada,
+      isencoes declaradas com justificativa/responsavel/data e fail-closed para artefato nem
+      coberto nem isento. Decisao em docs/architecture/cobertura-do-verificador-de-estrutura.md
+      e registrada em docs/operations/registro-de-aprovacoes.md (02/10/2026, decisao "C").
+      Nao ha credencial, nao ha dado de cliente e nao ha ato em producao neste card.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
