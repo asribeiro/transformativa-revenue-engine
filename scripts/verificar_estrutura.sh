@@ -200,5 +200,28 @@ for f in scripts/n8n/verificar-outbox-consumer.sh scripts/n8n/montar_workflow.py
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos da OBSERVABILIDADE de sync (TRE-W3-E05-T01): o workflow de observabilidade tambem e'
+# DERIVADO (contrato + SQL + nucleo) e a medicao so' vale se o que foi medido na VPS estiver
+# versionado — inclusive o aceite, o montador, o mutador e o RUNBOOK (quem opera precisa do
+# procedimento versionado, nao de conhecimento de sessao).
+for f in n8n/contracts/observabilidade-sync.v1.json n8n/codigo/observabilidade-sync.js \
+         n8n/sql/observabilidade-sync.sql n8n/sql/observabilidade-sync-dead-letters.sql \
+         n8n/workflows/TRE-observabilidade-sync.json \
+         scripts/n8n/montar_workflow_observabilidade.py scripts/n8n/mutar_workflow_observabilidade.py \
+         scripts/n8n/conferir_observabilidade.py scripts/n8n/testar_observabilidade_sync.js \
+         scripts/n8n/massa-observabilidade.sql scripts/n8n/ler_resultado_n8n.py \
+         scripts/n8n/normalizar_medicao.py scripts/n8n/verificar-observabilidade-sync.sh \
+         docs/runbooks/observabilidade-sync.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/n8n/verificar-observabilidade-sync.sh scripts/n8n/montar_workflow_observabilidade.py \
+         scripts/n8n/mutar_workflow_observabilidade.py scripts/n8n/conferir_observabilidade.py \
+         scripts/n8n/ler_resultado_n8n.py scripts/n8n/normalizar_medicao.py; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
