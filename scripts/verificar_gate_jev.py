@@ -42,7 +42,11 @@ import tempfile
 import time
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
-HERMES = pathlib.Path("/opt/hermes")
+# Pacote do Hermes a sobrepor. Parametrizado por JEV_HERMES_HOME porque o caminho fixo
+# exigia escrita no runtime instalado: medido em 02/10/2026, o gate falhava com
+# PermissionError em container sem sudo (arquivo root:root 444) — e, quando rodava,
+# escrevia dentro do Hermes vivo por symlink. Verificação não deve alterar o runtime.
+HERMES = pathlib.Path(os.environ.get("JEV_HERMES_HOME") or "/opt/hermes")
 DIR_CLI = HERMES / "hermes_cli"
 PY = sys.executable
 GATE = RAIZ / "hermes/jev/gate/gate_jev.py"

@@ -6,7 +6,7 @@
   "release_status": "DELIVERED",
   "current_gate": "DONE",
   "production_promotion_authorized": false,
-  "updated_at": "2026-09-30",
+  "updated_at": "2026-10-02",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -219,7 +219,38 @@
         {
           "hermes_task_id": "t_d36c7d0f",
           "stage": "DONE",
-          "evidence": "regra de lane por ambiente como PISO em hermes/jev/policy_v1_1.yaml (policy_v1_1 completa sobre esta), verificada pelo proprio roteador"
+          "evidence": "regra de lane por ambiente como PISO em hermes/jev/policy_v1_1.yaml (policy_v1_1 completa sobre esta), verificada pelo proprio roteador",
+          "validation_result": "PASS",
+          "validated_at": "2026-10-02",
+          "validated_by": "Hermes — primeira verificacao integrada da esteira",
+          "verification": {
+            "commit": "0dcb22f9ee5334122d074819b06e56a4127723e8",
+            "ambiente": "clone limpo (scratch) no commit exato; pacote do Hermes apontado por JEV_HERMES_HOME (copia gravavel) — runtime vivo intocado",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "scripts/verificar_jev_policy_v1_1.py --autoteste",
+                "exit": 0,
+                "resultado": "PASS (155 itens, 0 falhas) + autoteste 63/63 mutacoes"
+              },
+              {
+                "gate": "scripts/verificar_gate_jev.py",
+                "exit": 0,
+                "resultado": "PASS (30 itens, 0 falhas)"
+              },
+              {
+                "gate": "scripts/validar_jev_guardrails.py",
+                "exit": 0,
+                "resultado": "PASS (74 itens, 0 falhas)"
+              },
+              {
+                "gate": "scripts/benchmark_roteamento.py",
+                "exit": 0,
+                "resultado": "benchmark OK"
+              }
+            ],
+            "ressalva": "o 4o portao exigiu parametrizar HERMES por env: com caminho fixo falhava por permissao (arquivo root 444, sem sudo) e escrevia no runtime vivo por symlink. Correcao no mesmo commit."
+          }
         }
       ]
     },
