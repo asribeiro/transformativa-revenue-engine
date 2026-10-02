@@ -383,7 +383,11 @@
       "request_payload / payload / response_payload (podem carregar dado pessoal ou segredo)",
       "credencial, token, Bearer, header de autorizacao",
       "corpo de erro com mais de 200 caracteres (o motivo e' nomeado e curto; texto longo e' truncado com marca)"
-    ]
+    ],
+    "linha_vazia": {
+      "regra": "`alwaysOutputData` faz o no' emitir UM item VAZIO quando a consulta nao devolve detalhe — rodada SAUDAVEL tem zero detalhe e a cadeia nao pode parar. Isso e' AUSENCIA DE DETALHE, nao detalhe com tipo desconhecido: o nucleo ignora a linha TOTALMENTE vazia. Linha com QUALQUER campo preenchido e' dado, e tipo nao declarado nela continua fechando INDETERMINADO",
+      "por_que": "sem essa distincao toda rodada saudavel fecharia INDETERMINADO (`tipo_de_detalhe_nao_declarado:(vazio)`) e o relatorio gritaria justamente quando esta' tudo bem"
+    }
   },
   "conferencias_cruzadas": [
     {
@@ -428,13 +432,13 @@
       {
         "nome": "Metricas",
         "tipo": "n8n-nodes-base.postgres",
-        "papel": "n8n/sql/observabilidade-sync.sql",
+        "papel": "n8n/sql/observabilidade-sync.sql (executeOnce: a medicao roda uma vez por rodada)",
         "credencial": "tre-dev-postgres"
       },
       {
         "nome": "Detalhes",
         "tipo": "n8n-nodes-base.postgres",
-        "papel": "n8n/sql/observabilidade-sync-dead-letters.sql",
+        "papel": "n8n/sql/observabilidade-sync-dead-letters.sql (executeOnce + alwaysOutputData: zero detalhe e uma rodada saudavel, nao uma cadeia parada)",
         "credencial": "tre-dev-postgres"
       },
       {
@@ -473,6 +477,10 @@
     "saida": {
       "do_no_avaliar": "{veredito, versao_contrato, nucleo_versao, metricas[], detalhes{}, indeterminados[], relatorio (texto), saida (codigo do veredito)}",
       "regra": "o resultado da execucao E' o relatorio: quem opera le a execucao; o destino do ALERTA e' decisao do dono (declarado em autoridade.fora_do_escopo)"
+    },
+    "consulta_uma_vez": {
+      "campo_do_no": "executeOnce",
+      "regra": "os DOIS nos Postgres rodam UMA vez por rodada: a consulta e' a MEDICAO, nao um passo por linha de entrada. O n8n, sem isto, executa o no' uma vez por item que chega — as 20 linhas de metrica viram 20 execucoes da consulta de detalhes e a lista sai multiplicada (medido no aceite: 20 copias do mesmo dead-letter, e o estado sem detalhe virou 20 linhas vazias)"
     }
   },
   "credenciais": {

@@ -385,6 +385,14 @@ def main():
           no_detalhes.get("parameters", {}).get("query"), ler(arq_sql_detalhes).rstrip() + "\n")
     igual("o no Detalhes tem alwaysOutputData (rodada saudavel nao para a cadeia)",
           no_detalhes.get("alwaysOutputData"), True)
+    # `executeOnce`: a consulta e' a MEDICAO da rodada, nao um passo por linha de entrada.
+    # Sem isto o n8n roda o no' uma vez por item que chega (as 20 linhas de metrica) e a
+    # lista de detalhes sai multiplicada — defeito medido no primeiro aceite real.
+    igual("as duas consultas rodam UMA vez por rodada (executeOnce), nao uma por linha de entrada",
+          [nos["Metricas"].get("executeOnce"), nos["Detalhes"].get("executeOnce")], [True, True])
+    confere("o contrato declara a regra `consulta_uma_vez`", "consulta_uma_vez" in contrato["workflow"])
+    confere("o contrato declara o que e' linha vazia de detalhe (placeholder do alwaysOutputData)",
+            "linha_vazia" in contrato["detalhes"])
     for nome in ("Metricas", "Detalhes"):
         cred = nos[nome].get("credentials", {}).get("postgres", {})
         igual("o no %s usa a credencial declarada por id/nome" % nome,

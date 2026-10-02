@@ -92,6 +92,11 @@ def no_de_pg(ident, nome, sql, contrato, posicao, nota, extra=None):
         "type": "n8n-nodes-base.postgres",
         "typeVersion": 2.7,
         "position": posicao,
+        # `executeOnce`: a consulta e' a MEDICAO da rodada, nao um passo por linha de
+        # entrada. Sem isto, o no' roda uma vez por item que chega (20 metricas -> 20
+        # execucoes) e a lista de detalhes sai multiplicada. Medido no aceite: a
+        # primeira rodada trouxe 20 copias do mesmo dead-letter.
+        "executeOnce": True,
         "credentials": {"postgres": {"id": contrato["credenciais"]["postgres"]["id"],
                                      "name": contrato["credenciais"]["postgres"]["nome"]}},
         "notes": nota,

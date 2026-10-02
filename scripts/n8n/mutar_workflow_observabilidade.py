@@ -141,8 +141,11 @@ def m_sem_fail_closed_de_metrica_ausente(workflow):
 def m_sanitizacao_removida(workflow):
     _mutar_nucleo(
         workflow,
+        # corpo VIGENTE de `sanitizar` no nucleo versionado (teto declarado + marca do corte)
+        "    var limite = numero(teto);\n"
         "    var t = texto(motivo).replace(/[\\r\\n\\t]+/g, ' ').replace(/[\\u0000-\\u001f\\u007f]/g, ' ');\n"
         "    t = t.replace(/\\s{2,}/g, ' ');\n"
+        "    if (limite === null || limite <= 0) return t;\n"
         "    if (t.length > limite) return t.slice(0, limite) + '...';\n"
         "    return t;",
         "    return texto(motivo);",
@@ -173,6 +176,15 @@ def m_sem_conclusao_nao_conta(workflow):
     """A trilha fechada sem `completed_at` deixa de ser contada."""
     sql, no = sql_do_no(workflow, "Metricas")
     no["parameters"]["query"] = sub_bloco_sql(sql, "trilha_sem_conclusao", "0")
+
+
+def m_placeholder_vira_indeterminado(workflow):
+    """O item vazio do `alwaysOutputData` passa a ser tratado como detalhe (fail-open ao contrario)."""
+    _mutar_nucleo(
+        workflow,
+        "        if (linhaDeDetalheVazia(linha)) { vazias++; continue; }\n",
+        "",
+        "tratamento da linha vazia da consulta de detalhes")
 
 
 # nome -> (funcao, fase do aceite, item que TEM de reprovar, por que a mutacao quebra o item)
@@ -221,6 +233,10 @@ MUTACOES = {
         m_metrica_nao_declarada_ignorada, "codigo",
         "nao declarada no contrato fecha INDETERMINADO",
         "metrica do SQL fora do contrato passa a ser ignorada em silencio"),
+    "placeholder_vira_indeterminado": (
+        m_placeholder_vira_indeterminado, "codigo",
+        "nao vira indeterminado",
+        "sem distinguir item vazio de detalhe quebrado, toda rodada saudavel grita INDETERMINADO"),
 }
 
 

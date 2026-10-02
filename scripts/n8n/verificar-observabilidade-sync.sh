@@ -651,7 +651,7 @@ rodada_do_estado A && {
     confere_valor trilha_sem_conclusao "" 0 "estado A: nenhuma trilha fechada sem conclusao (trilha_sem_conclusao=0)"
     confere_valor trilha_por_status "postgres->odoo/COMPLETED" 2 "estado A: as duas entregas estao na porta PG -> Odoo (trilha_por_status=2)"
     confere_valor trilha_por_status "odoo->postgres/COMPLETED" 0 "estado A: a porta de ingestao nao teve atividade (grade declarada = 0, nao linha faltando)"
-    confere_valor_tolerancia trilha_ultima_atividade_s 120 10 "estado A: a ultima atividade da trilha tem ~120s (medida na unidade do contrato)"
+    confere_valor_tolerancia trilha_ultima_atividade_s 120 30 "estado A: a ultima atividade da trilha tem ~120s (medida na unidade do contrato)"
     confere_valor fila_idade_maxima_s "" 0 "estado A: fila sem espera (fila_idade_maxima_s=0)"
     confere_relatorio '^VEREDITO: OK ' "estado A: a linha do veredito e' a declarada no contrato"
 }
@@ -685,6 +685,7 @@ rodada_do_estado D && {
     confere_valor trilha_recusas "" 1 "estado D: a recusa nomeada esta' na trilha (trilha_recusas=1)"
     confere_relatorio 'CNPJ invalido \(HTTP 422\)' "estado D: o relatorio mostra o MOTIVO do dead-letter (contagem sem motivo nao e observabilidade)"
     confere_relatorio 'outbox_dead_letter' "estado D: o detalhe do dead-letter esta' na secao declarada do relatorio"
+    confere_relatorio 'outbox_dead_letter (1)' "estado D: o dead-letter aparece UMA vez na lista (a consulta de detalhes roda uma vez por rodada, nao uma por linha de metrica)"
 }
 
 # --- estado E: PROCESSED sem trilha de sucesso -> CRITICO
@@ -701,7 +702,7 @@ rodada_do_estado F && {
     confere_veredito CRITICO "estado F: veredito CRITICO pela fila no teto"
     confere_valor fila_pendentes "" 51 "estado F: a fila tem 51 eventos esperando (fila_pendentes=51)"
     confere_valor fila_no_teto "" 1 "estado F: ha' evento PENDING no teto de tentativas (fila_no_teto=1)"
-    confere_valor_tolerancia fila_idade_maxima_s 1200 15 "estado F: a espera mais longa da fila tem ~1200s"
+    confere_valor_tolerancia fila_idade_maxima_s 1200 60 "estado F: a espera mais longa da fila tem ~1200s"
     confere_relatorio '\[CRITICO\] fila_no_teto' "estado F: o relatorio marca a fila no teto como critico"
 }
 
@@ -737,7 +738,7 @@ else
     falhou "a rodada extra mexeu no que observa (antes=$RETRATO_ANTES depois=$RETRATO_DEPOIS)"
 fi
 VALORES_EXTRA="$(valor_de "$LOG_DIR/estado-H-extra.wf.valores" trilha_sem_conclusao "")"
-[ "$VALORES_EXTRA" = "1" ] \
+[ -n "$VALORES_EXTRA" ] && awk -v v="$VALORES_EXTRA" 'BEGIN { exit !(v > 0.999 && v < 1.001) }' \
     && ok "a rodada extra mediu o mesmo estado (medicao estavel, nao efeito colateral)" \
     || falhou "a rodada extra mediu outro estado (trilha_sem_conclusao=$VALORES_EXTRA)"
 

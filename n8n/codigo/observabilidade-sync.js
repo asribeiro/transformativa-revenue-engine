@@ -323,6 +323,22 @@ function piorVeredito(a, b) {
 }
 
 /**
+ * Linha VAZIA da consulta de detalhes: e' o que o n8n entrega quando a consulta nao
+ * devolve linha alguma e o no' esta' com `alwaysOutputData` (rodada SAUDAVEL = zero
+ * detalhe, e a cadeia nao pode parar). Isso e' AUSENCIA DE DETALHE, nao um detalhe
+ * com tipo desconhecido: sem esta distincao, toda rodada saudavel fecharia
+ * INDETERMINADO (`tipo_de_detalhe_nao_declarado:(vazio)`) — e a observabilidade que
+ * grita quando esta' tudo bem e' tao inutil quanto a que se cala quando quebra.
+ * Linha com QUALQUER campo preenchido e' dado: tipo nao declarado nela continua
+ * fechando INDETERMINADO.
+ */
+function linhaDeDetalheVazia(linha) {
+    return ehVazio(linha.tipo) && ehVazio(linha.id) && ehVazio(linha.event_type) &&
+        ehVazio(linha.direcao) && ehVazio(linha.status) && ehVazio(linha.quando) &&
+        ehVazio(linha.motivo);
+}
+
+/**
  * Avaliacao dos detalhes (dead-letter, falha de trilha, recusa de trilha):
  * sanitizada e agrupada por TIPO declarado no contrato. Tipo que o contrato nao
  * declara nao e' ignorado em silencio: entra no relatorio como divergencia.
@@ -335,8 +351,10 @@ function avaliarDetalhes(contrato, linhas) {
     var por_tipo = {};
     var divergencias = [];
     var total = 0;
+    var vazias = 0;
     for (var i = 0; i < (linhas || []).length; i++) {
         var linha = linhas[i] || {};
+        if (linhaDeDetalheVazia(linha)) { vazias++; continue; }
         var tipo = texto(linha.tipo);
         if (!tipos[tipo]) {
             divergencias.push('tipo_de_detalhe_nao_declarado:' + (tipo || '(vazio)'));
@@ -355,7 +373,7 @@ function avaliarDetalhes(contrato, linhas) {
         });
         total++;
     }
-    return { por_tipo: por_tipo, divergencias: divergencias, total: total };
+    return { por_tipo: por_tipo, divergencias: divergencias, total: total, linhas_vazias: vazias };
 }
 
 /**
@@ -520,6 +538,7 @@ if (typeof module !== 'undefined' && module.exports) {
         sanitizar: sanitizar,
         metricaDeclarada: metricaDeclarada,
         contratoValido: contratoValido,
+        linhaDeDetalheVazia: linhaDeDetalheVazia,
         limitesDaMetrica: limitesDaMetrica,
         direcaoValida: direcaoValida,
         avaliarValor: avaliarValor,

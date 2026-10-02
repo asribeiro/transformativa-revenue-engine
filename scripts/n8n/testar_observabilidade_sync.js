@@ -327,6 +327,17 @@ const MORTO_SEM_MOTIVO = {
         'o detalhe da trilha mostra a direcao e o motivo nomeado');
 }
 {
+    // `alwaysOutputData`: rodada SAUDAVEL entrega UM item VAZIO como placeholder da consulta
+    // sem linhas. Ausencia de detalhe NAO e' detalhe com tipo desconhecido — sem isso toda
+    // rodada saudavel fecharia INDETERMINADO e o relatorio gritaria quando esta' tudo bem.
+    const r = nucleo.avaliar(contrato, linhas(), [{}], AGORA);
+    verifica(r.veredito === 'OK' && r.indeterminados.length === 0,
+        'linha VAZIA do alwaysOutputData nao vira indeterminado (rodada saudavel tem zero detalhe)');
+    const r2 = nucleo.avaliar(contrato, linhas(), [{ tipo: '', id: 'x', motivo: null }], AGORA);
+    verifica(r2.veredito === 'INDETERMINADO' && r2.indeterminados.some((i) => i.motivo.startsWith('tipo_de_detalhe_nao_declarado')),
+        'linha de detalhe COM dado e tipo vazio continua fechando INDETERMINADO (placeholder e linha quebrada sao coisas diferentes)');
+}
+{
     const r = nucleo.avaliar(contrato, linhas(), detalhes({ tipo_que_ninguem_declarou: [{ id: 'x', motivo: 'y' }] }), AGORA);
     verifica(r.veredito === 'INDETERMINADO' && r.indeterminados.some((i) => i.motivo.startsWith('tipo_de_detalhe_nao_declarado')),
         'tipo de detalhe nao declarado no contrato fecha INDETERMINADO (nada e ignorado em silencio)');
