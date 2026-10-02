@@ -297,3 +297,56 @@ obrigatório, idempotência e ausência de credencial Titan no papel `dev-harnes
 `docs/runbooks/titan-smtp.md`, `scripts/verificar_estrutura.sh`.
 **Depends on:** W5-E08-T01 (fechado e medido) · **Destrava:** W6-E01-T02 (IMAP), W6-E04-T01 (send
 workflow) e, por consequência, o E2E Outbound #002.
+
+## TRE-W6-E01-T02 — Configurar Titan IMAP
+
+- **Componente:** `hermes/integracoes/titan/imap_titan.py` (versão `titan-imap-v1`) + contrato
+  `hermes/integracoes/titan/titan-imap-v1.json` + doc `docs/integrations/titan-imap-v1.md`.
+- A configuração `TRE_TITAN_*` é **validada** antes de qualquer conexão: completude (faltantes
+  nomeados), **matriz porta × TLS do provedor** (`993` implicit_tls · `143` starttls · portas de
+  outro protocolo — `25`/`465`/`587` SMTP e `110`/`995` POP3 — recusadas em
+  `PORTA_DE_OUTRO_PROTOCOLO` · outra porta recusada) e coerência entre porta e segurança declarada —
+  divergência **RECUSA** (`CONFIG_INCOERENTE`), nunca "conserta sozinho".
+- **Invariante de leitura (o traço deste card):** a caixa é aberta **só com `EXAMINE`**
+  (`readonly=True`), todo conteúdo vem de **`BODY.PEEK`** e o componente **audita a própria fonte
+  antes de qualquer conexão** — achando comando de escrita (STORE, EXPUNGE, DELETE, COPY, MOVE,
+  APPEND) ou busca sem `PEEK`, **RECUSA** com `ESCRITA_NO_CODIGO` (exit 3) e não conecta. Medição de
+  ponta no sink: todas as seleções em `EXAMINE`, `total_buscas_sem_peek = 0`,
+  `total_comandos_de_escrita = []` e nenhuma mensagem marcada `\Seen`.
+- **Guardas de ambiente (ADR-005):** em `dev` só sink local e login do domínio de dev
+  (`HOST_NAO_E_DEV`, `USUARIO_NAO_DEV`); `homolog` exige aprovação registrada
+  (`HOMOLOG_SEM_APROVACAO`) e caixa na lista explícita (`CAIXA_NAO_PERMITIDA`); **`prod` RECUSA
+  (exit 4)**.
+- **Segredo:** senha só por `TRE_TITAN_PASSWORD`, mascarada em todo relatório/trilha/arquivo de
+  mensagem, sem caminho por linha de comando, e **checagem fail-closed** de vazamento na gravação
+  (exit 5 `SENHA_VAZADA`); o sink do aceite guarda `LOGIN <usuario> <senha-oculta>`.
+- **Idempotência:** identidade da mensagem `UIDVALIDITY:UID`; `--chave-idempotencia` e `--saida`
+  obrigatórias; replay → `JA_INGERIDO` **sem buscar o corpo de novo**; `--desfazer <identidade>` é
+  dry-run até `--confirmo`, preserva a auditoria e só aceita identidade com **ingesta registrada**.
+- `--planejar`/`--conferir` nunca abrem conexão; `--ingerir` sem `--confirmo` é `DRY_RUN` e não
+  conecta.
+
+**Test plan:** `python3 scripts/integracoes/verificar_imap_titan.py` (suite offline — config, matriz,
+guardas, invariante de leitura **inclusive a violação injetada numa cópia do módulo**, segredo,
+trilha; **67 itens**) + `bash scripts/integracoes/teste_imap_titan_aceite.sh` (sink IMAP descartável em
+`127.0.0.1` com TLS próprio, nos modos `implicit_tls` e `starttls`: TLS/LOGIN/EXAMINE/NOOP, leitura de
+envelopes sem marcar lido, ingesta medida na captura, replay que não relê o corpo, invariante medido no
+sink, guardas, segredo, desfazer, escopo; **33 itens**) + `--prova-de-dente` (6 mutações, cada uma
+reprovando o item esperado; **40 itens**). Evidência = saída completa com exit code. Runbook:
+`docs/runbooks/titan-imap.md`.
+**Rollback:** `git revert` do commit do card — sem DDL, sem migration, sem tabela e sem ato em
+produção; a ingesta grava apenas arquivos locais (`--saida`) e a trilha JSONL, e `--desfazer
+<identidade> --confirmo` marca `DESFEITO` preservando a auditoria. Nada é apagado do servidor em
+nenhum caso.
+**Risco:** Alto — é credencial + canal externo de e-mail, e a leitura de IMAP é o ponto em que "ler"
+costuma **escrever** (flag, remoção, pasta). Mitigado por: invariante de leitura em três camadas
+(EXAMINE, `BODY.PEEK`, auditoria da própria fonte com prova de dente), guarda de dev (host loopback +
+login de dev), lista explícita de caixas em homolog, aprovação registrada, `--confirmo` obrigatório,
+idempotência por `UIDVALIDITY:UID` e ausência de credencial Titan no papel `dev-harness`. A prova
+contra `imap.titan.email` é de **homolog**, com credencial do Sales AI e aprovação do dono (fora deste
+card).
+**Components afetados:** `hermes/integracoes/titan/`, `scripts/integracoes/`,
+`deploy/environments/dev-imap.env`, `.env.example`, `docs/integrations/titan-imap-v1.md`,
+`docs/runbooks/titan-imap.md`, `scripts/verificar_estrutura.sh`.
+**Depends on:** W6-E01-T01 (SMTP, fechado e medido — a branch do card ramifica dele) · **Destrava:**
+W6-E05-T01 (reply ingestion/classification) e, por consequência, o E2E Outbound #002.

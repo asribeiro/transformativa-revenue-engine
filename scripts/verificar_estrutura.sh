@@ -112,5 +112,35 @@ else
   FALHAS=$((FALHAS+1))
 fi
 
+# Artefatos do Titan IMAP (TRE-W6-E01-T02) existem E estao versionados
+for f in hermes/integracoes/titan/imap_titan.py hermes/integracoes/titan/titan-imap-v1.json \
+         scripts/integracoes/sink-imap-dev.py scripts/integracoes/verificar_imap_titan.py \
+         scripts/integracoes/teste_imap_titan_aceite.sh scripts/integracoes/mutar_imap_titan.py \
+         deploy/environments/dev-imap.env docs/integrations/titan-imap-v1.md docs/runbooks/titan-imap.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# Mesma regra do SMTP para o ambiente de dev do IMAP: sem senha versionada e com host de sink local.
+if grep -qE '^TRE_TITAN_PASSWORD=.+$' deploy/environments/dev-imap.env; then
+  echo "FALHOU dev-imap.env carrega valor em TRE_TITAN_PASSWORD (dev-harness nao tem TRE_TITAN_*)"
+  FALHAS=$((FALHAS+1))
+elif grep -qE '^TRE_TITAN_IMAP_HOST=(127\.0\.0\.1|localhost)$' deploy/environments/dev-imap.env; then
+  echo "OK    dev-imap.env sem senha e com host de sink local (loopback)"
+else
+  echo "FALHOU dev-imap.env sem host loopback (a prova de dev e contra sink local, ADR-005)"
+  FALHAS=$((FALHAS+1))
+fi
+# O IMAP le a caixa: o invariante de leitura tem de estar no componente (EXAMINE + PEEK) — se alguem
+# trocar por SELECT de escrita ou por busca sem PEEK, a estrutura acusa antes do aceite.
+if grep -q 'readonly=True' hermes/integracoes/titan/imap_titan.py \
+   && grep -q 'BODY.PEEK' hermes/integracoes/titan/imap_titan.py \
+   && ! grep -qE 'readonly[[:space:]]*=[[:space:]]*False' hermes/integracoes/titan/imap_titan.py; then
+  echo "OK    imap_titan.py abre a caixa em EXAMINE e busca o conteudo por BODY.PEEK"
+else
+  echo "FALHOU imap_titan.py sem o invariante de leitura (EXAMINE + BODY.PEEK)"
+  FALHAS=$((FALHAS+1))
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

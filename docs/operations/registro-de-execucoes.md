@@ -341,3 +341,65 @@ sustenta 16 containers. Nada foi executado.
   `t6smtp.aceite-base.out`, `t6smtp.aceite-dente.out` e `t6smtp.sha256.out` (anexados ao card).
 - Segredos: nenhum valor nesta entrada; a senha usada na prova e um valor de teste local gerado pelo
   proprio aceite e nunca entra em arquivo versionado, argumento de linha de comando ou log.
+
+## 2026-10-02 — container do Hermes (workspace do board TRE, worktree `feature/TRE-W6-E01-T02`) — TRE-W6-E01-T02 (Titan IMAP): entrega medida, sem rede além do loopback
+
+- **O que este card e:** segundo card da onda W6 (canal inbound). Entrega a camada de **configuracao
+  validada** do IMAP do Titan e o **primitivo de leitura** da caixa (listar envelopes e ingerir as
+  mensagens novas uma unica vez cada). Nao toca banco, nao cria tabela, nao classifica resposta (isso e
+  do W6-E05) e nao escreve no servidor.
+- **Invariante de leitura (o traco do card):** a caixa e aberta **somente** com `EXAMINE`
+  (`readonly=True`), todo conteudo vem de `BODY.PEEK` e o proprio componente **audita a fonte antes de
+  qualquer conexao** (`ESCRITA_NO_CODIGO`, exit 3, sem conectar). O aceite mede no sink que **todas** as
+  selecoes foram `EXAMINE`, que `total_buscas_sem_peek = 0`, que `total_comandos_de_escrita = []` e que
+  **nenhuma** mensagem ficou marcada `\Seen` (flags identicas antes e depois).
+- **Ambiente e seguranca:** worktree proprio, nada em producao (ADR-005). O papel dev-harness nao tem
+  `TRE_TITAN_*` (`hermes/policies/dev-harness.yaml`), nenhuma credencial real foi usada e nenhum host
+  fora do loopback foi contatado: os casos "host real" usam `192.0.2.1` (TEST-NET, nao roteavel) e sao
+  sempre recusa medida — se o modulo tivesse tentado conectar, o exit seria 1 (FALHOU), nunca 3/4.
+  `--ambiente prod` recusa por desenho (exit 4).
+- **Medido por execucao real** (verde, exit 0, tres instrumentos):
+  - suite offline `scripts/integracoes/verificar_imap_titan.py`: **IMAP_TITAN_SUITE_OK (67 itens,
+    0 falhas)** — config, inferencias, matriz porta x TLS (993/143; 25/465/587 SMTP e 110/995 POP3
+    recusadas), guardas de ambiente, invariante de leitura (incluindo a **violacao injetada** numa copia
+    do modulo, que a auditoria pega), segredo, trilha/idempotencia/desfazer e contrato;
+  - aceite `scripts/integracoes/teste_imap_titan_aceite.sh` com sink descartavel em `127.0.0.1` (TLS
+    proprio, modos `implicit_tls` e `starttls`): **ACEITE_IMAP_TITAN_001_OK (33 itens, 0 falhas)** —
+    TLS/LOGIN/EXAMINE/NOOP, leitura de envelopes sem marcar lido, ingesta medida na captura (3 arquivos,
+    3 INGERIDO), replay `JA_INGERIDO` que **nao busca o corpo de novo**, invariante medido no sink,
+    guardas com a caixa intacta, senha com 0 ocorrencias em todos os artefatos, desfazer com auditoria
+    preservada e `git status` identico antes/depois;
+  - `--prova-de-dente` (6 mutacoes: sem-guarda-de-host, sem-matriz-porta-tls, ignora-confirmo,
+    senha-sem-mascara, **busca-sem-peek**, sem-idempotencia): **ACEITE_IMAP_TITAN_001_OK (40 itens,
+    0 falhas)** — cada mutacao reprovou **o item esperado** e o controle rodou a suite de novo no modulo
+    intacto, verde.
+- **Defeitos REAIS medidos na rodada 1 e corrigidos** (todos entraram como item de regressao):
+  1. **a captura do sink guardava a senha**: o comando `LOGIN` era registrado cru (`LOGIN <usuario>
+     <senha>`); agora o sink registra `LOGIN <usuario> <senha-oculta>` e o item 8.2 do aceite exige a
+     marca;
+  2. **a auditoria de leitura se auto-detectava**: o padrao de escrita era `"." + "append("`, que casa
+     com `lista.append()` de Python — o modulo recusava a si mesmo (`ESCRITA_NO_CODIGO` com APPEND,
+     BUSCA_SEM_PEEK e BUSCA_ANTIGA). A auditoria passou a mirar o **recebedor da sessao**
+     (`sessao.<metodo>`) e o comando enviado por `uid(...)`, com regex;
+  3. **o DRY_RUN do proprio `--desfazer` servia de alvo**: como o dry-run tambem entra na trilha
+     (auditoria do que NAO aconteceu), um desfazer de mensagem nunca ingerida achava a si mesmo e
+     respondia `DESFEITO`. Agora so uma INGESTA registrada e alvo (`NAO_ENCONTRADO`, exit 1) — item 7.9
+     da suite.
+- **Defeitos do proprio instrumento** (medidos ao rodar, corrigidos): o sink nao implementava STARTTLS
+  (o item 3.2 do aceite reprovou com o modulo correto antes da correcao) e o aceite tinha um
+  `[ "$A" = "$B ]` sem a aspa de fechamento, que quebrava a leitura do proprio roteiro (`unexpected EOF`
+  do bash) — os dois foram corrigidos e o aceite passou a rodar `bash -n` limpo.
+- **Limites declarados:** (a) a prova contra `imap.titan.email` NAO e deste card — exige credencial do
+  Sales AI + aprovacao registrada, e por isso e de **homolog**; (b) o aceite prova TLS contra um
+  certificado proprio de dev: mede negociacao TLS e LOGIN, nao a cadeia de confianca publica (que so o
+  provedor real exercita); (c) nao ha `IDLE`/push nem parser de anexo/HTML nesta v1 — quem repete a
+  rodada e o chamador, com a mesma identidade de mensagem; (d) a trilha e arquivo JSONL fora do banco
+  (quando o banco do TRE estiver de pe, o card de sincronizacao decide se ela passa a viver em
+  `sync_events`); (e) o sink e **estrito por desenho**: o RFC 3501 descartaria a flag em `EXAMINE`, e o
+  sink a aplica mesmo assim para expor a INTENCAO do cliente (mede o pedido, nao apenas o efeito).
+- **Logs brutos:** saidas completas anexadas ao card —
+  `/opt/data/kanban/boards/transformativa-revenue-engine/attachments/t_9d38e360/aceite-suite-imap-titan-67ok.out`,
+  `aceite-imap-titan-33ok.out` e `aceite-imap-titan-dente-40ok.out` (mais `00-cabecalho.out` e
+  `sha256-artefatos.out`).
+- Segredos: nenhum valor nesta entrada; a senha usada nas provas e um valor de teste local gerado pelo
+  proprio aceite e nunca entra em arquivo versionado, argumento de linha de comando ou log.

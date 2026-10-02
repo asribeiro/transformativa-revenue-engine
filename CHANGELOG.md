@@ -401,10 +401,64 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     `TRE_TITAN_DOMINIO_DEV`, `TRE_TITAN_DESTINOS_PERMITIDOS`, `TRE_TITAN_APROVACAO_HUMANA` (sem valor).
     A prova contra `smtp.titan.email` fica em **homolog**, com credencial do Sales AI e aprovação do dono.
 
+- **Configuração do IMAP do Titan (`TRE-W6-E01-T02`)** — segundo card da onda W6 (canal inbound: a
+  resposta do prospect entra por aqui). Entrega a camada de configuração **validada** e o **primitivo
+  de leitura** da caixa:
+  - `hermes/integracoes/titan/imap_titan.py` (versão `titan-imap-v1`) — lê `TRE_TITAN_*`, confere
+    **completude** (faltantes nomeados), **matriz porta × TLS do provedor** (`993` implicit_tls ·
+    `143` starttls · portas de outro protocolo — `25`/`465`/`587` SMTP e `110`/`995` POP3 —
+    recusadas, `PORTA_DE_OUTRO_PROTOCOLO`) e a **coerência** entre porta e segurança declarada;
+    conecta por TLS, mede saudação/CAPACIDADE/LOGIN/EXAMINE/NOOP (`--provar`), lista envelopes
+    (`--listar`) e **ingere** as mensagens novas uma única vez cada (`--ingerir`);
+  - **invariante de leitura** (o traço deste card): a caixa é aberta só com `EXAMINE`
+    (`readonly=True`), todo conteúdo vem de `BODY.PEEK`, e o próprio componente **audita a fonte
+    antes de qualquer conexão** — achando no próprio código um comando de escrita (STORE, EXPUNGE,
+    DELETE, COPY, MOVE, APPEND) ou uma busca sem `PEEK`, RECUSA com `ESCRITA_NO_CODIGO` (exit 3) e
+    não conecta. Os padrões são montados em tempo de execução para a auditoria não se encontrar a si
+    mesma, e a suíte injeta uma violação numa cópia do módulo para provar que a guarda pega;
+  - **guardas de ambiente (ADR-005)**: em `dev` só sink local e login do domínio de dev
+    (`HOST_NAO_E_DEV`, `USUARIO_NAO_DEV`); `homolog` exige aprovação registrada
+    (`HOMOLOG_SEM_APROVACAO`) e caixa na lista explícita (`CAIXA_NAO_PERMITIDA`); **`prod` RECUSA
+    (exit 4)**;
+  - **segredo**: senha só por `TRE_TITAN_PASSWORD`, mascarada em todo relatório/trilha/arquivo de
+    mensagem, sem caminho por linha de comando e com checagem **fail-closed** de vazamento na
+    gravação (exit 5 `SENHA_VAZADA`); o sink guarda o comando `LOGIN <usuario> <senha-oculta>` — o
+    defeito de registrar o comando cru foi medido na rodada 1 e corrigido;
+  - **idempotência**: identidade da mensagem `UIDVALIDITY:UID` (o `UIDVALIDITY` protege contra
+    reutilização de UID quando a caixa é recriada), `--chave-idempotencia` obrigatória, `--saida`
+    obrigatória; replay → `JA_INGERIDO` **sem buscar o corpo de novo**; `--desfazer <identidade>` é
+    dry-run até `--confirmo`, preserva a auditoria e só aceita identidade com ingesta registrada;
+  - `hermes/integracoes/titan/titan-imap-v1.json` (contrato), `docs/integrations/titan-imap-v1.md` e
+    `docs/runbooks/titan-imap.md` (runbook + motivos de recusa);
+  - `scripts/integracoes/sink-imap-dev.py` — sink IMAP de desenvolvimento (só stdlib, TLS próprio,
+    modos `implicit_tls`/`starttls`), **estrito**: registra seleção, buscas sem `PEEK` e comandos de
+    escrita, e aplica `\Seen` na busca sem `PEEK` para expor a intenção do cliente; acompanha
+    `deploy/environments/dev-imap.env` (nomes não secretos);
+  - `scripts/integracoes/verificar_imap_titan.py` — suite **offline** (67 itens: config, matriz,
+    guardas, invariante — inclusive a violação injetada —, segredo, trilha; nenhuma conexão);
+  - `scripts/integracoes/teste_imap_titan_aceite.sh` — aceite com sink descartável e TLS próprio
+    (33 itens: TLS/LOGIN/EXAMINE/NOOP nos dois modos, leitura sem marcar lido, ingesta medida na
+    captura, replay que não relê o corpo, invariante de leitura medido no sink, guardas com caixa
+    intacta, segredo, desfazer, escopo do repositório) e `--prova-de-dente` (6 mutações; 40 itens);
+  - `scripts/integracoes/mutar_imap_titan.py` (mutações da prova de dente). `.env.example` ganhou
+    `TRE_TITAN_IMAP_SEGURANCA`, `TRE_TITAN_IMAP_CAIXA`, `TRE_TITAN_IMAP_LIMITE` e
+    `TRE_TITAN_CAIXAS_PERMITIDAS` (sem valor).
+  - Medido em 02/10/2026, no worktree do card, sem rede além do loopback: suite `IMAP_TITAN_SUITE_OK
+    (67 itens, 0 falhas)` exit 0; aceite `ACEITE_IMAP_TITAN_001_OK (33 itens, 0 falhas)` exit 0;
+    `--prova-de-dente` `ACEITE_IMAP_TITAN_001_OK (40 itens, 0 falhas)` exit 0, com 6 mutações cada
+    uma reprovando o item esperado e o controle verde no módulo intacto. Defeitos reais medidos e
+    corrigidos na rodada 1: a captura do sink guardava o comando `LOGIN` com a senha crua, a
+    auditoria de leitura se auto-detectava (`lista.append()` de Python contava como escrita de IMAP) e
+    o DRY_RUN do próprio `--desfazer` servia de alvo para o desfazer — os três entraram como itens de
+    regressão. A prova contra `imap.titan.email` fica em **homolog**, com credencial do Sales AI e
+    aprovação do dono.
+
 ### Notas de estado
 
 - A onda W6 nasce do plano (doc 11) — as ondas W2 a W5 estão entregues em suas branches
-  `feature/TRE-W*` e ainda não integradas em `develop`; este card ramificou de `develop` (convenção de
-  `BRANCHING.md`) e não depende de código das ondas anteriores.
+  `feature/TRE-W*` e ainda não integradas em `develop`; o card do SMTP ramificou de `develop`
+  (convenção de `BRANCHING.md`) e não depende de código das ondas anteriores. O card do IMAP
+  **depende do SMTP** (`DEPENDS ON: W6-E01-T01`) e por isso ramificou de
+  `feature/TRE-W6-E01-T01` (e299906), compartilhando o namespace `TRE_TITAN_*` e a mesma caixa.
 - Nada em produção e nenhuma credencial real usada: a prova de configuração em desenvolvimento usa um
   sink local descartável (ADR-005).

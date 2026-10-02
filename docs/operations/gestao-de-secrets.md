@@ -47,6 +47,16 @@ contra `smtp.titan.email` é de **homolog**, com a credencial do Sales AI no cof
 `TRE_TITAN_DESTINOS_PERMITIDOS` e `TRE_TITAN_APROVACAO_HUMANA` registrada em
 `docs/operations/registro-de-aprovacoes.md`; `--ambiente prod` é recusado (exit 4, ADR-005).
 
+**Consequência medida no canal inbound (`TRE-W6-E01-T02`):** a mesma regra vale para a leitura da
+caixa. O componente de IMAP recusa host real em `dev` (`HOST_NAO_E_DEV`) e login fora do domínio de dev
+(`USUARIO_NAO_DEV`), e a prova de desenvolvimento usa um **sink IMAP local descartável**
+(`scripts/integracoes/sink-imap-dev.py`, em `127.0.0.1`, modos `implicit_tls` e `starttls`). Em
+`homolog`, além da aprovação registrada, a leitura exige a lista explícita
+`TRE_TITAN_CAIXAS_PERMITIDAS` — **sem a lista, o componente não lê caixa nenhuma**
+(`CAIXA_NAO_PERMITIDA`); `--ambiente prod` é recusado (exit 4). O sink **nunca guarda a senha**: compara
+e descarta, e registra apenas `LOGIN <usuario> <senha-oculta>` (o defeito de registrar o comando cru
+foi medido na rodada 1 do card e corrigido).
+
 ## 4. Inventário (nomes, nunca valores)
 
 Hoje presentes no ambiente: `GITHUB_TOKEN` (rotacionado em 29/09/2026), credenciais dos provedores de LLM,

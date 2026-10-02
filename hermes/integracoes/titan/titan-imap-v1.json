@@ -1,0 +1,145 @@
+{
+  "integracao": "Titan — IMAP inbound (leitura da caixa)",
+  "nome": "titan-imap-v1",
+  "versao": "titan-imap-v1",
+  "card": "TRE-W6-E01-T02",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "componente": "hermes/integracoes/titan/imap_titan.py",
+  "papel": "configuracao validada (completude, matriz porta x TLS, guardas de ambiente) e primitivo de LEITURA da caixa — listar envelopes e ingerir mensagens novas UMA vez cada, com trilha append-only; NAO classifica, NAO responde, NAO escreve no servidor",
+  "irmao": "titan-smtp-v1 (card TRE-W6-E01-T01): o mesmo namespace TRE_TITAN_* e a mesma caixa, no sentido oposto (saida x entrada)",
+
+  "fonte_da_verdade": [
+    "docs/integrations/titan-imap-v1.md (documento do contrato, das guardas e do invariante de leitura)",
+    "docs/operations/gestao-de-secrets.md (§1 principios, §3 segregacao Dev Harness x Sales AI, §5 ciclo de vida)",
+    "hermes/policies/dev-harness.yaml (credenciais_proibidas: TRE_TITAN_*; nao_pode: contatar lead/cliente)",
+    "hermes/policies/sales-ai.yaml (quem pode ler e enviar e-mail pelo Titan, apenas com Human Approval)",
+    "docs/adr/ADR-0005-separacao.md (nada nasce em producao)",
+    "matriz do provedor Titan: imap.titan.email — 993 SSL/TLS; 143 STARTTLS quando habilitado (POP3 e 995, SMTP e 465/587)"
+  ],
+
+  "invariante_de_leitura": {
+    "regra": "ler IMAP nao pode alterar a caixa: nenhuma flag, nenhuma mensagem removida, nenhuma pasta criada",
+    "camadas": [
+      "a caixa e aberta com EXAMINE (select(..., readonly=True)); SELECT de escrita nunca e usado",
+      "todo conteudo vem de BODY.PEEK (corpo e cabecalhos); a busca sem PEEK nao existe no codigo",
+      "o proprio componente AUDITA a fonte antes de qualquer conexao: se achar no proprio codigo um comando de escrita (STORE, EXPUNGE, DELETE, COPY, MOVE, APPEND) ou uma busca sem PEEK, RECUSA com ESCRITA_NO_CODIGO (exit 3) e nao conecta"
+    ],
+    "medicao_de_ponta": "sink de dev ESTRITO: registra selecao, buscas sem PEEK e comandos de escrita, e aplica \\Seen quando a busca nao tem PEEK (mesmo em selecao read-only) para expor a INTENCAO do cliente; o aceite exige total_buscas_sem_peek = 0, total_comandos_de_escrita = [] e mensagens_marcadas_lidas = []",
+    "por_que_o_sink_e_estrito": "o RFC 3501 descarta mudanca de flag em EXAMINE; um sink fiel a isso mascararia um cliente que usa BODY[] em vez de BODY.PEEK[] — a flag nao apareceria por acidente da modalidade de selecao"
+  },
+
+  "variaveis": [
+    {"nome": "TRE_TITAN_IMAP_HOST", "campo": "host", "obrigatoria": true, "uso": "servidor IMAP (imap.titan.email em homolog/prod; sink local em dev)", "segredo": false},
+    {"nome": "TRE_TITAN_IMAP_PORT", "campo": "porta", "obrigatoria": true, "uso": "993 (implicit TLS) ou 143 (STARTTLS); portas de outro protocolo (25/465/587 SMTP, 110/995 POP3) sao recusadas; em dev aceita porta de sink local com seguranca explicita", "segredo": false},
+    {"nome": "TRE_TITAN_IMAP_SEGURANCA", "campo": "seguranca", "obrigatoria": false, "uso": "implicit_tls | starttls | nenhuma; inferida da porta quando 993/143 e ausente; 'nenhuma' so em sink loopback", "segredo": false},
+    {"nome": "TRE_TITAN_IMAP_CAIXA", "campo": "caixa", "obrigatoria": false, "uso": "caixa a ler; padrao INBOX; em homolog/prod precisa estar em TRE_TITAN_CAIXAS_PERMITIDAS", "segredo": false},
+    {"nome": "TRE_TITAN_IMAP_LIMITE", "campo": "limite", "obrigatoria": false, "uso": "maximo de mensagens por rodada; padrao 50, teto 500", "segredo": false},
+    {"nome": "TRE_TITAN_USER", "campo": "usuario", "obrigatoria": true, "uso": "caixa autenticada (a MESMA do SMTP); em dev precisa ser do dominio de dev", "segredo": false},
+    {"nome": "TRE_TITAN_PASSWORD", "campo": "senha", "obrigatoria": true, "uso": "senha da caixa; vive so em memoria, nunca em argumento, saida, relatorio, trilha ou captura do sink", "segredo": true},
+    {"nome": "TRE_TITAN_TIMEOUT", "campo": "timeout", "obrigatoria": false, "uso": "segundos de espera da sessao; padrao 15", "segredo": false},
+    {"nome": "TRE_TITAN_CA", "campo": "ca", "obrigatoria": false, "uso": "CA de confianca alternativa (sink de dev com certificado proprio); ausente = CA do sistema", "segredo": false},
+    {"nome": "TRE_TITAN_DOMINIO_DEV", "campo": "dominio_dev", "obrigatoria": false, "uso": "dominio aceito em dev para o login; padrao dev.local", "segredo": false},
+    {"nome": "TRE_TITAN_CAIXAS_PERMITIDAS", "campo": "caixas_permitidas", "obrigatoria": false, "uso": "lista CSV de caixas autorizadas em homolog/prod; sem a lista o componente nao le caixa nenhuma", "segredo": false},
+    {"nome": "TRE_TITAN_APROVACAO_HUMANA", "campo": "aprovacao_humana", "obrigatoria": false, "uso": "identificador do registro de aprovacao; exigido para falar com o provedor em homolog", "segredo": false}
+  ],
+
+  "matriz_porta_tls": {
+    "993": "implicit_tls — caminho principal (TLS na conexao)",
+    "143": "starttls — alternativa, com STARTTLS negociado",
+    "110": "RECUSA (PORTA_DE_OUTRO_PROTOCOLO) — POP3",
+    "995": "RECUSA (PORTA_DE_OUTRO_PROTOCOLO) — POP3",
+    "25": "RECUSA (PORTA_DE_OUTRO_PROTOCOLO) — SMTP",
+    "465": "RECUSA (PORTA_DE_OUTRO_PROTOCOLO) — SMTP",
+    "587": "RECUSA (PORTA_DE_OUTRO_PROTOCOLO) — SMTP",
+    "outra": "RECUSA (PORTA_NAO_PREVISTA), exceto sink loopback em dev com seguranca explicita",
+    "fonte": "matriz do provedor conferida pelo componente; divergencia entre porta e seguranca declarada RECUSA (CONFIG_INCOERENTE) em vez de corrigir sozinho",
+    "excecao_declarada": "em dev, host loopback (sink) aceita porta fora da matriz se TRE_TITAN_IMAP_SEGURANCA vier explicita — nao se infere TLS de porta de teste; as portas de outro protocolo continuam recusadas"
+  },
+
+  "ambientes": {
+    "dev": {
+      "host": "loopback/sink local obrigatorio (HOST_NAO_E_DEV caso contrario)",
+      "login": "dominio de dev obrigatorio (USUARIO_NAO_DEV caso contrario)",
+      "credencial_real": "nao existe: o papel dev-harness nao tem TRE_TITAN_* (policies/dev-harness.yaml)",
+      "prova": "sink IMAP descartavel em 127.0.0.1 (scripts/integracoes/sink-imap-dev.py), com TLS proprio"
+    },
+    "homolog": {
+      "host": "provedor permitido (imap.titan.email)",
+      "exige": ["TRE_TITAN_APROVACAO_HUMANA registrada", "caixa na lista TRE_TITAN_CAIXAS_PERMITIDAS"],
+      "recusa": "HOMOLOG_SEM_APROVACAO / CAIXA_NAO_PERMITIDA"
+    },
+    "prod": {
+      "status": "RECUSADO por desenho (exit 4, PRODUCAO_NAO_E_DESTE_CARD)",
+      "regra": "ADR-005: nada nasce em producao; promocao e decisao humana registrada, com card proprio"
+    }
+  },
+
+  "guardas": {
+    "confirmo": "--ingerir sem --confirmo e DRY_RUN: nao abre conexao, nao le e nao grava",
+    "chave_idempotencia": "obrigatoria na ingesta (exit 2 sem ela) — nomeia o ESCOPO da rodada",
+    "identidade_da_mensagem": "UIDVALIDITY:UID — o UIDVALIDITY protege contra reutilizacao de UID quando a caixa e recriada",
+    "replay": "mensagem ja registrada com resultado INGERIDO na trilha nao e buscada de novo nem reescrita => JA_INGERIDO",
+    "saida_obrigatoria": "--ingerir sem --saida RECUSA (exit 2): ingesta sem destino e leitura perdida",
+    "limite": "TRE_TITAN_IMAP_LIMITE em 1..500; fora disso RECUSA (LIMITE_INVALIDO)",
+    "fail_closed_do_segredo": "se o valor de TRE_TITAN_PASSWORD aparecer no que seria gravado (trilha, relatorio ou arquivo de mensagem), a gravacao e RECUSADA e o exit e 5 (SENHA_VAZADA)",
+    "desfazer": "--desfazer <UIDVALIDITY:UID> e dry-run ate --confirmo; marca DESFEITO e preserva a auditoria original. Nenhum caso apaga nada do servidor; so uma INGESTA registrada pode ser desfeita (o DRY_RUN do proprio --desfazer nao conta como alvo)"
+  },
+
+  "segredo": {
+    "origem": "TRE_TITAN_PASSWORD (cofre do ambiente; nunca em Git — .env.example so tem nomes vazios)",
+    "mascaramento": "todo relatorio/trilha mostra a senha como <oculta>; a impressao digital da configuracao (identidade_config) e sha256 de host|porta|seguranca|caixa|usuario|timeout|ca, SEM a senha",
+    "nenhum_caminho_por_cli": "o componente nao aceita senha em argumento de linha de comando",
+    "sink": "o sink de dev compara a senha e a descarta; a captura guarda o comando LOGIN com <senha-oculta> (defeito medido na rodada 1, quando a captura guardava o comando cru)",
+    "vazamento": "detectado e recusado no proprio componente (exit 5), com o fato registrado como SENHA_VAZADA"
+  },
+
+  "idempotencia": {
+    "chave": "--chave-idempotencia (escopo da rodada, ex.: 'w6-e05:2026-10-02T23')",
+    "por_mensagem": "identidade UIDVALIDITY:UID + Message-ID registrados na trilha; sha256 do corpo guardado para prova de conteudo sem expor o corpo na trilha",
+    "trilha": "--registro <arquivo.jsonl> append-only, fora do banco; cada evento traz ambiente, identidade da configuracao, identidade da mensagem, tamanho, sha256 e arquivo gravado",
+    "por_que_fora_do_banco": "a tabela de sincronizacao ainda nao existe neste card; a trilha em arquivo e o minimo auditavel desta v1 e nao inventa schema"
+  },
+
+  "saida": {
+    "diretorio": "--saida <dir>: um JSON por mensagem, nome <UIDVALIDITY>-<UID>.json",
+    "campos": ["uid", "identidade_mensagem", "message_id", "de", "para", "assunto", "data", "flags", "tamanho_bytes", "sha256_corpo", "corpo_texto"],
+    "consumidor": "W6-E05 (reply ingestion/classification) le este diretorio: decidir se e resposta, bounce, opt-out ou ruido e do card seguinte, nao deste"
+  },
+
+  "vereditos": {
+    "PLANO": "--planejar (nunca conecta; declara o que falta, as recusas e o resultado da auditoria de leitura)",
+    "CONFIG_COMPLETA": "--planejar com configuracao completa",
+    "CONFIG_INCOMPLETA": "--planejar/--conferir com variavel obrigatoria ausente (nomes, nunca valores)",
+    "CONFIGURACAO_OK": "--conferir aprovou completude, matriz, guardas e invariante de leitura (sem conexao)",
+    "CONEXAO_OK": "--provar mediu saudacao, TLS, LOGIN, CAPACIDADE, EXAMINE e NOOP sem trazer corpo",
+    "LEITURA_OK": "--listar leu os envelopes (cabecalhos) sem trazer corpo e sem marcar lido",
+    "INGERIDO": "mensagens novas trazidas e gravadas UMA vez cada nesta rodada",
+    "JA_INGERIDO": "replay: todas as mensagens da caixa ja constavam na trilha; nada novo foi lido",
+    "NENHUMA_MENSAGEM": "a caixa nao tem mensagem na janela lida",
+    "DRY_RUN": "--ingerir sem --confirmo",
+    "RECUSADO": "guarda/configuracao recusou (exit 3), producao recusada (exit 4) ou escrita no codigo detectada (exit 3)",
+    "FALHOU": "falha de conexao/LOGIN/EXAMINE/leitura (exit 1)"
+  },
+
+  "aceite": {
+    "suite_offline": "scripts/integracoes/verificar_imap_titan.py (config, matriz, guardas, invariante, segredo, trilha — sem conexao)",
+    "aceite_com_sink": "scripts/integracoes/teste_imap_titan_aceite.sh (sink descartavel em 127.0.0.1, TLS proprio, leitura e ingesta medidas, flags conferidas antes/depois)",
+    "prova_de_dente": "scripts/integracoes/mutar_imap_titan.py aplica as mutacoes e o aceite exige que cada uma reprove O ITEM ESPERADO",
+    "runbook": "docs/runbooks/titan-imap.md"
+  },
+
+  "fora_do_card": [
+    "classificar a mensagem e decidir o proximo passo (W6-E05 e a classificacao de resposta)",
+    "compor e enviar outreach (W6-E02/W6-E04) — este componente so le",
+    "conceder Human Approval (W6-E03): a aprovacao entra como identificador e e conferida, nunca concedida",
+    "provar contra imap.titan.email de verdade: exige credencial do Sales AI e aprovacao registrada (homolog), decisao do dono no caminho do W6-E07"
+  ],
+
+  "lacunas": [
+    "a trilha de ingesta e arquivo JSONL (nao tabela): quando o banco do TRE estiver de pe, o card de sincronizacao decide se ela passa a viver em `sync_events` — nao inventar schema aqui",
+    "a v1 nao mantem IDLE/push: quem repete a rodada e o chamador (com a mesma chave de idempotencia e a mesma identidade de mensagem)",
+    "nao ha parser de anexo nem de HTML: o corpo entregue e o text/plain (HTML fica no arquivo bruto do servidor, nao lido aqui)",
+    "TRE_TITAN_IMAP_SEGURANCA=nenhuma existe para o sink de dev e e recusado fora do loopback; em homolog/prod a matriz exige TLS"
+  ]
+}
