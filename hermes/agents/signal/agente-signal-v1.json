@@ -1,0 +1,208 @@
+{
+  "agente": "signal",
+  "papel": "signal_detection",
+  "versao": "1.0.0",
+  "card": "TRE-W4-E03-T01",
+  "onda": "W4",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "02_ARQUITETURA_DA_SOLUCAO.md §2 (Hermes Sales AI: signal detection) e §4 (guardrails L0/L1/L2)",
+    "03_ARQUITETURA_DE_NEGOCIO.md §2 (funil) e §7 (tipos de sinais: vocabulario fechado de 18 tipos)",
+    "04_PROJETO_FISICO_DE_DADOS.md §5 (signals: colunas, indices) e §3 (organizations)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §2 (fluxo empresa descoberta: Hermes -> research/signals) e §7 (idempotencia)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W4: Signal Detector) e §8/gate (empresa -> research/signals/hipotese/contatos)",
+    "12_CONTRATOS_E_GOVERNANCA.md §7 (compliance) e §8 (regras: inferencia marcada, conservar evidencia, audit trail)",
+    "docs/data/data_contract_v1.json (vocabularies.signal_type, source_of_truth.sinais=PostgreSQL, dedup, governance)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "uma_observacao_por_linha": true,
+    "campos": {
+      "organizacao": "objeto com o(s) identificador(es) FORTES da empresa que JA existe no PostgreSQL (cnpj, domain, linkedin_url na prioridade do contrato)",
+      "tipo": "signal_type — um do vocabulario fechado tipos_de_sinal (doc 03 §7 / vocabularies.signal_type do contrato)",
+      "titulo": "texto ate 500 caracteres (opcional: o DDL nao exige titulo e o detector nao inventa um)",
+      "descricao": "texto livre com o que foi observado (opcional)",
+      "fontes": "lista (>=1) de {tipo, url?, trecho?} com o que a fonte mostrou: e a evidencia conservada (compliance). A PRIMEIRA fonte declarada e a primaria: ela vira signal.source_type/source_url; todas vao para signals.evidence.fontes",
+      "data_do_evento": "data/hora ISO do evento observado (opcional; invalida e descartada com motivo, nunca escrita)",
+      "confianca": "numero entre 0 e 1 declarado pela fonte (opcional; ausente = NULL, nao inventada)",
+      "research_run_id": "UUID opcional do research_run que motivou a deteccao (vinculo LOGICO sem FK no DDL): se nao existir em research_runs, e descartado com motivo e o sinal segue sem o vinculo",
+      "categoria": "PROIBIDO na entrada: signal_category e DERIVADA do tipo pela tabela categorias_por_tipo (declarada e coberta por suite); categoria declarada pela fonte e descartada (DERIVADO_NAO_ACEITO)"
+    },
+    "exemplo": "{\"organizacao\":{\"cnpj\":\"11.222.333/0001-81\"},\"tipo\":\"HIRING\",\"titulo\":\"40 vagas de logistica abertas em 30 dias\",\"fontes\":[{\"tipo\":\"LINKEDIN\",\"url\":\"https://www.linkedin.com/company/vale-forte/jobs\",\"trecho\":\"40 vagas abertas no ultimo mes\"}],\"data_do_evento\":\"2026-09-28\",\"confianca\":0.8}",
+    "nao_cria_organizacao": "o sinal SO se prende a empresa que ja existe (o produtor da empresa e o Scout, TRE-W4-E01-T01); identidade que nao casa e RECUSADA"
+  },
+  "tipos_de_sinal": [
+    "GROWTH",
+    "HIRING",
+    "NEW_EXECUTIVE",
+    "NEW_LOCATION",
+    "ERP_CHANGE",
+    "CRM_CHANGE",
+    "DIGITAL_TRANSFORMATION",
+    "AI_INITIATIVE",
+    "M_AND_A",
+    "NEW_PRODUCT",
+    "TECH_ADOPTION",
+    "FUNDING",
+    "PROCESS_COMPLEXITY",
+    "CUSTOMER_COMPLAINT",
+    "SERVICE_VOLUME",
+    "REGULATORY_CHANGE",
+    "EFFICIENCY_PROGRAM",
+    "COST_REDUCTION"
+  ],
+  "categorias_por_tipo": {
+    "GROWTH": "EXPANSAO",
+    "HIRING": "EXPANSAO",
+    "NEW_LOCATION": "EXPANSAO",
+    "NEW_PRODUCT": "EXPANSAO",
+    "FUNDING": "EXPANSAO",
+    "M_AND_A": "CORPORATIVO",
+    "NEW_EXECUTIVE": "CORPORATIVO",
+    "ERP_CHANGE": "TECNOLOGIA",
+    "CRM_CHANGE": "TECNOLOGIA",
+    "TECH_ADOPTION": "TECNOLOGIA",
+    "DIGITAL_TRANSFORMATION": "TECNOLOGIA",
+    "AI_INITIATIVE": "TECNOLOGIA",
+    "PROCESS_COMPLEXITY": "PRESSAO_OPERACIONAL",
+    "CUSTOMER_COMPLAINT": "PRESSAO_OPERACIONAL",
+    "SERVICE_VOLUME": "PRESSAO_OPERACIONAL",
+    "EFFICIENCY_PROGRAM": "EFICIENCIA",
+    "COST_REDUCTION": "EFICIENCIA",
+    "REGULATORY_CHANGE": "REGULATORIO"
+  },
+  "fontes": [
+    "LINKEDIN",
+    "WEB",
+    "GOOGLE",
+    "META",
+    "WHATSAPP",
+    "TITAN",
+    "EVENTOS",
+    "DADOS_PUBLICOS"
+  ],
+  "identidade": {
+    "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+    "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+    "resolucao": "a empresa e resolvida pelos fortes VALIDOS da observacao; 0 casadas = RECUSADA, 1 = segue, 2+ distintas = REVISAO_IDENTIDADE",
+    "forte_invalido_e_descartado": true,
+    "sem_forte_declarado": "RECUSADA (SEM_IDENTIFICADOR_FORTE): sem empresa identificada nao ha sinal a registrar, e o detector nao descobre empresa (quem cria/ingere empresa e o Scout). Identificador forte DECLARADO e invalido tambem e RECUSADA (IDENTIFICADOR_FORTE_INVALIDO); ambiguidade de verdade (2+ empresas casadas) e que vai para a fila humana",
+    "cria_organizacao": false,
+    "escreve_em_organizations": false
+  },
+  "escrita_sinal": {
+    "colunas_escritas": [
+      "id",
+      "organization_id",
+      "signal_type",
+      "signal_category",
+      "title",
+      "description",
+      "source_type",
+      "source_url",
+      "event_date",
+      "detected_at",
+      "confidence",
+      "evidence",
+      "research_run_id",
+      "created_at"
+    ],
+    "colunas_proibidas": [
+      "relevance_score",
+      "buying_signal_points",
+      "decay_factor",
+      "expires_at"
+    ],
+    "motivo_das_proibidas": "a forca e a atualidade do sinal (pontos, relevancia e decaimento) sao o Buying Signal Score — card TRE-W5-E03-T01, com formula homologada propria. O detector entrega o FATO datado com evidencia; nao calcula score. As colunas ficam no default do contrato (decay_factor = 1) e o DDL nao define janela de expiracao.",
+    "coluna_derivada": "signal_category e SEMPRE derivada de signal_type pela tabela categorias_por_tipo; categoria vinda da fonte e descartada (DERIVADO_NAO_ACEITO)",
+    "fonte_primaria": "a PRIMEIRA fonte declarada vira source_type/source_url; a lista inteira fica em evidence.fontes",
+    "uuid": "v4 gerado no produtor (o agente) antes de qualquer escrita (canonical_ids do contrato)"
+  },
+  "vereditos": {
+    "DETECTADO": "sinal gravado em signals (com a categoria derivada e as evidencias) e idempotency_key registrada em sync_events",
+    "JA_DETECTADO": "a chave de idempotencia da MESMA observacao ja existia: nada foi duplicado (nao cria sinal)",
+    "REVISAO_IDENTIDADE": "a identidade casou com organizacoes distintas OU nenhum forte foi declarado: human_approvals PENDING (SIGNAL_IDENTITY_REVIEW); nada escrito em signals",
+    "RECUSADA": "observacao invalida ou empresa inexistente: nada escrito em signals",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "DETECTADO": "COMPLETED",
+    "JA_DETECTADO": "COMPLETED",
+    "REVISAO_IDENTIDADE": "REVIEW_REQUIRED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.signals",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events",
+      "sales_intelligence.human_approvals"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.signals": ["INSERT", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.agent_runs": ["INSERT"],
+      "sales_intelligence.sync_events": ["INSERT", "UPDATE", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.human_approvals": ["INSERT"]
+    },
+    "proibido": [
+      "qualquer escrita em organizations (o sinal e aditivo: a deteccao nao enriquece a empresa)",
+      "qualquer escrita em research_runs, contacts, pain_hypotheses, scores, interactions, recommendations e outbox_events",
+      "INSERT de sinal sem organization_id ou sem signal_type (NOT NULL do DDL)",
+      "INSERT de sinal com coluna de score/decaimento/expiracao (relevance_score, buying_signal_points, decay_factor, expires_at)",
+      "DELETE fora do --desfazer --confirmo",
+      "DDL (CREATE/ALTER/DROP/TRUNCATE)",
+      "escrita em qualquer outra tabela",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "o contrato lista os eventos PG->Odoo (doc 06 §5) e nenhum deles e de sinal; mudanca de estagio do funil tem o Odoo como dono (doc 12 §1)"
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed)",
+    "llm_exige_recibo_jev": true,
+    "recibo_jev_aceito": {"outcome": "PASS", "lane_obrigatoria": true, "decision_id_obrigatorio": true},
+    "recibo_jev_recusado": {"outcome": "ESCALATE", "outcome_bloqueado": "BLOCK", "ausente": "recusa"},
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ],
+    "sem_http_smtp_socket": "o agente nao faz requisicao de rede nenhuma; a fonte entrega a observacao e a evidencia (sem crawler na v1)"
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por observacao processada (agent_name=signal, agent_role=signal_detection, correlation_id do lote, output com veredito e signal_id)",
+    "signals": "uma linha por sinal de fato detectado (idempotency_key em sync_events = 'signal:org:<uuid>:<tipo>:<input_hash>')",
+    "sync_events": "uma linha por sinal ingerido: guarda as evidencias, os descartes com motivo e o correlation_id",
+    "human_approvals": "action_type=SIGNAL_IDENTITY_REVIEW, status=PENDING (so na identidade ambigua ou ausente)",
+    "deteccao": "o detection e DETERMINISTICO na v1: a fonte entrega a observacao; nenhum limiar de relevancia e aplicado (isso e W5)"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "os signals da rodada (veredito DETECTADO, ligados pelo sync_events da chave) + os sync_events desses sinais; nada e restaurado em organizations porque o agente nao escreve la",
+    "padrao": "dry-run (sem --confirmo nada e apagado)",
+    "nao_toca": "organizations, research_runs, agent_runs (auditoria) e human_approvals"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em observacao ou falha de porta)",
+    "2": "uso incorreto",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "sem LLM e sem crawler na v1: a fonte entrega a observacao com evidencia; busca ativa na web/LinkedIn nao esta implementada (o gate do JEV existe e e fail-closed)",
+    "sem score: buying_signal_points, relevance_score, decay_factor e expires_at NAO sao escritos (Buying Signal Score e a W5) — a guarda de escrita recusa quem tentar",
+    "sem hipotese de dor e sem contato: pain_hypotheses e contacts sao W4-E04/E05",
+    "sem outbox: nenhum evento PG->Odoo nasce na deteccao; a passagem de estado no funil e do Odoo (dono do estagio)",
+    "o baseline nao define janela de validade nem limiar de relevancia de sinal: duas observacoes legitimamente distintas do mesmo tipo para a mesma empresa geram dois sinais; o que a idempotencia barra e a MESMA observacao reapresentada",
+    "a deteccao nao julga se o sinal e bom: nenhum limiar de confianca expulsa a observacao (confianca ausente fica NULL e e registrada como veio)",
+    "retention_until/collected_at nao existem no contrato V1 (lacuna ja declarada no compliance do contrato)"
+  ]
+}

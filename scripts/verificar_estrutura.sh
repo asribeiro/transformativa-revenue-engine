@@ -299,5 +299,23 @@ for f in scripts/agentes/teste_research_aceite.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Agente Signal Detector v1 (TRE-W4-E03-T01): terceiro agente da W4 e o produtor do SINAL
+# (`signals`) — resolve a empresa que JA existe pelos identificadores fortes do contrato, deriva a
+# categoria do tipo e grava o fato datado com evidencia, sem criar organizacao e sem calcular score
+# (Buying Signal Score e W5). Se o contrato do agente, o codigo, a suite, o aceite ou o runbook
+# sumirem do git, o card entrega fica sem artefato verificavel — o gate reprova por nome.
+for f in hermes/agents/signal/signal.py hermes/agents/signal/agente-signal-v1.json \
+         hermes/agents/signal/exemplos/observacoes-exemplo.jsonl \
+         scripts/agentes/verificar_agente_signal.py scripts/agentes/teste_signal_aceite.sh \
+         docs/architecture/agente-signal-v1.md docs/runbooks/agente-signal.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_signal_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

@@ -1166,3 +1166,59 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   e `docs/runbooks/agente-research.md`.
 - **Portão de estrutura** (`TRE-W4-E02-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
   artefatos do agente Research (versionados no git, aceite executável).
+
+## [W4 — Hermes Sales AI · Signal Detector] — 02/10/2026
+
+### Added
+
+- **Agente Signal Detector v1 — detecção de sinais** (`TRE-W4-E03-T01`) — o terceiro agente da onda W4
+  fecha o elo que faltava da cadeia do doc 06 (`empresa → pesquisa → signal → hipótese → contato`):
+  recebe observações da fonte, resolve a empresa **que já existe** pelos identificadores fortes do
+  contrato, valida o tipo contra o vocabulário **fechado** de 18 valores (`vocabularies.signal_type`) e
+  grava o **fato datado com evidência** em `signals`:
+  - `hermes/agents/signal/signal.py`, `hermes/agents/signal/agente-signal-v1.json` (contrato legível por
+    máquina) e `hermes/agents/signal/exemplos/observacoes-exemplo.jsonl`;
+  - vereditos `DETECTADO`, `JA_DETECTADO`, `REVISAO_IDENTIDADE`, `RECUSADA`, `ERRO`; **nunca cria
+    empresa**: identidade que não casa é `RECUSADA` (`ORGANIZACAO_NAO_ENCONTRADA`), identidade ambígua
+    (dois fortes casando com organizações distintas) vai para a fila humana
+    (`human_approvals.action_type = SIGNAL_IDENTITY_REVIEW`);
+  - `signal_category` é **derivada** do tipo por tabela declarada (coberta uma vez por tipo, conferida
+    pela suíte) — categoria declarada pela fonte é descartada com motivo, como no `employee_band` do
+    Research;
+  - **nenhum score é escrito**: `buying_signal_points`, `relevance_score`, `decay_factor` e `expires_at`
+    ficam fora da escrita (o Buying Signal Score é `TRE-W5-E03-T01`) e a guarda **recusa** quem tentar;
+  - **nenhuma coluna de `organizations` é tocada** (o sinal é aditivo): a guarda recusa escrita em
+    empresa **pelo motivo de desenho**, com mensagem que nomeia a regra;
+  - idempotência na **entrada** (`signal:org:<uuid>:<tipo>:<input_hash>` em
+    `sync_events.idempotency_key` UNIQUE) numa transação de **dois comandos de escrita**: claim +
+    `INSERT` do sinal ancorado no claim, e fechamento (`UPDATE`) ancorado no sinal **desta rodada** — o
+    replay não insere e não marca sucesso; a **fila humana tem o mesmo claim** (`signal:revisao:…`),
+    então a mesma ambiguidade reapresentada não abre pedido duplicado;
+  - vínculo lógico com o `research_run` que motivou a detecção (`signals.research_run_id`, sem FK no
+    contrato) é **conferido por existência**: vínculo quebrado é descartado com motivo e o sinal segue;
+  - evidência conservada: fontes (a primeira é a primária em `source_type`/`source_url`), trechos,
+    `input_hash` e **todo descarte com campo, motivo e valor** em `signals.evidence` e no
+    `sync_events.request_payload`;
+  - guardas fail-closed: `--ambiente prod` recusado (exit 4), escrita só nas 4 tabelas declaradas,
+    `DELETE` só no desfazer, LLM só com recibo válido do JEV, nenhum cliente HTTP no código, ambiente
+    não declarado recusado; `--planejar` não abre conexão;
+  - `--desfazer <correlation_id>` (dry-run por padrão; `--confirmo` apaga os sinais da rodada e os
+    `sync_events` deles e registra o `ROLLBACK`, sem tocar `organizations`, `research_runs`, `agent_runs`
+    nem `human_approvals`).
+- **Verificação do Signal Detector** (`TRE-W4-E03-T01`) — `scripts/agentes/verificar_agente_signal.py`
+  (suíte offline, **75 itens**, autoteste de **21 mutações** com guarda da própria prova) e
+  `scripts/agentes/teste_signal_aceite.sh` (aceite E2E em container PostgreSQL descartável na VPS,
+  **64 itens** + prova de dente com 4 mutações, cada uma exigindo o **item esperado**);
+  `docs/architecture/agente-signal-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/agente-signal.md`.
+- **Portão de estrutura** (`TRE-W4-E03-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
+  artefatos do agente Signal Detector (versionados no git, aceite executável).
+
+### Fixed
+
+- **`sync_events.entity_type/entity_id` do sinal apontavam para a empresa** (`TRE-W4-E03-T01`) — defeito
+  medido no aceite E2E: com `entity_id = organization_id` a consulta do desfazer (`e.entity_id = s.id`)
+  não achava nada e o `--desfazer --confirmo` **não apagava sinal nenhum** (4 itens reprovados). Corrigido
+  para `entity_type='signal'`/`entity_id=<sinal>` (a empresa fica no payload) e coberto por item próprio
+  (`sync-event-do-sinal-aponta-o-sinal`) mais mutação que o reprova.
+
