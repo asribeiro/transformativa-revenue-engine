@@ -56,9 +56,10 @@ Veredito de sucesso: `ACEITE_E2E_SALES_INTELLIGENCE_001_OK` (uma linha `OK`/`FAL
 
 ## 3. TEST
 
-O plano está no cabeçalho do aceite e detalhado no runbook. Em resumo: guardas (docker, python3,
-migration, os cinco agentes em disco, nome do container livre) → sobe o container descartável e
-aplica a migration 0001 em schema limpo → **A** Scout → **B** Research → **C** Signal → **D** Pain
+O plano está no cabeçalho do aceite e detalhado no runbook. Em resumo: **passo 0** roda as cinco
+suítes offline dos agentes no mesmo commit (diz em que commit a cadeia foi medida) → guardas (docker,
+python3, migration, os cinco agentes em disco, nome do container livre) → sobe o container descartável
+e aplica a migration 0001 em schema limpo → **A** Scout → **B** Research → **C** Signal → **D** Pain
 → **E** Contact → **F** estado final da cadeia → **G** replay das cinco rodadas → **H** guardas de
 ambiente → **I** desfazer na ordem inversa. As fontes de C e D são **geradas a partir dos relatórios
 de B e C** (é isso que torna o encadeamento medido, e não narrado).

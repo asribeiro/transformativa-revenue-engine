@@ -48,6 +48,7 @@ docker ausente, artefato faltando).
 
 | passo | o que mede | por que não dá para fingir |
 | --- | --- | --- |
+| 0 · suítes | as **cinco suítes offline** dos agentes (58 + 65 + 75 + 85 + 60 itens) no **mesmo commit** do aceite | diz em que commit a cadeia foi medida: contrato de agente quebrado reprova aqui, antes de qualquer banco |
 | A · Scout | 3 candidatas → 3 empresas `DISCOVERED`, auditoria por pedido, trilha `INSERT` | o id de cada empresa (usado nos passos seguintes) sai do **relatório da rodada**, não da fixture |
 | B · Research | 4 pedidos nas MESMAS empresas → 4 `research_runs`; enriquece coluna vazia; **não sobrescreve** o que o Scout escreveu (indústria, porte e cidade do Scout sobrevivem a valores diferentes na fonte) | sobrescrever aqui não quebra nenhum teste unitário — só a cadeia, e só se os dois agentes rodarem no mesmo banco |
 | C · Signal | 4 observações, 2 declarando o `research_run_id` **produzido no passo B**; vínculo com run inexistente é descartado com motivo (`RESEARCH_RUN_NAO_ENCONTRADO`) e o sinal fica sem o vínculo | o `research_run_id` é lido do relatório do Research: é o encadeamento que o item mede |
@@ -77,8 +78,8 @@ Cinco mutações, **uma por agente**, aplicadas em cópia do código sob teste:
 
 | mutação | o que quebra | item que tem de reprovar |
 | --- | --- | --- |
-| `scout-sem-idempotencia` | remove o `ON CONFLICT` do claim da chave | `replay-scout-nao-duplica` |
-| `pesquisa-sobrescreve-o-scout` | troca o `COALESCE(NULLIF(...))` por atribuição direta | `pesquisa-rodada1-nao-sobrescreve-o-scout` |
+| `scout-escreve-empresa-sem-identidade` | grava a empresa **sem o identificador forte** que a resolveu | `pesquisa-rodada1-run-aponta-a-empresa-do-scout` |
+| `pesquisa-run-sem-organizacao` | grava a `research_run` sem o vínculo com a empresa | `pesquisa-rodada1-run-aponta-a-empresa-do-scout` |
 | `sinal-anexa-run-inexistente` | passa a anexar o `research_run_id` sem conferir se existe | `cadeia-sinal-run-invalido-nao-anexado` |
 | `hipotese-aceita-lastro-de-outra-empresa` | remove a conferência de dono da evidência | `cadeia-hipotese-evidencia-de-outra-empresa-recusada` |
 | `contato-sem-idempotencia` | remove o `ON CONFLICT` do claim da chave | `replay-contato-nao-duplica` |
@@ -86,6 +87,23 @@ Cinco mutações, **uma por agente**, aplicadas em cópia do código sob teste:
 Regras do dente: baseline verde **antes**; mutação que não se aplica na âncora (`MUTACAO_NAO_APLICAVEL`)
 reprova por buraco de verificação; e "o aceite falhou" **não** conta — o item esperado tem de
 aparecer como `FALHOU`. O dente é fail-closed: baseline vermelho fecha `DENTE_FALHOU` sem medir nada.
+
+**Por que as mutações do E2E são por VÍNCULO e não por "duplicar"/"sobrescrever"** (medido, não
+suposto, nesta rodada): as duas propriedades mais óbvias da cadeia têm **duas camadas independentes**
+cada uma, e nenhuma mutação de um ponto só produz o efeito ruim —
+
+- *replay do Scout*: a chave de idempotência é a **identidade** (claim em `sync_events`) **e** a
+  rodada seguinte resolve a empresa na base. Trocar o `ON CONFLICT` do claim não muda nada (a
+  resolução encontra a empresa antes) e tornar a resolução inerte também não (o claim barra a chave) —
+  medido: as duas mutações ficaram **verdes**, ou seja, inertes;
+- *"não sobrescreve" do Research*: a coluna preenchida nem entra na lista de enriquecimento **e** a
+  guarda exige `COALESCE(NULLIF(col,''), valor)`. Trocar o `COALESCE` por atribuição direta faz a
+  guarda **recusar a escrita** (a rodada inteira vira `ERRO`) — não há mutação de um ponto que produza
+  sobrescrita.
+
+Nos dois casos a propriedade é medida pelo item do aceite (que lê os **valores** e os **vereditos**
+reais) e pela suíte de mutações do próprio agente; o dente do E2E mira o que **só** a cadeia mede: o
+vínculo entre o que um agente escreve e o que o próximo resolve.
 
 ## 6. O que fazer quando reprova
 

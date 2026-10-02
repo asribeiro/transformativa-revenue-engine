@@ -44,6 +44,7 @@
 #        intactos, nada de producao; sha256 do codigo sob teste fixado na evidencia.
 #
 # TEST PLAN (por execucao real; ver o runbook docs/runbooks/e2e-sales-intelligence.md):
+#   passo 0  suites offline dos CINCO agentes (sem banco) no MESMO commit do aceite;
 #   guardas  docker/python3/migration/agentes presentes; o nome do container NAO pode existir
 #            (se existir, ABORTA em vez de mexer no que nao e' dele);
 #   sobe     container novo + migration 0001 em schema limpo;
@@ -582,6 +583,37 @@ rodar_aceite() { # <rotulo>
 }
 
 # ---------------------------------------------------------------------------------------
+# Passo 0 — regressao das CINCO suites offline no MESMO commit (nao toca o banco)
+# ---------------------------------------------------------------------------------------
+regressao_das_suites() {
+  # As suites offline dos cinco agentes reprovam contrato de agente quebrado (paridade de coluna,
+  # vocabulario, guarda de escrita, idempotencia). Elas nao tocam o banco: rodam aqui para que o
+  # veredito do E2E diga em que COMMIT a cadeia foi medida, e nao so' que "os agentes conversaram".
+  local pares=("scout:verificar_agente_scout.py" "research:verificar_agente_research.py"
+               "signal:verificar_agente_signal.py" "pain:verificar_agente_pain_hypothesis.py"
+               "contact:verificar_agente_contact_research.py")
+  local par agente script ok=0 falhou=0 ultima
+  echo "-- passo 0: suites offline dos cinco agentes no mesmo commit (sem banco)"
+  for par in "${pares[@]}"; do
+    agente="${par%%:*}"; script="$RAIZ/scripts/agentes/${par#*:}"
+    if [ ! -f "$script" ]; then
+      echo "FALHOU suite ausente $script"; falhou=$((falhou + 1)); continue
+    fi
+    if python3 "$script" > "$TRABALHO/suite-$agente.out" 2>&1 </dev/null \
+       && grep -q '(0 falhas)' "$TRABALHO/suite-$agente.out"; then
+      ultima="$(grep '^RESULTADO:' "$TRABALHO/suite-$agente.out" | tail -1)"
+      echo "OK     suites-offline-$agente ($ultima)"; ok=$((ok + 1))
+    else
+      echo "FALHOU suites-offline-$agente"
+      grep -E '^RESULTADO:|^FALHOU' "$TRABALHO/suite-$agente.out" | tail -3
+      falhou=$((falhou + 1))
+    fi
+  done
+  echo "-- suites offline: $ok OK / $falhou FALHOU"
+  [ "$falhou" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------------------
 # Prova de dente: uma mutacao por agente, cada uma pelo ITEM ESPERADO
 # ---------------------------------------------------------------------------------------
 aplicar_mutacao() { # <origem> <destino> <alvo> <substituto>
@@ -614,12 +646,19 @@ prova_de_dente() {
   # Mutacoes lidas numa LISTA antes do laco: o corpo chama `docker exec -i` (por psql_t/contagem),
   # que consome o stdin do laco — com here-string as iteracoes 2+ morriam.
   # Formato: nome|agente|alvo|substituto|itens-esperados (o dente exige o ITEM, nao so' "falhou").
+  #
+  # Por que a mutacao do E2E e' por VINCULO e nao "sobrescrever": o "nao sobrescreve" do Research tem
+  # DUAS camadas (a escolha de coluna vazia e o `COALESCE(NULLIF(...))` exigido pela guarda). Trocar o
+  # COALESCE por atribuicao direta num ponto so' faz a guarda RECUSAR a escrita (a rodada inteira vira
+  # ERRO) — nao ha mutacao de um ponto que produza sobrescrita; a propriedade e' medida pelo item do
+  # aceite que le os VALORES reais e pelo autoteste do proprio agente. Aqui a mutacao mira o que so' o
+  # E2E mede: o vinculo entre o que um agente escreve e o que o proximo resolve.
   local linhas=() linha
   while IFS= read -r linha; do
     [ -n "$linha" ] && linhas+=("$linha")
   done <<'EOF'
-scout-sem-idempotencia|scout|        "  ON CONFLICT (idempotency_key) DO NOTHING\n"|        "\n"|replay-scout-nao-duplica
-pesquisa-sobrescreve-o-scout|research|        return "%s = COALESCE(NULLIF(%s, ''), %s)" % (coluna, coluna, lit(valor))|        return "%s = %s" % (coluna, lit(valor))|pesquisa-rodada1-nao-sobrescreve-o-scout
+scout-escreve-empresa-sem-identidade|scout|        valores[tipo] = valor|        valores[tipo] = None|pesquisa-rodada1-run-aponta-a-empresa-do-scout
+pesquisa-run-sem-organizacao|research|        lit(organizacao_id),                          # organization_id|        "NULL",                                       # organization_id|pesquisa-rodada1-run-aponta-a-empresa-do-scout
 sinal-anexa-run-inexistente|signal|                if research_run_id and not self.research_run_existe(research_run_id):|                if False:|cadeia-sinal-run-invalido-nao-anexado
 hipotese-aceita-lastro-de-outra-empresa|pain|            if registro.get("organization_id") != organizacao_id:|            if False:|cadeia-hipotese-evidencia-de-outra-empresa-recusada
 contato-sem-idempotencia|contact|        "ON CONFLICT (idempotency_key) DO NOTHING\n"|        "\n"|replay-contato-nao-duplica
@@ -692,8 +731,11 @@ principal() {
   echo "== ACEITE E2E SALES INTELLIGENCE (TRE-W4-E06-T01) — container descartavel $CONTAINER ($IMAGEM)"
   subir_container
   echo "== container pronto: $(docker inspect -f '{{.State.Status}}' "$CONTAINER")"
-  local ok=0
+  local ok=0 suites_ok=1
+  regressao_das_suites || suites_ok=0
+  echo
   if rodar_aceite "principal"; then ok=1; fi
+  [ "$suites_ok" -eq 1 ] || ok=0
   if [ "$DENTE" -eq 1 ]; then
     if prova_de_dente; then :; else ok=0; fi
   fi
