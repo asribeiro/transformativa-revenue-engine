@@ -333,7 +333,7 @@ rodar_aceite() { # <rotulo>
   item "rodada1-cobertura-org-b" "1.00" \
     "$(contagem "SELECT explanation->>'cobertura' FROM sales_intelligence.scores WHERE organization_id='$ORG_B';")"
   item "rodada1-ausente-nao-vota-org-a" "prontidao_tecnologica" \
-    "$(contagem "SELECT explanation->>'ausentes' FROM sales_intelligence.scores WHERE organization_id='$ORG_A';" | tr -d '[]\"')"
+    "$(contagem "SELECT inputs->>'ausentes' FROM sales_intelligence.scores WHERE organization_id='$ORG_A';" | tr -d '[]\"')"
   item "rodada1-inputs-snapshot-e-hash" "4" \
     "$(contagem "SELECT count(*) FROM sales_intelligence.scores WHERE inputs->>'input_hash' ~ '^[0-9a-f]{64}\$' AND inputs->>'cobertura' IS NOT NULL AND inputs->>'organization_id' IS NOT NULL;")"
   item "rodada1-inputs-sem-dado-de-outra-empresa" "0" \
@@ -345,14 +345,7 @@ rodar_aceite() { # <rotulo>
   item "rodada1-nao-le-sinal-de-terceiro" "0" \
     "$(contagem "SELECT count(*) FROM sales_intelligence.scores WHERE organization_id='$ORG_A' AND inputs->'sinais' @> '[{\"id\":\"$SIG_B1\"}]';")"
   item "rodada1-le-so-as-hipoteses-da-empresa" "1" \
-    "$(contagem "SELECT count(*) FROM sales_intelligence.scores WHERE organization_id='$ORG_A' AND (SELECT count(*) FROM jsonb_array_elements(inputs->'hipoteses')) = 1 AND inputs->'hipoteses' @> '[{\"id\":\"$HIP_A1\",\"impacto\":\"90\"}]';")"
-  # A9: discriminacao MEDIDA nas linhas gravadas (nao na narrativa de quem rodou).
-  item "discriminacao-faixas-distintas" "4" \
-    "$(contagem "SELECT count(DISTINCT floor(score_value/20)) FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;" )"
-  item "discriminacao-margem-minima" "SIM" \
-    "$(contagem "SELECT CASE WHEN (max(score_value)-min(score_value)) >= 30 THEN 'SIM' ELSE 'NAO' END FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;")"
-  item "discriminacao-desvio-da-constante" "SIM" \
-    "$(contagem "SELECT CASE WHEN avg(abs(score_value-50)) >= 10 THEN 'SIM' ELSE 'NAO' END FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;")"
+    "$(contagem "SELECT count(*) FROM sales_intelligence.scores WHERE organization_id='$ORG_A' AND (SELECT count(*) FROM jsonb_array_elements(inputs->'hipoteses')) = 1 AND inputs->'hipoteses' @> '[{\"id\":\"$HIP_A1\"}]' AND (inputs->'hipoteses'->0->>'impacto')::numeric = 90 AND NOT (inputs->'hipoteses' @> '[{\"id\":\"$HIP_B1\"}]');")"
   # A4/A10: auditoria por pedido, claim de sincronizacao amarrado ao score, fila humana.
   item "rodada1-agent-runs-por-pedido" "10" \
     "$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs WHERE agent_name='automation_fit' AND agent_role='automation_scoring' AND agent_version='1.0.0' AND correlation_id='$CORR_R1';")"
@@ -441,6 +434,15 @@ SQL
     "$(contagem "SELECT count(*) FROM sales_intelligence.scores;")"
   item "rodada4-todos-replay" "0" \
     "$(veredito_do_relatorio "$TRABALHO/r4.json" CALCULADO)"
+
+  # ---- A9: discriminacao MEDIDA nas linhas gravadas (a ultima por empresa) ---------
+  # Estado medido aqui: A=76,00 (faixa 3) · B=48,50 (2) · D=83,00 (4) · E=30,00 (1).
+  item "discriminacao-faixas-distintas" "4" \
+    "$(contagem "SELECT count(DISTINCT floor(score_value/20)) FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;" )"
+  item "discriminacao-margem-minima" "SIM" \
+    "$(contagem "SELECT CASE WHEN (max(score_value)-min(score_value)) >= 30 THEN 'SIM' ELSE 'NAO' END FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;")"
+  item "discriminacao-desvio-da-constante" "SIM" \
+    "$(contagem "SELECT CASE WHEN avg(abs(score_value-50)) >= 10 THEN 'SIM' ELSE 'NAO' END FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;")"
 
   # ---- guardas: prod recusado e --planejar sem porta -------------------------------
   local antes
