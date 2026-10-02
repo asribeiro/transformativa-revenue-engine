@@ -195,16 +195,18 @@ passo_codigo() {
 # sem isso, ambiente quebrado viraria "dente cumprido".
 # ---------------------------------------------------------------------------
 juizo_do_dente() { # $1=arquivo de saida do sub-run  $2=marcador da fase  $3=trecho do item esperado
+    # O item pode vir indentado (a fase de codigo imprime os itens da suite com recuo),
+    # por isso a comparacao aceita recuo antes de OK/FALHOU.
     local saida="$1" marcador="$2" esperado="$3"
     if ! grep -q "$marcador" "$saida"; then
         echo "NAO_CONTA (o sub-run nao chegou a' fase $marcador)"
         return
     fi
-    if grep -q "^OK    .*$esperado" "$saida"; then
+    if grep -qE "^[[:space:]]*OK[[:space:]]+.*$esperado" "$saida"; then
         echo "MUTACAO_SEM_DENTE (o item esperado continuou OK)"
         return
     fi
-    if grep -q "^FALHOU .*$esperado" "$saida"; then
+    if grep -qE "^[[:space:]]*FALHOU[[:space:]]+.*$esperado" "$saida"; then
         echo "DENTE_CUMPRIDO"
         return
     fi
@@ -223,21 +225,25 @@ controle_do_juiz() {
     printf 'FASE_MEDICAO_OK\nOK    estado A: veredito OK (rodada saudavel)\n' >"$dir/controle_4.out"
     # 5) a fase de CODIGO tambem tem de ser reconhecida pelo juiz
     printf 'FASE_CODIGO_OK\nFALHOU metrica declarada sem linha fecha INDETERMINADO/exit 3 (OK/0)\n' >"$dir/controle_5.out"
-    local c1 c2 c3 c4 c5
+    # 6) item INDENTADO (a suite imprime com recuo dentro da fase de codigo)
+    printf 'FASE_CODIGO_OK\n      FALHOU metrica declarada sem linha fecha INDETERMINADO/exit 3 (OK/0)\n' >"$dir/controle_6.out"
+    local c1 c2 c3 c4 c5 c6
     c1="$(juizo_do_dente "$dir/controle_1.out" FASE_MEDICAO_OK 'estado C')"
     c2="$(juizo_do_dente "$dir/controle_2.out" FASE_MEDICAO_OK 'estado C')"
     c3="$(juizo_do_dente "$dir/controle_3.out" FASE_MEDICAO_OK 'estado C')"
     c4="$(juizo_do_dente "$dir/controle_4.out" FASE_MEDICAO_OK 'estado C' )"
     c5="$(juizo_do_dente "$dir/controle_5.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
+    c6="$(juizo_do_dente "$dir/controle_6.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
     case "$c1" in *MUTACAO_SEM_DENTE*) ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c2" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c3" in *NAO_CONTA*)        ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c4" in *NAO_CONTA*)        ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c5" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
+    case "$c6" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     if [ "$faltas" -eq 0 ]; then
-        ok "controle do juiz do dente (5 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo)"
+        ok "controle do juiz do dente (6 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo, item indentado)"
     else
-        falhou "controle do juiz do dente ($faltas de 5 saidas sinteticas julgadas errado)"
+        falhou "controle do juiz do dente ($faltas de 6 saidas sinteticas julgadas errado)"
     fi
 }
 
@@ -256,8 +262,10 @@ controle_do_juiz_sha() { # o item de sha256 nao pode ser vacuO: 2 saidas sinteti
 }
 
 if [ "$MODO" = "dente" ]; then
-    DENTE_DIR="$(mktemp -d /tmp/dente-e05t01-XXXXXX)"
-    trap 'rm -rf "$DENTE_DIR"' EXIT
+    # O diretorio do dente fica no LOG_DIR da rodada: e' evidencia reproduzivel
+    # (mutante aplicado, saida de cada sub-run), nao lixo de /tmp.
+    DENTE_DIR="${LOG_DIR}/dente"
+    mkdir -p "$DENTE_DIR"
     cabecalho "--prova-de-dente: o aceite tem dentes?"
     controle_do_juiz "$DENTE_DIR"
     controle_do_juiz_sha "$DENTE_DIR"
