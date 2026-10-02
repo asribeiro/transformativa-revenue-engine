@@ -181,5 +181,24 @@ else
   echo "OK    manifesto do modulo sem valor de senha"
 fi
 
+# Artefatos do consumidor de outbox em n8n (TRE-W3-E02-T01) existem E estao versionados: o
+# workflow e' artefato DERIVADO (contrato + nucleo + SQL) e sem estes arquivos o aceite do card
+# poderia passar na VPS por arquivo que nunca entrou no repo.
+for f in n8n/contracts/outbox-consumer.v1.json n8n/codigo/nucleo-outbox-consumer.js \
+         n8n/sql/ler-pendentes.sql n8n/sql/registrar-resultado.sql \
+         n8n/workflows/TRE-outbox-consumer.json scripts/n8n/montar_workflow.py \
+         scripts/n8n/conferir_contrato_e_workflow.py scripts/n8n/testar_nucleo_consumidor.js \
+         scripts/n8n/mutar_workflow.py scripts/n8n/preparar_massa_ambigua.py \
+         scripts/n8n/verificar-outbox-consumer.sh docs/runbooks/n8n-outbox-consumer.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/n8n/verificar-outbox-consumer.sh scripts/n8n/montar_workflow.py \
+         scripts/n8n/conferir_contrato_e_workflow.py scripts/n8n/mutar_workflow.py; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

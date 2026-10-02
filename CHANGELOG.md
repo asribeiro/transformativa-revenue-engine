@@ -762,6 +762,44 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (versão literal da política e lista fechada de operações) foram reescritos para **ler o próprio
   artefato** — a próxima operação de negócio não os quebra de novo. Runbook:
   `docs/runbooks/odoo-empresa-upsert.md`.
+- **Consumidor de outbox em n8n (`TRE-W3-E02-T01`)** — o caminho de consumo da fila
+  `sales_intelligence.outbox_events` até a escrita de negócio no CRM, **só** pela porta única
+  (`POST /tf/api/v1/<operacao>`, doc 06 §7): nada de XML-RPC, SQL no Odoo ou tabela interna. O
+  consumidor é declarado em quatro artefatos versionados — **contrato** (`n8n/contracts/outbox-consumer.v1.json`:
+  envelope, eventos aceitos, mapeamento evento→campos da política, operação destino, teto de
+  tentativas, classificação HTTP, credenciais por id/nome, entrega serializada), **núcleo em JS puro**
+  (`n8n/codigo/nucleo-outbox-consumer.js`, roda em node **e** no Code node) e dois SQL
+  (`n8n/sql/ler-pendentes.sql` só leitura, `status = ANY(...)` + `LIMIT` do contrato;
+  `n8n/sql/registrar-resultado.sql` grava estado do evento **e** linha de `sync_events` na **mesma
+  transação** — o consumidor nunca escreve na tabela da fila, quem escreve é este SQL). O
+  **workflow** (`n8n/workflows/TRE-outbox-consumer.json`) é **derivado** deles pelo montador
+  (`scripts/n8n/montar_workflow.py`), com o núcleo e o contrato embutidos **byte a byte** nos nós de
+  código; a lente estrutural (`scripts/n8n/conferir_contrato_e_workflow.py`, **55 itens**) reprova
+  divergência entre contrato, núcleo, SQL e workflow, e o workflow nasce **inativo**. Comportamento
+  (contrato §6): evento sem `event_version` é **RECUSADO sem chamada**; `event_type` fora do contrato,
+  identidade ausente ou campo exigido ausente são recusados com motivo nomeado; teto de 3 tentativas
+  → `DEAD_LETTER` **sem nova chamada**; falha transitória → `RETRY` com motivo em `last_error` **e** na
+  trilha; recusa definitiva da API (409 `valor_ambiguo`) → `DEAD_LETTER` com o código do erro.
+  **Dois defeitos foram achados pelo próprio aceite e corrigidos na raiz:** (1) sem
+  `authentication`/`genericAuthType` no nó HTTP o n8n **ignora** a credencial e o pedido saía sem
+  `Authorization` (401 da API) — agora há item que mede o header e uma sonda independente da chave;
+  (2) o nó HTTP disparava o lote **em paralelo** e dois eventos da MESMA identidade criavam **dois
+  parceiros** (E1/E2 com **2 ms** de intervalo na auditoria do servidor, `acao_efetiva:"criar"` nas
+  duas respostas) — a entrega passou a ser **serializada** (batch 1 + intervalo declarados no
+  contrato) e o segundo evento passou a **atualizar** o mesmo parceiro (**217 ms** medidos). Aceite na
+  VPS, sobre cópia byte a byte, em trio descartável próprio (postgres + odoo + n8n, banco
+  `tre_e02_outbox`): **`OUTBOX_CONSUMER_OK (81 itens, 0 falhas)`**, exit 0 — inclui a suíte pura do
+  núcleo **`NUCLEO_CONSUMIDOR_OK (87 itens)`** e os 55 estruturais, 7 eventos de fila no ciclo 1
+  medidos item a item, Odoo **parado** → `RETRY`/`attempts=1`/trilha `FAILED`, Odoo de volta → o retry
+  entrega (`PROCESSED`/`attempts=2`, **uma** linha de trilha, **um** parceiro), evento no teto →
+  `DEAD_LETTER` sem chamada e sem escrita, sonda de chave (200 em `dry_run`), chamadas autenticadas
+  contadas por **delta** da auditoria, segredo fora do versionado e ambiente medido antes/depois.
+  Dentes: **`OUTBOX_CONSUMER_DENTE_OK`** — 4 mutações nomeadas
+  (`sem_validacao_de_envelope`, `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`,
+  `mapeamento_trocado`), cada uma com veredito **`DENTE_CUMPRIDO`** (o item que a mutação quebra
+  reprovou), e o juiz dos dentes conferido por 4 saídas sintéticas (mutação sem efeito, mutação
+  cumprida, ambiente quebrado, âncora quebrada) — sem isso, ambiente quebrado viraria "dente
+  cumprido". Runbook: `docs/runbooks/n8n-outbox-consumer.md`.
 
 ### Notas de estado
 

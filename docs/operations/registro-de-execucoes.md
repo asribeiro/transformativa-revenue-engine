@@ -546,3 +546,79 @@ docker daemon, entao toda execucao vira esta linha):**
   configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E02-T01 (card `t_ba84b412`): consumidor de outbox em n8n (fila -> porta unica da API controlada)
+
+- **Escopo entregue:** o consumidor da fila `sales_intelligence.outbox_events` declarado em **quatro
+  artefatos versionados** — contrato `n8n/contracts/outbox-consumer.v1.json` (esquema 1, versao 1.0.0),
+  nucleo `n8n/codigo/nucleo-outbox-consumer.js` (JS puro: roda em `node` e no Code node), dois SQL
+  (`n8n/sql/ler-pendentes.sql` so leitura; `n8n/sql/registrar-resultado.sql` grava estado do evento +
+  linha de `sync_events` **na mesma transacao**) — e o workflow `n8n/workflows/TRE-outbox-consumer.json`
+  **derivado** deles pelo montador `scripts/n8n/montar_workflow.py` (nucleo e contrato embutidos byte a
+  byte; workflow nasce inativo; `--conferir` reprova divergencia). O consumidor so alcanca o Odoo pela
+  **porta unica** (`POST /tf/api/v1/<operacao>`); grep estrutural reprova XML-RPC, `execute_kw`,
+  `/jsonrpc`, `psycopg` e `res_partner` dentro do workflow.
+- **Leitura e escrita separadas (single-writer):** a fila e' lida por
+  `status = ANY(ARRAY['PENDING','RETRY'])` com `LIMIT` declarado no contrato; a **unica** mutacao e' o
+  `registrar-resultado.sql` (UPDATE do evento + INSERT da trilha, uma transacao). Nenhum caminho do
+  nucleo faz UPDATE na tabela da fila.
+- **Defeito 1 (achado pelo aceite, corrigido):** o no HTTP do workflow nao declarava
+  `authentication: genericCredentialType` + `genericAuthType: httpHeaderAuth` — o n8n **nao enviava** a
+  credencial e a API respondia `401 use an API Key with a Bearer ...`. Correcao: credencial declarada
+  pelo **id/nome** (nunca valor — o valor e' lido pelo preparo e morre com o diretorio), item
+  estrutural exigindo o tipo, item no aceite medindo o header e **sonda independente** da chave
+  (`dry_run`, 200) para separar "chave invalida" de "n8n nao mandou o header".
+- **Defeito 2 (achado pelo aceite, corrigido na raiz — vale para o produto, nao so para o teste):** o
+  no HTTP disparava o lote **em paralelo**: dois eventos da MESMA identidade na mesma leva chegavam a
+  API antes de o primeiro commitar, a busca de identidade da API nao via o registro vizinho e o
+  resultado eram **dois parceiros para a mesma empresa** (`acao_efetiva:"criar"` nas duas respostas,
+  E1/E2 com **2 ms** de intervalo na auditoria do servidor — contra 13 linhas de auditoria medidas onde
+  se esperava 3). Correcao: entrega **serializada** (`batching.batchSize = 1` + intervalo **declarados
+  no contrato** e lidos pelo montador), item no aceite medindo o intervalo entre E1 e E2 (**217 ms**
+  medidos no artefato final, duas ordens de grandeza acima do piso paralelo) e item de negocio exigindo
+  **um** parceiro com o `name` **atualizado** pelo segundo evento. Limite declarado no runbook: a
+  serializacao protege **dentro** de uma instancia de n8n; concorrencia entre instancias (sem
+  `FOR UPDATE SKIP LOCKED`) fica como card proprio antes de escalar.
+- **Outros defeitos do harness (rodadas 2..8), todos corrigidos:** contagem de auditoria sem base
+  (a sonda da chave audita — passou a ser **delta** de uma base medida antes do ciclo 1); verificacao do
+  id estavel do workflow dependia do formato de `list:workflow` (trocada por `export:workflow --id`);
+  `podar()` vs `limpar()` confundidos na leitura de campos do parceiro (whitespace do `psql`); `chown`
+  errado para o uid do container no preparo; `odoo_ci()` precisa de `--stop-after-init
+  --log-level=info` (senao a instalacao do modulo pendura); `secret_scan.sh` chamado do diretorio
+  errado; controle do juiz dos dentes com 2 saidas sinteticas julgadas errado (fail-closed: o juiz
+  devolvia `MUTACAO_SEM_DENTE`/`NAO_CONTA` onde o controle esperava `DENTE_CUMPRIDO`).
+- **Aceite (artefato final, sobre copia byte a byte na VPS):** `OUTBOX_CONSUMER_OK (81 itens,
+  0 falhas)`, exit 0 — trio descartavel proprio (postgres:16 + odoo:19.0 + n8nio/n8n:latest, banco
+  `tre_e02_outbox`, rede propria; **sem tocar** no dev/homolog/prod, medido antes e depois). Inclui:
+  suite pura do nucleo `NUCLEO_CONSUMIDOR_OK (87 itens)`; lente estrutural `CONTRATO_WORKFLOW_OK (55
+  itens)`; 7 eventos de fila no ciclo 1 medidos item a item (valido / atualizacao da mesma identidade /
+  sem `event_version` / fora do contrato / sem `name` / sem identidade / identidade ambigua na API);
+  Odoo **parado** -> `RETRY`, `attempts=1`, trilha `FAILED`; Odoo de volta -> o retry entrega
+  (`PROCESSED`, `attempts=2`, **uma** linha de trilha, **um** parceiro); evento no teto ->
+  `DEAD_LETTER` **sem** chamada e **sem** escrita; sonda da chave 200 em `dry_run`; chamadas
+  autenticadas por delta de auditoria (3 no ciclo 1, 4 no total); `sha256` dos 5 artefatos fixado no
+  inicio e reconferido no fim.
+- **Dentes (prova de que o aceite tem dentes):** `OUTBOX_CONSUMER_DENTE_OK` — as 4 mutações
+  nomeadas (`sem_validacao_de_envelope`, `sem_incremento_de_tentativas`, `sem_teto_de_tentativas`,
+  `mapeamento_trocado`) saíram **`DENTE_CUMPRIDO`** (o item esperado reprovou em cada sub-run) e o
+  **juiz dos dentes** foi conferido por 4 saídas sintéticas (mutação sem efeito → `MUTACAO_SEM_DENTE`,
+  mutação cumprida → `DENTE_CUMPRIDO`, ambiente quebrado → `NAO_CONTA`, âncora quebrada → `NAO_CONTA`).
+  O juiz é o que separa "dente" de "ambiente quebrado" — sem ele, um aceite abortado passaria por
+  prova. Nesta rodada ele próprio reprovou antes de valer (2 de 4 saídas sintéticas julgadas errado)
+  e foi corrigido antes de emitir veredito.
+- **Lição registrada (a mesma do E01-T02, agora com o item consertado):** o veredito do dente depende
+  de o **texto do item** existir tanto no ramo `OK` quanto no ramo `falhou`. Os itens E3/E8/E9/E1
+  passaram a repetir o rótulo estável no ramo de falha (com o diagnóstico entre parênteses) — sem
+  isso o juiz devolve "âncora quebrada" e o dente vira falso vermelho.
+- **Verificadores do projeto (no worktree):** `bash scripts/verificar_estrutura.sh` ->
+  `PASS (0 falhas)`; `bash scripts/secret_scan.sh` -> `PASS (nenhum segredo versionado)`. O
+  `verificar_estrutura.sh` foi estendido para exigir versionados os 12 artefatos deste card (contrato,
+  nucleo, 2 SQL, workflow, montador, lente, suite pura, mutador, massa ambigua, harness e runbook) e
+  com permissao de execucao para os 4 scripts.
+- **Segredos:** nenhum valor nesta entrada e nenhum valor no repositorio. A chave da API nasceu na VPS
+  em arquivo `600` no diretorio descartavel do preparo, lida pelo n8n por arquivo de configuracao, e
+  morreu com o diretorio. O contrato referencia a credencial **apenas** por id/nome.
+- **Limpeza medida:** 0 container, 0 rede e 0 diretorio `/tmp` residual do aceite (`e02t01-*`); os
+  containers do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pe o tempo todo.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.

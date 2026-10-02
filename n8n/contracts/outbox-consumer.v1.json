@@ -1,0 +1,151 @@
+{
+  "esquema": "1",
+  "versao": "1.0.0",
+  "id": "outbox-consumer",
+  "titulo": "Consumidor de outbox_events (PostgreSQL -> Odoo) — card TRE-W3-E02-T01",
+  "descricao": "Declaracao do consumidor que tira os eventos PENDING de sales_intelligence.outbox_events e os entrega a API controlada do Odoo (POST /tf/api/v1/<operacao>, card TRE-W3-E01-T01/T02). Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-outbox-consumer.js), o SQL (n8n/sql/*.sql) e o workflow (n8n/workflows/TRE-outbox-consumer.json) sao montados/verificados a partir deste contrato. Fora da declaracao, a resposta do consumidor e' RECUSA (fail-closed): evento que o contrato nao cobre vai para DEAD_LETTER com motivo nomeado, nunca ignorado em silencio.",
+  "autoridade": {
+    "fonte": [
+      "docs/data/DATA_CONTRACT_V1.md §6 (envelope do evento) e §7 (regras de integracao 1..5)",
+      "docs/data/DATA_CONTRACT_V1.md §4 (outbox_events, sync_events: colunas e papeis)",
+      "doc 06 §7-8 (idempotencia, retry limitado, dead-letter, sync_events)",
+      "doc 12 §2 (evento PG -> Odoo, com event_version)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "dedup por idempotency_key (retry/replay: mesma chave = mesmo efeito, sem repetir escrita) e' do card TRE-W3-E02-T02 — aqui a chave e' DERIVADA do evento, enviada, exigida pela API e registrada na trilha, e o replay nao duplica trilha (ON CONFLICT); a garantia de nao-duplicata no CRM continua vindo da IDENTIDADE declarada na politica da API",
+      "eventos Odoo -> PostgreSQL sao do card TRE-W3-E03-T01",
+      "reconciliacao diaria e' do card TRE-W3-E04-T01",
+      "rate limit, cache e auditoria duravel/observabilidade sao do card TRE-W3-E05-T01",
+      "publicar o workflow na instancia n8n de dev/producao e' passo de OPERADOR (o card entrega o artefato versionado e o caminho medido)"
+    ]
+  },
+  "origem": {
+    "tabela": "sales_intelligence.outbox_events",
+    "status_lidos": ["PENDING", "RETRY"],
+    "limite_por_ciclo": 20,
+    "colunas_lidas": ["id", "aggregate_type", "aggregate_id", "event_type", "payload", "attempts", "status"]
+  },
+  "envelope": {
+    "campos_obrigatorios": ["event_type", "event_version", "payload"],
+    "versoes_suportadas": ["1.0"],
+    "onde_vive": "a tabela V1 (db/migrations/0001_sales_intelligence_v1.sql) nao tem coluna `event_version`: o envelope viaja dentro do jsonb `payload` da linha, como o doc 12 §2 o define — `event_version` na RAIZ do jsonb e os campos do fato em `payload.payload` (o fato escrito direto na raiz tambem e' aceito; o que NAO se aceita e' evento sem `event_version`)",
+    "regra": "contrato §6 regra 5: evento sem event_version (ou com versao desconhecida) e' RECUSADO — nao se interpreta versao por suposicao"
+  },
+  "eventos": [
+    {
+      "event_type": "COMPANY_QUALIFIED",
+      "operacao": "empresa_upsert",
+      "exige_identidade": "aggregate_id",
+      "exigidos": ["name"],
+      "mapeamento": [
+        { "destino": "name", "origem": "payload.name" },
+        { "destino": "tf_company_id", "origem": "aggregate_id" },
+        { "destino": "tf_cnpj", "origem": "payload.cnpj" },
+        { "destino": "tf_domain", "origem": "payload.domain" },
+        { "destino": "tf_linkedin_url", "origem": "payload.linkedin_url" },
+        { "destino": "tf_priority_score", "origem": "payload.priority_score" }
+      ]
+    },
+    {
+      "event_type": "COMPANY_UPDATED",
+      "operacao": "empresa_upsert",
+      "exige_identidade": "aggregate_id",
+      "exigidos": ["name"],
+      "mapeamento": [
+        { "destino": "name", "origem": "payload.name" },
+        { "destino": "tf_company_id", "origem": "aggregate_id" },
+        { "destino": "tf_cnpj", "origem": "payload.cnpj" },
+        { "destino": "tf_domain", "origem": "payload.domain" },
+        { "destino": "tf_linkedin_url", "origem": "payload.linkedin_url" },
+        { "destino": "tf_priority_score", "origem": "payload.priority_score" }
+      ]
+    }
+  ],
+  "destino": {
+    "descricao": "a PORTA UNICA da API controlada do Odoo — nenhum caminho paralelo (nada de XML-RPC direto, SQL no Odoo ou tabela interna)",
+    "rota": "/tf/api/v1/",
+    "metodo": "POST",
+    "modelo": "res.partner",
+    "base_env": "TRE_API_BASE",
+    "autenticacao": "Bearer (credencial do cofre do n8n; nunca no versionado)",
+    "corpo": ["idempotency_key", "correlation_id", "parametros.modelo", "parametros.valores"],
+    "politica_da_api": "odoo/addons/transformativa_sales_ai/api/politica_api.json",
+    "operacoes_declaradas": ["empresa_upsert"],
+    "entrega_serializada": {
+      "batch_size": 1,
+      "intervalo_ms": 250,
+      "motivo": "a fila e' entregue em ORDEM, uma entrega por vez: dois eventos da MESMA identidade em paralelo criam dois parceiros (a busca de identidade da API nao ve o registro ainda nao commitado do pedido vizinho) — o aceite mediu exatamente isso antes desta declaracao"
+    }
+  },
+  "credenciais": {
+    "postgres": {"tipo": "postgres", "id": "tre-dev-postgres", "nome": "TRE dev — sales_intelligence"},
+    "api": {"tipo": "httpHeaderAuth", "id": "tre-dev-api-controlada", "nome": "TRE dev — API controlada Odoo (Bearer)"},
+    "regra": "o versionado carrega ID e NOME da credencial (que sao o contrato de importacao), nunca o valor; quem cria a credencial e' o passo de operador/harness, com a chave lida de arquivo 600"
+  },
+  "retry": {
+    "teto_de_tentativas": 3,
+    "regra": "tentativa de ENTREGA que falha de forma transitoria incrementa attempts; ao alcancar o teto o evento sai da fila como DEAD_LETTER (motivo nomeado) e a trilha e' preservada. Recusa por envelope/contrato/identidade NAO incrementa attempts (nao houve tentativa de entrega); ESGOTADO tambem nao incrementa (a tentativa que estourou ja' foi contada)."
+  },
+  "status": {
+    "entrada": ["PENDING", "RETRY"],
+    "sucesso": "PROCESSED",
+    "falha_transitoria": "RETRY",
+    "recusa": "DEAD_LETTER",
+    "esgotado": "DEAD_LETTER"
+  },
+  "classificacao_http": {
+    "sucesso": "2xx",
+    "recusa_definitiva": "4xx",
+    "falha_transitoria": "5xx e falha de transporte (sem resposta)",
+    "codigos_terminais_do_erro_da_api": [
+      "ambiente_nao_declarado",
+      "ambiente_nao_permitido",
+      "aprovacao_ausente",
+      "acesso_negado",
+      "politica_invalida",
+      "operacao_nao_declarada",
+      "modelo_nao_declarado",
+      "campo_nao_declarado",
+      "campo_obrigatorio_ausente",
+      "campo_fixo_divergente",
+      "valor_invalido",
+      "valor_ambiguo",
+      "identificador_ausente",
+      "idempotency_key_ausente",
+      "idempotency_key_invalida",
+      "dry_run_nao_suportado",
+      "payload_invalido",
+      "limite_excedido"
+    ],
+    "regra": "codigo terminal do envelope de recusa da API e' recusa DEFINITIVA mesmo quando o HTTP e' 5xx (ex.: ambiente/aprovacao) — retry nao conserta configuracao"
+  },
+  "trilha": {
+    "tabela": "sales_intelligence.sync_events",
+    "source_system": "postgres",
+    "target_system": "odoo",
+    "operation": "UPSERT",
+    "status": {
+      "sucesso": "COMPLETED",
+      "falha_transitoria": "FAILED",
+      "recusa": "REFUSED"
+    },
+    "chave_de_idempotencia": {
+      "derivacao": "outbox:<outbox_events.id>:<event_type>",
+      "formato": "^[A-Za-z0-9._:-]{8,128}$",
+      "regra": "derivada do PROPRIO evento (deterministica e reprodutivel: o mesmo evento reexecutado produz a mesma chave) — nao e' aleatoria, para o replay ser reconhecivel pela trilha"
+    },
+    "correlacao": {
+      "derivacao": "outbox:<outbox_events.id>",
+      "regra": "a API ecoa o correlation_id no envelope de resposta (ok e recusa); o consumidor confere o eco contra a decisao que originou a chamada — divergencia vira falha nomeada, nunca sucesso silencioso"
+    },
+    "unicidade": "sync_events.idempotency_key e' UNIQUE no contrato: a trilha e' upsertada pela chave, de modo que retry nao cria linha duplicada"
+  },
+  "ambiente": {
+    "permitido": ["dev"],
+    "regra": "ADR-005: o consumidor de dev so' aponta para o Odoo de dev (o par ambiente/aprovacao e' guardado DENTRO da API controlada, nao no consumidor)"
+  },
+  "segredos": {
+    "regra": "chave da API (Bearer) e credencial do banco vivem no cofre do n8n, importadas fora do versionado (docs/operations/gestao-de-secrets.md); o workflow aponta credencial por id/nome, nunca por valor"
+  }
+}
