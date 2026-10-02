@@ -1228,24 +1228,26 @@ exigida. O texto bruto original daquele card está no anexo
 
 ### 9.2 Suíte própria (nova)
 
-`scripts/verificar_registro_marcado_sem_execucao_automatica.py` — **53 itens, 7 mutações**, autoteste por mutação
+`scripts/verificar_registro_marcado_sem_execucao_automatica.py` — **54 itens, 8 mutações**, autoteste por mutação
 (49 itens + 5 mutações no commit `461a257`; os 4 itens e as 2 mutações da cobertura dos achados D1/D2 entraram no
-conserto do card `t_145eeaef`, ver §9.6).
+conserto do card `t_145eeaef`, ver §9.6; o item e a mutação do caminho anotado **sem piso** entraram no conserto do
+card `t_c21fc474`, ver §9.7).
 Ela prova os dois lados: marcado → `BLOCK` com recibo de 13 campos, motivo **dentro** do recibo e aprovação
 humana exigida; limpo → fluxo normal (ação interna executa). E o encaixe ponta a ponta: card na tabela `tasks` +
 declaração em `acoes-declaradas.yaml`, pelo gate real — o card limpo é liberado (PASS, exit 0) **com a aprovação
 de onda em vigor**, e o card marcado **não** é liberado (BLOCK, exit 3) nem com essa mesma aprovação. Desde o
 §9.6 ela também trava: (a) o rastro no **topo** do campo `override` quando o piso por ambiente age no mesmo card
 (anotação + DDL declarada) e (b) a anotação decidindo em **modo degradado** (política ausente), onde a aprovação
-de onda não libera o card anotado.
+de onda não libera o card anotado. Desde o §9.7 ela trava também (c) o caminho anotado **sem** piso: `humano` é só
+o override do chamador e nenhuma chave dele sai espelhada no topo.
 
 ### 9.3 Saída bruta (evidência)
 
 ```bash
 cd <worktree>
 /opt/hermes/.venv/bin/python scripts/verificar_registro_marcado_sem_execucao_automatica.py --autoteste
-# RESULTADO: PASS (53 itens, 0 falha(s))
-# AUTOTESTE: 7/7 mutacoes reprovadas
+# RESULTADO: PASS (54 itens, 0 falha(s))
+# AUTOTESTE: 8/8 mutacoes reprovadas
 # RESULTADO FINAL: PASS (autoteste OK)   [exit=0]
 ```
 
@@ -1299,3 +1301,42 @@ não valia nesses caminhos. Os dois foram fechados na raiz:
   degradado). Em modo degradado o card anotado agora sai `BLOCK`/exit 3 com `exige_aprovacao_humana: true` e o
   motivo no recibo; a aprovação de onda não o libera. O card **limpo** em modo degradado segue no fluxo
   degradado (escada conservadora + aprovação registrada) — não virou bloqueio geral.
+
+### 9.7 Cobertura do caminho ANOTADO **sem** piso (card `t_c21fc474`, 02/10/2026)
+
+A verificação independente do conserto D1/D2 (card `t_831d01f0`, perfil `tester`) aprovou o conserto e mediu um
+**buraco de cobertura**: o invariante declarado — "`humano` nomeia **só** o override do CHAMADOR; os rastros de
+regra (`registro_marcado`, `piso_por_ambiente`) são **irmãos** dele, no topo do campo `override`" — só estava
+travado no caminho em que o **piso por ambiente também age** (o item monta o card com DDL/migration declarada).
+Naquele caminho é a própria `_compor_override_do_recibo` que reconstrói `humano` a partir de
+`plano["override_do_chamador"]` — e ela **mascarava** uma regressão em `_registrar_proibicao_automatica_no_plano`.
+
+O mutante medido (cópia descartável do bundle do branch do conserto, head `c5867fc`), em
+`hermes/jev/routing/router.py`, `_registrar_proibicao_automatica_no_plano`:
+
+```
+-        plano["override"] = {"humano": humano, "registro_marcado": registro}
++        plano["override"] = {**humano, "registro_marcado": registro}
+```
+
+Com ele, um card anotado com override do chamador declarado e **sem** DDL/migration grava
+`override = {"por": "anderson", "motivo": "revisao manual", "registro_marcado": {...}}` — as chaves do chamador ficam
+espelhadas no topo e `humano` **desaparece** (o override do chamador deixa de ser nomeado). A suíte anterior
+(53 itens + 7 mutações) **passava** por ele: `EXIT 0` (o buraco, medido).
+
+**Correção (cobertura — sem alterar política, sem campo novo no recibo):**
+- item novo **D1 sem piso** — anotação + override do chamador **sem** DDL/migration (o piso não age): `override.humano`
+  é só o override do chamador, `override.registro_marcado` fica no **topo** e **nenhuma** chave do chamador sai
+  espelhada fora de `humano`;
+- o item **D1 com piso** passou a exigir o mesmo invariante de "nenhuma chave espelhada" (antes aceitava o
+  espelhamento — visível quando o mutante age nos dois caminhos);
+- mutação nova na lista da própria suíte (o mutante acima) e, para o dente ser **real**, o autoteste passou a montar
+  a árvore temporária na posição relativa do repo (`hermes/jev/routing/router.py` + política por symlink, mesma
+  convenção da suíte v1.1, `_arvore_do_roteador_mutado`): antes, com o copy plano no diretório temporário, o roteador
+  mutado não achava a política e a suíte reprovava por **exceção** — dente falso, medido. Depois do conserto as 8
+  mutações reprovam por **item** ([FALHA]), não por exceção;
+- medido na raiz: suíte **54 itens PASS + autoteste 8/8**, `exit 0`; o mutante acima, na mesma árvore, reprova
+  **2 itens** (`D1 com piso` e `D1 sem piso`) e a suíte sai `exit 1`; a suíte anterior (53 itens) sobre o mesmo
+  mutante saía `exit 0`;
+- **nenhuma política alterada** (`hermes/jev/policy_v1*.yaml` e `hermes/policies/*` intactos), contrato de 13 campos
+  intacto, nada de credencial.
