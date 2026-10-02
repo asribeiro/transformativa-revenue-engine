@@ -438,5 +438,24 @@ for f in scripts/e2e/verificar-e2e-scoring-nba.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Gerador de abordagem outbound (TRE-W6-E02-T01): sem o aceite E2E, a suite offline, o prompt versionado, a
+# politica e os docs do card versionados, o pedido de aprovacao PENDING e o fail-closed de compliance nao
+# sao conferiveis por terceiro.
+for f in hermes/agents/outreach/outreach_generator.py \
+         hermes/agents/outreach/gerador-abordagem-v1.json \
+         hermes/agents/outreach/politica-outreach-v1.json \
+         hermes/agents/outreach/prompt-abordagem-v1.md \
+         scripts/agentes/verificar_gerador_abordagem.py \
+         scripts/agentes/teste_gerador_abordagem_aceite.sh \
+         docs/architecture/gerador-abordagem-v1.md docs/runbooks/gerador-abordagem.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_gerador_abordagem_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

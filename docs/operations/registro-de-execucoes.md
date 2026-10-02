@@ -2243,3 +2243,49 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   limites declarados no runbook §5 e a massa sintética (o aceite mede o encadeamento e o fail-closed,
   não a acurácia dos scores — isso é W8).
 - Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.
+
+---
+
+## TRE-W6-E02-T01 — Criar GPT outreach generator (`gerador-abordagem-v1`)
+
+**Onde foi medido:** VPS do ambiente (Contabo), árvore sob teste em `/opt/tre/outreach-e02t01-r1/repo`,
+commit `ec6a427` (branch `feature/TRE-W6-E02-T01`, base `feature/TRE-W5-E08-T01`). Container
+descartável `pg-outreach-acc` (imagem `postgres:16`, migration 0001 aplicada por ele mesmo), **removido
+pelo próprio aceite**; `pg-sales-dev`, `pg-odoo-dev`, `odoo-dev` e `proxy-dev` não foram tocados. Nada
+em produção (ADR-005): `--ambiente prod` é recusado com exit 4.
+
+**O que foi medido (execução real, não leitura):**
+
+| Medida | Comando | Resultado |
+|---|---|---|
+| Suíte offline (sem banco, sem rede externa) | `python3 scripts/agentes/verificar_gerador_abordagem.py` | **PASS (100 OK / 0 falhas)**, exit 0 |
+| Autoteste por mutação | `... --autoteste` | **PASS (12/12 mutações detectadas)** — cada mutação reprovou o item esperado |
+| Aceite E2E em PostgreSQL descartável | `bash scripts/agentes/teste_gerador_abordagem_aceite.sh` | **ACEITE_OUTREACH_001_OK (69 OK / 0 FALHOU)** |
+| Prova de dente do aceite | `... --prova-de-dente` | **4/4 dentes**: guarda de contato → `A6 contato com opt_out recusa`; validação de fato → `A8 alucinação RECUSA a rodada`; id aleatório → `A4 replay não duplica pedido`; supersessão desligada → `A5 pedido antigo preservado e EXPIRED` |
+
+**O que o aceite mostra, item a item (amostra dos números medidos):** pedido `PENDING` em `human_approvals`
+com `action_type` da ação recomendada, `entity_type=CONTACT`, canal/tipo/assunto/corpo/cta/citações/hash em
+`proposed_action` e `decided_by` vazio; auditoria em `agent_runs` (`COMPLETED|outreach|1.0.0|outbound-abordagem`)
+com provider/modelo e `prompt_version` **estruturados** em `input`; tokens `NULL` no modo offline (nenhuma
+contagem fingida) e tokens do provedor (321/654) quando a resposta vem por HTTP; nada tocado fora das duas
+tabelas em **nenhuma** rodada (organizations/contacts/recommendations/scores/signals/pain_hypotheses/
+research_runs/interactions/sync_events/outbox_events com as mesmas contagens, outbox em 0); replay com o
+mesmo id; evidência citável nova → pedido novo + anterior `EXPIRED`; mexer só em campo **não** citável
+(`relevance_score`) → replay, sem rascunho novo; contato com `opt_out_email` RECUSA e não grava; empresa sem
+fato nenhum RECUSA (`SEM_EVIDENCIA`); ação `WAIT` ABSTEM; empresa inexistente RECUSA; canal `LINKEDIN`
+respeitado para `PREPARE_LINKEDIN`; alucinação do provedor (número e promessa inventados) RECUSA a rodada e
+**não** grava pedido; `--desfazer` dry-run não apaga e `--confirmo` apaga só o pedido da rodada, com a
+auditoria preservada.
+
+**Correções do instrumento durante a medição** (todas do aceite, não do componente): `gerar()` passava o
+rótulo do caso como argumento do CLI (as rodadas saíam com `unrecognized arguments`); a subquery do contato
+citava o alias `o` fora de escopo (a leitura devolvia `missing FROM-clause entry for table "o"` — corrigido no
+módulo); dois itens usavam `||` antes de `->>` sem parênteses (erro de tipo no psql); itens de booleano
+esperavam `t/f` em vez de `true/false`; a foto de contagens final comparava com a de antes das inserções de
+evidência (falso positivo); e a mutação de evidência do caso A5 alterava só `relevance_score`, campo que
+**não** entra no texto citável — o caso foi reescrito para inserir um sinal novo, e a fronteira virou item
+medido (`A5(a)`).
+
+**Não é homologação:** o veredito técnico deste registro é de quem entregou; a revisão independente é do
+perfil `tester` e a homologação (estágio 7) é do Anderson. Segredos: nenhum valor aqui; a rodada de provedor
+usou chave fictícia contra um stub HTTP local (`127.0.0.1`), e o modo padrão é o renderizador offline.

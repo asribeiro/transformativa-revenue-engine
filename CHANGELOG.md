@@ -1777,3 +1777,30 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   exige a porta do banco (recusa sem ela); o tier **não** é `score_type` (o contrato lista cinco) e o
   aceite mede o encadeamento, **não** a acurácia dos scores nem a conversão das recomendações (W8).
 - Nada em produção (ADR-005): o aceite roda em container descartável removido por ele mesmo.
+
+## [W6 — Titan Outbound MVP]
+
+### Added
+
+- **Gerador de abordagem outbound v1** (`TRE-W6-E02-T01`) — o passo `Hermes -> GPT: gerar abordagem` do
+  doc 06 §3, medido por execução real: `hermes/agents/outreach/outreach_generator.py` lê a recomendação
+  `NEXT_BEST_ACTION` (OPEN) do card W5-E07-T01 e a evidência já existente (organização, contato, pesquisa,
+  dores, sinais, PRIORITY, registro TIER), monta o **prompt versionado** (`prompt-abordagem-v1.md`,
+  `abordagem-v1`) e pede assunto/corpo/CTA ao provedor declarado — `chat-completions` (formato compatível
+  com OpenAI, credencial só por `TRE_OUTREACH_API_KEY`) ou o renderizador determinístico `offline`.
+  A abordagem passa por **validação determinística** (fato sustentado pela evidência, citação `[En]`
+  obrigatória, limites de tamanho, afirmações proibidas) e vira **pedido de aprovação humana** em
+  `human_approvals` (`PENDING`, `proposed_action` JSONB) com auditoria estruturada em `agent_runs` —
+  **nada é enviado** (envio é W6-E04, decisão humana é W6-E03). Idempotência por conteúdo (uuid5 do
+  `entrada_hash`; replay não duplica) e supersessão do `PENDING` anterior para `EXPIRED` quando a evidência
+  citável muda. Compliance fail-closed: `do_not_contact`/`opt_out_*` bloqueiam, sem evidência não há
+  abordagem, provedor sem credencial recusa **sem abrir conexão**, `prod` recusado (exit 4).
+  Medido: suíte offline `PASS (100 OK / 0 falhas)` + autoteste `12/12` mutações; aceite E2E em PostgreSQL
+  descartável com stub local do provedor `ACEITE_OUTREACH_001_OK (69 OK / 0 FALHOU)` com **4 dentes**, cada
+  um reprovando o item esperado.
+
+### Security
+
+- **`TRE-W6-E02-T01`** — credencial de provedor de modelo apenas por variável de ambiente; ausente, a rodada
+  RECUSA antes de abrir conexão. Nenhuma chave em argumento, política, relatório ou registro; a guarda de
+  escrita recusa DDL, escrita fora de `human_approvals`/`agent_runs` e DELETE sem `--confirmo`.

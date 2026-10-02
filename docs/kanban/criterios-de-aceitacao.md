@@ -289,3 +289,26 @@ descartável é removido pelo próprio aceite e o rollback operacional dos dados
 componente.
 **Risco:** Baixo-médio — é medição. O risco real é o instrumento (verde falso sobre cadeia quebrada),
 endereçado pelos itens de composição e pelos dentes.
+
+## TRE-W6-E02-T01 — Criar GPT outreach generator (`gerador-abordagem-v1`)
+
+**Acceptance:** a evidência lida (recomendação `NEXT_BEST_ACTION` OPEN + organização + contato + pesquisa +
+dores + sinais + PRIORITY + registro TIER) vira uma abordagem validada e um **pedido de aprovação humana**
+`PENDING` em `human_approvals` (`action_type` = ação recomendada, `proposed_action` com canal/tipo/assunto/
+corpo/cta/citações/hash/recomendação), auditado em `agent_runs` com provider/modelo/`prompt_version`/
+`entrada_hash` **estruturados**; nada é enviado; nada fora dessas duas tabelas é tocado; replay não duplica;
+evidência citável nova gera pedido novo com o anterior `EXPIRED`; contato bloqueado, ausência de contato,
+ausência de evidência, empresa inexistente e abordagem inválida **recusam sem gravar**; `prod` recusado (exit 4).
+**Test plan:** `python3 scripts/agentes/verificar_gerador_abordagem.py` (100 OK / 0) + `--autoteste` (12/12) +
+`bash scripts/agentes/teste_gerador_abordagem_aceite.sh` na VPS do ambiente (PostgreSQL descartável
+`pg-outreach-acc`, migration 0001, 8 empresas sintéticas, stub HTTP local do provedor) + `--prova-de-dente`
+(4 mutações, cada uma reprovando o item esperado). Evidência = saída completa com exit code e o veredito
+`ACEITE_OUTREACH_001_OK (69 OK / 0 FALHOU)`. Runbook: `docs/runbooks/gerador-abordagem.md`.
+**Rollback:** `--desfazer <correlation_id> [--confirmo]` apaga só os pedidos de aprovação da rodada,
+preservando a auditoria; reverter o merge do branch (sem DDL, sem migration, sem estado externo criado —
+nenhum e-mail enviado, nenhuma atividade no Odoo, nenhum evento de outbox).
+**Risco:** médio — é o primeiro componente que chama modelo. Endereçado por: validação determinística de fato
+sustentado com citação obrigatória, lista declarada de afirmações proibidas, guarda de compliance antes da
+geração, id determinístico (sem duplicação em retry), provedor sem credencial recusando **sem abrir conexão**,
+e o default `offline` (sem rede, sem custo) — cada um com item e dente próprios. O que **não** está coberto
+nesta v1: qualidade da abordagem medida por resposta real (W9) e a decisão humana (W6-E03).
