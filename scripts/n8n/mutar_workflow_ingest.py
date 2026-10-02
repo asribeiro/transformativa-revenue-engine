@@ -12,6 +12,10 @@ Uso:
     python3 scripts/n8n/mutar_workflow_ingest.py --mutacao <nome> --saida <arquivo>
     python3 scripts/n8n/mutar_workflow_ingest.py --listar
 Saida: 0 = mutacao aplicada · 3 = ancora ausente (nao aplicada) · 2 = uso errado.
+
+O campo `item` e' o TRECHO do item do aceite que a mutacao tem de reprovar, palavra por palavra: o
+juiz do dente casa `^FALHOU .*<trecho>` na saida do sub-run, entao o trecho tem de existir NAQUELE
+texto (e so' nele) — trecho que nao casa e' lido como "a mutacao nao tem dente" e o aceite reprova.
 """
 import argparse
 import json
@@ -32,28 +36,28 @@ MUTACOES = {
                    "motivo: 'envelope_sem_versao' };"),
         "troca": ("if (false) return { ok: false, "
                   "motivo: 'envelope_sem_versao' };"),
-        "item": "envelope sem event_version e recusado (422 + REFUSED na trilha)",
+        "item": "envelope sem event_version e recusado",
         "porque": "sem a checagem de versao a porta aceitaria envelope sem `event_version`",
     },
     "sem_formato_da_chave": {
         "no": NO_NUCLEO,
         "ancora": "if (!formatoChave.test(texto(envelope.idempotency_key))) {",
         "troca": "if (false) {",
-        "item": "chave de idempotencia fora do formato e recusada (422 + REFUSED)",
+        "item": "chave de idempotencia fora do formato e recusada",
         "porque": "sem a checagem de formato a porta aceitaria chave torta",
     },
     "sem_campos_exigidos": {
         "no": NO_NUCLEO,
         "ancora": "if (ehVazio(envelope.payload[campo])) {",
         "troca": "if (false) {",
-        "item": "campo exigido ausente e recusado (422 + REFUSED)",
+        "item": "campo exigido ausente e recusado",
         "porque": "sem a checagem de campo exigido a porta aceitaria fato incompleto",
     },
     "sem_on_conflict": {
         "no": NO_INGERIR,
         "ancora": "    ON CONFLICT (idempotency_key) DO NOTHING\n",
         "troca": "",
-        "item": "reenvio do mesmo fato nao cria segunda linha na trilha (duplicado: true)",
+        "item": "reenvio do mesmo fato nao cria segunda linha na trilha",
         "porque": "sem ON CONFLICT o reenvio estoura a UNIQUE em vez de responder duplicado",
     },
 }

@@ -633,8 +633,8 @@ cabecalho "passo D — reenvio do MESMO envelope NAO cria segunda linha (idempot
 odoo_shell "$LOG_DIR/6-replay.log" "$FATOS" -e "TRE_FASE=replay"
 odoo_shell "$LOG_DIR/6-reenvio.log" "$FATOS" -e "TRE_FASE=enviar"
 DUPLICADOS="$(grep -o '"duplicados_no_destino": [0-9]*' "$LOG_DIR/6-reenvio.log" | head -1 | grep -o '[0-9]*')"
-[ "${DUPLICADOS:-0}" = "$ESPERADO_TOTAL" ] && ok "a porta respondeu duplicado para os $ESPERADO_TOTAL reenvios" \
-    || falhou "reenvios reconhecidos como duplicados: ${DUPLICADOS:-0} de $ESPERADO_TOTAL (ver $LOG_DIR/6-reenvio.log)"
+[ "${DUPLICADOS:-0}" = "$ESPERADO_TOTAL" ] && ok "reenvio do mesmo fato nao cria segunda linha na trilha: a porta respondeu duplicado para os $ESPERADO_TOTAL reenvios" \
+    || falhou "reenvio do mesmo fato nao cria segunda linha na trilha: reconhecidos ${DUPLICADOS:-0} de $ESPERADO_TOTAL (ver $LOG_DIR/6-reenvio.log)"
 TRILHA_DEPOIS="$(limpar "$(si "select count(*) from sales_intelligence.sync_events where source_system='odoo'")")"
 [ "$TRILHA_DEPOIS" = "$ESPERADO_TOTAL" ] && ok "a trilha continua com $ESPERADO_TOTAL linhas depois do reenvio (retry nao duplica)" \
     || falhou "a trilha passou para ${TRILHA_DEPOIS:-0} linhas depois do reenvio"
@@ -661,9 +661,18 @@ if printf '%s' "$SAIDA" | grep -q 'HTTP 422' && printf '%s' "$SAIDA" | grep -q '
 else
     falhou "recusa por campo exigido ausente nao veio como esperado: $SAIDA"
 fi
+# Chave de idempotencia fora do formato declarado (`^[A-Za-z0-9._:-]{8,255}$`): o envelope esta'
+# completo, so' a chave e' torta — se a porta aceitar, o `ON CONFLICT` deixa de ser confiavel.
+printf '{"event_type":"STAGE_CHANGED","event_version":"1.0","timestamp":"2026-10-02 12:00:00","idempotency_key":"curta","payload":{"lead_id":1}}' >"$DESC_DIR/recusa-chave-torta.json"
+SAIDA="$(postar /prep/recusa-chave-torta.json /prep/token.txt)"
+if printf '%s' "$SAIDA" | grep -q 'HTTP 422' && printf '%s' "$SAIDA" | grep -q 'idempotency_key_invalida'; then
+    ok "chave de idempotencia fora do formato e recusada (422 + motivo nomeado)"
+else
+    falhou "recusa por chave fora do formato nao veio como esperado: $SAIDA"
+fi
 RECUSAS="$(limpar "$(si "select count(*) from sales_intelligence.sync_events where status='REFUSED'")")"
-[ "$RECUSAS" = "3" ] && ok "as 3 recusas ficaram VISIVEIS na trilha (status REFUSED)" \
-    || falhou "esperava 3 linhas REFUSED, medidas ${RECUSAS:-0}"
+[ "$RECUSAS" = "4" ] && ok "as 4 recusas ficaram VISIVEIS na trilha (status REFUSED)" \
+    || falhou "esperava 4 linhas REFUSED, medidas ${RECUSAS:-0}"
 MOTIVO_NA_TRILHA="$(limpar "$(si "select count(*) from sales_intelligence.sync_events where status='REFUSED' and error_message like 'campo_exigido_ausente:%'")")"
 [ "$MOTIVO_NA_TRILHA" = "1" ] && ok "o motivo da recusa esta' nomeado em error_message" \
     || falhou "motivo da recusa nao esta' nomeado na trilha (${MOTIVO_NA_TRILHA:-0})"
@@ -674,8 +683,8 @@ else
     falhou "token errado nao foi recusado: $SAIDA_TOKEN_ERRADO"
 fi
 TRILHA_SEM_EXTRA="$(limpar "$(si "select count(*) from sales_intelligence.sync_events")")"
-ESPERADO_COM_RECUSAS=$((ESPERADO_TOTAL + 3))
-[ "$TRILHA_SEM_EXTRA" = "$ESPERADO_COM_RECUSAS" ] && ok "a trilha tem $ESPERADO_TOTAL aceitas + 3 recusadas (nada extra entrou)" \
+ESPERADO_COM_RECUSAS=$((ESPERADO_TOTAL + 4))
+[ "$TRILHA_SEM_EXTRA" = "$ESPERADO_COM_RECUSAS" ] && ok "a trilha tem $ESPERADO_TOTAL aceitas + 4 recusadas (nada extra entrou)" \
     || falhou "trilha com ${TRILHA_SEM_EXTRA:-0} linhas (esperado $ESPERADO_COM_RECUSAS)"
 
 cabecalho "passo F — retry limitado no produtor (porta fora do ar e de volta)"
