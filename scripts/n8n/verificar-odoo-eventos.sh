@@ -77,6 +77,9 @@ AQUI="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 RAIZ_REPO="$(cd "$AQUI/../.." && pwd)"
 MODULO_DIR="${TRE_MODULO_DIR:-$RAIZ_REPO/odoo/addons/$MODULO}"
 WORKFLOW="${TRE_WORKFLOW:-$RAIZ_REPO/n8n/workflows/TRE-odoo-events-ingest.json}"
+# Rodada de dente: a sub-rodada recebe o nome da mutacao que ela DEVE reprovar. Serve para declarar
+# (INFO) o unico item que ela tem o direito de nao cumprir: "workflow sob teste diverge do montado".
+MUTACAO_DECLARADA="${TRE_MUTACAO:-}"
 CONTRATO="$RAIZ_REPO/n8n/contracts/odoo-events-ingest.v1.json"
 NUCLEO="$RAIZ_REPO/n8n/codigo/nucleo-ingest-eventos.js"
 SQL_ACEITE="$RAIZ_REPO/n8n/sql/ingerir-evento.sql"
@@ -157,6 +160,10 @@ passo_codigo() {
     fi
     if python3 "$MONTADOR" --conferir --saida "$WORKFLOW" >"$LOG_DIR/0-montador.out" 2>&1; then
         ok "workflow sob teste e' o montado a partir dos artefatos"
+    elif [ -n "$MUTACAO_DECLARADA" ]; then
+        # Rodada de dente: o workflow sob teste e' uma COPIA MUTADA de proposito. Divergir do
+        # montador e' o objetivo da rodada, entao isto e' declarado (INFO), nunca falha.
+        info "workflow sob teste e' a copia MUTADA declarada ($MUTACAO_DECLARADA) — divergir do montador e' o proposito desta rodada"
     else
         falhou "workflow sob teste diverge do montado (ver $LOG_DIR/0-montador.out)"
     fi
@@ -224,7 +231,7 @@ prova_de_dente() {
         local nome="${mutacoes[$i]}" esperado="${itens_esperados[$i]}"
         local copia="$LOG_DIR/mutado-$nome.json"
         if python3 "$MUTADOR" --mutacao "$nome" --saida "$copia" >"$LOG_DIR/mutacao-$nome.out" 2>&1; then
-            TRE_WORKFLOW="$copia" TRE_LOG_DIR="$LOG_DIR/dente-$nome" \
+            TRE_WORKFLOW="$copia" TRE_LOG_DIR="$LOG_DIR/dente-$nome" TRE_MUTACAO="$nome" \
                 bash "$0" --apenas-consumo >"$LOG_DIR/dente-$nome.out" 2>&1
             local veredito; veredito="$(juizo_do_dente "$LOG_DIR/dente-$nome.out" "$esperado")"
             if [ "$veredito" = "DENTE_CUMPRIDO" ]; then
@@ -372,7 +379,9 @@ for _ in $(seq 1 30); do
     sleep 2
 done
 [ "$PRONTO" = "1" ] && ok "postgres descartavel aceitando conexao" || falhou "postgres descartavel nao ficou pronto"
-if [ "$FALHAS" -gt 0 ]; then resumo; fi
+# Aborta so' com o AMBIENTE quebrado (postgres morto): falha de item de codigo nao interrompe a
+# medicao — quem interrompe e' a guarda especifica (docker ausente, artefato ausente, banco inseguro).
+if [ "$PRONTO" != "1" ]; then resumo; fi
 
 si()      { docker exec "$PG_TMP" psql -U "$PG_USER" -d "$BANCO_SI" -tAc "$1" 2>/dev/null; }
 odoo_db() { docker exec "$PG_TMP" psql -U "$PG_USER" -d "$BANCO" -tAc "$1" 2>/dev/null; }
