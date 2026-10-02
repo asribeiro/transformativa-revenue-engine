@@ -476,3 +476,58 @@ class TestApiControlada(HttpCase):
         )
         self.assertEqual(resposta.status_code, 422, resposta.text)
         self.assertEqual(self._codigo(resposta), "dry_run_nao_suportado")
+
+    # ------------------------------------------------------------------ leitura de ARQUIVADOS
+    def test_33_leitura_de_arquivados_ve_o_espelho_arquivado(self):
+        """Card TRE-W3-E04-T01: sem `incluir_arquivados` o ORM esconde o arquivado — e a
+        reconciliacao veria "espelho ausente" onde o espelho esta' ARQUIVADO."""
+        identidade = "7f3d0c2a-1b4e-4a6f-9c1d-2f5b8e0a4c11"
+        parceiro = self.env["res.partner"].create(
+            {"name": "Espelho que foi arquivado", "tf_company_id": identidade, "tf_cnpj": "11.222.333/0001-81"}
+        )
+        parceiro.active = False
+        base_da_leitura = {
+            "modelo": "res.partner",
+            "filtro": [["tf_company_id", "=", identidade]],
+            "campos": ["id", "active", "tf_cnpj"],
+            "limite": 5,
+        }
+        sem_o_parametro = self._post("crm_registros_ler", {"parametros": dict(base_da_leitura)})
+        self.assertEqual(sem_o_parametro.status_code, 200, sem_o_parametro.text)
+        self.assertEqual(sem_o_parametro.json()["dados"]["registros"], [], sem_o_parametro.text)
+
+        com_o_parametro = self._post(
+            "crm_registros_ler", {"parametros": dict(base_da_leitura, incluir_arquivados=True)}
+        )
+        self.assertEqual(com_o_parametro.status_code, 200, com_o_parametro.text)
+        registros = com_o_parametro.json()["dados"]["registros"]
+        self.assertEqual(len(registros), 1, com_o_parametro.text)
+        self.assertEqual(registros[0]["id"], parceiro.id)
+        self.assertFalse(registros[0]["active"])
+
+    def test_34_leitura_de_arquivados_sem_active_422(self):
+        """Ver o ARQUIVADO sem pedir o estado nao distingue arquivado de ativo: recusa nomeada."""
+        resposta = self._post(
+            "crm_registros_ler",
+            {"parametros": {"modelo": "res.partner", "campos": ["id"], "incluir_arquivados": True}},
+        )
+        self.assertEqual(resposta.status_code, 422, resposta.text)
+        self.assertEqual(self._codigo(resposta), "campo_obrigatorio_ausente")
+
+    def test_35_leitura_de_arquivados_fora_da_declaracao_422(self):
+        """Pedir arquivados em operacao que NAO declara a leitura e' recusa nomeada, nunca silencio."""
+        self.icp.set_param("tf.api.politica", self.politica_de_teste)
+        resposta = self._post(
+            "teste_ler_sem_dry_run",
+            {"parametros": {"modelo": "res.partner", "campos": ["id"], "incluir_arquivados": True}},
+        )
+        self.assertEqual(resposta.status_code, 422, resposta.text)
+        self.assertEqual(self._codigo(resposta), "parametro_nao_declarado")
+
+    def test_36_leitura_de_arquivados_nao_booleano_422(self):
+        resposta = self._post(
+            "crm_registros_ler",
+            {"parametros": {"modelo": "res.partner", "campos": ["id", "active"], "incluir_arquivados": "sim"}},
+        )
+        self.assertEqual(resposta.status_code, 422, resposta.text)
+        self.assertEqual(self._codigo(resposta), "valor_invalido")

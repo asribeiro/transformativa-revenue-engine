@@ -240,8 +240,9 @@ class TestAclSeguranca(TransactionCase):
 
         A aprovacao humana do TRE vive FORA do Odoo (registro de aprovacoes + gate JEV) e e'
         decisao do Anderson. O que se mede aqui e' que este modulo nao cria caminho nenhum para
-        uma maquina conceder aprovacao: (a) a superficie de ACL do modulo e' exatamente o proprio
-        modelo, (b) os grupos do modulo nao alcancam os grupos de administracao do Odoo,
+        uma maquina conceder aprovacao: (a) a superficie de ACL do modulo fica dentro dos modelos
+        do proprio modulo (derivada de `ir.model`, para nao envelhecer a cada modelo novo),
+        (b) os grupos do modulo nao alcancam os grupos de administracao do Odoo,
         (c) o usuario do Sales AI nao administra OUTRO usuario, (d) nao cria regra de acesso, e
         (e) a tentativa de se dar o grupo de administrador NAO promove (medida, nao suposta).
         """
@@ -250,9 +251,29 @@ class TestAclSeguranca(TransactionCase):
         ])
         self.assertTrue(dados, 'o modulo nao declara ACL nenhuma')
         acls = self.env['ir.model.access'].sudo().browse(dados.mapped('res_id'))
+        # A superficie de ACL do modulo tem de ficar DENTRO dos modelos do proprio modulo.
+        # Nao e' a lista dos modelos que "hoje existem": a expectativa e' DERIVADA de `ir.model`
+        # (quais modelos este modulo registra), entao ela nao envelhece quando um card novo cria
+        # modelo. O defeito que este conserto mede: o `tf.evento.outbox` entrou no card
+        # TRE-W3-E03-T01 (commit d0b8d5a) COM ACL propria e esta expectativa ficou presa em
+        # `{MODELO}` — a suite do modulo passou a reprovar por defeito HERDADO, nao por violacao.
+        # (`git log -1 -- tests/test_acl_seguranca.py` = 060c369, anterior ao d0b8d5a.)
+        # DERIVADO dos dados do proprio modulo (`ir.model.data` com `model = ir.model`): sao os
+        # modelos que ESTE modulo registra. `ir.model.modules` nao serve para filtrar em `search`
+        # (campo nao armazenado — medido: o `search` estoura no SQL), entao a derivacao vem do
+        # registro do modulo, nao da coluna.
+        modelos_do_modulo = set(
+            self.env['ir.model'].sudo().browse(
+                self.env['ir.model.data'].sudo().search([
+                    ('module', '=', MODULO), ('model', '=', 'ir.model'),
+                ]).mapped('res_id')
+            ).mapped('model')
+        )
+        self.assertTrue(modelos_do_modulo, 'o modulo nao registra modelo nenhum')
+        self.assertTrue(modelos_do_modulo >= {MODELO}, 'o modelo do card nao esta em ir.model')
         self.assertEqual(
-            set(acls.mapped('model_id.model')), {MODELO},
-            'a superficie de ACL do modulo tem de ser so o proprio modelo',
+            set(acls.mapped('model_id.model')) - modelos_do_modulo, set(),
+            'a superficie de ACL do modulo tem de ficar dentro dos modelos do proprio modulo',
         )
         grupo_system = self.env.ref('base.group_system')
         proibidos = {grupo_system.id, self.env.ref('base.group_erp_manager').id}

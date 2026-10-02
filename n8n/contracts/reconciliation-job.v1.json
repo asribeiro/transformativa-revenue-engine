@@ -1,0 +1,414 @@
+{
+  "esquema": "1",
+  "versao": "1.0.0",
+  "id": "reconciliation-job",
+  "titulo": "Job diario de RECONCILIACAO — entidades esperadas, IDs cruzados e eventos pendentes (card TRE-W3-E04-T01)",
+  "descricao": "Declaracao do job de reconciliacao do doc 06 §8: comparar entidades esperadas, verificar IDs cruzados, verificar eventos pendentes, detectar divergencias e GERAR RELATORIO — e NUNCA corrigir dado ambiguo em silencio. O job e' SOMENTE LEITURA por construcao: le o lado PostgreSQL por duas consultas SQL (SELECT/WITH puro), le o lado Odoo pela PORTA UNICA (`crm_registros_ler`, a primitiva de leitura declarada na politica da API) e devolve um relatorio com as divergencias NOMEADAS. Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-reconciliacao.js), os dois SQL (n8n/sql/reconciliacao-*.sql) e o workflow (n8n/workflows/TRE-reconciliation.json) sao montados/verificados a partir deste contrato. Fora da declaracao a resposta e' INDETERMINADO (fail-closed): um lado que nao se pode medir nao autoriza dizer que esta' tudo certo.",
+  "autoridade": {
+    "fonte": [
+      "doc 06 §8 (reconciliation: job diario que compara entidades esperadas, verifica IDs cruzados e eventos pendentes, detecta divergencias e gera relatorio — e 'nunca corrigir silenciosamente dados ambiguos')",
+      "doc 02 §3 ('polling apenas para reconciliation, nao como arquitetura principal')",
+      "doc 07 §6 (W3: sync, idempotencia, Odoo -> PostgreSQL, reconciliation, observabilidade)",
+      "docs/data/DATA_CONTRACT_V1.md §4 (organizations/contacts: odoo_partner_id), §6 (envelope e regras de integracao 1..5) e §5/§3 (IDs canonicos: `organizations.id` <-> `res.partner.tf_company_id`; `contacts.id` <-> `contacts.odoo_partner_id`)",
+      "odoo/addons/transformativa_sales_ai/api/politica_api.json -> operacao `crm_registros_ler` (a primitiva de leitura da integracao, declarada para os cards TRE-W3-E03-T01/TRE-W3-E04-T01)",
+      "n8n/contracts/outbox-consumer.v1.json (retry.teto_de_tentativas e status.entrada da fila) e n8n/contracts/odoo-events-ingest.v1.json (vocabulario da trilha)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "CORRIGIR divergencia: o job NAO escreve. A correcao e' ato de operador, com a divergencia nomeada pelo relatorio na mao (doc 06 §8: 'nunca corrigir silenciosamente dados ambiguos'). Nao existe caminho de escrita neste contrato — nem INSERT, nem UPDATE, nem HTTP de escrita;",
+      "observabilidade da sincronizacao (metricas da fila, dead-letter com motivo, sucesso sem prova) e' do card TRE-W3-E05-T01: aqui a fila entra apenas como DIVERGENCIA entre duas tabelas que deveriam concordar (evento entregue que continua na fila), nunca como metrica;",
+      "o CONSUMO da fila e o dedup por chave sao dos cards TRE-W3-E02-T01/TRE-W3-E02-T02; a INGESTAO de eventos Odoo -> PostgreSQL e' do card TRE-W3-E03-T01;",
+      "materializar entidade de negocio por evento (ex.: `interactions`) NAO esta' no contrato V1 — o alvo da reconciliacao sao as entidades que o contrato declara e a trilha;",
+      "a varredura da base Odoo INTEIRA (paginacao por `write_date`) e a varredura da base PostgreSQL inteira sem lote sao ampliacao declarada (`lacunas_declaradas`); a rodada cobre o lote declarado e o relatorio diz se a janela foi completa;",
+      "ativar a agenda na instancia n8n de dev/homolog/producao e' passo de OPERADOR: o workflow nasce inativo (ADR-005);",
+      "o destino do relatorio (canal de plantao, e-mail, painel) e' decisao do dono; o job entrega o relatorio como saida da rodada"
+    ]
+  },
+  "fontes": {
+    "origem": {
+      "sistema": "postgres",
+      "descricao": "as entidades que o PostgreSQL espera ver espelhadas no CRM (doc 12 §1/§2: o PostgreSQL e' dono de empresa/contato/inteligencia; o Odoo e' o espelho operacional)",
+      "tabelas": [
+        "sales_intelligence.organizations",
+        "sales_intelligence.contacts",
+        "sales_intelligence.sync_events"
+      ],
+      "somente_leitura": true
+    },
+    "pendentes": {
+      "sistema": "postgres",
+      "descricao": "o estado da FILA e da TRILHA do mesmo fato: o que a fila diz e o que a trilha diz tem de contar a mesma historia",
+      "tabelas": [
+        "sales_intelligence.outbox_events",
+        "sales_intelligence.sync_events"
+      ],
+      "somente_leitura": true
+    },
+    "destino": {
+      "sistema": "odoo",
+      "descricao": "o lado CRM lido PELA PORTA UNICA e somente por ela — nada de XML-RPC, nada de SQL no Odoo, nenhuma tabela interna",
+      "modelo": "res.partner",
+      "operacao_de_leitura": "crm_registros_ler",
+      "base_env": "TRE_API_BASE",
+      "autenticacao": "Bearer (credencial do cofre do n8n; nunca no versionado)",
+      "envelope_da_requisicao": {
+        "chave_dos_parametros": "parametros",
+        "montagem": "o nucleo monta o CONTEUDO de `parametros` (modelo/filtro/campos/ordem/limite) e o Code node o entrega a' porta unica dentro do involucro declarado",
+        "por_que": "a porta unica recebe `{parametros: {...}}` (controllers/api_controlada.py); pedido sem o involucro e' recusado com 400 payload_invalido — o que fecharia a rodada em INDETERMINADO por um erro de FORMA, nao de fato",
+        "parametros_declarados_por_leitura": "cada leitura declara os parametros EXTRA que manda no pedido (`leituras_do_destino[].parametros`); a lente confere que a politica declara a capacidade correspondente na operacao de leitura",
+        "no_que_nao_mede": {
+          "onError": "continueRegularOutput",
+          "por_que": "a porta unica pode estar FORA DO AR (estado de falha, nao de resposta): sem `onError: continueRegularOutput` o no HTTP ABORTA a execucao e a rodada morre sem relatorio — medido no aceite (estado G: porta unica parada -> execucao n8n com erro e `leitura=ilegivel`). Com a declaracao, a falha vira ITEM que o nucleo le como NAO MEDIDA e a rodada fecha em INDETERMINADO nomeado"
+        }
+      },
+      "campos_da_leitura_declarados_por": "odoo/addons/transformativa_sales_ai/api/politica_api.json -> operacoes[crm_registros_ler].modelos[res.partner] (a lente estrutural confere campo a campo)"
+    }
+  },
+  "lote": {
+    "limite_de_entidades": 200,
+    "espelho_do_limite": "odoo/addons/transformativa_sales_ai/api/politica_api.json -> operacoes[crm_registros_ler].limite_de_registros (a lente estrutural confere o espelho): o lote da rodada nao pode passar do que a porta unica consegue devolver numa leitura",
+    "ordem": "updated_at DESC, id ASC (o que mudou por ultimo e' o que primeiro se reconcilia)",
+    "como_a_janela_e_medida": "a consulta de origem devolve as entidades do lote E uma linha de cobertura com o TOTAL de organizacoes da base; `janela_completa` e' `total <= limite`. Com a janela incompleta o relatorio DIZ que a rodada e' parcial — veredito de base parcial nunca e' apresentado como veredito da base inteira",
+    "maximo_de_ids_por_leitura": 200,
+    "limite_de_eventos": 200,
+    "limite_de_eventos_por_que": "a leitura da fila e' limitada pelo MESMO teto do lote (200 linhas): uma fila gigante nao pode virar leitura sem fim. A linha de cobertura da fila traz o TOTAL por status, e o relatorio declara se a leitura da fila foi completa ou parcial ('fila_leitura_completa') — janela parcial nunca e' apresentada como base inteira"
+  },
+  "janela_de_pendencia_s": 900,
+  "janela_de_pendencia_por_que": "doc 06 §7: evento na fila e' espera normal; evento parado ha' mais de 15 minutos deixou de ser espera. O numero e' DECLARADO aqui e ajustavel por versao do contrato — o nucleo nao tem constante de tempo",
+  "teto_de_tentativas": 3,
+  "teto_de_tentativas_espelho": "ESPELHO de n8n/contracts/outbox-consumer.v1.json -> retry.teto_de_tentativas (a lente estrutural confere o espelho): no teto, o evento deveria ter saido da fila como DEAD_LETTER — o numero nao e' escolhido por este contrato",
+  "status_da_trilha": {
+    "sucesso": "COMPLETED",
+    "falha_transitoria": "FAILED",
+    "recusa": "REFUSED",
+    "espelho": "ESPELHO de n8n/contracts/outbox-consumer.v1.json -> trilha.status (a lente estrutural confere). Status fora deste vocabulario nao vira 'nao encontrado' nem 'nao entregue': fecha INDETERMINADO"
+  },
+  "operacoes_de_espelho": [
+    "COMPANY_QUALIFIED",
+    "COMPANY_UPDATED"
+  ],
+  "operacoes_de_espelho_por_que": "sao as operacoes que o contrato do consumidor declara para `empresa_upsert` (n8n/contracts/outbox-consumer.v1.json -> eventos). Entidade cujo evento de espelho foi ENTREGUE (trilha COMPLETED) e' entidade ESPERADA no destino: se o espelho nao esta' la', isso e' divergencia medida, nao suposicao",
+  "leituras_do_destino": [
+    {
+      "id": "por_id",
+      "descricao": "prova de EXISTENCIA do espelho: os parceiros apontados por `organizations.odoo_partner_id`",
+      "campo_de_filtro": "id",
+      "operador": "in",
+      "valores_de": "odoo_partner_id",
+      "campos": [
+        "id",
+        "name",
+        "active",
+        "tf_company_id",
+        "tf_cnpj",
+        "tf_domain",
+        "tf_linkedin_url",
+        "write_date"
+      ],
+      "limite": 200,
+      "por_que": "e' o unico caminho para distinguir 'o espelho existe' de 'o espelho sumiu' — a leitura por `tf_company_id` sozinha nao responde por um parceiro cujo `tf_company_id` foi apagado",
+      "no": "Ler destino por id",
+      "ordem": "id asc",
+      "parametros": {
+        "incluir_arquivados": true
+      },
+      "parametros_por_que": "a leitura declarada devolve registros ATIVOS por padrao (ORM do Odoo). Sem pedir os arquivados, `active` seria campo lido e nunca observado `false`: espelho ARQUIVADO viraria espelho AUSENTE na reconciliacao (medido no estado E do aceite). A operacao `crm_registros_ler` declara `leitura_de_arquivados` (politica 1.4.0) e exige `active` entre os campos pedidos — o nucleo repassa o parametro declarado aqui, sem conhecer o vocabulario da porta unica",
+      "parametros_declarados_na_politica": {
+        "incluir_arquivados": "leitura_de_arquivados"
+      }
+    },
+    {
+      "id": "por_company_id",
+      "descricao": "prova de UNICIDADE e de IDA-VOLTA do ID cruzado: os parceiros que se declaram o espelho das organizacoes do lote",
+      "campo_de_filtro": "tf_company_id",
+      "operador": "in",
+      "valores_de": "organizacoes.id",
+      "campos": [
+        "id",
+        "name",
+        "active",
+        "tf_company_id",
+        "tf_cnpj",
+        "tf_domain",
+        "tf_linkedin_url",
+        "write_date"
+      ],
+      "limite": 200,
+      "por_que": "duas leituras respondem a duas perguntas diferentes: 'o parceiro que o PostgreSQL aponta existe?' (por_id) e 'quantos parceiros se dizem o espelho desta organizacao?' (por_company_id). Uma leitura so' deixaria a duplicidade invisivel",
+      "no": "Ler destino por tf_company_id",
+      "ordem": "id asc",
+      "parametros": {
+        "incluir_arquivados": true
+      },
+      "parametros_por_que": "a leitura declarada devolve registros ATIVOS por padrao (ORM do Odoo). Sem pedir os arquivados, `active` seria campo lido e nunca observado `false`: espelho ARQUIVADO viraria espelho AUSENTE na reconciliacao (medido no estado E do aceite). A operacao `crm_registros_ler` declara `leitura_de_arquivados` (politica 1.4.0) e exige `active` entre os campos pedidos — o nucleo repassa o parametro declarado aqui, sem conhecer o vocabulario da porta unica",
+      "parametros_declarados_na_politica": {
+        "incluir_arquivados": "leitura_de_arquivados"
+      }
+    }
+  ],
+  "razoes_de_nao_medicao": [
+    "leitura do destino sem HTTP 200 (porta unica fora do ar, credencial recusada, operacao fora da politica)",
+    "envelope de resposta sem `dados.registros`",
+    "consulta de origem sem a linha de cobertura (a consulta nao chegou ao fim)",
+    "consulta de pendentes sem a linha de cobertura"
+  ],
+  "envelope_da_leitura": {
+    "chave_do_sucesso": "ok",
+    "caminho_dos_registros": "dados.registros",
+    "regra": "a leitura do destino so' conta como MEDIDA quando o corpo tem `ok` verdadeiro e `dados.registros` e' lista. Corpo com outra cara (recusa da porta unica, HTML de proxy, resposta sem `dados`) fecha a rodada em INDETERMINADO — nao se le 'sem divergencia' de uma resposta que nao foi entendida"
+  },
+  "vinculo_da_trilha": {
+    "tabela": "sales_intelligence.sync_events",
+    "coluna_do_vinculo": "entity_id",
+    "de_onde_vem_o_entity_id": "o consumidor grava o `aggregate_id` do evento como `entity_id` da trilha; para os eventos de espelho o `aggregate_id` E' o `organizations.id` (a identidade canonica que vira `tf_company_id`)",
+    "direcao": {
+      "source_system": "postgres",
+      "target_system": "odoo"
+    },
+    "operacao": "UPSERT",
+    "status_de_sucesso": "COMPLETED",
+    "chave_de_idempotencia": {
+      "prefixo": "outbox:",
+      "posicao_do_event_type": 3,
+      "formato": "outbox:<outbox_events.id>:<event_type>"
+    },
+    "espelho": "todos os valores acima sao ESPELHO de n8n/contracts/outbox-consumer.v1.json -> trilha (source_system, target_system, operation, status.sucesso, chave_de_idempotencia.derivacao); a lente estrutural confere o espelho — o SQL do job nao escolhe esses valores, ele os espelha"
+  },
+  "status_da_fila": {
+    "entrada": [
+      "PENDING",
+      "RETRY"
+    ],
+    "recusa": "DEAD_LETTER",
+    "espelho": "ESPELHO de n8n/contracts/outbox-consumer.v1.json -> status (entrada e recusa): o vocabulario da fila nao e' escolhido por este contrato"
+  },
+  "identificadores_fortes": [
+    {
+      "destino": "tf_cnpj",
+      "origem": "cnpj"
+    },
+    {
+      "destino": "tf_domain",
+      "origem": "domain"
+    },
+    {
+      "destino": "tf_linkedin_url",
+      "origem": "linkedin_url"
+    }
+  ],
+  "campos_do_vinculo": {
+    "id_canonico_no_destino": "tf_company_id",
+    "ponta_no_pg": "organizations.odoo_partner_id",
+    "regra": "o mapa canonico da V1 (data contract §3) declara `organizations.id` <-> `res.partner.tf_company_id` e o vinculo do lado PostgreSQL por `organizations.odoo_partner_id`. A reconciliacao dos IDs cruzados mede EXATAMENTE esse par: as duas pontas e a ida-e-volta"
+  },
+  "comparacoes": [
+    {
+      "id": "E1",
+      "grupo": "entidades_esperadas",
+      "tipo": "entidade_esperada_ausente_no_destino",
+      "motivo": "organizacao cujo espelho era ESPERADO (evento de espelho entregue com sucesso ou `odoo_partner_id` gravado) e que nao aparece em NENHUMA das duas leituras do destino",
+      "por_que": "doc 06 §8 'comparar entidades esperadas': o fato foi entregue e o espelho nao esta' la' — a puncao do outbox entregou, o CRM nao tem o registro"
+    },
+    {
+      "id": "E2",
+      "grupo": "entidades_esperadas",
+      "tipo": "entidade_arquivada_no_destino",
+      "motivo": "espelho encontrado com `active = false`: o registro existe mas esta' arquivado no CRM",
+      "por_que": "arquivado nao e' o mesmo que existente: quem le o CRM pelo espelho (contato, atividade, oportunidade) nao o alcanca"
+    },
+    {
+      "id": "E4",
+      "grupo": "entidades_esperadas",
+      "tipo": "identidade_forte_divergente",
+      "motivo": "os dois lados tem valor para o MESMO identificador forte (`tf_cnpj`, `tf_domain`, `tf_linkedin_url`) e os valores DIFEREM",
+      "por_que": "endereco de identidade divergente entre origem e espelho. A comparacao so' reporta quando os DOIS lados tem valor: espelho sem o campo nao e' divergencia (o evento pode nao ter carregado o identificador), e inventar divergencia a partir de ausencia seria alarme falso"
+    },
+    {
+      "id": "I1",
+      "grupo": "ids_cruzados",
+      "tipo": "id_cruzado_divergente",
+      "motivo": "o parceiro apontado por `organizations.odoo_partner_id` declara outro `tf_company_id` (ou nenhum)",
+      "por_que": "doc 06 §8 'verificar IDs cruzados': a ida (PG -> Odoo) e a volta (Odoo -> PG) tem de apontar para o MESMO par. Divergencia aqui e' o espelho apontando para outra organizacao"
+    },
+    {
+      "id": "I2",
+      "grupo": "ids_cruzados",
+      "tipo": "id_cruzado_sem_volta_no_pg",
+      "motivo": "parceiro encontrado por `tf_company_id` da organizacao do lote, mas `organizations.odoo_partner_id` esta' vazio ou aponta para OUTRO parceiro",
+      "por_que": "o lado Odoo diz 'sou o espelho desta organizacao' e o lado PostgreSQL nao sabe disso: o vinculo canonico esta' quebrado em uma das pontas"
+    },
+    {
+      "id": "I3",
+      "grupo": "ids_cruzados",
+      "tipo": "id_cruzado_duplicado_no_destino",
+      "motivo": "mais de um parceiro declara o MESMO `tf_company_id`",
+      "por_que": "duplicidade no espelho e' o que a identidade declarada da API existe para nao criar (doc 06 §7.2 'retry nao pode criar duplicatas'); duas pontas para um ID canonico quebram qualquer leitura por espelho"
+    },
+    {
+      "id": "I4",
+      "grupo": "ids_cruzados",
+      "tipo": "id_cruzado_aponta_para_fora_do_lote",
+      "motivo": "parceiro do lote cujo `tf_company_id` aponta para uma organizacao que NAO esta' no lote da rodada",
+      "por_que": "o espelho esta' ligado a uma organizacao fora da janela: com a janela completa isso e' orfao; com a janela parcial e' 'nao medido nesta rodada'. O relatorio diz qual dos dois casos e' (cobertura), nunca os confunde"
+    },
+    {
+      "id": "P1",
+      "grupo": "eventos_pendentes",
+      "tipo": "evento_pendente_alem_da_janela",
+      "motivo": "evento em PENDING/RETRY na fila ha' mais que `janela_de_pendencia_s`",
+      "por_que": "doc 06 §8 'verificar eventos pendentes': o pendente legitimo vira atraso depois da janela declarada"
+    },
+    {
+      "id": "P2",
+      "grupo": "eventos_pendentes",
+      "tipo": "evento_entregue_ainda_na_fila",
+      "motivo": "evento em PENDING/RETRY cuja chave derivada ja' tem linha de trilha com status de sucesso",
+      "por_que": "duas tabelas do MESMO fato discordam: a trilha diz entregue, a fila diz esperando. E' a divergencia que o replay por chave (TRE-W3-E02-T02) existe para fechar"
+    },
+    {
+      "id": "P3",
+      "grupo": "eventos_pendentes",
+      "tipo": "evento_no_teto_ainda_na_fila",
+      "motivo": "evento em PENDING/RETRY com tentativas no teto declarado",
+      "por_que": "no teto o evento deveria ter saido da fila como DEAD_LETTER (contrato do consumidor -> retry.teto_de_tentativas): continua na fila = o teto nao esta' sendo aplicado"
+    },
+    {
+      "id": "P4",
+      "grupo": "eventos_pendentes",
+      "tipo": "recusa_ainda_na_fila",
+      "motivo": "evento em PENDING/RETRY cuja chave derivada tem linha de trilha REFUSED",
+      "por_que": "recusa definitiva e' terminal (contrato do consumidor -> status.recusa = DEAD_LETTER): o evento nao volta para a fila"
+    }
+  ],
+  "observacoes": [
+    {
+      "id": "O1",
+      "tipo": "lote_sem_entidades_esperadas",
+      "informativa": true,
+      "motivo": "o lote nao tem nenhuma entidade esperada no destino (nem evento de espelho entregue, nem `odoo_partner_id`)",
+      "por_que": "ausencia de ATIVIDADE e' informacao (base recem-criada), nao divergencia — mas o leitor tem de saber que a rodada nao mediu ida-e-volta nenhuma. Observacao INFORMATIVA e' relatada e NAO decide veredito (mesma regra da metrica informativa da observabilidade)"
+    }
+  ],
+  "veredito": {
+    "ordem": [
+      "OK",
+      "DIVERGENTE",
+      "INDETERMINADO"
+    ],
+    "regra": "o veredito da rodada e' o PIOR entre as comparacoes declaradas, na ordem acima: INDETERMINADO e' pior que DIVERGENTE (um lado que nao se pode medir nao autoriza dizer que o outro esta' certo — ausencia de medicao nunca e' saude). DIVERGENTE e' o resultado de QUALQUER divergencia nomeada. OK exige que TODAS as comparacoes declaradas tenham sido medidas e nenhuma tenha encontrado divergencia",
+    "saida": {
+      "OK": 0,
+      "DIVERGENTE": 1,
+      "INDETERMINADO": 2
+    },
+    "linha": "VEREDITO: <veredito> — <n> entidades medidas, <n> eventos na fila lidos, <n> divergencias; cobertura: janela_<completa|parcial>"
+  },
+  "regras_de_fail_closed": {
+    "lado_nao_medido": "INDETERMINADO (leitura do destino sem HTTP 200, resposta sem `dados.registros`, consulta sem linha de cobertura): nao se compara o que nao se mediu — e nao se declara OK o lado que nao respondeu",
+    "entidade_esperada_sem_leitura": "INDETERMINADO: entidade esperada no destino quando NENHUMA das duas leituras do destino foi medida",
+    "comparacao_sem_insumo": "INDETERMINADO (comparacao declarada que nao tem de onde sair fecha a rodada em INDETERMINADO nomeando o insumo que faltou; nunca e' silenciada)",
+    "trilha_sem_status_conhecido": "INDETERMINADO (status de trilha fora do vocabulario declarado pelos contratos das duas portas nao vira 'nao encontrado' nem 'nao entregue')",
+    "divergencia_sem_motivo_nomeado": "INDETERMINADO (divergencia sem o motivo nomeado pelo contrato nao entra no relatorio como divergencia: o que nao se pode nomear nao se relata)",
+    "base_vazia": "OK com `cobertura.entidades_lidas = 0` — ausencia de ATIVIDADE e' informacao (nao ha' entidade a reconciliar); ausencia de MEDICAO e' INDETERMINADO. As duas coisas sao diferentes e o relatorio distingue as duas",
+    "comparacoes_de_entidade_puladas": "INDETERMINADO: com QUALQUER leitura do destino nao medida, nenhuma entidade e comparada — ausencia de medicao nao vira divergencia (E1/E2/E4/I1..I4 exigem leitura MEDIDA), e o pulo fica nomeado nas indeterminacoes da rodada"
+  },
+  "relatorio": {
+    "campos": [
+      "card",
+      "versao_do_contrato",
+      "rodada",
+      "veredito",
+      "cobertura",
+      "contagens",
+      "divergencias",
+      "linha"
+    ],
+    "tamanho_maximo_do_motivo": 200,
+    "nao_mostrar": [
+      "request_payload",
+      "response_payload",
+      "payload"
+    ],
+    "por_que": "o relatorio mostra IDENTIFICADOR e MOTIVO (doc 06 §7.3: falha visivel e com motivo). Payload pode carregar dado pessoal ou segredo e NAO entra no relatorio; motivo longo e' truncado COM MARCA, nunca cortado em silencio",
+    "ordem_das_divergencias": "por comparacao declarada (a ordem deste contrato) e, dentro dela, por identificador",
+    "destino": "saida da rodada (o item final do workflow). O job NAO escreve relatorio em tabela: nenhuma tabela do contrato V1 guarda relatorio de reconciliacao, e criar uma seria DDL — ato de contrato com aprovacao registrada (ADR-005), nao decisao deste card",
+    "linha_de_resumo": "VEREDITO: <veredito> — <n> entidades medidas, <n> eventos na fila lidos, <n> divergencias; cobertura: janela_<completa|parcial|nao_medida>, fila_<completa|parcial|nao_medida>. A linha SEMPRE carrega a cobertura das DUAS janelas: veredito de base parcial nao pode ser lido como veredito da base inteira",
+    "cobertura_declarada": [
+      "entidades_lidas",
+      "entidades_esperadas",
+      "total_de_organizacoes",
+      "limite",
+      "janela_completa",
+      "eventos_na_fila_lidos",
+      "total_pending",
+      "total_retry",
+      "total_na_fila",
+      "limite_de_eventos",
+      "fila_leitura_completa",
+      "leituras"
+    ]
+  },
+  "proibicoes": {
+    "corrigir": "nunca — doc 06 §8 ('nunca corrigir silenciosamente dados ambiguos'). O contrato nao declara nenhuma escrita; a lente estrutural reprova SQL do job que nao seja SELECT/WITH e reprova no de escrita no workflow",
+    "escrever_no_banco": "nunca",
+    "chamar_operacao_de_escrita_da_api": "nunca (so' `crm_registros_ler`, declarada como leitura)",
+    "seguir_com_lado_nao_medido": "nunca — ver `regras_de_fail_closed`"
+  },
+  "sql": {
+    "origem": "n8n/sql/reconciliacao-origem.sql",
+    "pendentes": "n8n/sql/reconciliacao-pendentes.sql",
+    "regra": "os dois arquivos sao SOMENTE LEITURA (SELECT/WITH) e devolvem, cada um, suas linhas de dado E uma linha de COBERTURA (`tipo='cobertura'`): e' a linha de cobertura que distingue base vazia (informacao) de consulta quebrada (INDETERMINADO)"
+  },
+  "credenciais": {
+    "postgres": {
+      "tipo": "postgres",
+      "id": "tre-dev-postgres",
+      "nome": "TRE dev — sales_intelligence"
+    },
+    "api": {
+      "tipo": "httpHeaderAuth",
+      "id": "tre-dev-api-controlada",
+      "nome": "TRE dev — API controlada Odoo (Bearer)"
+    },
+    "regra": "o versionado carrega ID e NOME da credencial (que sao o contrato de importacao), nunca o valor; quem cria a credencial e' o passo de operador/harness, com a chave lida de arquivo 600"
+  },
+  "workflow": {
+    "id_estavel": "TRERECONCILIA01",
+    "nome": "TRE — Reconciliacao (entidades, IDs cruzados, pendentes)",
+    "gatilho": {
+      "tipo": "n8n-nodes-base.scheduleTrigger",
+      "unidade": "hours",
+      "intervalo": 24,
+      "por_que": "doc 06 §8 declara 'job diario'; quem ATIVA ajusta a hora ao plantao real — o card nao escolhe a janela de operacao"
+    },
+    "nos": {
+      "agenda": "Agenda",
+      "sob_demanda": "Executar agora",
+      "origem": "Origem (PG)",
+      "destino_por_id": "Ler destino por id",
+      "destino_por_company_id": "Ler destino por tf_company_id",
+      "pendentes": "Pendentes (PG)",
+      "avaliar": "Avaliar",
+      "relatorio": "Relatorio",
+      "preparar_leitura": "Preparar leitura (nucleo)"
+    },
+    "saida": "a rodada termina no no' `Relatorio` (no-op): o item que chega nele E' o relatorio do job"
+  },
+  "ambiente": {
+    "permitido": [
+      "dev"
+    ],
+    "regra": "ADR-005: nada nasce em producao. O par ambiente/aprovacao e' guardado DENTRO da API controlada; o job de dev so' le o Odoo de dev"
+  },
+  "segredos": {
+    "regra": "a credencial do banco e a chave Bearer da porta unica vivem no cofre do n8n, importadas fora do versionado (docs/operations/gestao-de-secrets.md); o workflow aponta credencial por id/nome, nunca por valor. O relatorio nao imprime payload nem credencial"
+  },
+  "lacunas_declaradas": [
+    "a rodada cobre no MAXIMO `lote.limite_de_entidades` (200) entidades: a varredura de bases maiores exige rodadas sucessivas com cursor, e o cursor NAO esta' implementado na V1 — o relatorio diz se a janela foi completa, e uma janela parcial nao e' apresentada como veredito da base inteira",
+    "o lado Odoo e' lido PELA PORTA UNICA e so' para os IDs do lote: um parceiro orfao (sem `tf_company_id` e sem `odoo_partner_id`) que a rodada nao tenha como alcancar NAO e' encontrado. Achar orfao do lado Odoo exigiria varredura paginada do modelo (`write_date`), ampliacao declarada e nao implementada",
+    "contatos: a ida-e-volta do contato e' medida pelo vinculo declarado (`contacts.odoo_partner_id` -> `res.partner.id`), nao por um UUID do lado Odoo — o contrato V1 NAO define `tf_contact_id` em `res.partner` (declarado na politica da API, `contato_upsert`), entao um contato espelhado nao carrega o proprio UUID no CRM. A divergencia de identidade do contato e' por ISSO medida no vinculo, e a ausencia do campo esta' declarada, nao contornada",
+    "oportunidades/leads: o mapa canonico da V1 nao da' UUID de oportunidade do lado PostgreSQL (a oportunidade canonica vive no payload do evento e em `crm.lead.tf_opportunity_id`): a reconciliacao de lead x PostgreSQL fica sem as duas pontas do lado PG e NAO e' medida aqui — e' ampliacao do card que definir a tabela de oportunidade",
+    "o relatorio nao e' persistido em tabela (nenhuma tabela do contrato V1 o guarda; criar uma seria DDL sob ADR-005): a rodada entrega o relatorio como saida e a execucao do n8n o registra. Persistencia durvel e' ampliacao declarada, com aprovacao de contrato",
+    "a rodada NAO corrige NADA por decisao (doc 06 §8): a divergencia medida vira trabalho de operador"
+  ]
+}

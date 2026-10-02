@@ -135,7 +135,11 @@ class ApiControlada(http.Controller):
         if plano["acao"] == "ler":
             if plano["dry_run"]:
                 return {"dry_run": True, "consultaria": self._descricao_da_leitura(plano)}
-            registros = modelo.search_read(
+            # Leitura de ARQUIVADOS: so' quando o plano declara (a operacao declara, o chamador
+            # pede). Sem isso, `active = false` no CRM e' invisivel e "arquivado" viraria
+            # "ausente" na reconciliacao (card TRE-W3-E04-T01).
+            consulta = modelo.with_context(active_test=False) if plano.get("incluir_arquivados") else modelo
+            registros = consulta.search_read(
                 domain=plano["filtro"],
                 fields=plano["campos"],
                 limit=plano["limite"],

@@ -1,5 +1,5 @@
 {
-  "versao": "1.3.0",
+  "versao": "1.4.0",
   "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. BASE CONSOLIDADA da onda W3-E01: card TRE-W3-E01-T01 (a porta unica), TRE-W3-E01-T02 (a escrita de NEGOCIO da empresa, `empresa_upsert`), TRE-W3-E01-T03 (a escrita de NEGOCIO do contato comercial, `contato_upsert`), TRE-W3-E01-T04 (a escrita de NEGOCIO da oportunidade canonica, `oportunidade_upsert`) e TRE-W3-E01-T05 (a escrita de NEGOCIO da atividade comercial, `atividade_criar`). A reconciliacao das escritas na MESMA forma de identidade (`campos_de_identidade`, a lista ordenada que nasceu no E01-T02) e' do card E01-T05: as levas foram construidas em ramos paralelos e a declaracao do E01-T04 nasceu na forma singular (`campo_de_identidade`); o motor aceita as DUAS formas (a singular e' do E01-T01), mas a politica em vigor declara UMA so' — quem ampliar o vocabulario da escrita e' o card TRE-W3-E02-T02. Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa (nunca descarte em silencio). As demais operacoes de negocio (dedup por chave, reprocesso, eventos) entram por card proprio, com vocabulario declarado.",
   "ambientes_permitidos": [
     "dev"
@@ -94,7 +94,9 @@
       ],
       "requer_idempotency_key": false,
       "aceita_dry_run": true,
-      "somente_leitura": true
+      "somente_leitura": true,
+      "leitura_de_arquivados": true,
+      "leitura_de_arquivados_por_que": "a leitura declarada e' de registros ATIVOS por padrao (comportamento do ORM do Odoo). O campo `active` esta' declarado nos modelos, o que so' tem sentido se o chamador puder ver o estado ARQUIVADO: sem esta declaracao, o job de reconciliacao veria 'espelho ausente' onde o espelho esta' arquivado, e mandaria criar de novo o que ja' existe. Quem pede e' o chamador (`parametros.incluir_arquivados: true`), e a operacao DECLARA que aceita o pedido — pedir em operacao que nao declara e' recusa nomeada (422 `parametro_nao_declarado`), nunca silencio"
     },
     {
       "nome": "empresa_upsert",

@@ -215,5 +215,27 @@ for f in scripts/n8n/verificar-outbox-consumer.sh scripts/n8n/montar_workflow.py
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos do job diario de reconciliacao (TRE-W3-E04-T01) existem E estao versionados. Mesma
+# classe do bloco do consumidor de outbox: o workflow e' DERIVADO do contrato + nucleo + SQL, e sem
+# a lista o gate imprimiria PASS com o card fora da arvore versionada. Um arquivo por linha.
+for f in n8n/contracts/reconciliation-job.v1.json n8n/codigo/nucleo-reconciliacao.js \
+         n8n/sql/reconciliacao-origem.sql \
+         n8n/sql/reconciliacao-pendentes.sql \
+         n8n/workflows/TRE-reconciliation.json scripts/n8n/montar_workflow_reconciliacao.py \
+         scripts/n8n/conferir_reconciliacao.py scripts/n8n/testar_nucleo_reconciliacao.js \
+         scripts/n8n/mutar_reconciliacao.py scripts/n8n/ler_resultado_reconciliacao.py \
+         scripts/n8n/massa-reconciliacao.sql scripts/odoo/massa_reconciliacao.py \
+         scripts/n8n/verificar-reconciliacao.sh docs/runbooks/n8n-reconciliacao.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/n8n/verificar-reconciliacao.sh scripts/n8n/montar_workflow_reconciliacao.py \
+         scripts/n8n/conferir_reconciliacao.py scripts/n8n/mutar_reconciliacao.py \
+         scripts/n8n/ler_resultado_reconciliacao.py scripts/odoo/massa_reconciliacao.py; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

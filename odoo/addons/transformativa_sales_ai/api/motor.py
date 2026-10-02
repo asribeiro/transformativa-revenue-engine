@@ -71,6 +71,9 @@ CODIGOS_DE_ERRO = {
     "operacao_nao_declarada": 404,
     "modelo_nao_declarado": 422,
     "campo_nao_declarado": 422,
+    # Parametro VALIDO na forma, mas que a operacao nao declara (ex.: pedir a leitura de
+    # arquivados numa operacao que so' le ativos). Recusa nomeada, nunca ignorar o pedido.
+    "parametro_nao_declarado": 422,
     "campo_obrigatorio_ausente": 422,
     "valor_invalido": 422,
     "limite_excedido": 422,
@@ -105,7 +108,11 @@ AMBIENTES_COM_APROVACAO = ("homologacao", "producao")
 FORMATO_DE_NOME_DE_OPERACAO = re.compile(r"^[a-z][a-z0-9_]{2,40}$")
 CHAVES_DE_TOPO = ("parametros", "idempotency_key", "correlation_id", "dry_run")
 CHAVES_DE_PARAMETROS = {
-    "leitura": ("modelo", "filtro", "campos", "ordem", "limite"),
+    # `incluir_arquivados` (card TRE-W3-E04-T01): a leitura declarada e' de registros ATIVOS por
+    # padrao (comportamento do ORM). Sem esta chave, `active` seria campo declarado e impossivel de
+    # observar `false` — e "espelho ARQUIVADO" ficaria indistinguivel de "espelho AUSENTE" para
+    # quem reconcilia. O parametro e' declarado pela OPERACAO (`leitura_de_arquivados`).
+    "leitura": ("modelo", "filtro", "campos", "ordem", "limite", "incluir_arquivados"),
     "escrita": ("modelo", "valores", "identificador"),
 }
 # Operacao de FONTE (nao toca modelo de negocio nenhum): aceita 'parametros' vazio e nada mais.
@@ -539,6 +546,27 @@ def _plano_de_leitura(politica, op, declaracao, parametros):
                 )
         campos_do_plano = list(dict.fromkeys(pedidos))
 
+    incluir_arquivados = parametros.get("incluir_arquivados")
+    if incluir_arquivados is not None:
+        _exigir(
+            isinstance(incluir_arquivados, bool),
+            "valor_invalido",
+            "'incluir_arquivados' tem de ser booleano",
+        )
+        if incluir_arquivados:
+            if not op.get("leitura_de_arquivados"):
+                raise ErroApi(
+                    "parametro_nao_declarado",
+                    "a operacao %s nao declara leitura de arquivados: pedir por eles aqui seria "
+                    "ler o que a operacao nao promete" % op["nome"],
+                )
+            if "active" not in campos_do_plano:
+                raise ErroApi(
+                    "campo_obrigatorio_ausente",
+                    "leitura de arquivados exige 'active' entre os campos pedidos: sem o estado, "
+                    "arquivado e' indistinguivel de ativo",
+                )
+
     operadores = op.get("operadores_de_dominio", [])
     filtro = parametros.get("filtro") or []
     _exigir(isinstance(filtro, list), "payload_invalido", "'filtro' tem de ser lista")
@@ -602,6 +630,7 @@ def _plano_de_leitura(politica, op, declaracao, parametros):
         "filtro": filtro_do_plano,
         "ordem": ordem,
         "limite": limite,
+        "incluir_arquivados": bool(incluir_arquivados) if incluir_arquivados is not None else False,
     }
 
 

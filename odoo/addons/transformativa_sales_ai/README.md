@@ -304,6 +304,53 @@ POST /tf/api/v1/oportunidade_upsert        Authorization: Bearer <chave de API>
   ORM) e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3 mutações,
   cada uma **tem** de reprovar, com o item esperado conferido e harness **fail-closed**: prova que
   não mede nada reprova).
+## Leitura de registros ARQUIVADOS na porta única (`TRE-W3-E04-T01`)
+
+A leitura controlada (`crm_registros_ler`) devolve, por padrão, apenas registros **ativos** — é o
+comportamento do ORM do Odoo, não uma decisão nossa. O campo `active` sempre esteve declarado nos
+modelos, e isso só tem sentido se o chamador puder observar `active = false`: **sem** essa leitura,
+"espelho arquivado" é indistinguível de "espelho ausente" e um job de reconciliação mandaria criar de
+novo o que já existe no CRM. Esse caso foi **medido**, não suposto: no aceite do card
+(`scripts/n8n/verificar-reconciliacao.sh`, estado *E* — parceiro arquivado) as duas leituras do
+destino voltavam `0 registro(s)` e o veredito saía `E1 espelho_ausente` em vez de `E2`.
+
+A capacidade entra por **declaração**, em três camadas — nenhuma delas abre a porta para o chamador
+pedir o que a operação não promete:
+
+| Camada | O que declara |
+| --- | --- |
+| política (`api/politica_api.json`, sobe de `1.3.0` para `1.4.0`) | `leitura_de_arquivados: true` na operação `crm_registros_ler`, com o `por_que` |
+| motor | `incluir_arquivados` entra no vocabulário de parâmetros da leitura (`CHAVES_DE_PARAMETROS`); pedir em operação que **não** declara é recusa nomeada `parametro_nao_declarado` (422) |
+| controlador | `search_read` passa a rodar em `with_context(active_test=False)` **quando** o plano diz `incluir_arquivados` |
+
+Quem pede é o chamador; a operação **declara** que aceita o pedido. Como ver o arquivado sem pedir o
+estado não distingue arquivado de ativo, `incluir_arquivados: true` **exige** `active` entre os
+campos pedidos — senão `campo_obrigatorio_ausente` (422).
+
+```http
+POST /tf/api/v1/crm_registros_ler          Authorization: Bearer <token de API>
+{"parametros": {"modelo": "res.partner",
+                "filtro": [["tf_company_id", "=", "<uuid da organizations>"]],
+                "campos": ["id", "active", "tf_cnpj", "tf_domain"],
+                "limite": 200,
+                "incluir_arquivados": true}}
+```
+
+Resposta (note `active` `false` — é o que a reconciliação usa para separar `E2` de `E1`):
+
+```json
+{"ok": true, "dados": {"registros": [{"id": 42, "active": false, "tf_cnpj": "11.222.333/0001-81"}]}}
+```
+
+Medido em `tests/test_api_controlada.py` (4 testes novos): sem o parâmetro o arquivado **não**
+aparece; com o parâmetro aparece com `active = false`; sem `active` nos campos → 422
+`campo_obrigatorio_ausente`; parâmetro em operação que não declara → 422 `parametro_nao_declarado`;
+valor não booleano → 422 `valor_invalido`.
+
+Quem consome: o job diário de reconciliação (`n8n/workflows/TRE-reconciliation.json`), que pede
+`incluir_arquivados` porque a leitura o **declara** no contrato
+(`n8n/contracts/reconciliation-job.v1.json` → `leituras_do_destino[].parametros`).
+
 ## Operação de escrita de negócio `atividade_criar` (`TRE-W3-E01-T05`)
 
 Runbook do card: **`docs/runbooks/odoo-atividade-criar.md`**. A operação entra por **declaração** na
