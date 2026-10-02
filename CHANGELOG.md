@@ -801,6 +801,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   cumprida, ambiente quebrado, âncora quebrada) — sem isso, ambiente quebrado viraria "dente
   cumprido". Runbook: `docs/runbooks/n8n-outbox-consumer.md`.
 
+### Fixed
+
+- **Prova de dente e lente estrutural do consumidor de outbox (`TRE-W3-E02-T01`, rodada 2)** — o modo
+  `--prova-de-dente` do aceite fechava com `OUTBOX_CONSUMER_DENTE_OK` e **exit 0 incondicionalmente**: o
+  veredito de cada dente era apenas impresso e o contador de falhas do juiz nunca era lido naquele ramo,
+  então um ambiente quebrado (imagem inexistente) imprimia 4x `NAO_CONTA` e saía **verde** (fail-open —
+  *verde que não pode ficar vermelho não é medição*). Agora o modo é **fail-closed**: sub-run **não
+  mutado** (baseline) verde obrigatório antes de contar dente, vereditos agregados por mutação
+  (`DENTE_CUMPRIDO`), e qualquer outro veredito / baseline vermelho / juiz com falta fecha com
+  `OUTBOX_CONSUMER_DENTE_FALHOU` + exit 1. O item de integridade deixou de ser **afirmação no registro**:
+  o `sha256` dos 5 artefatos é **fixado** nas guardas e **reconferido** no fecho (com juiz próprio),
+  medido com adulteração real de um artefato no meio da medição. E o item *"nenhum host literal no
+  workflow"* da lente estrutural, que era **código morto** (reprovava apenas o loopback), passou a medir o
+  texto inteiro do workflow **e** o parâmetro `url` da porta única (2 mutantes próprios reprovam; o
+  versionado passa). Aceite remedido na VPS, sobre cópia própria do commit: `OUTBOX_CONSUMER_OK (83 itens,
+  0 falhas)` exit 0 e `OUTBOX_CONSUMER_DENTE_OK (4/4 dentes cumpridos; baseline verde)` exit 0 — e o
+  controle do revisor (imagem inexistente) agora fecha `DENTE_FALHOU` + exit 1.
+
 ### Notas de estado
 
 - **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por

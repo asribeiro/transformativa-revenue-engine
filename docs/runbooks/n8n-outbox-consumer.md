@@ -139,12 +139,22 @@ O teto de tentativas volta a contar do zero — é uma decisão consciente de op
 * Odoo **parado** → falha transitória (`RETRY`, `attempts=1`, trilha `FAILED`); Odoo de volta →
   o retry entrega (`PROCESSED`, `attempts=2`, **uma** linha de trilha, **um** parceiro);
 * evento já no teto → `DEAD_LETTER` **sem** chamada e **sem** escrita no CRM;
-* contagem de chamadas autenticadas, segredo fora do versionado, ambiente do dev intocado.
+* contagem de chamadas autenticadas, segredo fora do versionado, ambiente do dev intocado;
+* `sha256` dos 5 artefatos sob teste **fixado nas guardas** e **reconferido no fecho** (dois itens,
+  com juiz próprio): artefato que mude no meio da medição reprova o aceite.
 
 `--prova-de-dente` roda o aceite em cópias mutadas do workflow (sem exigir `event_version`, sem
 incrementar `attempts`, sem teto, com o mapeamento trocado) e exige que **o item que aquela
-mutação quebra** reprove. O juiz do dente é testado com saídas sintéticas (senão ambiente quebrado
-viraria "dente cumprido").
+mutação quebra** reprove. O modo é **fail-closed** (rodada 2): antes de contar dente ele roda um
+sub-run **não mutado** (baseline) que tem de ficar verde — sem isso, ambiente quebrado devolveria
+`NAO_CONTA` em todos os dentes e um "verde" não significaria nada —, os vereditos vão para arquivo
+(o laço roda em subshell) e a agregação só fecha com `OUTBOX_CONSUMER_DENTE_OK` quando **todos** os
+vereditos forem `DENTE_CUMPRIDO`; qualquer outro veredito (`NAO_CONTA`, `MUTACAO_SEM_DENTE`,
+`MUTACAO_NAO_APLICADA`), baseline vermelho ou juiz com falta fecha com
+`OUTBOX_CONSUMER_DENTE_FALHOU` e **exit 1**. Dois juízes são conferidos por saídas sintéticas: o do
+dente (mutação sem efeito / mutação cumprida / ambiente quebrado / âncora quebrada) e o da
+reconferência de `sha256` (idêntico / mudado) — senão ambiente quebrado viraria "dente cumprido" e o
+item de integridade dos artefatos poderia comparar duas medidas do mesmo nada.
 
 Modos: `--apenas-codigo` (estático, sem containers), `--apenas-consumo` (o trio + os ciclos) e
 `--manter`. **`--manter` preserva de propósito o trio e o diretório do preparo — e esse diretório

@@ -631,3 +631,64 @@ docker daemon, entao toda execucao vira esta linha):**
   `git diff --name-only 0eaae57 HEAD`.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+### Rodada 2 — revisao independente pediu mudancas: 3 defeitos do proprio artefato de teste, corrigidos e remedidos (commit `38b539f`)
+
+A revisao da rodada 1 (`tester`, parecer em `evidencia/PARECER-t_ba84b412-r1.md`) **reproduziu o aceite
+verde na base do revisor** (`OUTBOX_CONSUMER_OK`, 81 itens, 0 falhas, EXIT=0; dentes 4/4; controle
+externo proprio mostrando 2 parceiros ao remover a serializacao) e reprovou **o artefato de teste
+entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
+
+1. **BLOQUEANTE — `--prova-de-dente` fail-open (verde sem medir dente nenhum).** O laco so imprimia o
+   veredito de cada dente e o script fechava com `OUTBOX_CONSUMER_DENTE_OK (...)` + `exit 0`
+   **incondicionalmente**; o contador `FALHAS` e o controle do juiz nunca eram lidos naquele ramo.
+   Reproducao do revisor: `TRE_IMAGEM=odoo:nao-existe-9.9 ... --prova-de-dente` -> 4x `NAO_CONTA` +
+   `DENTE_OK` + `EXIT=0`. **Correcao (fail-closed):** (a) sub-run **NAO mutado** (baseline) tem de ficar
+   verde **antes** de contar dente; (b) os vereditos vao para **arquivo** (o laco roda em subshell) e a
+   agregacao roda fora dele; (c) qualquer veredito que nao seja `DENTE_CUMPRIDO`
+   (`NAO_CONTA`/`MUTACAO_SEM_DENTE`/`MUTACAO_NAO_APLICADA`), baseline vermelho ou juiz com falta fecha
+   com `OUTBOX_CONSUMER_DENTE_FALHOU` + `exit 1`. Remedido na VPS: `OUTBOX_CONSUMER_DENTE_OK (4/4
+   dentes cumpridos; juiz conferido; baseline nao mutado verde)` **EXIT=0**, com o baseline medindo
+   `OUTBOX_CONSUMER_OK (81 itens, 0 falhas)`; e o **mesmo controle do revisor** agora fecha
+   `OUTBOX_CONSUMER_DENTE_FALHOU (baseline NAO mutado nao ficou verde; 4 sem dente de 4)` **EXIT=1**.
+2. **Afirmacao falsa no registro (sha256 "reconferido no fim" que nao existia).** O harness so imprimia
+   os sha256 nas guardas (2 linhas de impressao, no inicio). **Correcao:** item que **fixa** o sha256
+   dos 5 artefatos nas guardas + item que **reconfere** no fecho, com juiz proprio de 2 saidas sinteticas
+   (`controle do juiz do sha256`) para o item nao ser vacuO. Medido de verdade, com adulteracao real: um
+   controle externo (fora do card) adiciona uma linha a `n8n/sql/ler-pendentes.sql` **no meio** da
+   medicao e o aceite fecha `OUTBOX_CONSUMER_FALHOU (81 itens, 1 falha)` **EXIT=1** com
+   `FALHOU sha256 dos 5 artefatos MUDOU durante a medicao` e os dois digests lado a lado; na rodada
+   limpa o item imprime `OK ... reconferido no fecho: identico ao fixado nas guardas`.
+3. **ADVISORY — item morto na lente estrutural** ("nenhum host literal no workflow"): reprovava apenas
+   o loopback, entao passava com qualquer outro host literal (medido pelo revisor com
+   `http://host-literal.example:8069/...` gravado no workflow). **Correcao:** o item passou a medir o
+   texto **inteiro** do workflow (fora do parametro `url` das portas) **e** o proprio parametro `url` da
+   porta unica. Controles meus: 2 mutantes (host cravado dentro do parametro `url`; host cravado fora das
+   portas) -> `FALHOU` nos **2/2**, versionado -> `OK` (2 itens de lente a mais reprovados nos mutantes,
+   como esperado, por o workflow divergir do montado).
+
+- **Identidade do que foi medido (na VPS, copia propria do commit):** `/opt/tre/e02t01-r2/repo` =
+  `git archive 38b539f`. Os **5 artefatos sob teste NAO mudaram** de sha256 em relacao a rodada 1
+  (contrato `3ee87a10...d7b7`, nucleo `be765699...f986`, ler `9234b566...dfb2`, registrar
+  `0eac7d7a...d017`, workflow `82212ffd...78e2`) — mudaram so os dois artefatos de teste
+  (`scripts/n8n/verificar-outbox-consumer.sh` `cb643d11...375f`;
+  `scripts/n8n/conferir_contrato_e_workflow.py` `f5d974df...3ad0`).
+- **Aceite remedido:** `OUTBOX_CONSUMER_OK (**83 itens, 0 falhas**)` **EXIT=0** (banco `tre_e02t01_r2`,
+  trio descartavel proprio; 83 = 81 da rodada 1 + os 2 itens novos de sha256). Inclui
+  `NUCLEO_CONSUMIDOR_OK (87 itens)` e `CONTRATO_WORKFLOW_OK (55 itens)`; entregas em SERIE
+  (**E1 -> E2 com 188 ms**; piso paralelo 2 ms); chamadas autenticadas por delta de auditoria = 4; dev
+  com os MESMOS bancos antes/depois; `/opt/tre/{homolog,prod}` com 0 arquivo; 0 container e 0 rede
+  `e02t01-*` no fecho e nenhum `/tmp/dente-e02t01-*` residual.
+- **Controles meus da rodada 2 (fora do card):** (a) fail-open: mesmo cenario do revisor (imagem
+  inexistente) -> `DENTE_FALHOU` + exit 1 (na VPS e localmente); (b) dente do item de sha256:
+  adulteracao real no meio da medicao -> 1 falha exatamente nesse item, exit 1; (c) dente do item de host
+  literal: 2 mutantes reprovados 2/2, versionado OK; (d) juizes conferidos por saidas sinteticas
+  (dente: 4; sha256: 2).
+- **Verificadores do projeto (no worktree, commit `38b539f`):** `verificar_estrutura.sh` PASS (0
+  falhas); `secret_scan.sh` PASS (nenhum segredo versionado); `verificar_papeis.sh` PASS (0 falhas).
+- **Arvore medida:** commit `38b539f` deste branch; o commit seguinte acrescenta **apenas documentacao**
+  (este registro, o runbook §5 e o CHANGELOG) — conferivel por `git diff --name-only 38b539f HEAD`.
+- **Nota:** o diretorio `/tmp/verificacao-outbox-consumer` que existe na VPS e' residuo **da rodada 1**
+  (01/10 23:10-23:40 UTC, ja' declarado); a rodada 2 gravou em `/opt/tre/e02t01-r2/logs-*`.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card segue com o estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
