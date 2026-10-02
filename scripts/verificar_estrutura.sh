@@ -304,15 +304,26 @@ done
 # categoria do tipo e grava o fato datado com evidencia, sem criar organizacao e sem calcular score
 # (Buying Signal Score e W5). Se o contrato do agente, o codigo, a suite, o aceite ou o runbook
 # sumirem do git, o card entrega fica sem artefato verificavel — o gate reprova por nome.
+# Agente Contact Research v1 (TRE-W4-E05-T01): o produtor do CONTATO comercial (`contacts`) da
+# empresa ja' pesquisada. Mesmo portao por nome dos irmaos: contrato, codigo, exemplo de fonte,
+# suite offline, aceite E2E, arquitetura e runbook, todos versionados. Um arquivo por linha de
+# proposito: o aceite da classe mede `grep -c`.
 for f in hermes/agents/signal/signal.py hermes/agents/signal/agente-signal-v1.json \
          hermes/agents/signal/exemplos/observacoes-exemplo.jsonl \
          scripts/agentes/verificar_agente_signal.py scripts/agentes/teste_signal_aceite.sh \
-         docs/architecture/agente-signal-v1.md docs/runbooks/agente-signal.md; do
+         hermes/agents/contact_research/contact_research.py \
+         hermes/agents/contact_research/agente-contact-research-v1.json \
+         hermes/agents/contact_research/exemplos/contatos-exemplo.jsonl \
+         scripts/agentes/verificar_agente_contact_research.py \
+         scripts/agentes/teste_contact_research_aceite.sh \
+         docs/architecture/agente-signal-v1.md docs/runbooks/agente-signal.md \
+         docs/architecture/agente-contact-research-v1.md docs/runbooks/agente-contact-research.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
-for f in scripts/agentes/teste_signal_aceite.sh; do
+for f in scripts/agentes/teste_signal_aceite.sh \
+         scripts/agentes/teste_contact_research_aceite.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
@@ -329,11 +340,6 @@ for f in hermes/agents/pain_hypothesis/pain_hypothesis.py \
          hermes/agents/pain_hypothesis/exemplos/hipoteses-exemplo.jsonl \
          scripts/agentes/verificar_agente_pain_hypothesis.py scripts/agentes/teste_pain_hypothesis_aceite.sh \
          docs/architecture/agente-pain-hypothesis-v1.md docs/runbooks/agente-pain-hypothesis.md; do
-  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
-  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
-  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
-done
-for f in scripts/agentes/teste_pain_hypothesis_aceite.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

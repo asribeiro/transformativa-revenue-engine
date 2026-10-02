@@ -1,0 +1,243 @@
+{
+  "agente": "contact_research",
+  "papel": "contact_research",
+  "versao": "1.0.0",
+  "card": "TRE-W4-E05-T01",
+  "onda": "W4",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "02_ARQUITETURA_DA_SOLUCAO.md §2 (Hermes Sales AI) e §4 (guardrails L0/L1/L2)",
+    "03_ARQUITETURA_DE_NEGOCIO.md §2 (funil: 'Contato identificado') e §5 (faixas de funcionarios do ICP)",
+    "04_PROJETO_FISICO_DE_DADOS.md §4 (contacts: colunas e indices)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §5 (evento DECISION_MAKER_FOUND) e §7 (idempotencia)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W4: Contact Research) e gate (empresa -> research/signals/hypothesis/contacts)",
+    "12_CONTRATOS_E_GOVERNANCA.md §7 (compliance e privacidade: campos minimos) e §8 (regras: nao contatar opt-out, conservar evidencia, audit trail)",
+    "docs/data/data_contract_v1.json (dedup.strong, vocabularies.decision_role, events.pg_to_odoo, compliance, source_of_truth)",
+    "docs/runbooks/odoo-contato-upsert.md §1 (card TRE-W3-E01-T03: a identidade do contato e' o e-mail, o espelho no CRM e' do consumidor)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "um_pedido_de_contato_por_linha": true,
+    "campos": {
+      "organizacao": "objeto com o(s) identificador(es) FORTES da empresa ja existente (cnpj, domain, linkedin_url na prioridade do contrato)",
+      "contato": "objeto com as colunas declaradas de `contacts` (ver `contato.colunas_permitidas`); `email` e' a identidade, `full_name` e `legal_basis` sao exigidos",
+      "fontes": "lista (>=1) de {tipo, url?, trecho?} com o que a fonte mostrou: e' a evidencia conservada (compliance) e a primeira da lista vira `contacts.source`",
+      "confianca": "numero entre 0 e 1 declarado pela fonte (opcional; ausente = NULL, nao inventado). NAO existe coluna em `contacts` para confianca (lacuna do contrato V1): ela fica na evidencia do `agent_runs`/`sync_events`"
+    },
+    "exemplo": "{\"organizacao\":{\"domain\":\"valeforte.com.br\"},\"contato\":{\"full_name\":\"Marina Alves\",\"email\":\"Marina.Alves@ValeForte.com.br\",\"job_title\":\"Diretora de Operacoes\",\"decision_role\":\"Economic Buyer\",\"legal_basis\":\"LEGITIMATE_INTEREST\"},\"fontes\":[{\"tipo\":\"LINKEDIN\",\"url\":\"https://www.linkedin.com/in/marina-alves\",\"trecho\":\"Diretora de Operacoes na Vale Forte\"}],\"confianca\":0.8}",
+    "nao_cria_organizacao": "o contato SO enriquece/cria contato em empresa que ja existe (o produtor da empresa e' o Scout, TRE-W4-E01-T01); identidade de empresa que nao casa e' RECUSADA",
+    "um_contato_por_pedido": "cada linha traz UM contato; lote = varias linhas com o mesmo --correlation-id"
+  },
+  "contato": {
+    "colunas_permitidas": [
+      "full_name",
+      "first_name",
+      "last_name",
+      "job_title",
+      "department",
+      "seniority",
+      "decision_role",
+      "linkedin_url",
+      "email",
+      "phone",
+      "whatsapp",
+      "preferred_channel",
+      "legal_basis",
+      "source"
+    ],
+    "colunas_de_enriquecimento": [
+      "full_name",
+      "first_name",
+      "last_name",
+      "job_title",
+      "department",
+      "seniority",
+      "decision_role",
+      "linkedin_url",
+      "phone",
+      "whatsapp",
+      "preferred_channel",
+      "legal_basis",
+      "source"
+    ],
+    "colunas_proibidas": [
+      "id",
+      "organization_id",
+      "odoo_partner_id",
+      "email_status",
+      "influence_score",
+      "contactability_score",
+      "relationship_score",
+      "do_not_contact",
+      "opt_out_email",
+      "opt_out_whatsapp",
+      "created_at",
+      "deleted_at"
+    ],
+    "housekeeping_permitido": ["updated_at = now()"],
+    "regra": "a coluna JA preenchida nunca e' sobrescrita: texto grava COALESCE(NULLIF(col, ''), valor). O que a fonte nao sabe fica como esta' (NULL continua NULL) e um UPDATE por atribuicao direta e' recusado pela guarda de escrita.",
+    "identidade_nao_se_reescreve": "`email` e' escrito UMA vez (no INSERT do contato novo) e nunca por UPDATE: identidade troca de dono fora daqui. O que a fonte trouxer de e-mail diferente do que ja esta' gravado e' descartado com motivo (IDENTIDADE_NAO_ESCRITA).",
+    "organization_id": "vem da EMPRESA resolvida pelos fortes do pedido — nunca do payload",
+    "source": "DERIVADO da primeira fonte declarada (a lista completa fica na evidencia)",
+    "nomes": "`full_name` e' exigido (a operacao de espelho exige `name`); `first_name`/`last_name` so' entram se a fonte os declarar — nao se fatia nome por heuristica"
+  },
+  "vocabulario_decision_role": [
+    "Economic Buyer",
+    "Decision Maker",
+    "Influencer",
+    "Champion",
+    "User",
+    "Blocker",
+    "Unknown"
+  ],
+  "vocabulario_decision_role_origem": "docs/data/data_contract_v1.json#vocabularies.decision_role (espelho conferido pela suite)",
+  "papeis_de_decisao": ["Economic Buyer", "Decision Maker", "Champion"],
+  "papeis_de_decisao_motivo": "subconjunto CONSERVADOR do vocabulario, usado SO' para medir a elegibilidade do evento de espelho `DECISION_MAKER_FOUND`: Economic Buyer (paga), Decision Maker (decide) e Champion (sustenta internamente). Influencer/User/Blocker/Unknown nao disparam o evento. O conjunto e' dado do contrato, nao constante do codigo — mudar e' ato de versao.",
+  "fontes": [
+    "LINKEDIN",
+    "WEB",
+    "GOOGLE",
+    "META",
+    "WHATSAPP",
+    "TITAN",
+    "EVENTOS",
+    "DADOS_PUBLICOS"
+  ],
+  "identidade": {
+    "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+    "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+    "resolucao": "a EMPRESA e' resolvida pelos fortes VALIDOS do pedido; 0 casadas = RECUSADA, 1 = segue, 2+ distintas = REVISAO_IDENTIDADE",
+    "forte_invalido_e_descartado": true,
+    "sem_forte_declarado": "RECUSADA (o contato nao descobre empresa)",
+    "cria_organizacao": false,
+    "escreve_organizacao": false,
+    "regra_de_identidade_da_empresa": "IMPORTADA do produtor (hermes/agents/scout/scout.py) — nao existe segunda copia aqui",
+    "identidade_do_contato": {
+      "campo": "email",
+      "normalizacao": "minusculo e sem espaco nas pontas (idempotente)",
+      "comparacao": "lower(email) = <normalizado>: a comparacao normaliza OS DOIS LADOS, entao linha antiga gravada com maiuscula nao vira contato duplicado (custo declarado: o indice contacts(email) nao e' usado quando a comparacao e' por lower())",
+      "escopo": "dentro da EMPRESA resolvida (organization_id): a mesma pessoa em duas empresas sao DOIS contatos legitimos no modelo V1, nao ambiguidade",
+      "origem_da_regra": "docs/data/DATA_CONTRACT_V1.md §4 (indice contacts(email)) + docs/runbooks/odoo-contato-upsert.md §1 (a operacao identifica por email)",
+      "e_obrigatoria": true,
+      "cria_contato": true,
+      "cria_contato_motivo": "o produtor do contato comercial na inteligencia e' este agente (doc 07 §7: gate da W4 empresa -> .../contacts)"
+    }
+  },
+  "espelho": {
+    "event_type": "DECISION_MAKER_FOUND",
+    "origem_do_evento": "docs/data/data_contract_v1.json#events.pg_to_odoo (o contrato V1 ja' declara este evento)",
+    "emite_evento": false,
+    "motivo_de_nao_emitir": "o consumidor de outbox versionado (n8n/contracts/outbox-consumer.v1.json) declara SOMENTE eventos de `empresa_upsert`; evento fora daquela declaracao vira DEAD_LETTER com motivo nomeado. Emitir aqui criaria dead-letter de proposito, entao a v1 mede a ELEGIBILIDADE e nao emite — a ampliacao do consumidor (DECISION_MAKER_FOUND -> contato_upsert, operacao que a API ja' declara) e' trabalho declarado, nao silencio.",
+    "exigidos": ["email", "full_name", "decision_role"],
+    "elegibilidade": "o contato EFETIVO depois da escrita tem `decision_role` em `papeis_de_decisao`, tem `email` e tem `full_name` (os tres campos que o mapeamento do consumidor exige para entregar `contato_upsert`)",
+    "onde_a_medicao_fica": "payload do `sync_events` da rodada e `agent_runs.output.evento_de_espelho` (elegivel, o_que_faltaria) — nada e' emitido em `outbox_events`"
+  },
+  "vereditos": {
+    "IDENTIFICADO": "contato criado OU enriquecido na empresa resolvida (o payload do sync_event diz qual dos dois: `acao`)",
+    "JA_IDENTIFICADO": "a chave de idempotencia da MESMA entrada ja' existia: nada foi duplicado nem reaplicado (nao cria nem enriquece)",
+    "REVISAO_IDENTIDADE": "a identidade casou com organizacoes distintas OU com mais de um contato da mesma empresa: human_approvals PENDING (CONTACT_IDENTITY_REVIEW); nenhum contato escrito",
+    "RECUSADA": "pedido invalido (sem forte de empresa, sem nome, sem e-mail valido, sem base legal, sem fonte) ou empresa inexistente: nada escrito em contacts",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "IDENTIFICADO": "COMPLETED",
+    "JA_IDENTIFICADO": "COMPLETED",
+    "REVISAO_IDENTIDADE": "REVIEW_REQUIRED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.contacts",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events",
+      "sales_intelligence.human_approvals"
+    ],
+    "somente_leitura": [
+      "sales_intelligence.organizations"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.contacts": ["INSERT (contato novo)", "UPDATE (so enriquecimento com COALESCE e restauracao do --desfazer --confirmo)", "DELETE (so no --desfazer --confirmo, e so' contato CRIADO pela rodada)"],
+      "sales_intelligence.agent_runs": ["INSERT"],
+      "sales_intelligence.sync_events": ["INSERT", "UPDATE", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.human_approvals": ["INSERT"]
+    },
+    "proibido": [
+      "qualquer escrita em sales_intelligence.organizations (a empresa e' do Scout/Research)",
+      "INSERT de contacts com coluna fora da lista declarada (guarda de escrita recusa)",
+      "UPDATE de contacts fora das colunas de enriquecimento declaradas",
+      "UPDATE de contacts com atribuicao direta (sem COALESCE) fora do --desfazer --confirmo",
+      "DELETE de contacts fora do --desfazer --confirmo",
+      "escrita de email por UPDATE (identidade nao se reescreve)",
+      "escrita de odoo_partner_id, scores, email_status ou flags de opt-out",
+      "DDL (CREATE/ALTER/DROP/TRUNCATE)",
+      "escrita em qualquer outra tabela",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "ver `espelho`: o evento e' do contrato e a elegibilidade e' medida, mas o consumidor versionado nao cobre o evento — emitir alimentaria a dead-letter de proposito"
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed)",
+    "llm_exige_recibo_jev": true,
+    "recibo_jev_aceito": {"outcome": "PASS", "lane_obrigatoria": true, "decision_id_obrigatorio": true},
+    "recibo_jev_recusado": {"outcome": "ESCALATE", "outcome_bloqueado": "BLOCK", "ausente": "recusa"},
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ],
+    "nao_contatar_opt_out": "o agente NAO contata ninguem (nenhum cliente de rede no codigo) e NUNCA escreve nem limpa `do_not_contact`/`opt_out_email`/`opt_out_whatsapp`: os flags nao estao nas colunas declaradas, entao nem no INSERT nem no UPDATE eles entram (doc 12 §8)",
+    "sem_http_smtp_socket": "o agente nao faz requisicao de rede nenhuma; a fonte entrega os achados (sem crawler na v1)"
+  },
+  "compliance": {
+    "campos_minimos_do_contrato": ["legal_basis", "source", "do_not_contact", "opt_out_email", "opt_out_whatsapp", "preferred_channel"],
+    "o_que_este_agente_preenche": ["legal_basis (exigido do pedido: sem ele o contato e' RECUSADA)", "source (derivado da primeira fonte declarada)", "preferred_channel (se a fonte declarar)"],
+    "o_que_este_agente_NAO_preenche": {
+      "do_not_contact": "default FALSE do DDL; o flag e' fato do titular/operador e o agente nunca o escreve — nem para limpar",
+      "opt_out_email": "idem",
+      "opt_out_whatsapp": "idem"
+    },
+    "lacunas_do_contrato": ["collected_at e retention_until nao existem no contrato V1 (lacuna ja' declarada no compliance do contrato)"],
+    "dado_pessoal_na_trilha": "e-mail e telefone sao dado pessoal: entram em `contacts` (a coluna existe para isso) e NAO entram no log de CLI/relatorio de execucao impresso na tela (o relatorio da rodada so' imprime veredito, acao e motivo)"
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por pedido processado (agent_name=contact_research, agent_role=contact_research, correlation_id do lote, output com veredito, acao, contato, colunas e a elegibilidade do evento)",
+    "contacts": "uma linha por contato (criada na primeira rodada que o identificou; enriquecida nas seguintes)",
+    "sync_events": "uma linha por pedido ingerido: guarda as evidencias, o ANTES/DEPOIS de cada coluna (e o que o --desfazer restaura) e a elegibilidade do evento",
+    "human_approvals": "action_type=CONTACT_IDENTITY_REVIEW, status=PENDING (so' na ambiguidade)",
+    "uuid": "v4 gerado no produtor (o agente) antes de qualquer escrita"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "contatos CRIADOS pela rodada (apagados) + colunas enriquecidas (restauradas para os valores anteriores gravados no proprio sync_event) + sync_events da rodada; registra o ROLLBACK",
+    "padrao": "dry-run (sem --confirmo nada e' apagado nem restaurado)",
+    "recusa": "se algum contato CRIADO pela rodada ja' tem `odoo_partner_id` (ja' espelhado no CRM), o --confirmo RECUSA a rodada inteira (RollbackRecusado): apagar so' um lado deixaria as duas pontas discordando. Quem resolve isso e' o operador.",
+    "nao_toca": "organizacao (a empresa nao e' deste agente), agent_runs (auditoria) e human_approvals"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em pedido ou falha de porta; inclui rollback recusado)",
+    "2": "uso incorreto",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "sem LLM e sem crawler na v1: a fonte entrega as fontes e os achados; busca ativa em web/LinkedIn nao esta' implementada (o gate do JEV existe e e' fail-closed)",
+    "sem evento de outbox: o evento `DECISION_MAKER_FOUND` e' do contrato, mas o consumidor versionado so' declara `empresa_upsert`; a elegibilidade e' medida e registrada, e a ampliacao do consumidor e' trabalho declarado",
+    "sem score: `influence_score`/`contactability_score`/`relationship_score` continuam NULL (W5) e nenhum score e' calculado aqui",
+    "sem verificacao de entregabilidade: `email_status` nao e' escrito nem aceito da fonte — nenhuma fonte desta versao verifica caixa de e-mail, e escrever 'VALID' de ouvir dizer seria inferencia",
+    "sem sinais nem hipotese de dor: signals/hipotese sao W4-E03/E04",
+    "sem escrita na organizacao: o contato nao mexe em `organizations` (nem para enriquecer) — a empresa e' do Scout/Research",
+    "sem odoo_partner_id: o vinculo com o CRM e' escrito pelo caminho do consumidor/espelho, nunca por este agente",
+    "confianca nao tem coluna em `contacts` no contrato V1: ela fica na evidencia (agent_runs/sync_events) e nao e' inventada em coluna",
+    "um contato por linha: lote com varios contatos da mesma empresa sao varias linhas com o mesmo correlation_id",
+    "a chave de idempotencia cobre a MESMA entrada: dois achados legitimamente distintos para o mesmo e-mail (input_hash diferente) geram duas rodadas — a segunda enriquece as colunas vazias, e a conferencia de identidade e' a mesma"
+  ]
+}

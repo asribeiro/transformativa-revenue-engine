@@ -1275,3 +1275,46 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Portão de estrutura** (`TRE-W4-E04-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
   artefatos do agente Pain Hypothesis (versionados no git, aceite executável).
 
+## [W4 — Hermes Sales AI · Contact Research] — 02/10/2026
+
+### Added
+
+- **Agente Contact Research v1 — contato comercial da empresa já pesquisada** (`TRE-W4-E05-T01`) — o
+  terceiro agente da onda W4 e o produtor do `contacts`: resolve a empresa **que já existe** (nunca
+  cria organização), casa o contato pela **identidade de e-mail** (`lower(email)` nos dois lados),
+  cria o que não existe e **enriquece** o que existe sem sobrescrever coluna preenchida:
+  - `hermes/agents/contact_research/contact_research.py`, `hermes/agents/contact_research/agente-contact-research-v1.json`
+    (contrato legível por máquina do próprio agente) e `hermes/agents/contact_research/exemplos/contatos-exemplo.jsonl`;
+  - veredito por identidade: empresa casando **uma** vez = cria/enriquece (`IDENTIFICADO`); replay da
+    mesma entrada = `JA_IDENTIFICADO`; dois casamentos distintos = `REVISAO_IDENTIDADE` para a fila
+    humana (`human_approvals.action_type = CONTACT_IDENTITY_REVIEW`); identidade que não casa =
+    `RECUSADA` (`ORGANIZACAO_NAO_ENCONTRADA`) — o agente **não cria** empresa, **não escreve** o
+    e-mail (identidade), `odoo_partner_id`, `do_not_contact`, `opt_out_email`, `opt_out_whatsapp` nem
+    scores, e não detecta sinais, dores ou recomendações (W4-E03/E04);
+  - **não sobrescrever é garantido no SQL** (`COALESCE(NULLIF(coluna,''), valor)`) e a guarda de
+    escrita **exige** esse formato; `UPDATE` por atribuição direta é recusado pelo próprio agente
+    (medido por mutação, no offline e no E2E);
+  - identidade do contato sem diferença de caixa/espaço; achado inválido, papel de decisão fora do
+    vocabulário fechado ou campo fora do DDL do `contacts` é **descartado com motivo** em
+    `output.descartados` — nunca escrito em silêncio;
+  - ingestão idempotente por `contact:<correlation>:<sha256 do pedido>` em
+    `sync_events.idempotency_key` (`ON CONFLICT (idempotency_key) DO NOTHING`), com **toda** instrução
+    da rodada ancorada no `sync_event` daquela rodada (`... WHERE id = <id> AND status = 'PENDING'`) e
+    `antes`/`depois` gravados no `request_payload` — é dele que o `--desfazer` tira a restauração;
+  - `DECISION_MAKER_FOUND` é **medido, não emitido** na v1 (o consumidor versionado
+    `n8n/contracts/outbox-consumer.v1.json` não cobre o evento): a elegibilidade fica como evidência em
+    `agent_runs.output.evento_de_espelho` e a fila de outbox fica **vazia** — lacuna declarada no doc
+    de arquitetura (§12);
+  - guardas fail-closed: `--ambiente prod` recusado (exit 4), escrita só nas 4 tabelas declaradas,
+    `DELETE` de contato só no desfazer, LLM só com recibo válido do JEV, nenhum cliente HTTP no código;
+  - `--planejar` (sem banco) e `--desfazer <correlation_id>` (dry-run por padrão; `--confirmo`
+    restaura as colunas enriquecidas, apaga os contatos **criados** pela rodada e os `sync_events` da
+    rodada, registra o `ROLLBACK` e **recusa** a rodada cujo contato já foi espelhado no CRM).
+- **Verificação do Contact Research** (`TRE-W4-E05-T01`) — `scripts/agentes/verificar_agente_contact_research.py`
+  (suíte offline, **60 itens**, autoteste de **25 mutações** com guarda da própria prova) e
+  `scripts/agentes/teste_contact_research_aceite.sh` (aceite E2E em container PostgreSQL descartável na
+  VPS, **65 itens** + prova de dente com 4 mutações, cada uma exigindo o **item esperado**);
+  `docs/architecture/agente-contact-research-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/agente-contact-research.md`.
+- **Portão de estrutura** (`TRE-W4-E05-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
+  artefatos do agente Contact Research (versionados no git, aceite executável).
