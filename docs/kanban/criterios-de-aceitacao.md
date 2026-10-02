@@ -312,3 +312,35 @@ sustentado com citação obrigatória, lista declarada de afirmações proibidas
 geração, id determinístico (sem duplicação em retry), provedor sem credencial recusando **sem abrir conexão**,
 e o default `offline` (sem rede, sem custo) — cada um com item e dente próprios. O que **não** está coberto
 nesta v1: qualidade da abordagem medida por resposta real (W9) e a decisão humana (W6-E03).
+
+### TRE-W6-E03-T01 — Implementar Human Approval workflow
+
+**Acceptance:** `--fila` notifica cada pedido `PENDING` uma unica vez (codigo curto `APR-`, empresa, contato,
+acao, canal, texto e os tres comandos; sem `{{marcador}}` pendurado) e a segunda rodada e `JA_NOTIFICADO` com
+0 novos; `--decidir aprovar` grava `APPROVED` + operador humano canonico + `decided_at` + nota + hash do texto
+aprovado, e o `entrada_hash` do gerador fica intacto; replay do mesmo voto = `JA_DECIDIDO` (nada reescrito) e
+voto diferente = `CONFLITO_DE_VOTO`; `--decidir editar` so aprova texto que passa a validacao do gerador irmao
+(fato inventado RECUSA `EDICAO_INVALIDA` **sem gravar**), preservando o original; `--decidir rejeitar` fecha o
+pedido e ele nao reabre; compliance em vigor na hora da decisao (`do_not_contact`/`opt_out_*`) e recomendacao
+fora de `OPEN` RECUSAM; operador ausente/nao autorizado/maquina RECUSAM (exit 3) sem escrever; `--expirar`
+marca `EXPIRED` o que passou do TTL com `decided_by` **vazio** e nao mexe no resto; pedido `EXPIRED` nao aceita
+decisao; `--consultar` libera **so** `APPROVED` com hash conferido e contato limpo; `--desfazer` dry-run x
+`--confirmo` (motivo obrigatorio) reabre o pedido preservando a auditoria; `prod` exit 4; escrita so em
+`human_approvals`/`agent_runs` (DDL e DELETE sem `--confirmo` recusam) e nada fora delas e tocado em rodada
+nenhuma.
+**Test plan:** `python3 scripts/agentes/verificar_fluxo_aprovacao.py` (79 OK / 0) + `--autoteste` (20/20) +
+`bash scripts/agentes/teste_fluxo_aprovacao_aceite.sh --prova-de-dente` na VPS do ambiente (PostgreSQL
+descartavel `pg-aprovacao-acc`, migration 0001, 6 empresas sinteticas; os pedidos sao criados pelo **gerador do
+card irmao**, cadeia real) -> `ACEITE_APROVACAO_001_OK (104 OK / 0 FALHOU)` + 4/4 dentes. Evidencia = saida
+completa com exit code e veredito. Doc: `docs/architecture/aprovacao-humana-v1.md`; runbook:
+`docs/runbooks/aprovacao-humana.md`.
+**Rollback:** `--desfazer <correlation_id> [--confirmo --por --motivo]` devolve os pedidos da rodada a
+`PENDING`, limpa `decided_at`/`decided_by`, restaura o texto original da edicao e preserva a auditoria; reverter
+o merge do branch (sem DDL, sem migration; nenhum envio, nenhuma atividade no Odoo, nenhum evento de outbox).
+**Risk:** medio — e o portao que autoriza abordagem a pessoa real. Enderecado por: decisao so de `PENDING`,
+operador humano obrigatorio e canonico, hash do texto aprovado carimbado e reconferido no portao, compliance
+reavaliada na hora da decisao, contexto do pedido reconferido contra o banco (recomendacao `OPEN`, contato e
+empresa atuais), escrita restrita a duas tabelas com guarda anti-DDL, `prod` recusado e idempotencia testada
+nos dois sentidos (replay nao reescreve, rodada repetida nao renotifica). O que **nao** esta coberto nesta v1:
+transporte real da notificacao (Telegram/e-mail e do W6-E04) e a qualidade da abordagem medida por resposta
+real (W9).

@@ -1804,3 +1804,14 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
 - **`TRE-W6-E02-T01`** — credencial de provedor de modelo apenas por variável de ambiente; ausente, a rodada
   RECUSA antes de abrir conexão. Nenhuma chave em argumento, política, relatório ou registro; a guarda de
   escrita recusa DDL, escrita fora de `human_approvals`/`agent_runs` e DELETE sem `--confirmo`.
+
+- **`TRE-W6-E03-T01`** — workflow de aprovacao humana do outbound v1 (`hermes/agents/outreach/approval_workflow.py`,
+  politica `politica-aprovacao-v1.json`, template `notificacao-aprovacao-v1.md`, contrato `aprovacao-humana-v1.json`):
+  le os pedidos `PENDING` que o gerador irmao gravou, notifica **uma vez por (pedido, texto)** com codigo curto e os
+  tres comandos, recebe os atos humanos (aprovar / editar / rejeitar) com operador humano nomeado e canonico,
+  expira por TTL sem inventar operador, reverte pelo `--desfazer` (dry-run x `--confirmo` com motivo) e expoe o
+  portao `--consultar` — **nada e enviado** (envio e W6-E04). Escrita so em `human_approvals`/`agent_runs`, com
+  guarda contra DDL e DELETE. Medido: suite offline `PASS (79 OK / 0 falhas)` + autoteste `20/20` mutacoes;
+  aceite E2E em PostgreSQL descartavel (cadeia real com o gerador) `ACEITE_APROVACAO_001_OK (104 OK / 0 FALHOU)`
+  com **4/4 dentes**. Correcao de defeito real: a idempotencia da notificacao ficava vazia porque
+  `json_agg` de `output->'notificados'` produzia lista de listas — a segunda rodada renotificava todos os pedidos.

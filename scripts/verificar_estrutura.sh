@@ -457,5 +457,24 @@ for f in scripts/agentes/teste_gerador_abordagem_aceite.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Workflow de aprovacao humana do outbound (TRE-W6-E03-T01): sem o aceite E2E, a suite offline, a politica,
+# o template, o contrato do componente e os docs do card versionados, o portao que autoriza abordagem a
+# pessoa real nao e conferivel por terceiro.
+for f in hermes/agents/outreach/approval_workflow.py \
+         hermes/agents/outreach/politica-aprovacao-v1.json \
+         hermes/agents/outreach/notificacao-aprovacao-v1.md \
+         hermes/agents/outreach/aprovacao-humana-v1.json \
+         scripts/agentes/verificar_fluxo_aprovacao.py \
+         scripts/agentes/teste_fluxo_aprovacao_aceite.sh \
+         docs/architecture/aprovacao-humana-v1.md docs/runbooks/aprovacao-humana.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_fluxo_aprovacao_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

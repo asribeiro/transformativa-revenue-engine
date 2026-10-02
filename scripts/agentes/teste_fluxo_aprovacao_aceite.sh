@@ -554,11 +554,11 @@ fi
 if [ "$DENTE" -eq 1 ]; then
   echo "== prova de dente"
   mutar() { # <arquivo origem> <destino> <de> <para>
-    python3 - "$1" "$2" "$3" "$4" <<'PY'
+    python3 - "$1" "$2" "$3" "$4" <<'PY' || { echo "FALHOU ancora de mutacao nao encontrada em $1 — prova de dente INVALIDA (nao ha como medir o dente)"; exit 2; }
 import sys
 texto = open(sys.argv[1], encoding="utf-8").read()
 if sys.argv[3] not in texto:
-    raise SystemExit(f"ancora nao encontrada: {sys.argv[3]!r}")
+    raise SystemExit(2)
 open(sys.argv[2], "w", encoding="utf-8").write(texto.replace(sys.argv[3], sys.argv[4], 1))
 PY
   }
@@ -577,8 +577,8 @@ PY
     > "$TRABALHO/dente_guarda.out" 2>&1
   rodar_dente "guarda" "A6 aprovar contato que virou opt-out RECUSA (exit 1)"
   mutar "$MODULO" "$TRABALHO/dentes/sem_validacao.py" \
-    "    if problemas:\n        raise RecusaDeDecisao(MOTIVO_EDICAO_INVALIDA" \
-    "    if False:\n        raise RecusaDeDecisao(MOTIVO_EDICAO_INVALIDA"
+    $'    if problemas:\n        raise RecusaDeDecisao(MOTIVO_EDICAO_INVALIDA' \
+    $'    if False:\n        raise RecusaDeDecisao(MOTIVO_EDICAO_INVALIDA'
   TRE_APROVACAO_CONTAINER="pg-aprovacao-dente2" bash "$0" --raiz "$RAIZ" --codigo "$TRABALHO/dentes/sem_validacao.py" \
     > "$TRABALHO/dente_validacao.out" 2>&1
   rodar_dente "validacao" "A8 edicao com fato inventado RECUSA (exit 1)"

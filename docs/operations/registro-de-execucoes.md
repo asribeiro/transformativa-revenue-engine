@@ -2289,3 +2289,35 @@ medido (`A5(a)`).
 **Não é homologação:** o veredito técnico deste registro é de quem entregou; a revisão independente é do
 perfil `tester` e a homologação (estágio 7) é do Anderson. Segredos: nenhum valor aqui; a rodada de provedor
 usou chave fictícia contra um stub HTTP local (`127.0.0.1`), e o modo padrão é o renderizador offline.
+
+## 2026-10-02 — TRE-W6-E03-T01 (workflow de aprovacao humana do outbound v1)
+
+**O que foi executado, com numero medido:** suite offline `scripts/agentes/verificar_fluxo_aprovacao.py`
+-> `RESULTADO: PASS (79 OK / 0 falhas)` e `--autoteste` -> `PASS (20/20 mutacoes detectadas)`; aceite E2E
+`scripts/agentes/teste_fluxo_aprovacao_aceite.sh` na VPS do ambiente em `/opt/tre/aprovacao-e03t01-r3/repo`
+com PostgreSQL descartavel `pg-aprovacao-acc` + `pg-aprovacao-dente1..4` (todos removidos pelo proprio aceite;
+`pg-sales-dev`, `pg-odoo-dev`, `odoo-dev` e `proxy-dev` intactos) -> `RESULTADO: ACEITE_APROVACAO_001_OK
+(104 OK / 0 FALHOU)` e `--prova-de-dente` -> 4/4 (`guarda` -> A6, `validacao` -> A8, `transicao` -> A11,
+`replay` -> A3). Nada em producao: `--ambiente prod` sai com exit 4 antes de falar com o banco (ADR-005).
+
+**A cadeia do aceite e a real, nao uma simulacao:** o gerador do card irmao (`outreach_generator.py`,
+W6-E02) cria os pedidos `PENDING` em `human_approvals` e este componente os notifica, decide, expira,
+reverte e libera pelo portao. A massa e sintetica (6 empresas/contatos) e a rodada e descartavel.
+
+**Defeito real encontrado pelo aceite (e corrigido):** o mapa de idempotencia da notificacao ficava vazio
+porque `json_agg(output->'notificados')` produz uma **lista de listas** (uma por rodada) e o leitor so
+aceitava dicts — a segunda `--fila` renotificava os 5 pedidos (`NOTIFICADO`, 5 novos) em vez de
+`JA_NOTIFICADO`. Correcao: `jsonb_array_elements(...)` no `FROM`, `_achatar()` defensivo e **fail-closed**
+(se a leitura falhar, a rodada RECUSA: renotificar em loop e pior do que nao notificar). Ganhou item C6 na
+suite offline e a mutacao D21 no autoteste.
+
+**Correcoes do instrumento (do aceite, nao do componente):** itens que liam colunas com `tr -d ' '`
+destruiam nomes/notas de mais de uma palavra (agora `psql_limpo`); itens de booleano comparavam `t` com
+`true` (agora `CASE WHEN ... THEN 'sim'`); a contagem de ocorrencias de texto em arquivo usava `grep -c`
+(linhas) onde o correto era presenca; a mutacao da validacao da edicao passava `\n` literal em vez de
+quebra de linha (a ancora nao era encontrada e o dente nao media nada — agora `$'...'` e a mutacao aborta o
+harness quando a ancora nao existe); a linha do conflito do A13 chamava o CLI sem `--decisao`/`--por`.
+
+**Nao e homologacao:** o veredito tecnico deste registro e de quem entregou; a revisao independente e do
+perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A rodada nao envia nada —
+`entrega_externa: false` e `envio.executado: false` na auditoria; nenhum evento de outbox e criado.
