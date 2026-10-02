@@ -279,8 +279,16 @@ def validar_candidata(candidata: dict, fortes: tuple) -> dict:
             "validos": validos, "problemas": []}
 
 
-def decidir_veredito(declarados: list, validos: list, organizacoes_casadas: list) -> tuple:
-    """Decisao pura (testavel sem banco) — a regra vive aqui e so aqui."""
+def decidir_veredito(declarados: list, validos: list, organizacoes_casadas: list,
+                     problemas=()) -> tuple:
+    """Decisao pura (testavel sem banco) — a regra vive aqui e so aqui.
+
+    `problemas` sao as recusas de FORMA ja detectadas pela validacao (sem nome, sem fonte,
+    fonte fora do vocabulario, forte declarado e invalido): elas vencem qualquer identidade,
+    porque candidata invalida nao e criada.
+    """
+    if problemas:
+        return VER_RECUSADA, problemas[0]
     if not validos:
         if declarados:
             return VER_RECUSADA, "IDENTIFICADOR_FORTE_INVALIDO"
@@ -457,8 +465,12 @@ def sql_ingerir(organizacao_id: str, sync_event_id: str, chave: str, valores: di
     a saida vazia E a prova de que nada foi duplicado (retry nao cria duplicata).
     """
     colunas = [c.strip() for c in _COLUNAS_ORGANIZACAO.split(",")]
-    expressoes = [lit(organizacao_id)] + [lit(valores.get(c)) for c in colunas[1:-2]] + \
+    # id + campos de negocio (tudo que fica ENTRE id e status) + status + source + os dois carimbos.
+    expressoes = [lit(organizacao_id)] + [lit(valores.get(c)) for c in colunas[1:-4]] + \
                  [lit(valores["status"]), lit(valores["source"]), "now()", "now()"]
+    if len(expressoes) != len(colunas):
+        raise ValueError("montagem do INSERT divergente: %d colunas x %d valores"
+                         % (len(colunas), len(expressoes)))
     lista_colunas = ", ".join(colunas)
     lista_valores = ", ".join(expressoes)
     payload = dict(evidencia)
@@ -701,7 +713,8 @@ class Scout:
                 resultado["idempotency_key"] = chave_idempotencia(tipo, valor)
             casadas = self.organizacoes_casadas(validos) if validos else []
             ids_casados = sorted({c["organization_id"] for c in casadas})
-            veredito, motivo = decidir_veredito(identificacao["declarados"], validos, ids_casados)
+            veredito, motivo = decidir_veredito(identificacao["declarados"], validos, ids_casados,
+                                                identificacao["problemas"])
             resultado["veredito"] = veredito
             resultado["motivos"] = identificacao["problemas"] or ([motivo] if motivo else [])
             resultado["organizacoes_casadas"] = casadas

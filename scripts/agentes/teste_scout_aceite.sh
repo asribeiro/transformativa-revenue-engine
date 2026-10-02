@@ -267,7 +267,7 @@ prova_de_dente() {
   mutacoes=$(cat <<'EOF'
 sem-idempotencia|ON CONFLICT (idempotency_key) DO NOTHING|
 sem-forte-tambem-cria|        return VER_REVISAO, "SEM_IDENTIFICADOR_FORTE"|        return VER_CRIADA, None
-prod-deixa-de-ser-recusado|        if self.ambiente == AMBIENTE_RECUSADO:|        if False:
+revisao-nao-vai-para-a-fila-humana|            elif veredito == VER_REVISAO:|            elif False:
 EOF
 )
   local linha nome alvo substituto destino

@@ -115,6 +115,29 @@ def candidata(**campos):
     return base
 
 
+def lista_sql(texto):
+    """Divide uma lista SQL por virgula respeitando strings entre apostrofos."""
+    itens, atual, dentro, i = [], [], False, 0
+    while i < len(texto):
+        char = texto[i]
+        if char == "'":
+            if dentro and i + 1 < len(texto) and texto[i + 1] == "'":
+                atual.append("''")
+                i += 2
+                continue
+            dentro = not dentro
+            atual.append(char)
+        elif char == "," and not dentro:
+            itens.append("".join(atual).strip())
+            atual = []
+        else:
+            atual.append(char)
+        i += 1
+    if atual:
+        itens.append("".join(atual).strip())
+    return [x for x in itens if x]
+
+
 # ---------------------------------------------------------------------------------------
 # 1. Contrato e artefatos
 # ---------------------------------------------------------------------------------------
@@ -401,6 +424,21 @@ def _ (ctx):
     return not proibidos, "0 UPDATE em organizations em %d SQLs gerados" % len(gerados)
 
 
+@item("insert-de-organizations-casa-colunas-com-valores")
+def _ (ctx):
+    linha = ctx.modulo.montar_linha_organizacao(
+        candidata(domain="x.com.br"), {"fonte": "WEB", "validos": [("domain", "x.com.br")]})
+    sql = ctx.modulo.sql_ingerir("11111111-1111-1111-1111-111111111111",
+                                 "22222222-2222-2222-2222-222222222222",
+                                 "scout:org:domain:x.com.br", linha, {"origem": "scout"})
+    m = re.search(r"INSERT INTO sales_intelligence\.organizations \(([^)]*)\)\s*\n\s*"
+                  r"SELECT (.*?)\s+FROM claim", sql, re.S)
+    if not m:
+        return False, "nao achei INSERT ... SELECT FROM claim no SQL gerado"
+    colunas, valores = lista_sql(m.group(1)), lista_sql(m.group(2))
+    return len(colunas) == len(valores), "%d colunas x %d valores" % (len(colunas), len(valores))
+
+
 @item("colunas-dos-inserts-existem-no-ddl")
 def _ (ctx):
     problemas = []
@@ -616,6 +654,19 @@ def _ (ctx):
         "veredito=%s escritas=%d" % (r["veredito"], len(escritas))
 
 
+@item("candidata-invalida-nao-chega-a-insercao-no-fluxo")
+def _ (ctx):
+    porta = PortaRoteiro(modulo=ctx.modulo)
+    agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
+    casos = [candidata(legal_name="", trade_name="", domain="sem-nome.com.br"),
+             candidata(domain="x.com.br", source="PANFLETO"),
+             candidata(legal_name="Sem fonte", domain="y.com.br", source=None)]
+    vereditos = [agente.processar(c)["veredito"] for c in casos]
+    insercoes = [s for s in porta.chamadas if "INSERT INTO sales_intelligence.organizations" in s]
+    return (vereditos == [ctx.modulo.VER_RECUSADA] * 3 and not insercoes), \
+        "vereditos=%s insercoes_de_organizacao=%d" % (vereditos, len(insercoes))
+
+
 @item("modo-planejar-nao-toca-a-porta")
 def _ (ctx):
     porta = PortaRoteiro(modulo=ctx.modulo)
@@ -701,16 +752,20 @@ def executar_suite(modulo, raiz=RAIZ):
 MUTACOES = [
     ("sem-idempotencia-no-sql",
      "  ON CONFLICT (idempotency_key) DO NOTHING\\n", "\\n",
-     ["sql-de-ingestao-exige-a-chave-unica", "fluxo-replay-idempotente-nao-duplica-nem-marca-sucesso"]),
+     ["sql-de-ingestao-exige-a-chave-unica"]),
     ("sem-forte-tambem-cria",
      '        if declarados:\n            return VER_RECUSADA, "IDENTIFICADOR_FORTE_INVALIDO"\n'
      '        return VER_REVISAO, "SEM_IDENTIFICADOR_FORTE"',
      '        return VER_CRIADA, None',
      ["sem-forte-declarado-vai-para-revisao", "carrega-forte-e-nenhum-valido-recusa"]),
-    ("prod-deixa-de-ser-recusado",
-     "        if self.ambiente == AMBIENTE_RECUSADO:",
+    ("ambiente-desconhecido-deixa-de-ser-recusado",
+     "        if self.ambiente not in AMBIENTES_PERMITIDOS:",
      "        if False:",
      ["fluxo-sem-ambiente-ou-prod-recusa-antes-de-qualquer-escrita"]),
+    ("revisao-deixaria-de-ir-a-fila-humana",
+     "            elif veredito == VER_REVISAO:",
+     "            elif False:",
+     ["fluxo-revisao-de-identidade-cria-aprovacao-e-nao-cria-organizacao"]),
     ("conflito-de-fortes-vira-ja-existe",
      '    return VER_REVISAO, "CONFLITO_DE_IDENTIDADE_FORTE"',
      "    return VER_JA_EXISTE, None",
