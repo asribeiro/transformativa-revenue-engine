@@ -243,7 +243,7 @@ PY
         echo "FALHOU dente 1: mutacao NAO foi aplicada na copia ($MUT1) — o dente mediria o artefato intacto"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
-    prova 1 "capacidades: oportunidade_upsert declarada como escrita com chave exigida" "sem-operacao"
+    prova 1 "capacidades: declaracao inesperada da operacao" "sem-operacao"
 
     # ---------------------------------------------------------------- dente 2
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
@@ -277,7 +277,7 @@ texto = texto.replace(
         echo "FALHOU dente 3: mutacao NAO foi aplicada na copia do controlador ($MUT3)"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
-    prova 3 "mesma identidade: segunda chamada (atualiza)" "controlador-sem-upsert"
+    prova 3 "segunda chamada nao atualizou" "controlador-sem-upsert"
 
     # ---------------------------------------------------------------- ancora externa
     MANIFESTO_DEPOIS="$(manifesto_modulo)"
