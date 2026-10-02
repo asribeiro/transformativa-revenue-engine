@@ -31,7 +31,6 @@ O QUE ESTA SUITE NAO PROVA (declarado, para nao vender mais do que mede):
 
 import json
 from datetime import date, datetime, timedelta
-import json
 
 from odoo.modules.module import get_module_path
 from odoo.tests import HttpCase, new_test_user, tagged
