@@ -1798,3 +1798,13 @@ apresentou defeito no que foi medido — o buraco era do verificador:
 - **Ambiente:** o container `pg-buying-acc` foi **removido** pelo próprio aceite; `pg-sales-dev` (Up 2d),
   `pg-odoo-dev`, `odoo-dev` e `proxy-dev` **intactos**; o container `pg-icp-acc` (aceite do card irmão
   W5-E01-T01, rodando em paralelo) **não foi tocado**; nada em produção.
+- **Prova de dente do aceite (agente):** `bash scripts/agentes/teste_buying_signal_aceite.sh --prova-de-dente`
+  → **`40 OK / 0 FALHOU` → `ACEITE_BSS_001_OK`** com dente **4/4** (`sem-versao` → `A1 score_version`,
+  `sem-teto` → `A1 score_value > 0`, `sem-idempotencia` → `A4 replay: continua 1 score`, `sem-validade` →
+  `A1 valid_until = calculated_at + 30 dias`); console `/tmp/bss-aceite-dente2.console`, sha256
+  `74871f2f5e02fafdc0031eefe9509a76bb7e46d1d2bc23a78230c2d2ea8ba8d3`, cópia em
+  `attachments/t_967911e0/aceite-bss-e2e-dente.console`. O primeiro dente do aceite teve duas falhas de
+  PROVA (âncora ausente e mutação inerte de duas camadas), corrigidas: a mutação passou a mirar o
+  `AND status = 'REGISTERED'` do INSERT ancorado, que é o que só o E2E mede.
+- **Suítes offline (agente):** `verificar_buying_signal_score.py` → **91 itens / 0 falhas**; `--prova-de-dente`
+  → **12/12 OK** com controle negativo (mutação inerte **não** reprova a suíte).

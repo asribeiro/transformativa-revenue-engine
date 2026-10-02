@@ -241,8 +241,8 @@ PY
   done <<'LISTA'
 sem-versao|lit(SCORE_VERSION)|lit("SEM_VERSAO")|A1 score_version
 sem-teto|valor = max(0.0, min(100.0, 100.0 * forca))|valor = 100.0 * forca * 3|A1 score_value > 0
-sem-idempotencia|WHERE NOT EXISTS (SELECT 1 FROM sales_intelligence.sync_events WHERE idempotency_key = '|WHERE NOT EXISTS (SELECT 1 FROM sales_intelligence.sync_events WHERE idempotency_key <> '|A4 replay: continua 1 score
-sem-guarda-signals|if tabela in (TABELA_SINAIS, TABELA_ORGANIZACOES):|if tabela in ():|A2 nenhuma coluna de score do sinal preenchida
+sem-idempotencia|AND status = 'REGISTERED');|AND status = status);|A4 replay: continua 1 score
+sem-validade|VALIDADE_DIAS = 30|VALIDADE_DIAS = 7|A1 valid_until = calculated_at + 30 dias
 LISTA
   rm -rf "$D"
 fi

@@ -112,8 +112,20 @@ score    = 100 * forca                 # arredondado a 2 decimais, teto 100
 
 ## 7. Evidências da rodada
 
-- Suíte offline: `91 itens / 0 falhas`; dente `12/12 OK` (inclui controle negativo).
-- Aceite E2E: `36 OK / 0 FALHOU` → `ACEITE_BSS_001_OK`, em container descartável `pg-buying-acc`
-  na VPS do TRE, com a migration 0001 aplicada e a massa de 3 sinais; containers do TRE intactos.
-- Ambiente: `pg-buying-acc` **removido** ao fim do aceite; `pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`
-  e `proxy-dev` (e o container de outro card, `pg-icp-acc`) intocados; nada em produção.
+- Suíte offline: **91 itens / 0 falhas**; dente offline **12/12 OK** (inclui controle negativo de
+  mutação inerte). Saída: `evidencia/suite-bss.out` e `evidencia/dente-bss-offline.out`.
+- Aceite E2E: **36 OK / 0 FALHOU** → `ACEITE_BSS_001_OK` (console `evidencia/aceite-bss-e2e.console`,
+  sha256 `69db8bbc…`), e com `--prova-de-dente` **40 OK / 0 FALHOU** → `ACEITE_BSS_001_OK` com dente
+  **4/4** (console `evidencia/aceite-bss-e2e-dente.console`, sha256 `74871f2f…`): `sem-versao` reprova
+  `A1 score_version`, `sem-teto` reprova `A1 score_value > 0`, `sem-idempotencia` reprova
+  `A4 replay: continua 1 score`, `sem-validade` reprova `A1 valid_until = calculated_at + 30 dias`.
+- Os primeiros dentes do aceite reprovaram **a prova**, não o código: `sem-idempotencia` estava com
+  âncora ausente e `sem-guarda-signals` era **inerte** (a guarda tem duas camadas — lista de tabelas
+  permitidas **e** recusa explícita de `signals`/`organizations`); a mutação passou a mirar o que só
+  o E2E mede (`AND status = 'REGISTERED'` do INSERT ancorado). A propriedade "não escreve em
+  `signals`" é medida por item do E2E (A2) e pelo dente offline de duas partes.
+- Medição em container descartável `pg-buying-acc` na VPS do TRE, com a migration 0001 aplicada e a
+  massa de 3 sinais + 1 empresa sem sinal; `pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`, `proxy-dev` e o
+  container do card irmão (`pg-icp-acc`) **intocados**; o container do aceite foi **removido** ao fim.
+- `scripts/verificar_estrutura.sh` → **PASS** com os 6 artefatos deste card versionados e o aceite
+  executável.
