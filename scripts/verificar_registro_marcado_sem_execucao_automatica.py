@@ -33,9 +33,14 @@ O QUE ESTA SUITE TRAVA (os dois lados exigidos no card)
      libera (PASS) e grava o recibo.
   4. COBERTURA dos achados D1/D2 da verificacao independente do card `t_2c8c5a22`, fechados no
      conserto do card `t_145eeaef`:
-       D1 — com anotacao E DDL/migration declarada no proprio card (o piso por ambiente age),
-       o rastro do guardrail segue no TOPO do campo `override` (nunca em
+       D1 (com piso) — com anotacao E DDL/migration declarada no proprio card (o piso por
+       ambiente age), o rastro do guardrail segue no TOPO do campo `override` (nunca em
        `override.humano.registro_marcado`), e `humano` nomeia SO o override do chamador;
+       D1 (SEM piso) — com anotacao e override do chamador mas SEM DDL/migration declarada
+       (o piso NAO age, entao nada recompila o campo `override`), `humano` continua nomeando
+       SO o override do chamador e o rastro do guardrail fica no TOPO; nenhuma chave do
+       chamador pode sair espelhada fora de `humano` (cobertura do defeito medido pela
+       verificacao do card `t_831d01f0`, consertada no card `t_c21fc474`);
        D2 — em modo degradado (politica ausente) a anotacao DECIDE: BLOCK/exit 3 com
        aprovacao humana exigida, e a aprovacao de onda NAO libera o card anotado (o card
        limpo em modo degradado segue no fluxo degradado — nao ha bloqueio geral).
@@ -49,6 +54,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import sqlite3
 import sys
@@ -329,11 +335,42 @@ def checar(roteador=roteador_padrao, gate=None) -> None:
     d1b = _d1(declarado_d1)
     override_d1b = d1b["recibo"].get("override") or {}
     item("D1 — `humano` nomeia SO o override do chamador; o rastro de guardrail e IRMAO "
-         "dele no topo (nunca embrulhado sob `humano`)",
+         "dele no topo (nunca embrulhado sob `humano`), sem chave do chamador espelhada",
          override_d1b.get("humano") == declarado_d1
          and isinstance(override_d1b.get("registro_marcado"), dict)
-         and isinstance(override_d1b.get("piso_por_ambiente"), dict),
+         and isinstance(override_d1b.get("piso_por_ambiente"), dict)
+         and sorted(set(override_d1b) - {"humano", "registro_marcado", "piso_por_ambiente"}) == [],
          f"override={json.dumps(override_d1b, ensure_ascii=False)[:150]}")
+
+    # ------------------- D1 SEM piso: anotacao + override do chamador, sem DDL/migration
+    # Caminho em que o piso por ambiente NAO age (card anotado sem DDL/migration declarada):
+    # ninguem recompoe o campo `override` depois de `_registrar_proibicao_automatica_no_plano`,
+    # entao uma regressao ali (chaves do chamador espelhadas no topo e `humano` ausente) sai
+    # CRUA no recibo — era o buraco de cobertura medido pela verificacao independente do card
+    # `t_831d01f0` (o item D1 com piso nao o pega: `_compor_override_do_recibo` reconstroi
+    # `humano` a partir de `plano["override_do_chamador"]` e MASCARA a regressao).
+    def _d1_sem_piso(override_do_chamador=None):
+        tarefa = {"card_id": "t_d1_sem_piso_marcado", "acao": "ajuste de texto simples",
+                  "acao_codigo": "ajuste_de_texto", "ambiente_alvo": "desenvolvimento",
+                  "sinais": {SINAL: True}}
+        if override_do_chamador is not None:
+            tarefa["override"] = override_do_chamador
+        return roteador.decidir(tarefa, politica=politica)
+
+    sem_piso = _d1_sem_piso(declarado_d1)
+    recibo_sem_piso = sem_piso["recibo"]
+    override_sem_piso = recibo_sem_piso.get("override") or {}
+    item("D1 sem piso — anotacao + override do chamador sem DDL/migration (o piso NAO age): "
+         "`humano` nomeia SO o override do chamador, o rastro do guardrail fica no TOPO e "
+         "nenhuma chave do chamador aparece espelhada fora de `humano`",
+         sem_piso["decisao"]["outcome"] == "BLOCK"
+         and "piso_de_lane" not in sem_piso["decisao"]
+         and override_sem_piso.get("humano") == declarado_d1
+         and isinstance(override_sem_piso.get("registro_marcado"), dict)
+         and "piso_por_ambiente" not in override_sem_piso
+         and sorted(set(override_sem_piso) - {"humano", "registro_marcado"}) == []
+         and len(recibo_sem_piso) == 13 and list(recibo_sem_piso) == campos,
+         f"outcome={sem_piso['decisao']['outcome']} chaves de override={list(override_sem_piso)}")
 
     # -------------------- D2: modo degradado (politica ausente) com card ANOTADO (t_145eeaef)
     # O guardrail de registro marcado e CODIGO: sem politica carregavel ele tem de decidir
@@ -377,6 +414,49 @@ def _carregar_modulo(caminho: pathlib.Path, nome: str):
     modulo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modulo)
     return modulo
+
+
+def _arvore_da_mutacao(area: pathlib.Path, arquivo: pathlib.Path):
+    """(destino do arquivo mutado, links a criar): a mutacao medida NA ARVORE CERTA.
+
+    O roteador e o gate descobrem a raiz do repo por `__file__` e carregam a politica (e
+    as politicas de papel, o registro de aprovacoes e o modulo de aprovacoes) por caminho
+    relativo a essa raiz. Um copy plano no diretorio temporario faz a suite reprovar por
+    EXCECAO (`politica ausente`) em vez de medir a mutacao — dente falso, medido na
+    verificacao independente do card `t_831d01f0`. A arvore temporaria reproduz os
+    caminhos por symlink (mesma convencao da suite v1.1, `_arvore_do_roteador_mutado`):
+    a mutacao e exercitada pelo roteador/gate de verdade, sem tocar o arquivo versionado.
+    """
+    if arquivo == CAMINHO_DO_ROTEADOR:
+        relativo = pathlib.Path("hermes/jev/routing") / arquivo.name
+        links = {
+            pathlib.Path("hermes/jev/policy_v1_2.yaml"):
+                RAIZ / "hermes/jev/policy_v1_2.yaml",
+            pathlib.Path("hermes/policies"): RAIZ / "hermes/policies",
+        }
+    else:
+        relativo = pathlib.Path("hermes/jev/gate") / arquivo.name
+        links = {
+            pathlib.Path("hermes/jev/gate/aprovacoes.py"):
+                RAIZ / "hermes/jev/gate/aprovacoes.py",
+            pathlib.Path("hermes/jev/acoes-declaradas.yaml"):
+                RAIZ / "hermes/jev/acoes-declaradas.yaml",
+            pathlib.Path("hermes/jev/aprovacoes-humanas.yaml"):
+                RAIZ / "hermes/jev/aprovacoes-humanas.yaml",
+            pathlib.Path("hermes/jev/receipts"): RAIZ / "hermes/jev/receipts",
+            pathlib.Path("docs/operations/registro-de-aprovacoes.md"):
+                RAIZ / "docs/operations/registro-de-aprovacoes.md",
+        }
+    destino = area / relativo
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    return destino, links
+
+
+def _criar_links(area: pathlib.Path, links: dict) -> None:
+    for relativo, alvo in links.items():
+        ponto = area / relativo
+        ponto.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(alvo, ponto)
 
 
 def _copia_mutada(origem: pathlib.Path, destino: pathlib.Path, antigo: str, novo: str) -> None:
@@ -432,6 +512,12 @@ def mutacoes() -> list:
          CAMINHO_DO_ROTEADOR,
          '    guardrails = list(_guardrails_de_codigo(tarefa))',
          '    guardrails = [] if politica is None else list(_guardrails_de_codigo(tarefa))'),
+        ("D1 SEM piso: o override do chamador deixa de ser nomeado sob `humano` "
+         "(chaves do chamador espelham no topo e `humano` desaparece do recibo; no caminho "
+         "COM piso `_compor_override_do_recibo` recompunha o campo e mascarava isto)",
+         CAMINHO_DO_ROTEADOR,
+         '        plano["override"] = {"humano": humano, "registro_marcado": registro}\n',
+         '        plano["override"] = {**humano, "registro_marcado": registro}\n'),
     ]
 
 
@@ -441,12 +527,13 @@ def autoteste() -> int:
     for indice, (nome, arquivo, antigo, novo) in enumerate(entradas, start=1):
         with tempfile.TemporaryDirectory(prefix=f"jev-registro-mut-{indice}-") as temporario:
             area = pathlib.Path(temporario)
-            destino = area / arquivo.name
+            destino, links = _arvore_da_mutacao(area, arquivo)
             try:
                 _copia_mutada(arquivo, destino, antigo, novo)
             except RuntimeError as erro:
                 print(f"  [BURACO] mutacao nao aplicavel: {nome} — {erro}")
                 continue
+            _criar_links(area, links)
             roteador_mutado, gate_mutado = roteador_padrao, None
             if arquivo == CAMINHO_DO_ROTEADOR:
                 roteador_mutado = _carregar_modulo(destino, f"router_mut_{indice}")
