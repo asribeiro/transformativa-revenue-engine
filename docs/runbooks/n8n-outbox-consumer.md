@@ -22,11 +22,13 @@ muda na **política da API**, não no n8n. O consumidor só muda quando o *contr
 
 | Artefato | Papel |
 | --- | --- |
-| `n8n/contracts/outbox-consumer.v1.json` | **O contrato**: envelope, eventos aceitos, mapeamento evento→campos, operação destino, teto de tentativas, classificação HTTP, status da trilha, credenciais por id/nome |
-| `n8n/codigo/nucleo-outbox-consumer.js` | Núcleo em JS puro (decisão: enviar/recusar/esgotado + classificação da resposta). Roda em node e dentro do Code node |
+| `n8n/contracts/outbox-consumer.v1.json` | **O contrato** (v1.1.0): envelope, eventos aceitos, mapeamento evento→campos, operação destino, teto de tentativas, classificação HTTP, status da trilha, **dedup por chave** (`dedup`), credenciais por id/nome |
+| `n8n/codigo/nucleo-outbox-consumer.js` | Núcleo em JS puro (decisão: replay/enviar/recusar/esgotado + classificação da resposta). Roda em node e dentro do Code node |
 | `n8n/sql/ler-pendentes.sql` | Leitura da fila (somente SELECT) |
+| `n8n/sql/ler-trilha.sql` | Leitura da **trilha** pelas chaves do lote (somente SELECT) — insumo do dedup |
 | `n8n/sql/registrar-resultado.sql` | Estado final do evento **e** linha da trilha, numa transação |
-| `n8n/workflows/TRE-outbox-consumer.json` | O workflow **gerado** dos quatro acima |
+| `n8n/sql/registrar-replay.sql` | Estado final do **replay** (reaproveita o registro da trilha; não toca a trilha) |
+| `n8n/workflows/TRE-outbox-consumer.json` | O workflow **gerado** dos artefatos acima |
 | `scripts/n8n/montar_workflow.py` | Monta o workflow a partir dos artefatos (o workflow é artefato derivado) |
 | `scripts/n8n/conferir_contrato_e_workflow.py` | Lente estrutural: contrato × SQL × nós × política da API |
 | `scripts/n8n/testar_nucleo_consumidor.js` | Suite do núcleo (node puro) + **código embutido no workflow** |
@@ -41,22 +43,35 @@ editar contrato/núcleo/SQL → `python3 scripts/n8n/montar_workflow.py` → com
 ## 3. O que o consumidor faz em cada evento
 
 1. Lê a fila (`status IN ('PENDING','RETRY')`, `ORDER BY created_at, id LIMIT 20`).
-2. Decide, por evento, com o contrato na mão:
+2. Deriva a **chave de idempotência** de cada evento da leva (`outbox:<id>:<event_type>`) e lê a
+   trilha **numa única consulta** pelas chaves do lote (`n8n/sql/ler-trilha.sql`).
+3. Decide, por evento, com o contrato na mão (a ordem é a declarada em `dedup.ordem_da_decisao`):
+   * `status` fora da fila → **IGNORAR** (defensivo, vira no-op);
+   * chave **já entregue** (linha da trilha com status `COMPLETED`) → **REPLAY**: não chama a API,
+     não incrementa `attempts`, não toca a trilha — o registro existente é reaproveitado
+     (`n8n/sql/registrar-replay.sql`, que exige a trilha de sucesso para finalizar o evento);
    * envelope (regra 5 do contrato §6): sem `event_version` (ou versão fora de `1.0`) → **RECUSAR**;
    * `event_type` fora do contrato → **RECUSAR**;
    * identidade (`aggregate_id`) vazia → **RECUSAR**;
    * campo exigido do mapeamento ausente (ex.: `name`) → **RECUSAR**;
    * `attempts >= teto` (3) → **ESGOTADO**;
    * caso contrário → **ENVIAR** (com `idempotency_key` e `correlation_id` derivados do evento).
-3. Recusa: não chama a API, marca `DEAD_LETTER` e grava o motivo em `last_error` **e** na trilha
+4. Recusa: não chama a API, marca `DEAD_LETTER` e grava o motivo em `last_error` **e** na trilha
    (`sync_events`, status `REFUSED`). Recusa por envelope/contrato **não incrementa** `attempts`
    (não houve tentativa de entrega).
-4. Envio: `POST /tf/api/v1/empresa_upsert` com `parametros.valores` **só** com o que o mapeamento
+5. Envio: `POST /tf/api/v1/empresa_upsert` com `parametros.valores` **só** com o que o mapeamento
    declara, e classifica a resposta: 2xx → `PROCESSED`/`COMPLETED`; 4xx e códigos terminais
    (ex.: `valor_ambiguo`, `ambiente_nao_permitido`) → `DEAD_LETTER`/`REFUSED`; 5xx e falha de
    transporte → `RETRY`/`FAILED` com o motivo.
-5. O estado do evento e a linha da trilha gravam na **mesma instrução SQL** (uma transação):
+6. O estado do evento e a linha da trilha gravam na **mesma instrução SQL** (uma transação):
    não existe evento marcado como entregue sem trilha, nem trilha sem estado.
+
+**Replay (TRE-W3-E02-T02).** A garantia é do **evento**: a chave é determinística, a trilha é o
+registro dela (coluna `UNIQUE`) e o replay é reconhecido por **consulta**, nunca por heurística. Só
+trilha com status de sucesso autoriza replay — trilha `FAILED` ou `REFUSED` **não** autoriza (a falha
+transitória pode não ter escrito nada no destino, e a recusa é do evento, não da chave): nesses casos
+o evento volta a ser entregue normalmente. O caminho do replay **não** tem nó de HTTP alcançável (a
+lente estrutural mede isso: só o ramo de entrega alimenta a porta única).
 
 ## 4. Operação
 
@@ -128,23 +143,46 @@ UPDATE sales_intelligence.outbox_events
 
 O teto de tentativas volta a contar do zero — é uma decisão consciente de operação, não automática.
 
+**Chave já entregue volta como REPLAY, não como nova entrega (T02).** Se a chave do evento
+reenfileirado já tem linha `COMPLETED` na trilha, o consumidor finaliza o evento **sem chamar a API**
+— e isso é o desenho, não um defeito: a chave é a identidade do efeito no CRM e o registro da trilha
+já guarda o pedido e a resposta daquela entrega. Para forçar uma **nova** escrita, o caminho é um
+evento novo (outro `id`/`event_type`, portanto outra chave) — não existe, e não deve existir, operação
+que apague a trilha para burlar a garantia. Antes de reenfileirar, confira o que a trilha diz:
+
+```sql
+SELECT idempotency_key, status, completed_at, left(error_message, 120)
+  FROM sales_intelligence.sync_events
+ WHERE idempotency_key = 'outbox:<uuid do evento>:<event_type>';
+```
+
+`COMPLETED` → o reenfileiramento vira REPLAY (no-op no CRM). `FAILED` ou `REFUSED` → o evento volta a
+ser entregue de verdade.
+
 ## 5. Evidência do aceite
 
 `bash scripts/n8n/verificar-outbox-consumer.sh` mede, num **trio descartável próprio**
 (postgres + odoo + n8n criados e destruídos na hora, banco `tre_e02_outbox`):
 
-* lente estrutural (55 itens) e suite do núcleo (87 itens), incluindo o código **embutido** no workflow;
+* lente estrutural (93 itens) e suite do núcleo (124 itens), incluindo o código **embutido** no workflow;
 * 7 eventos de fila no ciclo 1 (válido, atualização da mesma identidade, sem versão, fora do
   contrato, sem `name`, sem identidade, identidade ambígua) com o estado final medido item a item;
 * Odoo **parado** → falha transitória (`RETRY`, `attempts=1`, trilha `FAILED`); Odoo de volta →
   o retry entrega (`PROCESSED`, `attempts=2`, **uma** linha de trilha, **um** parceiro);
 * evento já no teto → `DEAD_LETTER` **sem** chamada e **sem** escrita no CRM;
+* **dedup por chave (ciclo 5)**: dois eventos voltam à fila com os IDs originais — o de chave
+  `COMPLETED` vira REPLAY (`PROCESSED`, `attempts` inalterado, **uma** chamada a menos na contagem do
+  ciclo) e o de chave `REFUSED` é reentregue. Mede-se que o ciclo com 2 eventos chamou a API **uma**
+  vez, que a trilha **não cresceu** e que a linha do replay é a **mesma** (mesmo `id`, mesmo
+  `completed_at`, mesma resposta da entrega original) — e que o parceiro do CRM segue com o `name` e o
+  score da entrega original (o replay não reescreveu nada);
 * contagem de chamadas autenticadas, segredo fora do versionado, ambiente do dev intocado;
-* `sha256` dos 5 artefatos sob teste **fixado nas guardas** e **reconferido no fecho** (dois itens,
+* `sha256` dos 7 artefatos sob teste **fixado nas guardas** e **reconferido no fecho** (dois itens,
   com juiz próprio): artefato que mude no meio da medição reprova o aceite.
 
 `--prova-de-dente` roda o aceite em cópias mutadas do workflow (sem exigir `event_version`, sem
-incrementar `attempts`, sem teto, com o mapeamento trocado) e exige que **o item que aquela
+incrementar `attempts`, sem teto, com o mapeamento trocado, **sem a consulta da trilha** e **com a
+guarda de status da trilha afrouxada**) e exige que **o item que aquela
 mutação quebra** reprove. O modo é **fail-closed** (rodada 2): antes de contar dente ele roda um
 sub-run **não mutado** (baseline) que tem de ficar verde — sem isso, ambiente quebrado devolveria
 `NAO_CONTA` em todos os dentes e um "verde" não significaria nada —, os vereditos vão para arquivo
@@ -165,9 +203,11 @@ diretório do preparo saem no fim (medido: 0 resíduo). Os **logs** ficam em `TR
 
 ## 6. Limites conhecidos (o que este card não resolve)
 
-* **Deduplicação de entrega** (evento já `PROCESSED` reenviado) — E02-T02. Aqui a proteção é a
-  chave derivada do evento (`outbox:<id>:<event_type>`) e a chave `UNIQUE` da trilha, que impedem
-  **trilha duplicada**; a política da API é idempotente por `idempotency_key`.
+* **Deduplicação de entrega** — implementada em T02 (AC9): ver §3 (Replay) e §4.4. A proteção é a
+  chave derivada do evento (`outbox:<id>:<event_type>`), `UNIQUE` na trilha: a chave já `COMPLETED`
+  vira REPLAY (sem chamada, sem nova linha, sem reescrever o CRM) e retry/reenfileiramento da mesma
+  chave não duplica trilha. A idempotência da **política da API** (`idempotency_key`) continua sendo a
+  segunda linha de defesa, para o caso de duas instâncias concorrentes (ver o item abaixo).
 * **Concorrência entre dois consumidores**: a leitura da fila não usa `FOR UPDATE SKIP LOCKED`, então
   dois n8n processando a mesma fila podem pegar o mesmo evento — e, pior, dois eventos da mesma
   identidade em paralelo reproduzem a duplicação descrita em §4.0 (a serialização protege **dentro**

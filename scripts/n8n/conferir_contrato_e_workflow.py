@@ -85,6 +85,8 @@ def main():
     nucleo = texto(raiz / "n8n" / "codigo" / "nucleo-outbox-consumer.js")
     sql_ler = texto(raiz / "n8n" / "sql" / "ler-pendentes.sql")
     sql_registrar = texto(raiz / "n8n" / "sql" / "registrar-resultado.sql")
+    sql_trilha = texto(raiz / "n8n" / "sql" / "ler-trilha.sql")
+    sql_replay = texto(raiz / "n8n" / "sql" / "registrar-replay.sql")
     alvo = pathlib.Path(args.workflow).resolve() if args.workflow \
         else raiz / "n8n" / "workflows" / "TRE-outbox-consumer.json"
     workflow = json.loads(texto(alvo))
@@ -119,9 +121,11 @@ def main():
     embutido("Ler pendentes (outbox)", sql_ler, "query")
     for no in ("Registrar entrega (outbox + trilha)", "Registrar recusa (outbox + trilha)"):
         embutido(no, sql_registrar, "query")
+    embutido("Ler trilha (chaves entregues)", sql_trilha, "query")
+    embutido("Registrar replay (outbox)", sql_replay, "query")
 
     marcador = montador.MARCADOR
-    for no in ("Nucleo: validar e decidir", "Classificar resposta"):
+    for no in ("Nucleo: validar e decidir", "Classificar resposta", "Chaves do lote (nucleo)"):
         js = por_nome[no]["parameters"]["jsCode"]
         partes = js.split(marcador)
         confere("Code node '%s' tem nucleo + adaptador separados pelo marcador" % no, len(partes) == 2)
@@ -172,6 +176,102 @@ def main():
             "attempts = attempts + $2::int" in sql_registrar)
     confere("SQL do registro deixa o motivo visivel (last_error/error_message parametrizados)",
             "last_error = $3" in sql_registrar and "$12" in sql_registrar)
+
+    # ---------------------------------------------------- dedup por chave (T02)
+    # A consulta da chave e o registro do replay sao artefatos DECLARADOS no contrato: o
+    # verificador exige que os caminhos declarados existam e que o conteudo case com o criterio
+    # declarado (status de sucesso, coluna da chave, fila de entrada) — sem isso o "mesmo
+    # efeito" seria afirmacao de leitura.
+    dedup = contrato["dedup"]
+    criterio = dedup["criterio_de_replay"]
+    tabela_trilha = contrato["trilha"]["tabela"]
+    confere("o contrato declara a consulta da chave do dedup (%s)" % dedup["consulta_da_chave"],
+            (raiz / dedup["consulta_da_chave"]).is_file(), dedup["consulta_da_chave"])
+    confere("o contrato declara o registro do replay (%s)" % dedup["registro_do_replay"],
+            (raiz / dedup["registro_do_replay"]).is_file(), dedup["registro_do_replay"])
+
+    comando_trilha = sem_comentarios(sql_trilha)
+    confere("SQL da trilha le a tabela da trilha do contrato (%s)" % tabela_trilha, tabela_trilha in comando_trilha)
+    confere("SQL da trilha e' somente leitura (SELECT; nenhum INSERT/UPDATE/DELETE)",
+            comando_trilha.upper().startswith("SELECT") and
+            not re.search(r"\b(INSERT|UPDATE|DELETE|ALTER|DROP)\b", comando_trilha.upper()),
+            comando_trilha[:60])
+    confere("SQL da trilha consulta pela coluna de chave do contrato (%s)" % criterio["coluna_de_chave"],
+            re.search(r"\b%s\s*=\s*ANY" % re.escape(criterio["coluna_de_chave"]), comando_trilha) is not None,
+            comando_trilha[-90:])
+    for coluna in (criterio["coluna_de_chave"], "status", "completed_at", "response_payload"):
+        confere("SQL da trilha devolve %s (e' com isso que o nucleo decide o replay)" % coluna,
+                coluna in sql_trilha)
+
+    parametros_replay = sorted({int(m) for m in re.findall(r"\$(\d+)", sql_replay)})
+    igual("SQL do replay usa exatamente $1..$2 (sem buraco nem sobra)", parametros_replay, [1, 2])
+    comando_replay = sem_comentarios(sql_replay)
+    confere("SQL do replay finaliza o evento no status de sucesso do contrato (%s)"
+            % contrato["status"]["sucesso"],
+            "status = '%s'" % contrato["status"]["sucesso"] in comando_replay)
+    confere("SQL do replay exige trilha com o status de sucesso do contrato (%s) — guarda fail-closed"
+            % criterio["status_trilha"],
+            re.search(r"EXISTS\s*\([\s\S]*?status\s*=\s*'%s'" % criterio["status_trilha"], comando_replay) is not None)
+    confere("SQL do replay so' finaliza evento DA FILA (status.entrada do contrato)",
+            all("'%s'" % s in comando_replay for s in contrato["status"]["entrada"]), comando_replay[:200])
+    confere("SQL do replay NAO escreve na trilha (a linha e' reaproveitada, nunca recriada)",
+            not re.search(r"\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+%s" % re.escape(tabela_trilha),
+                          comando_replay, re.I))
+    confere("SQL do replay NAO incrementa tentativas (replay nao e' tentativa de entrega)",
+            "attempts + " not in comando_replay)
+    confere("SQL do replay casa o evento pelo id parametrizado (nao por literal)",
+            re.search(r"WHERE\s+id\s*=\s*\$2::uuid", comando_replay) is not None)
+
+    # ---------------------------------------------------- dedup: o grafo do workflow
+    # O no da consulta PRECISA emitir saida mesmo quando nao ha chave entregue: no sem itens nao
+    # deixa o no seguinte rodar, e o consumidor pararia de entregar no PRIMEIRO ciclo (fila cheia,
+    # trilha vazia). O aceite mede isso; aqui a propriedade e' travada na estrutura.
+    no_trilha = por_nome.get("Ler trilha (chaves entregues)")
+    confere("o no da consulta da trilha existe", no_trilha is not None)
+    if no_trilha:
+        confere("o no da trilha emite saida mesmo sem chave entregue (alwaysOutputData)",
+                no_trilha.get("alwaysOutputData") is True)
+    igual("a consulta da trilha passa UMA lista de chaves do lote (nao uma chave por parametro)",
+          re.findall(r"\$json\.([A-Za-z_][A-Za-z0-9_]*)",
+                     por_nome["Ler trilha (chaves entregues)"]["parameters"]["options"]["queryReplacement"]),
+          list(montador.CAMPOS_DO_SQL_TRILHA))
+    igual("a lista de parametros do no 'Registrar replay (outbox)' casa o SQL (2 campos, na ordem)",
+          re.findall(r"\$json\.([A-Za-z_][A-Za-z0-9_]*)",
+                     por_nome["Registrar replay (outbox)"]["parameters"]["options"]["queryReplacement"]),
+          list(montador.CAMPOS_DO_SQL_REPLAY))
+
+    adaptador_nucleo = por_nome["Nucleo: validar e decidir"]["parameters"]["jsCode"].split(marcador)[-1]
+    confere("o adaptador do nucleo le os EVENTOS do no da fila (nao o $input da trilha)",
+            "$('Ler pendentes (outbox)').all()" in adaptador_nucleo, adaptador_nucleo.strip())
+    confere("o adaptador do nucleo passa a TRILHA lida para a decisao pura",
+            "trilhaPorChave($input.all())" in adaptador_nucleo, adaptador_nucleo.strip())
+    adaptador_chaves = por_nome["Chaves do lote (nucleo)"]["parameters"]["jsCode"].split(marcador)[-1]
+    confere("o adaptador das chaves deriva a lista do lote pelo nucleo (mesma derivacao da decisao)",
+            "chavesDoLoteComoItem($input.all(), CONTRATO)" in adaptador_chaves, adaptador_chaves.strip())
+
+    for literal in ("'COMPLETED'", "'PROCESSED'", "'FAILED'", "'REFUSED'"):
+        confere("o nucleo nao tem %s literal (o status vem do contrato)" % literal, literal not in nucleo)
+
+    def alvos_de(origem):
+        return [a["node"] for ramo in workflow["connections"].get(origem, {}).get("main", []) for a in ramo]
+
+    igual("a cadeia do dedup e' Ler pendentes -> Chaves do lote -> Ler trilha -> Nucleo",
+          [alvos_de("Ler pendentes (outbox)"), alvos_de("Chaves do lote (nucleo)"),
+           alvos_de("Ler trilha (chaves entregues)")],
+          [["Chaves do lote (nucleo)"], ["Ler trilha (chaves entregues)"], ["Nucleo: validar e decidir"]])
+    igual("o IF do replay compara com o codigo de decisao declarado no contrato",
+          por_nome["Decisao: replay?"]["parameters"]["conditions"]["conditions"][0]["rightValue"], dedup["decisao"])
+    igual("o ramo sem entrega da decisao de entrega vai para a decisao de replay",
+          alvos_de("Decisao: entregar?")[1], "Decisao: replay?")
+    igual("a decisao de replay manda o replay para o registro do replay",
+          alvos_de("Decisao: replay?")[0], "Registrar replay (outbox)")
+    igual("só a decisao de entrega alimenta a porta unica (o replay nao tem caminho para o POST)",
+          [n["name"] for n in workflow["nodes"]
+           if any(a["node"] == "Chamar API controlada (porta unica)"
+                  for ramo in workflow["connections"].get(n["name"], {}).get("main", []) for a in ramo)],
+          ["Decisao: entregar?"])
+    igual("o no do registro do replay termina o caminho (nao alimenta nenhum outro no)",
+          workflow["connections"].get("Registrar replay (outbox)"), None)
 
     # ------------------------------------ a lista que o workflow passa para o SQL
     campos_montador = list(montador.CAMPOS_DO_SQL_REGISTRAR)

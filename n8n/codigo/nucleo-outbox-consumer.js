@@ -1,39 +1,44 @@
 /* ============================================================================
- * Nucleo do consumidor de outbox — card TRE-W3-E02-T01 (board
- * transformativa-revenue-engine, card t_ba84b412).
+ * Nucleo do consumidor de outbox — cards TRE-W3-E02-T01 (consumo) e
+ * TRE-W3-E02-T02 (dedup por chave); board transformativa-revenue-engine
+ * (cards t_ba84b412 e t_3bde06ab).
  *
  * O QUE ESTE ARQUIVO E', E POR QUE ELE E' PURO:
  * Aqui vive a DECISAO do consumidor: qual evento da fila e' entregue, qual e'
- * recusado (e por que), quando a fila desiste (teto de tentativas), como o
- * evento vira pedido da API controlada do Odoo e como a RESPOSTA da API vira
- * estado final do outbox. Este arquivo NAO fala com banco, NAO fala com HTTP e
- * NAO importa nada (o sandbox de Code node do n8n nao tem `require`). Quem
- * executa e' o workflow; quem decide e' este nucleo — a mesma separacao do
- * motor puro da API controlada (odoo/addons/transformativa_sales_ai/api/motor.py).
+ * recusado (e por que), quando a fila desiste (teto de tentativas), quando o
+ * evento e' um REPLAY (a chave ja' foi entregue: mesma chave = mesmo efeito,
+ * sem repetir escrita), como o evento vira pedido da API controlada do Odoo e
+ * como a RESPOSTA da API vira estado final do outbox. Este arquivo NAO fala com
+ * banco, NAO fala com HTTP e NAO importa nada (o sandbox de Code node do n8n nao
+ * tem `require`). Quem executa e' o workflow; quem decide e' este nucleo — a
+ * mesma separacao do motor puro da API controlada
+ * (odoo/addons/transformativa_sales_ai/api/motor.py).
  *
  * FONTE DA REGRA (nada aqui e' inventado):
  *   * n8n/contracts/outbox-consumer.v1.json — o contrato versionado do
  *     consumidor (eventos aceitos, mapeamento, teto de tentativas, status,
- *     classificacao HTTP, trilha). O contrato e' PARAMETRO: as funcoes recebem
- *     `contrato` e nao tem lista de eventos, mapeamento ou teto literal;
+ *     classificacao HTTP, trilha, `dedup`). O contrato e' PARAMETRO: as funcoes
+ *     recebem `contrato` e nao tem lista de eventos, mapeamento, teto ou
+ *     criterio de replay literal;
  *   * docs/data/DATA_CONTRACT_V1.md §6 (envelope com event_version obrigatorio)
  *     e §7 (idempotency_key + correlacao + retry limitado + sync_events +
  *     dead-letter; retry nao cria duplicata);
- *   * doc 06 §7-8 e doc 12 §2 (evento PG -> Odoo);
+ *   * doc 06 §7-8, doc 08 §5 (reprocessar mesmo event_id / mesma chave /
+ *     timeout apos sucesso remoto / retry nao cria registro adicional) e doc 12 §2;
  *   * ADR-005 (nada nasce em producao — a guarda de ambiente vive na API, o
  *     consumidor so' aponta para o ambiente declarado).
  *
  * O QUE ESTE ARQUIVO NAO FAZ (lacuna declarada, de proposito):
- *   * nao implementa dedup por `idempotency_key` (mesma chave = mesmo efeito,
- *     sem repetir escrita) — card TRE-W3-E02-T02. Aqui a chave e' DERIVADA do
- *     evento, enviada, exigida pela API e registrada na trilha;
- *   * nao escreve em lugar nenhum: devolve itens de decisao/estado final;
+ *   * nao acessa banco nem rede: recebe a TRILHA ja' lida (quem le e' o no
+ *     Postgres com n8n/sql/ler-trilha.sql) e devolve itens de decisao/estado final;
+ *   * nao cria linha de trilha no replay: `n8n/sql/registrar-replay.sql` finaliza
+ *     o evento reaproveitando o registro — a trilha nao e' tocada;
  *   * nao gera segredo nem token: a autenticacao e' credencial do cofre do n8n.
  *
- * VERSAO: acompanha o contrato (n8n/contracts/outbox-consumer.v1.json).
+ * VERSAO: acompanha o contrato (n8n/contracts/outbox-consumer.v1.json -> 1.1.0).
  * ==========================================================================*/
 
-var NUCLEO_VERSAO = '1.0.0';
+var NUCLEO_VERSAO = '1.1.0';
 
 /* ------------------------------------------------------------------ utilidades */
 
@@ -110,6 +115,89 @@ function correlacaoDoEvento(evento, contrato) {
     return contrato.trilha.correlacao.derivacao.replace('<outbox_events.id>', texto(evento.id));
 }
 
+/* ------------------------------------------------- dedup por chave (T02)
+ * A chave de idempotencia e' do EVENTO e e' deterministica: o mesmo evento
+ * reexecutado produz a mesma chave. A trilha e' o REGISTRO dessa chave (UNIQUE
+ * no contrato); o replay e' reconhecido por consulta, nunca por heuristica.
+ * ------------------------------------------------------------------------ */
+
+/** Chaves do lote, derivadas do PROPRIO evento (uma por evento, sem repeticao). */
+function chavesDoLote(itens, contrato) {
+    var vistas = {};
+    var chaves = [];
+    var componentes = camposDaChaveDeIdempotencia(contrato);
+    for (var i = 0; i < itens.length; i++) {
+        var evento = (itens[i] && itens[i].json) ? itens[i].json : itens[i];
+        if (ehVazio(evento) || typeof evento !== 'object') continue;
+        if (chaveDoEvento(evento, contrato, componentes) === '') continue;
+        var chave = chaveDeIdempotencia(evento, contrato);
+        if (vistas[chave]) continue;
+        vistas[chave] = true;
+        chaves.push(chave);
+    }
+    return chaves;
+}
+
+/** Campos do evento que COMPOEM a chave, lidos da propria derivacao declarada no contrato. */
+function camposDaChaveDeIdempotencia(contrato) {
+    var achados = contrato.trilha.chave_de_idempotencia.derivacao.match(/<([^>]+)>/g) || [];
+    var campos = [];
+    for (var i = 0; i < achados.length; i++) {
+        var nome = achados[i].replace(/[<>]/g, '').split('.').pop();
+        if (nome && campos.indexOf(nome) < 0) campos.push(nome);
+    }
+    return campos;
+}
+
+/**
+ * Chave do evento BEM FORMADA, ou '' quando o evento nao a tem.
+ * Evento sem os componentes da derivacao produziria `outbox::` — chave de nada: o formato do
+ * contrato sozinho nao pega isso, porque `:` e' caractere valido. Chave assim NAO e' consultada
+ * nem pode autorizar replay (o registro da trilha e' por chave do EVENTO).
+ */
+function chaveDoEvento(evento, contrato, componentes) {
+    for (var i = 0; i < componentes.length; i++) {
+        if (ehVazio(evento[componentes[i]])) return '';
+    }
+    return chaveDeIdempotencia(evento, contrato);
+}
+
+/**
+ * Trilha do lote indexada pela chave — o que a consulta devolveu, cru.
+ * Linha sem chave (inclusive a linha vazia que o no de consulta emite quando nao
+ * ha nada a devolver) e' DESCARTADA: o registro do replay so' se apoia em
+ * registro de trilha com chave. Consulta vazia nunca vira "ja' entregue".
+ */
+function trilhaPorChave(itensTrilha) {
+    var porChave = {};
+    if (!itensTrilha) return porChave;
+    for (var i = 0; i < itensTrilha.length; i++) {
+        var linha = (itensTrilha[i] && itensTrilha[i].json) ? itensTrilha[i].json : itensTrilha[i];
+        if (ehVazio(linha) || typeof linha !== 'object') continue;
+        var chave = texto(linha.idempotency_key);
+        if (ehVazio(chave)) continue;
+        porChave[chave] = linha;
+    }
+    return porChave;
+}
+
+/**
+ * Registro de trilha que AUTORIZA o replay, ou null.
+ * O criterio e' o declarado no contrato (nome da coluna da chave + status de
+ * sucesso da trilha) — nao ha status literal aqui. Trilha de outro status
+ * (FAILED, REFUSED) NAO autoriza: falha transitoria pode nao ter escrito nada
+ * no destino, e recusa definitiva e' do evento, nao da chave.
+ */
+function registroDeReplay(evento, contrato, trilha) {
+    var criterio = contrato.dedup.criterio_de_replay;
+    var chave = chaveDeIdempotencia(evento, contrato);
+    var registro = (trilha && trilha[chave]) ? trilha[chave] : null;
+    if (ehVazio(registro)) return null;
+    if (texto(registro[criterio.coluna_de_chave]) !== chave) return null;
+    if (texto(registro.status) !== texto(criterio.status_trilha)) return null;
+    return registro;
+}
+
 /** Corpo do POST na porta unica — so' o que a politica da API declara. */
 function montarPedido(evento, definicao, contrato) {
     return {
@@ -146,13 +234,19 @@ function itemFinal(evento, contrato, campos) {
 
 /**
  * DECISAO de um evento da fila. Devolve sempre o mesmo formato de item, com
- * `decisao` em ENVIAR | RECUSAR | ESGOTADO | IGNORAR:
- *   ENVIAR   -> envelope valido, evento no contrato, identidade e campos exigidos presentes;
- *   RECUSAR  -> recusa DEFINITIVA por envelope/contrato/identidade (sem tentativa de entrega);
+ * `decisao` em REPLAY | ENVIAR | RECUSAR | ESGOTADO | IGNORAR — a ORDEM abaixo e'
+ * a ordem declarada no contrato (`dedup.ordem_da_decisao`):
+ *   IGNORAR  -> status fora da fila (defensivo; o SQL so' le PENDING/RETRY) — vira no-op;
+ *   REPLAY   -> a chave do evento JA' esta' na trilha com status de sucesso: mesma chave =
+ *               mesmo efeito, sem repetir escrita (sem chamada, sem nova linha de trilha);
  *   ESGOTADO -> ja' tentou o teto de vezes (a fila desiste, dead-letter nomeada);
- *   IGNORAR  -> status fora da fila (defensivo; o SQL so' le PENDING/RETRY) — vira no-op.
+ *   RECUSAR  -> recusa DEFINITIVA por envelope/contrato/identidade (sem tentativa de entrega);
+ *   ENVIAR   -> envelope valido, evento no contrato, identidade e campos exigidos presentes.
+ *
+ * `trilha` (opcional) e' a trilha do lote indexada pela chave (`trilhaPorChave`). Sem ela
+ * nao existe replay — o nucleo nao inventa "ja' entregue" a partir de nada.
  */
-function decidirEvento(evento, contrato) {
+function decidirEvento(evento, contrato, trilha) {
     var status = texto(evento.status);
     var teto = Number(contrato.retry.teto_de_tentativas);
     var tentativas = Number(ehVazio(evento.attempts) ? 0 : evento.attempts);
@@ -167,6 +261,27 @@ function decidirEvento(evento, contrato) {
             status_trilha: null,
             last_error: null,
             request_payload: null
+        });
+    }
+    var registro = registroDeReplay(evento, contrato, trilha);
+    if (registro) {
+        // Replay: o efeito no destino JA' aconteceu (a trilha guarda o pedido e a resposta da
+        // entrega que o produziu). Nao ha' chamada, nao ha' incremento de tentativa e a trilha
+        // NAO e' tocada — o registro e' reaproveitado por n8n/sql/registrar-replay.sql, que
+        // exige a trilha de sucesso (fail-closed) para finalizar o evento.
+        return itemFinal(evento, contrato, {
+            decisao: 'REPLAY',
+            motivo: 'chave_ja_entregue:' + chaveDeIdempotencia(evento, contrato),
+            incrementa_tentativas: 0,
+            status_final: contrato.dedup.status_final,
+            status_trilha: contrato.dedup.status_trilha,
+            last_error: null,
+            request_payload: null,
+            response_payload: ehVazio(registro.response_payload) ? null : registro.response_payload,
+            trilha_reaproveitada: {
+                id: ehVazio(registro.trilha_id) ? null : registro.trilha_id,
+                completed_at: ehVazio(registro.completed_at) ? null : registro.completed_at
+            }
         });
     }
     if (tentativas >= teto) {
@@ -288,14 +403,23 @@ function corpoDaResposta(valor) {
  * e' puro e roda igual no n8n e no node do aceite (scripts/n8n).
  * --------------------------------------------------------------------------- */
 
-/** Adaptador do Code node "Nucleo: validar e decidir". */
-function decisaoDoLote(itens, contrato) {
+/**
+ * Adaptador do Code node "Nucleo: validar e decidir". A trilha do lote chega pelo
+ * $input (a consulta de chaves rodou imediatamente antes) e os eventos vem do no de
+ * leitura da fila: e' a MESMA decisao pura, com a trilha como parametro.
+ */
+function decisaoDoLote(itens, contrato, trilha) {
     var saida = [];
     for (var i = 0; i < itens.length; i++) {
         var evento = (itens[i] && itens[i].json) ? itens[i].json : itens[i];
-        saida.push({ json: decidirEvento(evento, contrato) });
+        saida.push({ json: decidirEvento(evento, contrato, trilha) });
     }
     return saida;
+}
+
+/** Adaptador do Code node "Chaves do lote": uma UNICA consulta de trilha por ciclo. */
+function chavesDoLoteComoItem(itens, contrato) {
+    return [{ json: { chaves: chavesDoLote(itens, contrato) } }];
 }
 
 /**
@@ -380,11 +504,17 @@ if (typeof module !== 'undefined' && module.exports) {
         montarValores: montarValores,
         chaveDeIdempotencia: chaveDeIdempotencia,
         correlacaoDoEvento: correlacaoDoEvento,
+        chavesDoLote: chavesDoLote,
+        camposDaChaveDeIdempotencia: camposDaChaveDeIdempotencia,
+        chaveDoEvento: chaveDoEvento,
+        trilhaPorChave: trilhaPorChave,
+        registroDeReplay: registroDeReplay,
         montarPedido: montarPedido,
         decidirEvento: decidirEvento,
         classificarResposta: classificarResposta,
         corpoDaResposta: corpoDaResposta,
         decisaoDoLote: decisaoDoLote,
+        chavesDoLoteComoItem: chavesDoLoteComoItem,
         resultadoDasRespostas: resultadoDasRespostas
     };
 }

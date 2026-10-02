@@ -1,9 +1,9 @@
 {
   "esquema": "1",
-  "versao": "1.0.0",
+  "versao": "1.1.0",
   "id": "outbox-consumer",
-  "titulo": "Consumidor de outbox_events (PostgreSQL -> Odoo) — card TRE-W3-E02-T01",
-  "descricao": "Declaracao do consumidor que tira os eventos PENDING de sales_intelligence.outbox_events e os entrega a API controlada do Odoo (POST /tf/api/v1/<operacao>, card TRE-W3-E01-T01/T02). Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-outbox-consumer.js), o SQL (n8n/sql/*.sql) e o workflow (n8n/workflows/TRE-outbox-consumer.json) sao montados/verificados a partir deste contrato. Fora da declaracao, a resposta do consumidor e' RECUSA (fail-closed): evento que o contrato nao cobre vai para DEAD_LETTER com motivo nomeado, nunca ignorado em silencio.",
+  "titulo": "Consumidor de outbox_events (PostgreSQL -> Odoo) — cards TRE-W3-E02-T01 (consumo) e TRE-W3-E02-T02 (dedup por chave)",
+  "descricao": "Declaracao do consumidor que tira os eventos PENDING de sales_intelligence.outbox_events e os entrega a API controlada do Odoo (POST /tf/api/v1/<operacao>, card TRE-W3-E01-T01/T02). Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-outbox-consumer.js), o SQL (n8n/sql/*.sql) e o workflow (n8n/workflows/TRE-outbox-consumer.json) sao montados/verificados a partir deste contrato. Fora da declaracao, a resposta do consumidor e' RECUSA (fail-closed): evento que o contrato nao cobre vai para DEAD_LETTER com motivo nomeado, nunca ignorado em silencio. A versao 1.1.0 acrescenta a secao `dedup` (card TRE-W3-E02-T02): retry/replay NAO repetem a escrita — a chave derivada do evento ja' registrada na trilha com status de sucesso finaliza o evento como PROCESSED sem chamar a porta unica e sem nova linha de trilha.",
   "autoridade": {
     "fonte": [
       "docs/data/DATA_CONTRACT_V1.md §6 (envelope do evento) e §7 (regras de integracao 1..5)",
@@ -13,7 +13,7 @@
       "ADR-005 (nada nasce em producao)"
     ],
     "fora_do_escopo": [
-      "dedup por idempotency_key (retry/replay: mesma chave = mesmo efeito, sem repetir escrita) e' do card TRE-W3-E02-T02 — aqui a chave e' DERIVADA do evento, enviada, exigida pela API e registrada na trilha, e o replay nao duplica trilha (ON CONFLICT); a garantia de nao-duplicata no CRM continua vindo da IDENTIDADE declarada na politica da API",
+      "dedup por idempotency_key (retry/replay: mesma chave = mesmo efeito, sem repetir escrita) e' do card TRE-W3-E02-T02 — IMPLEMENTADO na versao 1.1.0 deste contrato, secao `dedup`: a chave continua sendo DERIVADA do evento, enviada, exigida pela API e registrada na trilha, e agora o consumidor CONSULTA a trilha antes de entregar e finaliza sem nova escrita quando a chave ja' foi entregue. A garantia de nao-duplicata no CRM por IDENTIDADE declarada na politica da API continua valendo (a razao disso esta' em `dedup.por_que_nao_basta_a_identidade`).",
       "eventos Odoo -> PostgreSQL sao do card TRE-W3-E03-T01",
       "reconciliacao diaria e' do card TRE-W3-E04-T01",
       "rate limit, cache e auditoria duravel/observabilidade sao do card TRE-W3-E05-T01",
@@ -85,7 +85,7 @@
   },
   "retry": {
     "teto_de_tentativas": 3,
-    "regra": "tentativa de ENTREGA que falha de forma transitoria incrementa attempts; ao alcancar o teto o evento sai da fila como DEAD_LETTER (motivo nomeado) e a trilha e' preservada. Recusa por envelope/contrato/identidade NAO incrementa attempts (nao houve tentativa de entrega); ESGOTADO tambem nao incrementa (a tentativa que estourou ja' foi contada)."
+    "regra": "tentativa de ENTREGA que falha de forma transitoria incrementa attempts; ao alcancar o teto o evento sai da fila como DEAD_LETTER (motivo nomeado) e a trilha e' preservada. Recusa por envelope/contrato/identidade NAO incrementa attempts (nao houve tentativa de entrega); ESGOTADO tambem nao incrementa (a tentativa que estourou ja' foi contada); REPLAY tambem nao incrementa (nao houve tentativa: a escrita ja' aconteceu antes, ver `dedup`)."
   },
   "status": {
     "entrada": ["PENDING", "RETRY"],
@@ -140,6 +140,32 @@
       "regra": "a API ecoa o correlation_id no envelope de resposta (ok e recusa); o consumidor confere o eco contra a decisao que originou a chamada — divergencia vira falha nomeada, nunca sucesso silencioso"
     },
     "unicidade": "sync_events.idempotency_key e' UNIQUE no contrato: a trilha e' upsertada pela chave, de modo que retry nao cria linha duplicada"
+  },
+  "dedup": {
+    "card": "TRE-W3-E02-T02",
+    "regra": "mesma chave = mesmo efeito, sem repetir escrita (doc 06 §7 'retry nao pode criar duplicatas'; data contract §7 regra 2; doc 08 §5 'reprocessar mesmo event_id' / 'reprocessar mesmo idempotency_key' / 'simular timeout apos sucesso remoto' / 'retry nao cria registro adicional'). Antes de entregar, o consumidor CONSULTA a trilha pelas chaves do lote; evento cuja chave ja' esta' registrada com o status de sucesso e' finalizado como PROCESSED reaproveitando o registro — sem chamada a porta unica e sem nova linha em sync_events.",
+    "criterio_de_replay": {
+      "tabela": "sales_intelligence.sync_events",
+      "coluna_de_chave": "idempotency_key",
+      "status_trilha": "COMPLETED",
+      "regra": "so' o status de SUCESSO da trilha autoriza o replay. Trilha FAILED (falha transitoria, inclusive timeout DEPOIS de o remoto ter gravado) NAO autoriza: o evento volta a ser entregue, porque a escrita remota pode nao ter acontecido; quem impede o registro adicional nesse caso e' a IDENTIDADE declarada na politica da API (`campos_de_identidade`), medida no aceite. Trilha REFUSED tambem nao autoriza: recusa definitiva e' do evento, nao da chave."
+    },
+    "consulta_da_chave": "n8n/sql/ler-trilha.sql",
+    "registro_do_replay": "n8n/sql/registrar-replay.sql",
+    "status_final": "PROCESSED",
+    "status_trilha": "COMPLETED",
+    "incrementa_tentativas": 0,
+    "decisao": "REPLAY",
+    "ordem_da_decisao": ["IGNORAR", "REPLAY", "ESGOTADO", "RECUSAR", "ENVIAR"],
+    "preserva": [
+      "sync_events.id (a linha da trilha e' reaproveitada, nunca recriada)",
+      "sync_events.completed_at (o PRIMEIRO instante de conclusao nao e' reescrito pelo replay)",
+      "sync_events.response_payload (a prova do efeito ja' acontecido fica na trilha)",
+      "outbox_events.attempts (replay nao e' tentativa de entrega)",
+      "outbox_events.processed_at (ja' marcado no primeiro sucesso)"
+    ],
+    "guarda": "fail-closed em duas camadas: (1) o nucleo so' decide REPLAY com registro de trilha de status de sucesso — registro ausente, vazio ou de outro status NAO vira replay; (2) `n8n/sql/registrar-replay.sql` exige EXISTS(trilha da chave com o status de sucesso) no proprio UPDATE e chega ao maximo a UMA linha do evento da fila — sem essa trilha ele finaliza ZERO eventos e nao escreve nada. Resposta vazia do no de consulta nao vira 'ja entregue'.",
+    "por_que_nao_basta_a_identidade": "a identidade (tf_company_id/CNPJ/dominio/LinkedIn) casa a ESCOLHA do registro no CRM; ela nao sabe dizer se ESTE evento ja' foi entregue. Sem a consulta pela chave, um evento reexecutado depois de entregue gastaria uma nova escrita (e, com identidade ausente/ambigua/invalida, nao teria como casar). A chave e' do EVENTO e e' deterministica (`outbox:<id>:<event_type>`), entao o replay e' reconhecivel sem heuristica."
   },
   "ambiente": {
     "permitido": ["dev"],

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Aceite TRE-W3-E02-T01 — consumidor de outbox (n8n) do board
-# transformativa-revenue-engine (card t_ba84b412).
+# Aceite TRE-W3-E02-T01/T02 — consumidor de outbox (n8n) do board
+# transformativa-revenue-engine (cards t_ba84b412 e t_3bde06ab).
 #
 # Criterios de aceitacao (definidos no inicio do card, registrados no card e no runbook
 # docs/runbooks/n8n-outbox-consumer.md):
@@ -26,6 +26,11 @@
 #   AC8 trilha sem payload de segredo + ambiente intocado: trio DESCARTÁVEL proprio
 #       (postgres + odoo + n8n), dev/homolog/producao medidos antes e depois, nenhum DDL ou
 #       escrita no banco do dev.
+#   AC9 DEDUP por idempotency_key (TRE-W3-E02-T02): evento que volta a fila com a chave JA'
+#       entregue (trilha COMPLETED) e' REPLAY — nao chama a porta unica, nao incrementa
+#       tentativas, NAO cria linha nova na trilha (a linha e' reaproveitada) e NAO reescreve o
+#       registro do CRM (mesma chave = mesmo efeito); chave com trilha de outro status
+#       (FAILED/REFUSED) NAO autoriza replay — o evento volta a ser entregue.
 #
 # TEST PLAN (executado por este script, na VPS, por execucao real):
 #   passo 0  lente estrutural (python puro) e suite do nucleo (node dentro da imagem n8n)
@@ -37,11 +42,13 @@
 #   ciclo 2  Odoo PARADO -> falha de transporte (RETRY + attempts=1, trilha FAILED)
 #   ciclo 3  Odoo de volta -> o retry entrega (PROCESSED + attempts=2, trilha unica, sem duplicata)
 #   ciclo 4  evento ja no teto de tentativas -> DEAD_LETTER sem chamada e sem escrita
+#   ciclo 5  dedup por chave (AC9): E1 (chave entregue) volta a fila -> REPLAY sem chamada e com a
+#            trilha reaproveitada; E7 (chave na trilha como REFUSED) volta a fila -> e' reentregue
 #   final    contagem de chamadas autenticadas, segredo nos logs, ambiente depois, fecho do
 #            sha256 (fixado nas guardas, reconferido no fim) e limpeza
 #
 # O modo --prova-de-dente e' FAIL-CLOSED: roda primeiro um sub-run NAO mutado (baseline) que
-# tem de ficar verde, depois os 4 mutantes, e so' fecha com DENTE_OK se TODOS os vereditos
+# tem de ficar verde, depois os 6 mutantes, e so' fecha com DENTE_OK se TODOS os vereditos
 # forem DENTE_CUMPRIDO e os dois juizes (dente e sha256) estiverem conferidos. Qualquer outro
 # veredito (NAO_CONTA / MUTACAO_SEM_DENTE / MUTACAO_NAO_APLICADA) fecha com DENTE_FALHOU e exit 1.
 #
@@ -70,6 +77,8 @@ CONTRATO="$RAIZ_REPO/n8n/contracts/outbox-consumer.v1.json"
 NUCLEO="$RAIZ_REPO/n8n/codigo/nucleo-outbox-consumer.js"
 SQL_LER="$RAIZ_REPO/n8n/sql/ler-pendentes.sql"
 SQL_REGISTRAR="$RAIZ_REPO/n8n/sql/registrar-resultado.sql"
+SQL_TRILHA="$RAIZ_REPO/n8n/sql/ler-trilha.sql"
+SQL_REPLAY="$RAIZ_REPO/n8n/sql/registrar-replay.sql"
 MIGRATION="$RAIZ_REPO/db/migrations/0001_sales_intelligence_v1.sql"
 MONTADOR="$RAIZ_REPO/scripts/n8n/montar_workflow.py"
 ESTRUTURAL="$RAIZ_REPO/scripts/n8n/conferir_contrato_e_workflow.py"
@@ -167,7 +176,7 @@ resumo() {
 sha256_dos_artefatos() { # $1 = arquivo onde gravar "<sha>  <caminho relativo>"
     local destino="$1" arquivo
     : >"$destino"
-    for arquivo in "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$WORKFLOW"; do
+    for arquivo in "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$SQL_TRILHA" "$SQL_REPLAY" "$WORKFLOW"; do
         printf '%s  %s\n' "$(sha256sum "$arquivo" | cut -d' ' -f1)" "${arquivo#"$RAIZ_REPO"/}" >>"$destino"
     done
 }
@@ -295,12 +304,14 @@ if [ "$MODO" = "dente" ]; then
         falhou "baseline NAO mutado nao ficou verde (rc=$BASELINE_RC; ${BASELINE_RES:-sem linha de resultado}) — ambiente quebrado nao e' dente"
     fi
 
-    cabecalho "--prova-de-dente: 4 mutacoes nomeadas"
+    cabecalho "--prova-de-dente: 6 mutacoes nomeadas"
     # mutacao|item esperado que TEM de reprovar|por que a mutacao quebra o item
     MUTACOES="sem_validacao_de_envelope|E3 sem event_version|sem a exigencia de event_version o evento passa e o estado final deixa de ser DEAD_LETTER
 sem_incremento_de_tentativas|E8 falha de transporte|sem o incremento o attempts do evento que falhou nao muda
 sem_teto_de_tentativas|E9 teto de tentativas|sem o teto o evento esgotado volta a ser entregue
-mapeamento_trocado|E1 o parceiro do CRM tem|com o mapeamento trocado o parceiro nasce com outro dominio"
+mapeamento_trocado|E1 o parceiro do CRM tem|com o mapeamento trocado o parceiro nasce com outro dominio
+sem_consulta_de_trilha|E1 reenfileirado|sem a consulta da chave o evento de chave ja' entregue volta a ser entregue (chama a API de novo, incrementa tentativas)
+guarda_de_sucesso_afrouxada|E7 (chave na trilha como REFUSED)|com a guarda de status afrouxada uma trilha REFUSED autoriza replay e o E7 deixa de ser reentregue"
     # O laco roda em subshell (pipe): os vereditos vao para ARQUIVO e a agregacao vem depois.
     # Antes (rodada 1) o laco so' imprimia e o script fechava com DENTE_OK incondicional.
     VEREDITOS="$DENTE_DIR/vereditos.txt"
@@ -382,7 +393,8 @@ command -v curl >/dev/null 2>&1 && ok "curl disponivel (sonda HTTP do Odoo)" \
     || { falhou "curl ausente"; resumo; }
 python3 --version >/dev/null 2>&1 && ok "python3 disponivel (lente estrutural e mutacoes)" \
     || { falhou "python3 ausente"; resumo; }
-for arquivo in "$WORKFLOW" "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$MONTADOR" \
+for arquivo in "$WORKFLOW" "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$SQL_TRILHA" "$SQL_REPLAY" \
+               "$MONTADOR" \
                "$MUTADOR" "$MASSA_AMBIGUA" "$MODULO_DIR/__manifest__.py" \
                "$MODULO_DIR/api/politica_api.json" "$PREPARADOR" "$MIGRATION"; do
     if [ -f "$arquivo" ]; then ok "consumidor em disco: ${arquivo#"$RAIZ_REPO"/}"; else falhou "ausente: $arquivo"; resumo; fi
@@ -390,10 +402,10 @@ done
 info "sha256 dos artefatos sob teste (fixado agora e reconferido no fecho):"
 sha256_dos_artefatos "$LOG_DIR/sha256-antes.txt"
 sed 's/^/      /' "$LOG_DIR/sha256-antes.txt"
-if [ "$(wc -l <"$LOG_DIR/sha256-antes.txt" | tr -d ' ')" = "5" ]; then
-    ok "sha256 dos 5 artefatos sob teste fixado (base da reconferencia do fecho)"
+if [ "$(wc -l <"$LOG_DIR/sha256-antes.txt" | tr -d ' ')" = "7" ]; then
+    ok "sha256 dos 7 artefatos sob teste fixado (base da reconferencia do fecho)"
 else
-    falhou "nao consegui fixar o sha256 dos 5 artefatos (ver $LOG_DIR/sha256-antes.txt)"
+    falhou "nao consegui fixar o sha256 dos 7 artefatos (ver $LOG_DIR/sha256-antes.txt)"
 fi
 case "$BANCO" in
     odoo_dev|sales_intelligence|postgres) falhou "banco $BANCO e' do ambiente — so' banco descartavel"; resumo ;;
@@ -869,12 +881,70 @@ case "$e9" in DEAD_LETTER/3/*teto_de_tentativas_atingido*) ok "E9 teto de tentat
     || falhou "evento esgotado escreveu no CRM"
 
 # ---------------------------------------------------------------------------
+# ciclo 5 — DEDUP por chave (TRE-W3-E02-T02): replay nao chama, nao duplica e nao reescreve
+# ---------------------------------------------------------------------------
+# Dois eventos voltam para a fila com os IDs ORIGINAIS (mesmo evento -> mesma chave derivada):
+#   E1  a chave JA' foi entregue (trilha COMPLETED)  -> REPLAY: sem chamada, trilha intacta;
+#   E7  a chave esta' na trilha como REFUSED         -> NAO e' replay: o evento volta a ser entregue.
+# A contagem de chamadas do ciclo separa os dois casos: tem de ser EXATAMENTE 1 (a do E7).
+cabecalho "ciclo 5 — dedup por chave: E1 (chave entregue) volta a fila e E7 (chave recusada) tambem"
+CHAVE_E1="outbox:$E1:COMPANY_QUALIFIED"
+CHAVE_E7="outbox:$E7:COMPANY_QUALIFIED"
+TRAIL_ANTES5="$(limpar "$(si "select count(*) from sales_intelligence.sync_events")")"
+TRILHA_E1_ANTES5="$(limpar "$(si "select id || '|' || completed_at || '|' || coalesce(response_payload->'dados'->>'acao_efetiva','-') from sales_intelligence.sync_events where idempotency_key='$CHAVE_E1'")")"
+info "retrato da trilha do E1 ANTES do replay: $TRILHA_E1_ANTES5"
+cat >"$DESC_DIR/semear4.sql" <<SQL
+UPDATE sales_intelligence.outbox_events SET status='RETRY', processed_at=NULL WHERE id IN ('$E1','$E7');
+SQL
+semear "$DESC_DIR/semear4.sql" && ok "E1 (chave entregue) e E7 (chave recusada) de volta na fila como RETRY" \
+    || falhou "nao devolvi E1/E7 para a fila"
+[ "$(limpar "$(si "select count(*) from sales_intelligence.outbox_events where id in ('$E1','$E7') and status='RETRY'")")" = "2" ] \
+    && ok "os dois eventos estao na fila com os IDs ORIGINAIS (mesma chave derivada)" \
+    || falhou "E1/E7 nao estao na fila como RETRY"
+CHAMADAS_ANTES5="$(limpar "$(chamadas_api)")"
+executar_ciclo "$LOG_DIR/8-ciclo5.out"
+e1="$(estado_evento "$E1")"; e7="$(estado_evento "$E7")"
+[ "$e1" = "PROCESSED/1/-" ] \
+    && ok "E1 reenfileirado (chave ja' entregue) -> REPLAY: PROCESSED sem incrementar tentativas" \
+    || falhou "E1 reenfileirado esperava PROCESSED/1/- (REPLAY nao incrementa attempts), medido $e1"
+case "$e7" in DEAD_LETTER/2/*valor_ambiguo*) ok "E7 (chave na trilha como REFUSED) NAO e' replay: voltou a ser entregue e recusado" ;; \
+    *) falhou "E7 esperava DEAD_LETTER/2 com valor_ambiguo (trilha REFUSED nao autoriza replay), medido $e7" ;; esac
+CHAMADAS5="$(limpar "$(( $(chamadas_api) - CHAMADAS_ANTES5 ))")"
+[ "$CHAMADAS5" = "1" ] \
+    && ok "o ciclo com 2 eventos na fila chamou a API UMA vez: so' o E7 (o replay do E1 nao chamou)" \
+    || falhou "esperava 1 chamada no ciclo 5 (so' o E7), medidas ${CHAMADAS5:-0}"
+parceiros_e1="$(parceiros_por_identidade "$ORG1")"
+[ "$parceiros_e1" = "1" ] && [ "$(campo_parceiro "$ORG1" name)" = "$NOME_E1_ATUALIZADO" ] \
+    && [ "$(campo_parceiro "$ORG1" tf_priority_score)" = "80" ] \
+    && ok "o replay NAO escreveu no CRM: 1 parceiro, name e score da entrega original preservados" \
+    || falhou "o replay mexeu no CRM (parceiros=$parceiros_e1, name='$(campo_parceiro "$ORG1" name)', score='$(campo_parceiro "$ORG1" tf_priority_score)')"
+TRAIL_DEPOIS5="$(limpar "$(si "select count(*) from sales_intelligence.sync_events")")"
+[ "$TRAIL_ANTES5" = "$TRAIL_DEPOIS5" ] \
+    && ok "o replay NAO cria linha nova na trilha ($TRAIL_DEPOIS5 linhas antes e depois)" \
+    || falhou "a trilha cresceu no replay: $TRAIL_ANTES5 -> $TRAIL_DEPOIS5"
+TRILHA_E1_DEPOIS5="$(limpar "$(si "select id || '|' || completed_at || '|' || coalesce(response_payload->'dados'->>'acao_efetiva','-') from sales_intelligence.sync_events where idempotency_key='$CHAVE_E1'")")"
+[ -n "$TRILHA_E1_ANTES5" ] && [ "$TRILHA_E1_ANTES5" = "$TRILHA_E1_DEPOIS5" ] \
+    && ok "a trilha do replay foi REAPROVEITADA: mesma linha, mesmo instante e mesma resposta da entrega original" \
+    || falhou "a trilha do E1 mudou no replay (antes '$TRILHA_E1_ANTES5', depois '$TRILHA_E1_DEPOIS5')"
+[ "$(estado_trilha "$CHAVE_E1")" = "1/COMPLETED" ] && ok "a chave do E1 continua com UMA linha COMPLETED" \
+    || falhou "trilha do E1 esperava 1/COMPLETED, medida $(estado_trilha "$CHAVE_E1")"
+[ "$(estado_trilha "$CHAVE_E7")" = "1/REFUSED" ] \
+    && ok "o retry do E7 NAO duplica a trilha (1 linha, ainda REFUSED)" \
+    || falhou "trilha do E7 esperava 1/REFUSED, medida $(estado_trilha "$CHAVE_E7")"
+[ "$(limpar "$(si "select count(*) from sales_intelligence.outbox_events where id='$E1' and processed_at is not null")")" = "1" ] \
+    && ok "o evento do replay foi finalizado no outbox (processed_at do REPLAY)" \
+    || falhou "o evento do replay ficou sem processed_at"
+[ "$(limpar "$(si "select count(*) from sales_intelligence.sync_events where idempotency_key='$CHAVE_E1'")")" = "1" ] \
+    && ok "a chave UNIQUE do replay e' uma so' (mesma chave = mesmo efeito, sem duplicata)" \
+    || falhou "a chave do replay aparece mais de uma vez na trilha"
+
+# ---------------------------------------------------------------------------
 # fecho — chamadas, segredo, ambiente e limpeza
 # ---------------------------------------------------------------------------
 cabecalho "fecho — chamadas, segredo e ambiente"
 CHAMADAS_FINAIS="$(limpar "$(( $(chamadas_api) - BASE_AUDITORIA ))")"
-[ "$CHAMADAS_FINAIS" = "4" ] && ok "total de chamadas autenticadas == entregas tentadas (E1, E2, E7, E8 retry)" \
-    || falhou "esperava 4 linhas TF_API_AUDIT (delta da base $BASE_AUDITORIA), medidas ${CHAMADAS_FINAIS:-0}"
+[ "$CHAMADAS_FINAIS" = "5" ] && ok "total de chamadas autenticadas == entregas tentadas (E1, E2, E7, E8 retry, E7 no ciclo do dedup)" \
+    || falhou "esperava 5 linhas TF_API_AUDIT (delta da base $BASE_AUDITORIA), medidas ${CHAMADAS_FINAIS:-0}"
 if logs_api | grep -q "$(cat "$DESC_DIR/chave.txt")"; then
     falhou "a chave da API aparece no log do servidor"
 else
@@ -910,7 +980,7 @@ done
 SHA_DEPOIS="$LOG_DIR/sha256-depois.txt"
 sha256_dos_artefatos "$SHA_DEPOIS"
 if [ "$(veredito_sha256 "$LOG_DIR/sha256-antes.txt" "$SHA_DEPOIS")" = "IDENTICO" ]; then
-    ok "sha256 dos 5 artefatos sob teste reconferido no fecho: identico ao fixado nas guardas"
+    ok "sha256 dos 7 artefatos sob teste reconferido no fecho: identico ao fixado nas guardas"
 else
     falhou "sha256 dos 5 artefatos MUDOU durante a medicao: $(diff "$LOG_DIR/sha256-antes.txt" "$SHA_DEPOIS" 2>&1 | head -4 | tr '\n' ' ')"
 fi

@@ -2,14 +2,17 @@
 # -*- coding: utf-8 -*-
 """Monta o workflow do consumidor de outbox a partir dos artefatos versionados.
 
-Card TRE-W3-E02-T01 (board transformativa-revenue-engine). O workflow versionado
+Cards TRE-W3-E02-T01 (consumo) e TRE-W3-E02-T02 (dedup por chave); board
+transformativa-revenue-engine. O workflow versionado
 (`n8n/workflows/TRE-outbox-consumer.json`) NAO e' escrito a mao: ele e' o resultado
-deste montador sobre tres artefatos que tem um dono cada um:
+deste montador sobre artefatos que tem um dono cada um:
 
   * `n8n/contracts/outbox-consumer.v1.json` — a declaracao (eventos, mapeamento, teto
-    de tentativas, status, classificacao HTTP, credenciais por id/nome);
+    de tentativas, status, classificacao HTTP, trilha, dedup, credenciais por id/nome);
   * `n8n/codigo/nucleo-outbox-consumer.js` — a decisao pura (roda no n8n e no node);
-  * `n8n/sql/ler-pendentes.sql` e `n8n/sql/registrar-resultado.sql` — a fila e o estado final.
+  * `n8n/sql/ler-pendentes.sql` e `n8n/sql/registrar-resultado.sql` — a fila e o estado final;
+  * `n8n/sql/ler-trilha.sql` e `n8n/sql/registrar-replay.sql` — a consulta da chave e o
+    estado final do replay (card TRE-W3-E02-T02).
 
 Assim "o workflow embute o nucleo/o SQL/o contrato" deixa de ser afirmacao de leitura: o
 texto do Code node e' o arquivo + um adaptador marcado, e o verificador
@@ -31,6 +34,8 @@ ARQ_CONTRATO = RAIZ / "n8n" / "contracts" / "outbox-consumer.v1.json"
 ARQ_NUCLEO = RAIZ / "n8n" / "codigo" / "nucleo-outbox-consumer.js"
 ARQ_SQL_LER = RAIZ / "n8n" / "sql" / "ler-pendentes.sql"
 ARQ_SQL_REGISTRAR = RAIZ / "n8n" / "sql" / "registrar-resultado.sql"
+ARQ_SQL_TRILHA = RAIZ / "n8n" / "sql" / "ler-trilha.sql"
+ARQ_SQL_REPLAY = RAIZ / "n8n" / "sql" / "registrar-replay.sql"
 ARQ_WORKFLOW = RAIZ / "n8n" / "workflows" / "TRE-outbox-consumer.json"
 
 # O adaptador e' a FRONTEIRA declarada: o que esta antes e' o arquivo versionado, o que esta
@@ -42,11 +47,18 @@ NOME_DO_WORKFLOW = "TRE — outbox consumer (PostgreSQL → Odoo)"
 
 NOTAS = {
     "nucleo": ("Code node: roda o NUCLEO VERSIONADO (n8n/codigo/nucleo-outbox-consumer.js) sobre os "
-               "eventos lidos e devolve a decisao por evento (ENVIAR | RECUSAR | ESGOTADO | IGNORAR). "
-               "Sem contrato ele nao decide nada: o contrato vai embutido abaixo."),
+               "eventos lidos e devolve a decisao por evento (REPLAY | ENVIAR | RECUSAR | ESGOTADO | "
+               "IGNORAR). Sem contrato ele nao decide nada: o contrato vai embutido abaixo."),
     "classificar": ("Code node: roda o MESMO nucleo versionado para virar a RESPOSTA da API em estado "
                     "final do evento (PROCESSED | RETRY | DEAD_LETTER), conferindo o correlation_id "
                     "ecoado contra a decisao que originou a chamada."),
+    "chaves": ("Code node: deriva as chaves de idempotencia do LOTE (mesma derivacao do nucleo, "
+               "`outbox:<id>:<event_type>`) para consultar a trilha UMA vez por ciclo. O evento, nao "
+               "a chave: nao ha' heuristica aqui."),
+    "replay": ("No Postgres do replay: finaliza o evento que voltou para a fila reaproveitando o "
+               "registro da trilha (n8n/sql/registrar-replay.sql). NAO chama a porta unica, NAO "
+               "incrementa tentativas e NAO escreve na trilha: sem trilha de sucesso da chave ele "
+               "finaliza zero eventos (guarda fail-closed)."),
 }
 
 
@@ -72,7 +84,7 @@ def js_code(adaptador, contrato_texto):
     ])
 
 
-def no_de_pg(ident, nome, sql, contrato, posicao, nota):
+def no_de_pg(ident, nome, sql, contrato, posicao, nota, campos):
     return {
         "parameters": {
             "operation": "executeQuery",
@@ -80,7 +92,7 @@ def no_de_pg(ident, nome, sql, contrato, posicao, nota):
             # A lista (e nao a string separada por virgula) e' o que o node Postgres 2.5+ aceita como
             # valores de $1..$n: com virgula, um motivo com virgula no meio deslocaria os parametros.
             "options": {"queryReplacement": "={{ [" + ", ".join(
-                "$json." + campo for campo in CAMPOS_DO_SQL_REGISTRAR) + "] }}"},
+                "$json." + campo for campo in campos) + "] }}"},
         },
         "id": ident,
         "name": nome,
@@ -111,15 +123,37 @@ CAMPOS_DO_SQL_REGISTRAR = (
     "last_error",
 )
 
+# Ordem dos parametros de n8n/sql/registrar-replay.sql ($1..$2): a chave derivada do evento e o
+# id do evento. A trilha NAO e' parametro — o replay nao escreve nela.
+CAMPOS_DO_SQL_REPLAY = ("chave", "evento_id")
+
+# A consulta da trilha recebe UMA lista de chaves do lote (nao uma chave por parametro): e' uma
+# consulta por ciclo, e o node Postgres recebe um item so' (`chavesDoLoteComoItem`).
+CAMPOS_DO_SQL_TRILHA = ("chaves",)
+
 
 def montar():
     contrato, contrato_texto = carregar_contrato_texto()
     sql_ler = ler(ARQ_SQL_LER)
     sql_registrar = ler(ARQ_SQL_REGISTRAR)
+    sql_trilha = ler(ARQ_SQL_TRILHA)
+    sql_replay = ler(ARQ_SQL_REPLAY)
 
-    nucleo = js_code("return decisaoDoLote($input.all(), CONTRATO);", contrato_texto)
+    nucleo = js_code("return decisaoDoLote($('Ler pendentes (outbox)').all(), CONTRATO, "
+                     "trilhaPorChave($input.all()));", contrato_texto)
     classificar = js_code("return resultadoDasRespostas($input.all(), $('Nucleo: validar e decidir').all(), CONTRATO);",
                           contrato_texto)
+    chaves = js_code("return chavesDoLoteComoItem($input.all(), CONTRATO);", contrato_texto)
+
+    no_trilha = no_de_pg("tre-outbox-ler-trilha", "Ler trilha (chaves entregues)", sql_trilha, contrato,
+                         [-140, 260],
+                         ("Consulta a TRILHA pelas chaves do lote (n8n/sql/ler-trilha.sql): e' o registro "
+                          "de idempotencia. Somente leitura, uma consulta por ciclo. "
+                          "`alwaysOutputData`: sem isso, ciclo sem chave entregue derrubaria a cadeia "
+                          "inteira (no sem itens nao deixa o no seguinte rodar) e o consumidor pararia "
+                          "de entregar no primeiro ciclo."),
+                         CAMPOS_DO_SQL_TRILHA)
+    no_trilha["alwaysOutputData"] = True
 
     nos = [
         {
@@ -154,6 +188,16 @@ def montar():
             "notes": ("Le a fila (n8n/sql/ler-pendentes.sql). Somente leitura: quem muda o estado do "
                       "evento e' o no de registro."),
         },
+        {
+            "parameters": {"mode": "runOnceForAllItems", "language": "javaScript", "jsCode": chaves},
+            "id": "tre-outbox-chaves-do-lote",
+            "name": "Chaves do lote (nucleo)",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [-380, 260],
+            "notes": NOTAS["chaves"],
+        },
+        no_trilha,
         {
             "parameters": {"mode": "runOnceForAllItems", "language": "javaScript", "jsCode": nucleo},
             "id": "tre-outbox-nucleo",
@@ -227,20 +271,52 @@ def montar():
         },
         no_de_pg("tre-outbox-registrar-entrega", "Registrar entrega (outbox + trilha)", sql_registrar, contrato,
                  [820, -80],
-                 "UPDATE do outbox + linha em sync_events numa transacao (n8n/sql/registrar-resultado.sql)."),
+                 "UPDATE do outbox + linha em sync_events numa transacao (n8n/sql/registrar-resultado.sql).",
+                 CAMPOS_DO_SQL_REGISTRAR),
+        {
+            "parameters": {"conditions": {
+                "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "loose", "version": 2},
+                "conditions": [{
+                    "id": "tre-outbox-cond-replay",
+                    "leftValue": "={{ $json.decisao }}",
+                    "rightValue": contrato["dedup"]["decisao"],
+                    "operator": {"type": "string", "operation": "equals"},
+                }],
+                "combinator": "and",
+            }},
+            "id": "tre-outbox-decisao-replay",
+            "name": "Decisao: replay?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.3,
+            "position": [340, 200],
+            "notes": ("Quem NAO vai para a porta unica so' pode ser recusa/esgotado ou replay. O replay e' "
+                      "finalizado sem chamada e sem nova linha de trilha; o resto vai para a trilha como "
+                      "recusa nomeada."),
+        },
         no_de_pg("tre-outbox-registrar-recusa", "Registrar recusa (outbox + trilha)", sql_registrar, contrato,
-                 [340, 200],
+                 [580, 200],
                  ("Mesmo SQL do caminho de entrega, com os parametros da recusa/esgotado: recusa nao "
-                  "incrementa tentativas e deixa o motivo no last_error.")),
+                  "incrementa tentativas e deixa o motivo no last_error."),
+                 CAMPOS_DO_SQL_REGISTRAR),
+        no_de_pg("tre-outbox-registrar-replay", "Registrar replay (outbox)", sql_replay, contrato,
+                 [580, 420],
+                 NOTAS["replay"],
+                 CAMPOS_DO_SQL_REPLAY),
     ]
 
     conexoes = {
         "Entrada por agenda (poll)": {"main": [[{"node": "Ler pendentes (outbox)", "type": "main", "index": 0}]]},
         "Entrada sob demanda": {"main": [[{"node": "Ler pendentes (outbox)", "type": "main", "index": 0}]]},
-        "Ler pendentes (outbox)": {"main": [[{"node": "Nucleo: validar e decidir", "type": "main", "index": 0}]]},
+        "Ler pendentes (outbox)": {"main": [[{"node": "Chaves do lote (nucleo)", "type": "main", "index": 0}]]},
+        "Chaves do lote (nucleo)": {"main": [[{"node": "Ler trilha (chaves entregues)", "type": "main", "index": 0}]]},
+        "Ler trilha (chaves entregues)": {"main": [[{"node": "Nucleo: validar e decidir", "type": "main", "index": 0}]]},
         "Nucleo: validar e decidir": {"main": [[{"node": "Decisao: entregar?", "type": "main", "index": 0}]]},
         "Decisao: entregar?": {"main": [
             [{"node": "Chamar API controlada (porta unica)", "type": "main", "index": 0}],
+            [{"node": "Decisao: replay?", "type": "main", "index": 0}],
+        ]},
+        "Decisao: replay?": {"main": [
+            [{"node": "Registrar replay (outbox)", "type": "main", "index": 0}],
             [{"node": "Registrar recusa (outbox + trilha)", "type": "main", "index": 0}],
         ]},
         "Chamar API controlada (porta unica)": {"main": [[{"node": "Classificar resposta", "type": "main", "index": 0}]]},
@@ -255,7 +331,8 @@ def montar():
         "connections": conexoes,
         "settings": {"executionOrder": "v1"},
         "staticData": None,
-        "meta": {"card": "TRE-W3-E02-T01", "contrato": "n8n/contracts/outbox-consumer.v1.json",
+        "meta": {"card": "TRE-W3-E02-T01 + TRE-W3-E02-T02",
+                 "contrato": "n8n/contracts/outbox-consumer.v1.json",
                  "montado_por": "scripts/n8n/montar_workflow.py"},
         "tags": [],
     }

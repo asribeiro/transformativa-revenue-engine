@@ -135,6 +135,84 @@ const ignorado = nucleo.decidirEvento(eventoValido({ status: 'PROCESSED' }), con
 igual('status fora da fila -> IGNORAR', ignorado.decisao, 'IGNORAR');
 igual('status fora da fila -> no-op (sem id, sem UPDATE)', ignorado.evento_id, null);
 
+/* ------------------------------------------------ dedup por chave (TRE-W3-E02-T02) */
+
+confere('contrato: dedup declarado (criterio, consulta, registro e status)',
+    !!contrato.dedup && !!contrato.dedup.criterio_de_replay &&
+    contrato.dedup.criterio_de_replay.coluna_de_chave === 'idempotency_key' &&
+    !!contrato.dedup.consulta_da_chave && !!contrato.dedup.registro_do_replay);
+igual('contrato: dedup.ordem_da_decisao nomeia as cinco decisoes',
+    contrato.dedup.ordem_da_decisao.slice().sort(),
+    ['ENVIAR', 'ESGOTADO', 'IGNORAR', 'RECUSAR', 'REPLAY'].sort());
+igual('contrato: o replay nao incrementa tentativas', contrato.dedup.incrementa_tentativas, 0);
+
+const eventoEntregue = eventoValido();
+const chaveEntregue = 'outbox:' + UUID_A + ':COMPANY_QUALIFIED';
+const trilhaCompleta = {};
+trilhaCompleta[chaveEntregue] = {
+    idempotency_key: chaveEntregue,
+    trilha_id: 'trilha-1',
+    status: contrato.dedup.criterio_de_replay.status_trilha,
+    completed_at: '2026-10-02 00:00:00+00',
+    response_payload: { ok: true, dados: { acao_efetiva: 'criar', id: 42 } }
+};
+
+igual('chavesDoLote deriva uma chave por evento (sem repetir)',
+    nucleo.chavesDoLote([{ json: eventoEntregue }, { json: eventoEntregue }], contrato), [chaveEntregue]);
+igual('chavesDoLote ignora item vazio (e o no de consulta emite item vazio quando nao ha trilha)',
+    nucleo.chavesDoLote([{ json: {} }, { json: null }], contrato), []);
+igual('campos da chave vem da DERIVACAO do contrato (nao ha lista literal no nucleo)',
+    nucleo.camposDaChaveDeIdempotencia(contrato), ['id', 'event_type']);
+igual('evento sem os componentes da chave nao gera chave (outbox:: nao e chave de nada)',
+    nucleo.chavesDoLote([{ json: eventoValido({ event_type: null }) }, { json: eventoValido({ id: null }) }], contrato), []);
+igual('trilhaPorChave indexa pela chave e descarta linha sem chave',
+    Object.keys(nucleo.trilhaPorChave([{ json: {} }, { json: trilhaCompleta[chaveEntregue] }])), [chaveEntregue]);
+igual('trilhaPorChave aceita consulta vazia sem inventar registro', nucleo.trilhaPorChave([]).hasOwnProperty(chaveEntregue), false);
+igual('registroDeReplay aceita o registro de status de sucesso',
+    nucleo.registroDeReplay(eventoEntregue, contrato, trilhaCompleta).trilha_id, 'trilha-1');
+igual('registroDeReplay recusa registro de trilha FAILED',
+    nucleo.registroDeReplay(eventoEntregue, contrato,
+        { [chaveEntregue]: Object.assign({}, trilhaCompleta[chaveEntregue], { status: 'FAILED' }) }), null);
+igual('registroDeReplay recusa registro de trilha REFUSED',
+    nucleo.registroDeReplay(eventoEntregue, contrato,
+        { [chaveEntregue]: Object.assign({}, trilhaCompleta[chaveEntregue], { status: 'REFUSED' }) }), null);
+igual('registroDeReplay recusa registro cuja chave nao e a do evento',
+    nucleo.registroDeReplay(eventoEntregue, contrato,
+        { [chaveEntregue]: Object.assign({}, trilhaCompleta[chaveEntregue], { idempotency_key: 'outbox:outro' }) }), null);
+igual('registroDeReplay sem trilha (consulta vazia) e null', nucleo.registroDeReplay(eventoEntregue, contrato, {}), null);
+
+const replay = nucleo.decidirEvento(eventoEntregue, contrato, trilhaCompleta);
+igual('chave ja entregue -> REPLAY', replay.decisao, 'REPLAY');
+igual('REPLAY -> status final do contrato', replay.status_final, contrato.dedup.status_final);
+igual('REPLAY -> status de trilha do contrato (reaproveitado)', replay.status_trilha, contrato.dedup.status_trilha);
+igual('REPLAY -> NAO incrementa tentativas', replay.incrementa_tentativas, 0);
+igual('REPLAY -> sem pedido (nao ha chamada a porta unica)', replay.pedido, null);
+igual('REPLAY -> sem operacao (nao ha caminho para o POST)', replay.operacao, null);
+confere('REPLAY -> motivo nomeado com a chave', replay.motivo === 'chave_ja_entregue:' + chaveEntregue, replay.motivo);
+igual('REPLAY -> id do evento preservado (ha UPDATE, ao contrario do IGNORAR)', replay.evento_id, UUID_A);
+igual('REPLAY -> resposta registrada e a da trilha (mesmo efeito)', replay.response_payload.ok, true);
+igual('REPLAY -> trilha reaproveitada (id e instante da conclusao preservados)',
+    replay.trilha_reaproveitada, { id: 'trilha-1', completed_at: '2026-10-02 00:00:00+00' });
+
+igual('sem a trilha nao existe replay (decisao do T01 preservada)',
+    nucleo.decidirEvento(eventoEntregue, contrato).decisao, 'ENVIAR');
+
+const replayNoTeto = nucleo.decidirEvento(
+    eventoValido({ attempts: contrato.retry.teto_de_tentativas, status: 'RETRY' }), contrato, trilhaCompleta);
+igual('ordem da decisao: REPLAY vem ANTES do teto de tentativas', replayNoTeto.decisao, 'REPLAY');
+const replayEnvelopeRuim = nucleo.decidirEvento(eventoValido({ event_version: null }), contrato, trilhaCompleta);
+igual('ordem da decisao: REPLAY vem ANTES da recusa de envelope (o fato JA foi entregue)',
+    replayEnvelopeRuim.decisao, 'REPLAY');
+igual('ordem da decisao: IGNORAR vem ANTES do REPLAY (status fora da fila e no-op)',
+    nucleo.decidirEvento(eventoValido({ status: 'PROCESSED' }), contrato, trilhaCompleta).decisao, 'IGNORAR');
+const trilhaFalha = {};
+trilhaFalha[chaveEntregue] = Object.assign({}, trilhaCompleta[chaveEntregue], { status: 'FAILED' });
+igual('trilha FAILED nao vira replay: o evento volta a ser entregue (a escrita pode nao ter acontecido)',
+    nucleo.decidirEvento(eventoEntregue, contrato, trilhaFalha).decisao, 'ENVIAR');
+igual('trilha REFUSED nao vira replay: a recusa e do evento, nao da chave',
+    nucleo.decidirEvento(eventoValido({ event_version: null }), contrato,
+        { [chaveEntregue]: Object.assign({}, trilhaCompleta[chaveEntregue], { status: 'REFUSED' }) }).decisao, 'RECUSAR');
+
 /* --------------------------------------------------- resposta da API -> estado */
 
 igual('200 -> SUCESSO', nucleo.classificarResposta(200, { ok: true }, contrato).resultado, 'SUCESSO');
@@ -174,15 +252,19 @@ igual('falha de transporte -> trilha FAILED', respTransporte.status_trilha, cont
 const nos = workflow.nodes;
 const noNucleo = nos.filter(n => n.name === 'Nucleo: validar e decidir')[0];
 const noClassificar = nos.filter(n => n.name === 'Classificar resposta')[0];
-confere('workflow tem os dois Code nodes', !!noNucleo && !!noClassificar);
+const noChaves = nos.filter(n => n.name === 'Chaves do lote (nucleo)')[0];
+const noTrilha = nos.filter(n => n.name === 'Ler trilha (chaves entregues)')[0];
+confere('workflow tem os Code nodes e o no da trilha do dedup',
+    !!noNucleo && !!noClassificar && !!noChaves && !!noTrilha);
 
 const jsNucleo = noNucleo.parameters.jsCode;
 const partesNucleo = jsNucleo.split(MARCADOR);
 confere('Code node do nucleo usa o marcador do adaptador', partesNucleo.length === 2);
 igual('Code node do nucleo embute o arquivo versionado (byte a byte, a menos do espaco final)',
     partesNucleo[0].replace(/\s+$/, ''), nucleoTexto.replace(/\s+$/, ''));
-confere('adaptador do nucleo chama decisaoDoLote($input.all(), CONTRATO)',
-    /return decisaoDoLote\(\$input\.all\(\), CONTRATO\);/.test(partesNucleo[1]), partesNucleo[1].trim());
+confere('adaptador do nucleo le os eventos do no da fila e passa a trilha lida',
+    /\$\(\s*'Ler pendentes \(outbox\)'\s*\)\.all\(\)/.test(partesNucleo[1]) &&
+    /trilhaPorChave\(\$input\.all\(\)\)/.test(partesNucleo[1]), partesNucleo[1].trim());
 
 const jsClassificar = noClassificar.parameters.jsCode;
 const partesClassificar = jsClassificar.split(MARCADOR);
@@ -192,6 +274,15 @@ igual('Code node da classificacao embute o MESMO arquivo versionado',
 confere('adaptador da classificacao passa as decisoes para o casamento',
     /resultadoDasRespostas\(\$input\.all\(\), \$\('Nucleo: validar e decidir'\)\.all\(\), CONTRATO\)/.test(partesClassificar[1]),
     partesClassificar[1].trim());
+
+const jsChaves = noChaves.parameters.jsCode;
+const partesChaves = jsChaves.split(MARCADOR);
+igual('Code node das chaves embute o MESMO arquivo versionado',
+    partesChaves[0].replace(/\s+$/, ''), nucleoTexto.replace(/\s+$/, ''));
+confere('adaptador das chaves deriva a lista do lote',
+    /chavesDoLoteComoItem\(\$input\.all\(\), CONTRATO\)/.test(partesChaves[1]), partesChaves[1].trim());
+confere('o no da trilha emite saida mesmo sem chave entregue (alwaysOutputData)',
+    noTrilha.alwaysOutputData === true);
 
 function contratoDoCodeNode(partes) {
     const m = partes[1].match(/const CONTRATO = ([\s\S]*?);\n/);
@@ -207,7 +298,8 @@ function executarComoCodeNode(jsCode, itens, referencias) {
     const $ = (nome) => ({ all: () => (referencias && referencias[nome]) || [] });
     return fn($input, $, JSON, itens);
 }
-const saidaEmbutida = executarComoCodeNode(jsNucleo, [{ json: eventoValido() }], null);
+const saidaEmbutida = executarComoCodeNode(jsNucleo, [{ json: {} }],
+    { 'Ler pendentes (outbox)': [{ json: eventoValido() }] });
 igual('Code node EMBUTIDO decide igual ao nucleo versionado', saidaEmbutida[0].json.decisao, 'ENVIAR');
 igual('Code node EMBUTIDO monta o mesmo pedido', saidaEmbutida[0].json.pedido, decisao.pedido);
 
@@ -215,6 +307,20 @@ const saidaClassificada = executarComoCodeNode(jsClassificar,
     [{ json: { statusCode: 200, body: { ok: true, correlation_id: decisaoEntrega.correlacao } } }],
     { 'Nucleo: validar e decidir': [{ json: decisaoEntrega }] });
 igual('Code node EMBUTIDO classifica a resposta em PROCESSED', saidaClassificada[0].json.status_final, contrato.status.sucesso);
+
+const saidaChavesEmbutida = executarComoCodeNode(jsChaves, [{ json: eventoValido() }], null);
+igual('Code node EMBUTIDO das chaves devolve a lista de chaves do lote',
+    saidaChavesEmbutida[0].json.chaves, [chaveEntregue]);
+const saidaReplayEmbutida = executarComoCodeNode(jsNucleo, [{ json: trilhaCompleta[chaveEntregue] }],
+    { 'Ler pendentes (outbox)': [{ json: eventoEntregue }] });
+igual('Code node EMBUTIDO decide REPLAY com a trilha que o no de consulta entregou',
+    saidaReplayEmbutida[0].json.decisao, 'REPLAY');
+igual('Code node EMBUTIDO do replay nao monta pedido (nenhuma chance de POST)',
+    saidaReplayEmbutida[0].json.pedido, null);
+const saidaSemTrilhaEmbutida = executarComoCodeNode(jsNucleo, [{ json: {} }],
+    { 'Ler pendentes (outbox)': [{ json: eventoEntregue }] });
+igual('Code node EMBUTIDO com consulta vazia entrega normalmente (nao inventa replay)',
+    saidaSemTrilhaEmbutida[0].json.decisao, 'ENVIAR');
 
 /* --------------------- o consumidor fala com a API controlada que EXISTE */
 

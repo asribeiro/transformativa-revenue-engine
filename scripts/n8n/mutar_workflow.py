@@ -84,11 +84,39 @@ def mapeamento_trocado(workflow):
     return trocas
 
 
+def sem_consulta_de_trilha(workflow):
+    """Tira as chaves do lote da consulta: o dedup deixa de enxergar a trilha (T02)."""
+    trocas = 0
+    alvo = "={{ [$json.chaves] }}"
+    novo = "={{ [[]] }}"
+    for no in nos_do_tipo(workflow, "postgres"):
+        opcoes = no["parameters"].get("options", {})
+        if opcoes.get("queryReplacement") == alvo:
+            opcoes["queryReplacement"] = novo
+            trocas += 1
+    return trocas
+
+
+def guarda_de_sucesso_afrouxada(workflow):
+    """Aceita QUALQUER status de trilha como replay: uma trilha REFUSED autorizaria replay."""
+    trocas = 0
+    alvo = "if (texto(registro.status) !== texto(criterio.status_trilha)) return null;"
+    novo = "if (false) return null;"
+    for no in nos_do_tipo(workflow, "code"):
+        js = no["parameters"]["jsCode"]
+        if alvo in js:
+            no["parameters"]["jsCode"] = js.replace(alvo, novo)
+            trocas += 1
+    return trocas
+
+
 MUTACOES = {
     "sem_validacao_de_envelope": sem_validacao_de_envelope,
     "sem_incremento_de_tentativas": sem_incremento_de_tentativas,
     "sem_teto_de_tentativas": sem_teto_de_tentativas,
     "mapeamento_trocado": mapeamento_trocado,
+    "sem_consulta_de_trilha": sem_consulta_de_trilha,
+    "guarda_de_sucesso_afrouxada": guarda_de_sucesso_afrouxada,
 }
 
 
