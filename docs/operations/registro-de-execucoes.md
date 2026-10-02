@@ -1428,3 +1428,48 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
    e as expectativas de `sem-idempotencia`/`fechamento-sem-ancora-no-run` passaram a apontar os itens que
    leem o **SQL gerado** (a porta de roteiro responde por roteiro e não mede semântica de banco — quem
    mede a idempotência em banco é a rodada 3 do E2E).
+
+### Rodada 2 — mudança pedida na revisão independente (estágio 6): guarda da própria prova
+
+- **Defeito apontado (fail-open, no harness da prova — não no agente):** a mutação
+  `raiz-por-profundidade-do-arquivo` declarava como item esperado
+  `agente-importa-de-diretorio-fora-da-arvore`, nome que **não existia** na suíte (o item real é
+  `raiz-vem-do-marcador-nao-da-profundidade`). `autoteste()` só consultava `resultados.get(nome)`:
+  nome inexistente devolvia `None`, nunca entrava em `nao_reprovados`, e a mutação era contada como
+  detectada **sem nada reprovar** — 1 das 15 provas sem exigência medida, contra o TEST do card. O
+  agente não apresentou defeito no que foi medido; o buraco era da prova.
+- **Correção:** (1) o item esperado passou a ser o nome real; (2) guarda da própria prova —
+  `problemas_em_mutacoes()` (estática, antes de rodar) mais a checagem de nome ausente no resultado da
+  suíte (dinâmica): item inexistente **ou** mutação sem item declarado **reprova**; (3) `--autoteste`
+  passou a mutar o arquivo apontado por `--codigo` (antes mutava sempre o canônico, qualquer que fosse
+  o alvo); (4) item novo `autoteste-recusa-mutacao-sem-item-medido` cobre a guarda — a suíte offline
+  passou de 64 para **65 itens**.
+- **Suíte offline (agente, no container do Hermes):** `python3
+  scripts/agentes/verificar_agente_research.py --autoteste` -> `RESULTADO: RESEARCH_SUITE_OK (65 itens,
+  0 falhas)` e `AUTOTESTE OK (15/15 mutacoes detectadas)`, exit 0; a mutação do defeito reprova pelo
+  item certo (`OK mutacao raiz-por-profundidade-do-arquivo reprovada por 1 item(ns):
+  raiz-vem-do-marcador-nao-da-profundidade`).
+- **Controle do defeito (4 casos, fail-closed):** `evidencias-impl-r2/controle-autoteste-r2.out` —
+  mutação **inerte** com item fantasma -> `FALHOU declaracao de mutacao -> ... item esperado inexistente
+  na suite` (na rodada 1 esse caso devolvia `OK`); inerte com item real -> `FALHOU ... nao reprovou`;
+  mutação **real** com o nome fantasma antigo -> FALHOU; mutação real sem item -> FALHOU.
+  `CONTROLE AUTOTESTE OK (4/4 casos fail-closed)`.
+- **Controle do `--codigo` (antes x depois):** arquivo sob teste com a âncora de uma mutação quebrada
+  por edição inerte de formatação. Antes (harness `8e437b2`, sha256 `2a65064b…`): `AUTOTESTE OK
+  (15/15)`, exit 0 — mutava o canônico enquanto a suíte media outro arquivo. Depois: `FALHOU mutacao
+  cnpj-passa-a-ser-coluna-de-enriquecimento -> ancora da mutacao nao casa exatamente 1 vez (0)`,
+  `AUTOTESTE FALHOU (14/15)`, exit 1.
+- **Aceite E2E (agente, na VPS, árvore própria `/opt/tre/t_d9be7d3c-r2`, container descartável
+  `pg-research-acc`):** `RESULTADO: ACEITE_RESEARCH_001_OK (55 itens, 0 falhas)` e `DENTE OK (4/4
+  mutacoes detectadas, cada uma pelo item esperado)`, exit 0. `research.py` com o **mesmo sha256** da
+  rodada 1 (`ab2e397e…`) nas duas pontas — a correção é da prova, o agente não mudou.
+- **Portão de estrutura (agente):** `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0
+  falhas)`.
+- **Nenhum container do TRE foi tocado:** só `pg-research-acc` nasceu e foi removido; `proxy-dev`,
+  `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` seguem de pé.
+- **Evidência bruta:** `evidencias-impl-r2/` no diretório de trabalho do card
+  (`suite-autoteste-r2.out`, `controle-autoteste-r2.out` e os casos `C1..C4`, `controle-codigo-r2.out`,
+  `controle-codigo-r2-ANTES.out`, `aceite-e2e-r2.out`, `estrutura-r2.out`); log completo do aceite
+  também em `/opt/tre/evid-t_d9be7d3c-r2/` na VPS.
+- **O que esta rodada NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
+  perfil `tester` e a homologação (estágio 7) é do Anderson.

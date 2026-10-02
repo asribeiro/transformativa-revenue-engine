@@ -1160,7 +1160,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     valores anteriores com o tipo da coluna, apaga os `research_runs`/`sync_events` da rodada e registra o
     `ROLLBACK`, sem tocar `agent_runs` nem `human_approvals`).
 - **Verificação do Research** (`TRE-W4-E02-T01`) — `scripts/agentes/verificar_agente_research.py` (suíte
-  offline, **64 itens**, autoteste de **15 mutações**) e `scripts/agentes/teste_research_aceite.sh` (aceite
+  offline, **65 itens**, autoteste de **15 mutações** com guarda da própria prova) e `scripts/agentes/teste_research_aceite.sh` (aceite
   E2E em container PostgreSQL descartável na VPS, **55 itens** + prova de dente com 4 mutações, cada uma
   exigindo o **item esperado**); `docs/architecture/agente-research-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK)
   e `docs/runbooks/agente-research.md`.

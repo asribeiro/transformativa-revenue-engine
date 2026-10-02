@@ -198,7 +198,7 @@ python3 hermes/agents/research/research.py --desfazer <correlation_id> --confirm
 ## 8. TEST
 
 - **Offline (contrato e regra):**
-  `python3 scripts/agentes/verificar_agente_research.py --autoteste` — **64 itens**: contrato do
+  `python3 scripts/agentes/verificar_agente_research.py --autoteste` — **65 itens**: contrato do
   agente espelhado no código, identidade forte lida do Data Contract V1.0, vocabulário de fontes
   idêntico ao do Scout (mesmo canal), colunas de enriquecimento contra o DDL congelado, colunas
   proibidas (identidade/estágio/score) fora da lista, INSERT de `research_runs`/`agent_runs`/
@@ -206,10 +206,11 @@ python3 hermes/agents/research/research.py --desfazer <correlation_id> --confirm
   faixas de empregados contra o vocabulário e contra os limites do contrato, validação/descarte de
   achados, decisão de veredito, guarda de escrita (DDL, tabela não declarada, organização sem modo,
   coluna proibida, sem COALESCE, DELETE de organização, DELETE fora do desfazer, separação do `SET`
-  com parênteses), gate do JEV fail-closed, ausência de rede/LLM, e o fluxo completo numa **porta de
-  roteiro** (pesquisar, não sobrescrever, replay idempotente, revisão, recusa, auditoria que falha,
-  desfazer dry-run/confirmado). O autoteste muta **cópia** do agente (**15 mutações**) e exige que o
-  item correspondente **reprove** — hoje 15/15.
+  com parênteses), gate do JEV fail-closed, ausência de rede/LLM, a guarda da **própria prova** (item
+  esperado inexistente ou mutação sem item declarado **reprova**, em vez de passar muda), e o fluxo
+  completo numa **porta de roteiro** (pesquisar, não sobrescrever, replay idempotente, revisão, recusa,
+  auditoria que falha, desfazer dry-run/confirmado). O autoteste muta **cópia** do arquivo sob teste
+  (`--codigo`; o canônico, por padrão) e exige que o item correspondente **reprove** — hoje 15/15.
 - **E2E (banco real, descartável):** `bash scripts/agentes/teste_research_aceite.sh` na VPS, em
   container PostgreSQL descartável (`pg-research-acc`) com a migration 0001 e **3 organizações
   pré-existentes** (uma com `industry_name` já preenchido: é o dado curado) — **55 itens**, em 3

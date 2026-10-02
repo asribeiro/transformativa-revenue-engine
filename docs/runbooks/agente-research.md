@@ -106,7 +106,7 @@ ele enriqueceu não é restaurada — o órfão continua visível para investiga
 ## 6. Verificação
 
 ```bash
-# offline (sem banco e sem rede): 64 itens + 15 mutações
+# offline (sem banco e sem rede): 65 itens + 15 mutações
 python3 scripts/agentes/verificar_agente_research.py --autoteste
 
 # E2E em container descartável NA VPS (o aceite recusa rodar se o container já existir)

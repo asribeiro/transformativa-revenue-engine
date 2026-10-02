@@ -16,9 +16,12 @@ proibida/sem COALESCE e DELETE em organizacao; o gate do JEV e fail-closed; e o 
 contrato do card — medido numa PORTA DE ROTEIRO (implementacao da porta declarada, nao dublê de
 biblioteca).
 
-AUTOTESTE (`--autoteste`): cada mutacao e aplicada a uma COPIA do `research.py` e a suite tem de
-REPROVAR o item correspondente — mutacao que passa em silencio e buraco de verificacao. Mutacao
-que nao se aplica (ancora de texto mudou) tambem reprova: e buraco, nao alivio.
+AUTOTESTE (`--autoteste`): cada mutacao e aplicada a uma COPIA do arquivo apontado por `--codigo`
+(o canonico, por padrao — as duas opcoes andam juntas de proposito: mutar o canonical enquanto se
+testa outro arquivo e' prova contra alvo errado) e a suite tem de REPROVAR o item correspondente —
+mutacao que passa em silencio e buraco de verificacao. Mutacao que nao se aplica (ancora de texto
+mudou), que nao declara item nenhum ou que declara item INEXISTENTE na suite tambem reprova: e
+buraco, nao alivio.
 
 VOCABULARIO DE EXIT: 0 = RESEARCH_SUITE_OK · 1 = RESEARCH_SUITE_FALHOU (o log aponta o item) ·
 2 = uso incorreto. Guarda de confiabilidade: etapa que roda 0 item REPROVA.
@@ -919,6 +922,28 @@ def _(ctx):
 
 
 # ---------------------------------------------------------------------------------------
+# 8. Guarda da propria prova (quem testa o teste)
+# ---------------------------------------------------------------------------------------
+@item("autoteste-recusa-mutacao-sem-item-medido")
+def _(ctx):
+    """Dente com item esperado INEXISTENTE (ou sem item) tem de reprovar o autoteste.
+
+    Antes desta guarda, `resultados.get(nome_inexistente)` devolvia None, o nome nunca entrava em
+    `nao_reprovados` e a mutacao era contada como detectada sem nada reprovar. Medido com mutacao
+    INERTE: com o nome fantasma o autoteste dizia OK; com o nome real, FALHOU.
+    """
+    fantasma = ("mutacao-com-item-fantasma", "ALVO_QUE_NAO_EXISTE", "SUBSTITUTO",
+                ["item-que-nao-existe-na-suite"])
+    sem_item = ("mutacao-sem-item-esperado", "ALVO_QUE_NAO_EXISTE", "SUBSTITUTO", [])
+    problemas = problemas_em_mutacoes([fantasma, sem_item])
+    assert len(problemas) == 2, "a guarda deixou passar mutacao muda: %r" % (problemas,)
+    assert any("item-que-nao-existe-na-suite" in p for p in problemas), problemas
+    assert any("nao declara item esperado" in p for p in problemas), problemas
+    reais = problemas_em_mutacoes()
+    assert reais == [], "mutacao declarada aponta item que a suite nao tem: %r" % (reais,)
+
+
+# ---------------------------------------------------------------------------------------
 # Execucao
 # ---------------------------------------------------------------------------------------
 def executar_suite(modulo, raiz=RAIZ):
@@ -1005,7 +1030,7 @@ MUTACOES = [
      "                return pasta\n"
      "    return Path.cwd()",
      "    return Path(__file__).resolve().parents[3]",
-     ["agente-importa-de-diretorio-fora-da-arvore"]),
+     ["raiz-vem-do-marcador-nao-da-profundidade"]),
     ("forte-invalido-aceito",
      "        if valida(bruto):",
      "        if True:",
@@ -1021,17 +1046,45 @@ MUTACOES = [
 ]
 
 
-def aplicar_mutacao(mutacao, destino: Path):
+def problemas_em_mutacoes(mutacoes=None):
+    """Guarda da PROPRIA prova: cada mutacao declara >=1 item e todo item declarado existe.
+
+    Item esperado que nao existe no resultado da suite faz `resultados.get(nome)` devolver None,
+    entao ele nunca entra em `nao_reprovados` e a mutacao passa sem medicao alguma — dente mudo.
+    Foi o que aconteceu quando o item `raiz-vem-do-marcador-nao-da-profundidade` foi renomeado e a
+    lista `MUTACOES` ficou com o nome velho (a mutacao estava detectada, mas nada exigia a
+    deteccao). Nome inexistente e lista vazia sao BURACO DE VERIFICACAO, nunca alivio.
+    """
+    nomes_da_suite = {nome for nome, _ in ITENS}
+    problemas = []
+    for mutacao in (MUTACOES if mutacoes is None else mutacoes):
+        nome, _alvo, _substituto, esperados = mutacao
+        if not esperados:
+            problemas.append("%s: nao declara item esperado (mutacao sem medicao)" % nome)
+            continue
+        for esperado in esperados:
+            if esperado not in nomes_da_suite:
+                problemas.append("%s: item esperado inexistente na suite: %s" % (nome, esperado))
+    return problemas
+
+
+def aplicar_mutacao(mutacao, destino: Path, fonte: Path = CODIGO_PADRAO):
     nome, alvo, substituto, itens_esperados = mutacao
-    texto = CODIGO_PADRAO.read_text(encoding="utf-8")
+    texto = Path(fonte).read_text(encoding="utf-8")
     if texto.count(alvo) != 1:
         return None, "ancora da mutacao nao casa exatamente 1 vez (%d)" % texto.count(alvo)
     destino.write_text(texto.replace(alvo, substituto), encoding="utf-8")
     return itens_esperados, "aplicada"
 
 
-def autoteste():
-    print("\n=== AUTOTESTE (mutacoes em COPIA do research.py) ===")
+def autoteste(codigo: Path = CODIGO_PADRAO):
+    print("\n=== AUTOTESTE (mutacoes em COPIA de %s) ===" % codigo)
+    problemas = problemas_em_mutacoes()
+    if problemas:
+        for problema in problemas:
+            print("FALHOU declaracao de mutacao -> %s" % problema)
+        print("\nAUTOTESTE FALHOU (0/%d mutacoes detectadas)" % len(MUTACOES))
+        return False
     ok_total = falhas_total = 0
     temporario = Path(tempfile.mkdtemp(prefix="research-autoteste-"))
     try:
@@ -1041,7 +1094,7 @@ def autoteste():
             # (a prova de que o agente importa de diretorio raso e item proprio da suite).
             copia = temporario / "mut" / ("research-%s.py" % nome)
             copia.parent.mkdir(parents=True, exist_ok=True)
-            esperados, detalhe = aplicar_mutacao(mutacao, copia)
+            esperados, detalhe = aplicar_mutacao(mutacao, copia, codigo)
             if esperados is None:
                 falhas_total += 1
                 print("FALHOU mutacao %s -> %s (mutacao nao aplicada e buraco de verificacao)"
@@ -1057,6 +1110,12 @@ def autoteste():
                 continue
             print("\n-- mutacao %s (tem de reprovar: %s)" % (nome, ", ".join(esperados)))
             resultados = executar_suite_silencioso(modulo)
+            desconhecidos = [i for i in esperados if i not in resultados]
+            if desconhecidos:
+                falhas_total += 1
+                print("FALHOU mutacao %s declara item que NAO existe no resultado da suite: %s "
+                      "(mutacao muda: nada a reprovar)" % (nome, desconhecidos))
+                continue
             reprovados = sorted(i for i, v in resultados.items() if not v)
             nao_reprovados = [i for i in esperados if resultados.get(i)]
             if nao_reprovados:
@@ -1088,7 +1147,7 @@ def main(argv=None) -> int:
           % ("OK" if falhas == 0 else "FALHOU", ok + falhas, falhas))
     sucesso = falhas == 0
     if args.autoteste:
-        sucesso = autoteste() and sucesso
+        sucesso = autoteste(Path(args.codigo)) and sucesso
         print("RESULTADO FINAL: RESEARCH_%s" % ("OK" if sucesso else "FALHOU"))
     return 0 if sucesso else 1
 
