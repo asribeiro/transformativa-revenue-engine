@@ -1369,3 +1369,62 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   `t_fd3e41f0`; o log completo do aceite tambem ficou em `/opt/tre/entrega-t_fd3e41f0-r2/` na VPS.
 - **Nao e homologacao:** quem entrega nao homologa — o veredito do estagio 6 e' do perfil `tester` e a
   homologacao (estagio 7) e' do Anderson.
+
+## TRE-W4-E02-T01 — Agente Research v1 (pesquisa e enriquecimento)
+
+- **Card:** `t_d9be7d3c` (board `transformativa-revenue-engine`) · branch `feature/TRE-W4-E02-T01`,
+  base no head aprovado do card pai (`feature/TRE-W4-E01-T01` @ `cb2c53a`).
+- **Momento do registro:** toda evidência abaixo foi produzida **antes** deste texto — nada é narrado
+  de memória. Data do registro: 02/10/2026.
+
+### Rodada 1 — implementação, suite offline e aceite E2E
+
+- **Suite offline (agente, no container do Hermes):**
+  `python3 scripts/agentes/verificar_agente_research.py --autoteste` ->
+  `RESULTADO: RESEARCH_SUITE_OK (64 itens, 0 falhas)` e
+  `AUTOTESTE OK (15/15 mutacoes detectadas)`, exit 0.
+- **Aceite E2E (agente, na VPS, árvore própria em `/opt/tre/t_d9be7d3c`):** container descartável
+  `pg-research-acc` (`postgres:16`, sem porta publicada) com a migration 0001 em schema limpo e 3
+  organizações pré-existentes (uma com `industry_name` já preenchido) -> `RESULTADO:
+  ACEITE_RESEARCH_001_OK (55 itens, 0 falhas)` e `DENTE OK (4/4 mutacoes detectadas, cada uma pelo
+  item esperado)`. Itens reprovados por mutação (contagem medida no log): `sem-idempotencia` 5 itens
+  (`rodada2-exit-0`, `rodada2-ja-pesquisado-seis`, `rodada3-exit-0`, …),
+  `enriquecimento-sem-coalesce` 31 itens, `coluna-fora-do-tipo-liberada` 2 itens
+  (`rodada1-nao-escreve-coluna-fora-do-tipo`, `rodada1-descarte-fora-do-tipo`) e
+  `numero-fora-do-tipo-liberado` 2 itens. Saída integral em `evidencias-impl/aceite-e2e-vps.out`
+  (anexo do card).
+- **Portão de estrutura (agente):** `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0
+  falhas)`, com os 7 artefatos do Research versionados e o aceite executável (bloco novo do gate).
+- **Nenhum container do TRE foi tocado:** o aceite cria e remove somente `pg-research-acc`; `proxy-dev`,
+  `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` seguem de pé com os mesmos `StartedAt`.
+- **Evidência bruta:** `evidencias-impl/` no diretório de trabalho do card
+  (`suite-offline.out`, `aceite-e2e-vps.out`, `estrutura.out`); o log completo do aceite também ficou em
+  `/tmp/rs-dente2.out` na VPS.
+- **O que este card NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
+  perfil `tester` e a homologação (estágio 7) é do Anderson.
+
+### Defeitos próprios encontrados e corrigidos ANTES de entregar (cada um com item que o reprova)
+
+1. **Guarda recusava o SQL que o próprio agente gera** (`_EXPR_TEXTO`/`_EXPR_NUMERO` ficaram no módulo
+   com o marcador `%s` sem formatar, então nunca casavam `COALESCE(NULLIF(...))`): a rodada 1 no E2E
+   terminou com `research_runs=0` e todos os PESQUISADA em `ERRO`. Corrigido com padrão montado por
+   coluna e com o item `sql-gerado-passa-na-propria-guarda` (agora o SQL gerado é conferido **pela
+   guarda do agente**, no offline e no E2E).
+2. **`employee_count` escapava da fronteira de tipo**: o número é tratado antes do laço (para a faixa
+   ser derivada depois dele) e naquela passagem não havia a checagem do tipo — um `COMPANY_PROFILE`
+   recebia `employee_count`. Corrigido no caminho especial, e o E2E passou a medir a fronteira nos
+   **dois** caminhos (laço com `city` num `INDUSTRY`, caminho especial com `employee_count` num
+   `COMPANY_PROFILE`).
+3. **Item de "sem segunda cópia da regra de identidade" comparava *objetos* de função** entre duas
+   cargas do mesmo módulo (sempre diferentes) e **lia o arquivo canônico em vez da cópia mutada**: a
+   mutação `segunda-copia-da-regra-de-identidade` passava em silêncio. Corrigido para comparar a
+   implementação (`co_code`) e o arquivo sob teste.
+4. **Item da raiz não provava o marcador**: passava `raiz=` explícito, então a mutação
+   `raiz-por-profundidade-do-arquivo` não era detectada. Refeito: a cópia roda a 4 níveis dentro do repo
+   e de um `cwd` fora dele, exigindo a raiz **pelo marcador**, e a cópia fora da árvore tem de
+   **recusar** (fail-closed) em vez de herdar o repo silenciosamente.
+5. **Duas mutações mudas** (sem efeito observável) na lista de autoteste: `guarda-aceita-update-sem-modo`
+   (a guarda ainda recusava pelo COALESCE) foi trocada por `guarda-aceita-enriquecimento-sem-coalesce`,
+   e as expectativas de `sem-idempotencia`/`fechamento-sem-ancora-no-run` passaram a apontar os itens que
+   leem o **SQL gerado** (a porta de roteiro responde por roteiro e não mede semântica de banco — quem
+   mede a idempotência em banco é a rodada 3 do E2E).
