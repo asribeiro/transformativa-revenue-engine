@@ -700,15 +700,38 @@ def sql_listar_organizacoes() -> str:
             % TABELA_ORGANIZACOES)
 
 
+def _filtro_grosso(tipo: str, valor: str) -> str:
+    """Pre-filtro SUPERSET do casamento de identidade — nunca descarta um casamento verdadeiro.
+
+    A coluna guarda a forma NORMALIZADA (o produtor escreve normalizado), mas `cnpj`/`domain`/
+    `linkedin_url` sao VARCHAR livre: aceitam pontuacao, caixa alta e URL inteira. O filtro aceita
+    as duas formas; quem DECIDE e' o Python, com a mesma regra do produtor (paridade de identidade).
+    """
+    if tipo == "cnpj":
+        return ("o.cnpj IS NOT NULL AND o.cnpj <> '' AND "
+                "regexp_replace(o.cnpj, '\\D', '', 'g') = %s" % lit(re.sub(r"\D", "", valor)))
+    if tipo == "domain":
+        return ("o.domain IS NOT NULL AND o.domain <> '' AND "
+                "(lower(o.domain) LIKE %s OR %s LIKE '%%' || lower(o.domain) || '%%')"
+                % (lit("%" + valor + "%"), lit(valor)))
+    # linkedin_url: o valor normalizado carrega o slug, e a forma guardada contem o slug
+    slug = valor.rstrip("/").rsplit("/", 1)[-1]
+    return ("o.linkedin_url IS NOT NULL AND o.linkedin_url <> '' AND "
+            "lower(o.linkedin_url) LIKE %s" % lit("%" + slug + "%"))
+
+
+_CAMPOS_IDENTIDADE = ("id", "cnpj", "domain", "linkedin_url")
+
+
 def sql_consultar_organizacao(validos: list) -> str:
-    """Identidade forte -> organizacoes casadas, em JSON (o texto da empresa nao quebra a leitura)."""
-    termos = ["(%s IS NOT NULL AND %s = %s)" % (tipo, tipo, lit(valor)) for tipo, valor in validos]
+    """Candidatas por identidade forte — o SQL PRE-FILTRA; a decisao exata e' do modulo (Python)."""
     campos = []
-    for campo in _CAMPOS_ORGANIZACAO:
+    for campo in _CAMPOS_IDENTIDADE:
         campos.append("'%s'" % campo)
         campos.append("o.%s" % campo)
+    filtros = " OR ".join(_filtro_grosso(tipo, valor) for tipo, valor in validos)
     return ("SELECT json_build_object(%s)::text FROM %s o WHERE o.deleted_at IS NULL AND (%s);"
-            % (", ".join(campos), TABELA_ORGANIZACOES, " OR ".join(termos)))
+            % (", ".join(campos), TABELA_ORGANIZACOES, filtros))
 
 
 def sql_ler_organizacao(organizacao_id: str) -> str:
@@ -974,9 +997,27 @@ class ScoreDataQuality:
         return [l.strip() for l in saida.splitlines() if l.strip() and l.strip() not in ("BEGIN", "COMMIT")]
 
     def organizacoes_casadas(self, validos: list) -> list:
+        """Casamento EXATO pelo modulo de identidade — o SQL so' pre-filtra (superset).
+
+        Mesma ordem do produtor (Scout): o filtro do banco e' grosso e a comparacao normaliza a
+        forma GUARDADA antes de comparar. Sem essa camada, CNPJ gravado com pontuacao (a coluna e'
+        VARCHAR livre) nao casaria — defeito medido no aceite E2E, item `fonte-forte-escreve-uma-medicao`.
+        """
         if not validos:
             return []
-        return self._linhas_json(sql_consultar_organizacao(validos))
+        normalizadores = {"cnpj": self.identidade.normalizar_cnpj,
+                          "domain": self.identidade.normalizar_domain,
+                          "linkedin_url": self.identidade.normalizar_linkedin}
+        casadas = []
+        for registro in self._linhas_json(sql_consultar_organizacao(validos)):
+            if not _texto(registro.get("id")):
+                continue
+            for tipo, valor in validos:
+                bruto = _texto(registro.get(tipo))
+                if bruto and normalizadores[tipo](bruto) == valor:
+                    casadas.append(registro)
+                    break
+        return casadas
 
     def ler_organizacao(self, organizacao_id: str):
         registros = self._linhas_json(sql_ler_organizacao(organizacao_id))

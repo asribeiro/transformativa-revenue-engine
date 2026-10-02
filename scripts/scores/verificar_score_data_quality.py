@@ -431,14 +431,52 @@ def _(ctx):
     assert resultado["veredito"] == "RECUSADA", resultado
     assert "ORGANIZACAO_NAO_ENCONTRADA" in resultado["motivos"]
     assert not any("INSERT INTO sales_intelligence.scores" in s for s in agente.porta.escritas())
+    # duas linhas da MESMA empresa em formas de gravacao diferentes (URL inteira x host) — e' o
+    # que a normalizacao do produtor enxerga como duplicata; 'acme.com' seria OUTRA empresa
     duas = [json.dumps(organizacao_completa()),
-            json.dumps(organizacao_completa(id=ORG_B, domain="acme.com"))]
+            json.dumps(organizacao_completa(id=ORG_B, domain="https://www.acme.com.br/"))]
     agente2 = ctx.agente_com([("SELECT json_build_object", ok("\n".join(duas)))])
     resultado2 = agente2.processar({"organizacao": {"domain": "acme.com.br"}})
     assert resultado2["veredito"] == "RECUSADA"
     assert any(m.startswith("IDENTIDADE_AMBIGUA") for m in resultado2["motivos"]), resultado2["motivos"]
     assert not any("human_approvals" in s for s in agente2.porta.executados), \
         "ambiguidade de identidade nao e fila humana do score (e do dedup/Scout)"
+
+
+@item("identidade-casa-a-forma-guardada-e-nao-so-a-normalizada")
+def _(ctx):
+    """A coluna e' VARCHAR livre: o casamento normaliza a forma GUARDADA (regra do produtor).
+
+    Defeito medido no aceite E2E (item `fonte-forte-escreve-uma-medicao`): a consulta comparava a
+    forma bruta da coluna com o valor normalizado e um CNPJ gravado com pontuacao nunca casava.
+    Aqui se mede as DUAS camadas: pre-filtro superset no SQL e decisao exata no Python.
+    """
+    validos = [("cnpj", "11222333000181"), ("domain", "acme.com.br"),
+               ("linkedin_url", "https://www.linkedin.com/company/acme")]
+    sql = ctx.modulo.sql_consultar_organizacao(validos)
+    assert "regexp_replace(o.cnpj, '\\D', '', 'g') = '11222333000181'" in sql, sql
+    assert "lower(o.domain) LIKE '%acme.com.br%'" in sql, sql
+    assert "lower(o.linkedin_url) LIKE '%acme%'" in sql, sql
+    # forma GUARDADA com pontuacao/URL/caixa: normaliza e casa
+    guardada = {"id": ORG_A, "cnpj": "11.222.333/0001-81",
+                "domain": "https://WWW.Acme.com.br/",
+                "linkedin_url": "https://www.linkedin.com/company/acme/?trk=x"}
+    agente = ctx.agente_com([("SELECT json_build_object", ok(json.dumps(guardada)))])
+    assert [c["id"] for c in agente.organizacoes_casadas([("cnpj", "11222333000181")])] == [ORG_A]
+    assert [c["id"] for c in agente.organizacoes_casadas([("domain", "acme.com.br")])] == [ORG_A]
+    assert [c["id"] for c in
+            agente.organizacoes_casadas([("linkedin_url", "https://www.linkedin.com/company/acme")])] \
+        == [ORG_A]
+    # o pre-filtro e' GROSSO de proposito (LIKE): um host MAIOR contem o valor e e' o decider quem
+    # rejeita — se a decisao fosse do LIKE, o score mediria a empresa errada
+    falsa = {"id": ORG_B, "cnpj": "", "domain": "acme.com.br.hospedado.net", "linkedin_url": ""}
+    agente_falso = ctx.agente_com([("SELECT json_build_object", ok(json.dumps(falsa)))])
+    assert agente_falso.organizacoes_casadas([("domain", "acme.com.br")]) == [], \
+        "host maior nao e' a mesma empresa: quem decide e' o modulo de identidade"
+    # e a comparacao NAO casa forma que normaliza para outro valor
+    outra = {"id": ORG_B, "cnpj": "45.723.174/0001-10", "domain": "acme.com", "linkedin_url": ""}
+    agente_outra = ctx.agente_com([("SELECT json_build_object", ok(json.dumps(outra)))])
+    assert agente_outra.organizacoes_casadas([("cnpj", "11222333000181")]) == []
 
 
 @item("auditoria-uma-linha-por-organizacao-processada")
@@ -623,6 +661,10 @@ MUTACOES = (
     ("hash-fixo-ignora-o-estado",
      '    canonico = json.dumps(', '    canonico = "fixo" or json.dumps(',
      "medicao-e-reproduzivel-e-o-hash-cobre-o-que-importa"),
+    ("identidade-sem-normalizar-a-forma-guardada",
+     'if bruto and normalizadores[tipo](bruto) == valor:',
+     'if bruto and bruto == valor:',
+     "identidade-casa-a-forma-guardada-e-nao-so-a-normalizada"),
     ("guarda-libera-coluna-de-organizations",
      '            fora = [c for c in colunas if c not in COLUNAS_ORGANIZACOES_ESCRITAS]',
      '            fora = []',

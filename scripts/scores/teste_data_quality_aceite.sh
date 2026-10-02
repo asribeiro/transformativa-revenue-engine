@@ -62,14 +62,20 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-ITENS_OK=0
-ITENS_FALHOU=0
+# Contagem por ARQUIVO, nao por variavel: `ciclo` roda dentro de `$( )` (subshell) e atribuicao
+# feita la' morre com o subshell — medido: a primeira versao imprimia "0 itens, 0 falhas" e saia com
+# exit 0 mesmo com item reprovado. Item que nao conta e' item que nao existe.
+ARQUIVO_ITENS=""
 item() { # <nome> <esperado> <obtido>
   if [ "$2" = "$3" ]; then
-    echo "OK     $1 ($3)"; ITENS_OK=$((ITENS_OK + 1))
+    echo "OK     $1 ($3)"; printf 'OK|%s\n' "$1" >> "$ARQUIVO_ITENS"
   else
-    echo "FALHOU $1 (esperado=$2 obtido=$3)"; ITENS_FALHOU=$((ITENS_FALHOU + 1))
+    echo "FALHOU $1 (esperado=$2 obtido=$3)"; printf 'FALHOU|%s\n' "$1" >> "$ARQUIVO_ITENS"
   fi
+}
+contar_itens() { # <OK|FALHOU> — 0 quando o arquivo ainda nao existe
+  [ -f "$ARQUIVO_ITENS" ] || { echo 0; return; }
+  grep -c "^$1|" "$ARQUIVO_ITENS" || true
 }
 
 # ---------------------------------------------------------------------------------------
@@ -222,8 +228,8 @@ PY
 # CICLO — a medicao completa do aceite (usada uma vez e repetida por mutacao na prova de dente)
 # ---------------------------------------------------------------------------------------
 ciclo() {
-  ITENS_OK=0
-  ITENS_FALHOU=0
+  ARQUIVO_ITENS="$TRABALHO/itens.txt"
+  : > "$ARQUIVO_ITENS"
   local v
 
   criar_massa
@@ -232,14 +238,21 @@ ciclo() {
   # -- rodada A: identidade FORTE (cnpj) ------------------------------
   fonte_forte "fonte-org1.jsonl" "\"cnpj\": \"$CNPJ1\""
   RODADA_A=$(rodar_score --fonte "$TRABALHO/fonte-org1.jsonl" --ambiente dev --referencia "$REFERENCIA")
+  # CNPJ gravado COM pontuacao na coluna (VARCHAR livre) e' o caso que o aceite E2E pegou quebrado
   item "fonte-forte-escreve-uma-medicao" "1" "$(veredito_de ESCRITO)"
   CID_A=$(echo "$RODADA_A" | python3 -c "import json,sys; print(json.loads(sys.stdin.read().splitlines()[0])['correlation_id'])")
-  item "linha-em-scores-apos-a-rodada-A" "1" "$(linhas_scores)"
+
+  # -- rodada A2: identidade FORTE por dominio — e a MESMA empresa em outra forma de gravacao ----
+  # (a coluna guarda o host; quem digita manda URL inteira: o pre-filtro aceita, o modulo decide)
+  fonte_forte "fonte-org2.jsonl" "\"domain\": \"https://www.parcial.com.br/\""
+  RODADA_A2=$(rodar_score --fonte "$TRABALHO/fonte-org2.jsonl" --ambiente dev --referencia "$REFERENCIA")
+  item "fonte-por-dominio-em-forma-de-url" "1" "$(veredito_de ESCRITO)"
+  item "linha-em-scores-apos-a-rodada-A" "2" "$(linhas_scores)"
 
   # -- rodada B: todas as organizacoes ATIVAS (a soft-deleted fica fora) ------------------------------
   RODADA_B=$(rodar_score --todas --ambiente dev --referencia "$REFERENCIA")
-  item "todas-mede-o-restante-e-nao-re-mede-a-ja-medida" "3" "$(veredito_de ESCRITO)"
-  item "ja-existe-na-rodada-B" "1" "$(veredito_de JA_EXISTE)"
+  item "todas-mede-o-restante-e-nao-re-mede-as-ja-medidas" "2" "$(veredito_de ESCRITO)"
+  item "ja-existe-na-rodada-B" "2" "$(veredito_de JA_EXISTE)"
   item "linhas-em-scores-apos-a-rodada-B" "4" "$(linhas_scores)"
   item "soft-deleted-fora-da-rodada" "0" "$(consulta "SELECT count(*) FROM sales_intelligence.scores WHERE organization_id = '$ORG5';")"
 
@@ -253,8 +266,8 @@ ciclo() {
   item "linhas-com-tipo-e-versao-do-score" "4" \
     "$(consulta "SELECT count(*) FROM sales_intelligence.scores WHERE score_type='DATA_QUALITY' AND score_version='v1.0';")"
   item "nenhuma-outra-coluna-escrita" "$FOTO_ANTES" "$(foto_negocio)"
-  # Auditoria: rodada A (1 organizacao) + rodada B (4) = 5 linhas; escritas = 1 + 3 = 4.
-  item "auditoria-uma-linha-por-organizacao-processada" "5" "$(auditoria)"
+  # Auditoria: A (1 empresa) + A2 (1) + B (4) = 6 linhas; com score_id (escritas) = 1 + 1 + 2 = 4.
+  item "auditoria-uma-linha-por-organizacao-processada" "6" "$(auditoria)"
   item "auditoria-com-score-id" "4" \
     "$(consulta "SELECT count(*) FROM sales_intelligence.agent_runs WHERE agent_name='data_quality' AND output->>'score_id' IS NOT NULL;")"
 
@@ -299,14 +312,14 @@ ciclo() {
   rodar_score --desfazer "$CID_E" --ambiente dev --confirmo >/dev/null
   item "desfazer-confirmo-apaga-a-rodada" "4" "$(linhas_scores)"
   item "desfazer-restaura-o-valor-anterior" "65.71" "$(espelho "$ORG2")"
-  # Escritas (veredito ESCRITO) na auditoria: A(1) + B(3) + E(1) = 5 — a rodada desfeita continua
+  # Escritas (veredito ESCRITO) na auditoria: A(1) + A2(1) + B(2) + E(1) = 5 — a rodada desfeita continua
   # auditada (o DELETE chega em `scores`, nunca em `agent_runs`).
   item "desfazer-preserva-a-auditoria" "5" \
     "$(consulta "SELECT count(*) FROM sales_intelligence.agent_runs WHERE agent_name='data_quality' AND output->>'veredito'='ESCRITO';")"
   item "desfazer-nao-toca-as-outras-organizacoes" "100.00" "$(espelho "$ORG1")"
-  # Auditoria no fim: A(1) + B(4) + C(4) + D1(1) + D2(1) + E(4) = 15 linhas — o desfazer NAO
-  # apaga auditoria (por isso a contagem nao cai quando as linhas de `scores` caem).
-  item "auditoria-completa-preservada" "15" "$(auditoria)"
+  # Auditoria no fim: A(1) + A2(1) + B(4) + C(4) + D1(1) + D2(1) + E(4) = 16 linhas — o desfazer
+  # NAO apaga auditoria (por isso a contagem nao cai quando as linhas de `scores` caem).
+  item "auditoria-completa-preservada" "16" "$(auditoria)"
 }
 
 # ---------------------------------------------------------------------------------------
@@ -316,7 +329,8 @@ ciclo() {
 MUTACOES=(
   "idempotencia-fora-do-sql|  WHERE NOT EXISTS (|  WHERE true OR NOT EXISTS (|replay-nao-duplica-linhas"
   "espelho-gravado-nulo|UPDATE {organizacoes} o SET data_quality_score = {valor}::numeric|UPDATE {organizacoes} o SET data_quality_score = NULL|espelho-bate-com-o-ultimo-score"
-  "prod-deixa-de-ser-recusado|        if self.ambiente == AMBIENTE_RECUSADO:|        if self.ambiente == \"prod-inutil\":|prod-recusado-com-exit-4"
+  "prod-passa-a-ser-aceito|    def conferir_ambiente(self) -> str:|    def conferir_ambiente(self) -> str:\n        return self.ambiente|prod-recusado-com-exit-4"
+  "identidade-sem-normalizar-a-forma-guardada|if bruto and normalizadores[tipo](bruto) == valor:|if bruto and bruto == valor:|fonte-forte-escreve-uma-medicao"
   "versao-errada-no-insert|, {versao},|, 'v9.9',|linhas-com-tipo-e-versao-do-score"
   "confiabilidade-sem-pesquisa|        \"pesquisa_existente\": Decimal(1) if concluidas else Decimal(\"0\"),|        \"pesquisa_existente\": Decimal(1),|valor-org3-magra-e-0"
 )
@@ -384,8 +398,18 @@ if [ "$DENTE" -eq 1 ]; then
 fi
 
 echo "---"
+ITENS_OK=$(contar_itens OK)
+ITENS_FALHOU=$(contar_itens FALHOU)
+if [ "$ITENS_OK" -eq 0 ]; then
+  echo "FALHOU nenhum item medido na rodada de referencia — veredito vazio nao e' aprovacao"
+  ITENS_FALHOU=$((ITENS_FALHOU + 1))
+fi
+if [ "$ITENS_FALHOU" -ne 0 ]; then
+  echo "ITENS REPROVADOS:"
+  grep "^FALHOU|" "$ARQUIVO_ITENS" | sed 's/^FALHOU|/  - /'
+fi
 if [ "$ITENS_FALHOU" -eq 0 ] && [ "$DENTE_FALHAS" -eq 0 ]; then
-  echo "RESULTADO: ACEITE_DATA_QUALITY_001_OK ($ITENS_OK itens, 0 falhas)"
+  echo "RESULTADO: ACEITE_DATA_QUALITY_001_OK ($ITENS_OK itens, 0 falhas, 0 dentes reprovados)"
   exit 0
 fi
 echo "RESULTADO: ACEITE_DATA_QUALITY_001_FALHOU ($ITENS_OK itens, $ITENS_FALHOU falhas, $DENTE_FALHAS dentes reprovados)"
