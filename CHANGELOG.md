@@ -1355,3 +1355,43 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     escolha de coluna vazia + `COALESCE(NULLIF(coluna,''), valor)` exigido pela guarda). O dente do E2E
     passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
     próximo resolve.
+
+## [W5 — Hermes Sales AI · Automation Fit Score v1] — 02/10/2026
+
+### Added
+
+- **Automation Fit Score v1** (`TRE-W5-E02-T01`) — primeiro componente da onda W5 e primeiro **produtor de
+  score** (leitor da onda W4, escritor da tabela `scores`):
+  - `hermes/agents/automation_fit/automation_fit.py` — componente `automation_fit/1.0.0`, score
+    `AUTOMATION_FIT` / `automation-fit-v1`. **Fórmula declarada** (não vem do baseline — decisão de
+    negócio registrada): `100 × Σ(peso × componente) ÷ cobertura`, com `porte` 0,25, `pressao_operacional`
+    0,30 (soma dos sinais de pressão, capada em 1,00), `prontidao_tecnologica` 0,20 (sinais de
+    tecnologia), `dispersao_de_processos` 0,10 (`unit_count`) e `dor_quantificada` 0,15 (impacto medido
+    das hipóteses). **Cobertura mínima 0,40**: abaixo dela `RECUSADA`/`SEM_LASTRO` e nada é escrito;
+    **componente ausente não vota** (a normalização é sobre os presentes e a `cobertura` vai explícita na
+    explicação). Porte e impacto **nunca vêm da fonte**: são medidos no banco (o pedido só diz QUEM medir);
+    campo derivado declarado na fonte é descartado com `CAMPO_NAO_DECLARADO`.
+  - `hermes/agents/automation_fit/agente-automation-fit-v1.json` — contrato legível por máquina (pesos,
+    vocabulário de sinais, faixas de porte, colunas de escrita, tabelas de leitura/escrita).
+  - **Histórico + idempotência**: `input_hash` canônico do que entra na conta (porte/contagem + sinais de
+    tipo válido + hipóteses com impacto medido) e `idempotency_key` `score:AUTOMATION_FIT:org:<id>:<hash>`
+    com `ON CONFLICT DO NOTHING` + fechamento ancorado em `EXISTS (SELECT 1 FROM scores WHERE id = ...)`:
+    **mesmo estado ⇒ `JA_CALCULADO` (zero duplicata); estado novo ⇒ LINHA NOVA** (score é histórico, doc 12
+    §8 — nunca `UPDATE`).
+  - **Guarda de escrita**: recusa DDL, `UPDATE`/`DELETE` em `scores` fora do `--desfazer` e escrita em
+    qualquer tabela que não seja `scores`/`agent_runs`/`sync_events`/`human_approvals` — em especial
+    `organizations` (inclusive `data_quality_score`, que é o card W5-E04), `signals`, `pain_hypotheses` e
+    `research_runs`, com motivo explícito de "tabela de outro agente".
+  - **Fila humana**: identidade ambígua (dois identificadores fortes de empresas diferentes, ou mais de uma
+    empresa casada) vai para `human_approvals` (`AUTOMATION_FIT_IDENTITY_REVIEW`) **sem escrever score**.
+  - `scripts/agentes/verificar_agente_automation_fit.py` — suíte offline (54 itens, sem banco e sem rede)
+    com `--autoteste` por mutação: **22/22 mutações** reprovadas, cada uma pelo item esperado.
+  - `scripts/agentes/teste_automation_fit_aceite.sh` — aceite E2E em PostgreSQL descartável próprio
+    (`pg-automation-fit-acc`): **76 itens** (4 rodadas: lote completo, replay, estado novo, replay do estado
+    novo; guardas de `prod`/`--planejar`; desfazer dry-run/`--confirmo`) + **prova de dente 5/5**.
+  - `docs/architecture/agente-automation-fit-v1.md` (contrato, ACCEPTANCE/TEST/ROLLBACK/RISK) e
+    `docs/runbooks/agente-automation-fit.md` (operação item a item); bloco do card em
+    `scripts/verificar_estrutura.sh`.
+  - **Poder de discriminação medido** (não declarado): no estado das quatro empresas do aceite o score
+    separa **4 faixas** de 20 pontos (76,00 · 48,50 · 83,00 · 30,00), margem de 53 pontos e desvio médio de
+    20 pontos da constante 50 — um estimador que empata com a constante seria ruído calibrado, não score.

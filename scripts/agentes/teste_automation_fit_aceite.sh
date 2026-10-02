@@ -298,6 +298,8 @@ rodar_aceite() { # <rotulo>
   local rotulo="$1"
   ITENS_OK=0; ITENS_FALHOU=0
   echo "== aceite do codigo sob teste: $CODIGO ($rotulo)"
+  echo "== sha256 do codigo sob teste: $(sha256sum "$CODIGO" | cut -d' ' -f1)"
+  echo "== sha256 do aceite: $(sha256sum "$0" | cut -d' ' -f1)"
   preparar_banco
   PREFIXO="docker exec -i $CONTAINER psql -U $USUARIO -d $BANCO"
   local cnpj_fora
@@ -445,13 +447,17 @@ SQL
     "$(contagem "SELECT CASE WHEN avg(abs(score_value-50)) >= 10 THEN 'SIM' ELSE 'NAO' END FROM (SELECT DISTINCT ON (organization_id) score_value FROM sales_intelligence.scores ORDER BY organization_id, calculated_at DESC) t;")"
 
   # ---- guardas: prod recusado e --planejar sem porta -------------------------------
-  local antes
+  local antes antes_runs
   antes="$(contagem "SELECT count(*) FROM sales_intelligence.scores;")"
+  antes_runs="$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs;")"
   rodar_score "$TRABALHO/prod.json" --ambiente prod --fonte "$FONTE" \
     --prefixo "$PREFIXO" > "$TRABALHO/prod.out" 2>&1
   item "prod-recusado-exit-4" "4" "$?"
-  item "prod-recusado-sem-escrita" "$antes" \
-    "$(contagem "SELECT count(*) FROM sales_intelligence.scores;")"
+  # "sem escrita" mede as DUAS coisas que prod poderia sujar: linha de score E auditoria. O score
+  # sozinho nao basta como testemunha: no replay a chave ja existe e nada seria inserido mesmo com a
+  # guarda desligada — a auditoria (agent_runs) pega a rodada que rodou onde nao devia.
+  item "prod-recusado-sem-escrita" "$antes|$antes_runs" \
+    "$(contagem "SELECT count(*) FROM sales_intelligence.scores;")|$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs;")"
   grep -q "ADR-005" "$TRABALHO/prod.out" && item "prod-recusado-cita-adr" "1" "1" \
     || item "prod-recusado-cita-adr" "1" "0"
   # --planejar NAO abre conexao: sem --prefixo (e com um prefixo que nao existe) ele nao estoura.
@@ -539,7 +545,7 @@ cobertura-ignorada|    if cobertura < COBERTURA_MINIMA:|    if False:|rodada1-re
 score-constante|    saida["valor"] = arredondar(Decimal("100") * numerador / cobertura)|    saida["valor"] = arredondar(Decimal("50"))|rodada1-valor-org-a
 idempotencia-sem-o-estado|    return "score:%s:org:%s:%s" % (SCORE_TYPE, organizacao_id, entrada_hash)|    return "score:%s:org:%s" % (SCORE_TYPE, organizacao_id)|rodada3-estado-novo-cria-linha,rodada3-historico-org-a
 leitura-sem-filtro-de-empresa|"FROM %s WHERE organization_id = %s ORDER BY detected_at, id;"|"FROM %s WHERE %s IS NOT NULL ORDER BY detected_at, id;"|rodada1-valor-org-a,rodada1-le-so-os-sinais-da-empresa
-prod-liberado|        if self.ambiente == AMBIENTE_RECUSADO:\n            raise RecusaDeAmbiente(\n                "Automation Fit Score v1 nao escreve em prod (ADR-005): a promocao exige card "\n                "proprio com aprovacao humana registrada")\n        if self.ambiente not in AMBIENTES_PERMITIDOS:\n            raise RecusaDeAmbiente("ambiente desconhecido: %r" % self.ambiente)\n        return self.ambiente|        return self.ambiente|prod-recusado-exit-4,prod-recusado-sem-escrita
+prod-liberado|        if self.ambiente == AMBIENTE_RECUSADO:\n            raise RecusaDeAmbiente(\n                "Automation Fit Score v1 nao escreve em prod (ADR-005): a promocao exige card "\n                "proprio com aprovacao humana registrada")\n        if self.ambiente not in AMBIENTES_PERMITIDOS:\n            raise RecusaDeAmbiente("ambiente desconhecido: %r" % self.ambiente)\n        return self.ambiente|        return self.ambiente|prod-recusado-exit-4,prod-recusado-sem-escrita,prod-recusado-cita-adr
 EOF
 
   local total="${#linhas[@]}" detectadas=0 falhas=0
