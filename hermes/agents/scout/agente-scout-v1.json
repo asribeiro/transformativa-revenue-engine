@@ -1,0 +1,141 @@
+{
+  "agente": "scout",
+  "papel": "discovery",
+  "versao": "1.0.0",
+  "card": "TRE-W4-E01-T01",
+  "onda": "W4",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "02_ARQUITETURA_DA_SOLUCAO.md §2 (Hermes Sales AI: discovery) e §4 (guardrails L0/L1/L2)",
+    "03_ARQUITETURA_DE_NEGOCIO.md §2 (funil: Descoberto)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §2 (fluxo empresa descoberta) e §7 (idempotencia)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W4) e §8 (gate empresa -> research/signals/hipotese/contatos)",
+    "docs/data/data_contract_v1.json (chaves dedup, vocabularies, events, canonical_ids, governance)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "uma_empresa_candidata_por_linha": true,
+    "nome_obrigatorio": ["legal_name", "trade_name"],
+    "campos_opcionais": [
+      "domain",
+      "website_url",
+      "linkedin_url",
+      "cnpj",
+      "industry_name",
+      "industry_code",
+      "employee_count",
+      "revenue_estimate",
+      "unit_count",
+      "city",
+      "state",
+      "country_code",
+      "business_model",
+      "source",
+      "evidence"
+    ],
+    "campo_de_evidencia": "evidence",
+    "descricao": "linha JSON com a empresa candidata recebida de uma fonte declarada; 'evidence' guarda o que a fonte mostrou (url, trecho, arquivo de origem) e vai inteira para sync_events.request_payload"
+  },
+  "fontes": [
+    "LINKEDIN",
+    "WEB",
+    "GOOGLE",
+    "META",
+    "WHATSAPP",
+    "TITAN",
+    "EVENTOS",
+    "DADOS_PUBLICOS"
+  ],
+  "identidade": {
+    "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+    "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+    "fracos_declarados_no_contrato": ["nome + cidade", "nome + telefone", "nome + endereco"],
+    "fracos_usados_para_criar": [],
+    "cria_somente_com_forte_valido": true,
+    "forte_invalido_e_descartado": true,
+    "carrega_forte_e_nenhum_valido": "RECUSADA",
+    "sem_forte_declarado": "REVISAO_IDENTIDADE",
+    "fortes_casando_com_organizacoes_distintas": "REVISAO_IDENTIDADE",
+    "merge_nao_e_do_scout": "a decisao de merge continua no modulo do TRE-W1-E04-T01 (entity_match_confidence, limiar auto_merge_threshold lido do contrato)"
+  },
+  "vereditos": {
+    "CRIADA": "organizacao nova inserida (status DISCOVERED) e sync_event SUCCESS",
+    "JA_EXISTE": "identidade forte casou com organizacao existente; nenhuma linha nova",
+    "REVISAO_IDENTIDADE": "ambiguidade reportada: human_approvals PENDING (SCOUT_IDENTITY_REVIEW), nunca merge silencioso",
+    "RECUSADA": "candidato invalido; nenhuma escrita em organizations",
+    "ERRO": "falha de banco/porta; candidato nao escrito e registrado em agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "CRIADA": "COMPLETED",
+    "JA_EXISTE": "COMPLETED",
+    "REVISAO_IDENTIDADE": "REVIEW_REQUIRED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.organizations",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events",
+      "sales_intelligence.human_approvals"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.organizations": ["INSERT"],
+      "sales_intelligence.agent_runs": ["INSERT"],
+      "sales_intelligence.sync_events": ["INSERT", "UPDATE"],
+      "sales_intelligence.human_approvals": ["INSERT"]
+    },
+    "proibido": [
+      "UPDATE/DELETE em organizations",
+      "DDL (CREATE/ALTER/DROP/TRUNCATE)",
+      "escrita em qualquer outra tabela",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "a descoberta nao e evento do contrato: doc 06 §5 lista COMPANY_QUALIFIED (depois do score), e o Scoring e a W5"
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed)",
+    "llm_exige_recibo_jev": true,
+    "recibo_jev_aceito": {"outcome": "PASS", "lane_obrigatoria": true, "decision_id_obrigatorio": true},
+    "recibo_jev_recusado": {"outcome": "ESCALATE", "outcome_bloqueado": "BLOCK", "ausente": "recusa"},
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ],
+    "limitacao_de_volume": "nao declarada pelo baseline; a rodada e limitada pelo que a fonte entrega (sem paginacao/crawler na v1)"
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por candidato processado, correlation_id compartilhado do lote",
+    "sync_events": "uma linha por identidade forte ingerida (idempotency_key UNIQUE = 'scout:org:<tipo>:<valor>')",
+    "human_approvals": "action_type=SCOUT_IDENTITY_REVIEW, status=PENDING",
+    "uuid": "v4 gerado no produtor (o agente) antes de qualquer escrita"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "organizations criadas por este correlation_id (veredito CRIADA) com status DISCOVERED + os sync_events dessas identidades",
+    "padrao": "dry-run (sem --confirmo nada e apagado)",
+    "nao_toca": "organizacao pre-existente, agent_runs (auditoria) e human_approvals"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em candidato ou falha de porta)",
+    "2": "uso incorreto",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "sem LLM e sem crawler na v1: a fonte entrega as candidatas; busca ativa na web/LinkedIn nao esta implementada",
+    "sem enriquecimento e sem score: data_quality_score fica NULL (Data Quality Score e a W5)",
+    "sem outbox: nenhum evento PG->Odoo nasce na descoberta",
+    "retention_until/collected_at nao existem no contrato V1 (lacuna ja declarada no compliance do contrato)",
+    "casamento entre duas candidatas que so compartilham identificador FRACO nao e resolvido aqui: vai para revisao humana"
+  ]
+}
