@@ -173,7 +173,7 @@ VALUES
   ('$ORG_D', 'AgroSmart Analytics Ltda', 'AgroSmart Analytics', '19131243000197',
    'agrosmart-analytics.com.br', NULL, '150_299', 250, 2, 'Agtech', 'DISCOVERED', 'WEB', NULL,
    '2026-01-05T10:00:00Z', '2000-01-01T00:00:00Z'),
-  ('$ORG_E', 'Transportes Serra Azul Ltda', 'Serra Azul', '28213728000153', 'serraazul.com.br',
+  ('$ORG_E', 'Transportes Serra Azul Ltda', 'Serra Azul', '28213728000110', 'serraazul.com.br',
    NULL, '70_149', 95, 1, 'Logistica', 'DISCOVERED', 'DADOS_PUBLICOS', NULL,
    '2026-01-05T10:00:00Z', '2000-01-01T00:00:00Z');
 
