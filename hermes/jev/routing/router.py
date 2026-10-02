@@ -568,6 +568,87 @@ def _singular(t: str) -> str:
     return t[:-1] if len(t) > 4 and t.endswith("s") else t
 
 
+# ---------------------------------------------------------------------------
+# FLEXAO VERBAL declarada — defeito [precisao] TRE-W3-E04-T03-D01-D01 (02/10/2026)
+#
+# O casamento de PALAVRA INTEIRA resolveu o falso positivo do prefixo de 4 caracteres,
+# mas exigia identidade do token (com o `s` de plural): a forma FLEXIONADA do proprio
+# termo de abordagem deixou de casar a prosa do papel. Medido no card `t_eefbe2e5`:
+# "contatamos o lead", "enviei mensagem para empresa" e "publiquei conteudo no perfil"
+# cairam de BLOCK para ESCALATE no roteador e para PASS no gate com a declaracao da onda
+# (a aprovacao da onda cobre a escalacao; nao cobre o bloqueio de papel).
+#
+# O conserto NAO volta ao prefixo: o termo inteiro continua sendo exigido e a flexao
+# entra por TERMINACAO DECLARADA — duas regras declaradas, como as do plural:
+#   * radical = o token sem UMA terminacao desta lista (a mais longa que casar), e so
+#     vale com 4 caracteres ou mais; terminacao de UMA letra exige radical de 5, porque
+#     uma letra sozinha e evidencia fraca (mesma postura do plural, que tambem nao corta
+#     palavra curta);
+#   * `qu` no fim do radical vira `c` — alternancia ortografica do portugues
+#     (`publiquei`/`publicar` -> `public`), nao tolerancia de prefixo;
+#   * dois tokens casam quando os RADICAIS sao iguais. Terminacao declarada e o que
+#     delimita o termo: "contagem" (radical `contag`) e "contrato" (radical `contrat`)
+#     NAO casam "contatar" (radical `contat`), que era o defeito do prefixo.
+#
+# Ficam FORA da lista as terminacoes que sao tambem plural de substantivo (`s`, `es`,
+# `as`) e a de `-em`: elas nao distinguem verbo de substantivo e foram MEDIDAS afrouxando
+# o encaixe — com `es` na lista, "testes" (substantivo de `rodar testes, gates...`)
+# passava a casar "testar" de outro texto e, na inferencia de papel de
+# `_papel_para_acao`, uma PERMISSAO do dev-harness passava a vencer a proibicao de DDL do
+# sales-ai (medido no corpo do card `t_969affa7`). O plural continua coberto por
+# `_singular` + a regra da terminacao de uma letra.
+#
+# Nada disso vale fora do vocabulario de papel: `CONCEITOS_DE_ACAO`,
+# `REGRAS_DE_ACAO_HUMANA` e o casamento de credencial seguem em `_token_casa`.
+# ---------------------------------------------------------------------------
+TERMINACOES_VERBAIS = tuple(sorted((
+    # formas nominais
+    "ando", "endo", "indo", "ado", "ada", "ido", "ida", "ar", "er", "ir",
+    # presente, preterito, imperfeito, futuro (terminacoes de 2+ letras)
+    "amos", "ais", "am", "aste", "astes", "aram", "ou", "ava", "avas",
+    "avamos", "avam", "ara", "aras", "aremos", "arao", "arei", "aria", "arias",
+    "ariamos", "ariam", "ei", "emos", "iste", "eu", "imos", "iram",
+    "ia", "ias", "iamos", "iam", "ira", "iras", "iremos", "irao", "irei",
+    "iria", "irias", "iriam", "asse", "asses", "assemos", "assem",
+), key=len, reverse=True))
+
+# Terminacao de UMA letra: so vale em radical maior (o termo inteiro tem de sobrar).
+TERMINACOES_DE_UMA_LETRA = ("a", "e")
+
+# Alternancia ortografica DECLARADA do radical (portugues): `qu` antes de terminacao
+# iniciada por `e`/`i` e o MESMO radical que `c` antes de `a`/`o` — `publiquei` =
+# `publicar` = `public`, `apliquei` = `aplicar` = `aplic`. Nao e tolerancia de prefixo:
+# a troca so vale no FIM do radical (a fronteira do termo).
+ALTERNANCIAS_DO_RADICAL = (("qu", "c"),)
+
+_RADICAL_MINIMO = 4
+_RADICAL_MINIMO_UMA_LETRA = 5
+
+
+def _radical_verbal(t: str) -> str:
+    """Radical declarado do token: o termo inteiro menos UMA terminacao da lista.
+
+    Devolve `_singular(t)` quando nenhuma terminacao declarada casa — ou seja, o
+    casamento por radical nunca e mais frouxo que o casamento por token identico; ele
+    so acrescenta a forma flexionada do MESMO termo.
+    """
+    for base in (t, _singular(t)):
+        for termo in TERMINACOES_VERBAIS:
+            if base.endswith(termo) and len(base) - len(termo) >= _RADICAL_MINIMO:
+                return _aplicar_alternancias(base[:-len(termo)])
+    for termo in TERMINACOES_DE_UMA_LETRA:
+        if t.endswith(termo) and len(t) - 1 >= _RADICAL_MINIMO_UMA_LETRA:
+            return _aplicar_alternancias(t[:-1])
+    return _singular(t)
+
+
+def _aplicar_alternancias(radical: str) -> str:
+    for de, para in ALTERNANCIAS_DO_RADICAL:
+        if radical.endswith(de):
+            return radical[:-len(de)] + para
+    return radical
+
+
 def _token_casa_inteiro(a: str, b: str) -> bool:
     """Casamento de PALAVRA INTEIRA — defeito [encaixe] TRE-W3-E04-T03-D01 (02/10/2026).
 
@@ -578,13 +659,17 @@ def _token_casa_inteiro(a: str, b: str) -> bool:
     card `t_c096e9a4`, com a contagem de termos do vocabulario em ZERO e o recibo ainda
     dizendo `papel dev-harness nao pode: <frase do vocabulario>`.
 
-    Sao iguais: (a) o token identico e (b) o token identico depois do `s` de plural
+    Sao iguais: (a) o token identico, (b) o token identico depois do `s` de plural
     ("leads" ~ "lead", "clientes" ~ "cliente", "credenciais" ~ "credencial") — sem o
-    plural, "contatar leads" deixaria de ser reconhecido. O prefixo continua valendo
+    plural, "contatar leads" deixaria de ser reconhecido — e (c) o token FLEXIONADO do
+    mesmo termo, por terminacao verbal declarada (`_radical_verbal`): "contatamos" ~
+    "contatar", "enviei" ~ "enviar", "publiquei" ~ "publicar". O prefixo continua valendo
     onde ele ajuda: `CONCEITOS_DE_ACAO`, `REGRAS_DE_ACAO_HUMANA` e o casamento de
     credencial seguem em `_token_casa`; nada disso muda aqui.
     """
-    return _singular(a) == _singular(b)
+    if _singular(a) == _singular(b):
+        return True
+    return _radical_verbal(a) == _radical_verbal(b)
 
 
 def _sobreposicao(alvo, fonte, comparador=_token_casa):

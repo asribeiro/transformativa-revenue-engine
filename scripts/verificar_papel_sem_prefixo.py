@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Prova o casamento de PALAVRA INTEIRA no vocabulario das politicas de PAPEL.
+"""Prova o casamento de PALAVRA INTEIRA (com flexao declarada) no vocabulario de PAPEL.
 
 Defeito [encaixe] TRE-W3-E04-T03-D01, medido em 02/10/2026 no card `t_c096e9a4`.
+Defeito [precisao] TRE-W3-E04-T03-D01-D01, medido em 02/10/2026 no card `t_eefbe2e5`
+(efeito colateral do proprio conserto do D01, nao declarado na epoca).
 
-O QUE ACONTECIA
+O QUE ACONTECIA (D01)
 A leitura da prosa das politicas de papel (`hermes/policies/*.yaml`, incluindo a fonte
 `human-approval.yaml`) casava por PREFIXO de 4 caracteres. Com isso, DUAS palavras
 legitimas de engenharia do card medido — as que nomeiam contagem de itens e acordo
@@ -21,13 +23,26 @@ isso o casamento de palavra inteira vale nos tres lugares que leem a prosa dos p
 guardrail `papel_sem_credencial_de_deploy`, guardrail `do_not_contact` e a ponte de prosa
 da camada Human Approval.
 
-O QUE ESTA SUITE TRAVA (os dois lados exigidos no card)
+O QUE ACONTECEU DEPOIS (D01-D01, este conserto)
+Exigir o token IDENTICO trocou tolerancia por precisao e perdeu a forma FLEXIONADA do
+proprio termo: `contatamos o lead`, `enviei mensagem para empresa` e `publiquei conteudo
+no perfil` cairam de BLOCK para ESCALATE no roteador e para PASS (exit 0,
+origem=aprovacao_humana_registrada) no gate com a declaracao da onda — a aprovacao da
+onda cobre a escalacao, nao cobre o bloqueio. O conserto NAO volta ao prefixo: o termo
+inteiro continua exigido e a flexao entra por TERMINACAO VERBAL DECLARADA
+(`_radical_verbal`: termo inteiro menos UMA terminacao da lista, radical de 4 caracteres
+ou mais, 5 quando a terminacao tem uma letra, mais a alternancia `qu` -> `c`).
+
+O QUE ESTA SUITE TRAVA (os dois lados exigidos nos cards)
   1. FALSO POSITIVO: as duas palavras de engenharia NAO acionam papel, nem outbound, nem
      decisao humana — inclusive no titulo verbatim do card medido;
   2. VERDADEIRO POSITIVO: o vocabulario declarado CONTINUA acionando (papel, plural,
-     outbound e as frases da fonte de Human Approval) — o fail-closed nao foi afrouxado;
+     outbound e as frases da fonte de Human Approval);
   3. REGRESSAO: `CONCEITOS_DE_ACAO`, `REGRAS_DE_ACAO_HUMANA` e o casamento de credencial
-     NAO foram tocados — o prefixo continua onde ele ajuda.
+     NAO foram tocados — o prefixo continua onde ele ajuda;
+  4. FLEXAO (D01-D01): as 3 frases medidas voltam a acionar (papel e/ou decisao humana) e
+     o desfecho e BLOCK; a flexao NAO pode afrouxar — o radical declarado nao casa
+     "contagem"/"contrato" com "contatar" nem "testes" com "testar".
 
 ACHADO FORA DO ESCOPO (nao e regressao deste conserto, ja existia antes): a lista de
 entradas do guardrail `do_not_contact` inclui a prosa de `pode`/`nao_pode` dos papeis, e
@@ -90,6 +105,38 @@ HUMANA_QUE_ACIONA = (
 # Tokens que nomeiam ABORDAGEM a terceiro: e o vocabulario que o defeito fazia casar por
 # prefixo. Comparados ja sem plural, como o proprio comparador faz.
 TERMOS_DE_ABORDAGEM = ("contatar", "contato", "lead", "prospect", "proposta")
+
+# ---------------------------------------------------------------------------
+# D01-D01 — FLEXAO VERBAL declarada (card `t_eefbe2e5`)
+# ---------------------------------------------------------------------------
+# As 3 frases medidas na varredura da revisao independente (`t_d4eb0e31`): forma
+# FLEXIONADA de um verbo de abordagem que existe no vocabulario de papel. Com o texto
+# INTACTO e a declaracao da onda, eram BLOCK antes do D01 e viraram ESCALATE -> PASS com
+# ele. Aqui elas tem de voltar a acionar (papel e/ou decisao humana) e a dar BLOCK.
+FLEXAO_QUE_ACIONA = (
+    "contatamos o lead",
+    "enviei mensagem para empresa",
+    "publiquei conteudo no perfil",
+)
+
+# Formas flexionadas que o radical declarado TEM de reconhecer como o mesmo termo.
+PARES_DE_FLEXAO = (
+    ("contatamos", "contatar"), ("contatando", "contatar"), ("contataremos", "contatar"),
+    ("contatou", "contatar"), ("contata", "contatar"), ("contatava", "contatar"),
+    ("enviei", "enviar"), ("enviando", "enviar"), ("enviou", "enviar"),
+    ("publiquei", "publicar"), ("publicando", "publicar"), ("publicou", "publicar"),
+    ("promove", "promover"), ("promovendo", "promover"), ("promoveu", "promover"),
+    ("alterou", "alterar"), ("aplicou", "aplicar"), ("acessando", "acessar"),
+)
+
+# Pares que a flexao NAO pode casar: sao as palavras de engenharia do falso positivo do
+# D01, o nome de outro verbo que comeca igual, a fronteira do radical minimo declarado e
+# a terminacao de plural de substantivo que FICOU FORA da lista (`testes`).
+PARES_SEM_FLEXAO = (
+    ("contagem", "contatar"), ("contrato", "contatar"), ("contabil", "contatar"),
+    ("controle", "contar"), ("conta", "contar"), ("testes", "testar"),
+    ("teste", "testar"), ("credencial", "credenciar"), ("proposta", "propor"),
+)
 
 
 def item(descricao: str, ok: bool, detalhe: str = "") -> None:
@@ -185,6 +232,44 @@ def checar() -> None:
     item("token inteiro e igual a si mesmo: _token_casa_inteiro('deploy','deploy')",
          r._token_casa_inteiro("deploy", "deploy"))
 
+    # ------------------------------- lado 4: FLEXAO VERBAL declarada (card t_eefbe2e5)
+    # As 3 frases medidas voltam a acionar e a dar BLOCK (o desfecho que a aprovacao da
+    # onda NAO converte: bloquear e bloquear; escalar a aprovacao converte em PASS).
+    for frase in FLEXAO_QUE_ACIONA:
+        _papel, motivo = r._papel_para_acao({"acao": frase}, _politica(), papeis)
+        humana = r.acao_de_decisao_humana(frase, _politica(), papeis)
+        item(f"lado 4a — flexao aciona (papel ou decisao humana): {frase!r}",
+             bool(motivo) or bool(humana), f"motivo {motivo!r} humana {humana}")
+        resultado = decidir(frase)
+        item(f"lado 4b — flexao bloqueia no caminho de decisao: {frase!r}",
+             resultado["decisao"]["outcome"] == "BLOCK",
+             f"outcome={resultado['decisao']['outcome']} "
+             f"guardrails={resultado['decisao']['guardrails_acionados']}")
+
+    for a, b in PARES_DE_FLEXAO:
+        item(f"flexao tolerada: {a!r} ~ {b!r}", r._token_casa_inteiro(a, b),
+             f"radicais {r._radical_verbal(a)!r} / {r._radical_verbal(b)!r}")
+    for a, b in PARES_SEM_FLEXAO:
+        item(f"flexao NAO afrouxa: {a!r} !~ {b!r}", not r._token_casa_inteiro(a, b),
+             f"radicais {r._radical_verbal(a)!r} / {r._radical_verbal(b)!r}")
+
+    # As regras declaradas da flexao, medidas diretamente.
+    item("radical da flexao: _radical_verbal('contatamos') == 'contat'",
+         r._radical_verbal("contatamos") == "contat", f"{r._radical_verbal('contatamos')!r}")
+    item("radical da flexao: _radical_verbal('enviei') == 'envi'",
+         r._radical_verbal("enviei") == "envi", f"{r._radical_verbal('enviei')!r}")
+    item("alternancia ortografica declarada: _radical_verbal('publiquei') == 'public'",
+         r._radical_verbal("publiquei") == "public", f"{r._radical_verbal('publiquei')!r}")
+    item("terminacao de UMA letra exige radical de 5: _radical_verbal('conta') == 'conta'",
+         r._radical_verbal("conta") == "conta", f"{r._radical_verbal('conta')!r}")
+    item("terminacao de UMA letra em radical maior: _radical_verbal('contata') == 'contat'",
+         r._radical_verbal("contata") == "contat", f"{r._radical_verbal('contata')!r}")
+    item("terminacao de plural de substantivo ficou FORA da lista (medida afrouxando): "
+         "'es' nao esta em TERMINACOES_VERBAIS",
+         "es" not in r.TERMINACOES_VERBAIS and "as" not in r.TERMINACOES_VERBAIS
+         and "em" not in r.TERMINACOES_VERBAIS,
+         f"{sorted(r.TERMINACOES_VERBAIS)}")
+
     # ------------------------- regressao: o prefixo continua onde ele ajuda
     for a, b in (("produto", "producao"), ("implementador", "implantacao"),
                  ("versionado", "versao"), ("promocao", "promover")):
@@ -217,6 +302,14 @@ def autoteste() -> int:
             lambda: setattr(r, "_token_casa_inteiro", r._token_casa),
         "exato sem o plural declarado":
             lambda: setattr(r, "_token_casa_inteiro", lambda a, b: a == b),
+        "flexao verbal neutralizada (exige token identico + plural)":
+            lambda: setattr(r, "_token_casa_inteiro",
+                            lambda a, b: r._singular(a) == r._singular(b)),
+        "alternancia ortografica do radical removida (qu -> c)":
+            lambda: setattr(r, "ALTERNANCIAS_DO_RADICAL", ()),
+        "radical minimo declarado removido (afrouxa a flexao)":
+            lambda: (setattr(r, "_RADICAL_MINIMO", 1),
+                     setattr(r, "_RADICAL_MINIMO_UMA_LETRA", 1)),
         "call site ignora o comparador (sempre prefixo)":
             lambda: setattr(r, "_entradas_que_casam", sempre_prefixo),
         "guardrail de papel neutralizado":
@@ -230,7 +323,8 @@ def autoteste() -> int:
     for nome, mutar in mutacoes.items():
         originais = {k: getattr(r, k) for k in ("_token_casa_inteiro", "_entradas_que_casam",
                                                 "_papel_para_acao", "acao_de_decisao_humana",
-                                                "_e_acao_outbound")}
+                                                "_e_acao_outbound", "ALTERNANCIAS_DO_RADICAL",
+                                                "_RADICAL_MINIMO", "_RADICAL_MINIMO_UMA_LETRA")}
         mutar()
         buffer, codigo = io.StringIO(), 0
         try:
