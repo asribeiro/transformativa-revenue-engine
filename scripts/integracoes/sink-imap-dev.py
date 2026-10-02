@@ -31,6 +31,7 @@ Uso (o aceite sobe e derruba este processo):
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import socket
@@ -43,6 +44,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 CAPTURA = None
+FIXTURES = None
 MODO = "nenhuma"
 CONTEXTO = None
 SENHA = ""
@@ -77,7 +79,27 @@ def registrar(evento: dict) -> None:
 
 
 def montar_mensagens(quantidade: int, lidas: int) -> list:
-    """Mensagens de fixture deterministicas: mesmos UIDs, Message-IDs e corpos em toda rodada."""
+    """Mensagens de fixture deterministicas: mesmos UIDs, Message-IDs e corpos em toda rodada.
+
+    Com `--fixtures <jsonl>` (card TRE-W6-E05-T01) o corpus vem de arquivo — cada linha traz
+    `{uid, flags, raw_base64}` — o que permite servir respostas de verdade (bounce com
+    `multipart/report`, auto-resposta com `Auto-Submitted`, HTML, thread citada) ao aceite da
+    ingestao/classificacao. Sem o arquivo, o comportamento antigo (corpus simples) e identico.
+    """
+    if FIXTURES:
+        mensagens = []
+        with open(FIXTURES, "r", encoding="utf-8") as fh:
+            for linha in fh:
+                linha = linha.strip()
+                if not linha:
+                    continue
+                item = json.loads(linha)
+                mensagens.append({"uid": int(item["uid"]),
+                                  "raw": base64.b64decode(item["raw_base64"]),
+                                  "flags": set(item.get("flags") or []),
+                                  "rotulo": item.get("rotulo", ""),
+                                  "esperado": item.get("esperado", "")})
+        return mensagens
     mensagens = []
     for i in range(1, quantidade + 1):
         msg = EmailMessage()
@@ -351,9 +373,11 @@ class Servidor(socketserver.ThreadingTCPServer):
 
 
 def main() -> int:
-    global CAPTURA, MODO, CONTEXTO, SENHA, MENSAGENS, LIDAS_INICIAIS
+    global CAPTURA, MODO, CONTEXTO, SENHA, MENSAGENS, LIDAS_INICIAIS, FIXTURES
     p = argparse.ArgumentParser(description="Sink IMAP de desenvolvimento (TRE-W6-E01-T02)")
     p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--fixtures", default=None,
+                   help="JSONL de mensagens cruas (uid, flags, raw_base64) — corpus do aceite E05")
     p.add_argument("--porta", type=int, default=2993)
     p.add_argument("--modo", choices=("implicit_tls", "starttls", "nenhuma"), default="implicit_tls")
     p.add_argument("--cert", default=None)
@@ -367,6 +391,7 @@ def main() -> int:
     args = p.parse_args()
 
     CAPTURA, MODO, SENHA = args.captura, args.modo, args.senha
+    FIXTURES = args.fixtures
     LIDAS_INICIAIS = args.lidas
     MENSAGENS = montar_mensagens(args.mensagens, args.lidas)
     if args.modo in ("implicit_tls", "starttls"):
@@ -388,7 +413,8 @@ def main() -> int:
         with open(args.pidfile, "w", encoding="utf-8") as fh:
             fh.write(str(os.getpid()))
     print(f"[sink-imap] escutando em {args.host}:{servidor.server_address[1]} modo={args.modo} "
-          f"mensagens={args.mensagens}", flush=True)
+          f"mensagens={len(MENSAGENS)}"
+          + (" (fixtures)" if FIXTURES else ""), flush=True)
     servidor.serve_forever()
     return 0
 

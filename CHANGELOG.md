@@ -3,6 +3,33 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W6 — Outbound] — 02/10/2026
+
+### Added
+
+- **Ingestão e classificação de respostas v1** (`TRE-W6-E05-T01`) — componente
+  `hermes/agentes/respostas/ingestao_respostas.py` (`ingestao-respostas-v1`) + contrato declarativo
+  `hermes/agentes/respostas/ingestao-respostas-v1.json`: lê a caixa de respostas pelo primitivo IMAP do
+  card `TRE-W6-E01-T02` (sem reimplementar IMAP), classifica em vocabulário fechado
+  (`INTERESSE`, `SEM_INTERESSE`, `OPT_OUT`, `BOUNCE`, `AUTO_RESPOSTA`, `RUIDO`, `INDEFINIDO`,
+  `NAO_RESPOSTA` — categoria fora da lista faz o contrato recusar) com precedência `OPT_OUT > INTERESSE`
+  e grava em `sales_intelligence.interactions` com trilha de idempotência `resposta:<UIDVALIDITY:UID>` em
+  `sync_events`; sem vínculo → `SEM_VINCULO` (não inventa organização); só `INSERT` (sem DDL/UPDATE/DELETE);
+  exclusão de citação de histórico e assinatura antes das regras; guardas de dev/homolog/prod (prod recusa,
+  `--confirmo` obrigatório) e fail-closed de segredo por variável de ambiente.
+  - `scripts/agentes/verificar_ingestao_respostas.py` — suite offline (sem rede, banco `stub` que recusa
+    fora do contrato): **50 itens** + `--prova-de-dente` com 6 mutações (**56 itens**);
+  - `scripts/agentes/teste_ingestao_respostas_aceite.sh` + `scripts/integracoes/gerar-fixtures-respostas.py`
+    — aceite E2E com Postgres descartável e sink IMAP local + corpus de 10 respostas: **43 itens**;
+  - `docs/integrations/respostas-titan-v1.md`, `docs/runbooks/respostas-ingestao.md`,
+    `docs/validation/registro-de-execucoes-e05-t01.md`, `deploy/environments/dev-respostas.env`.
+
+### Changed
+
+- `hermes/integracoes/titan/imap_titan.py` — **aditivo** (envelope do E01-T02 inalterado, suite dele segue
+  verde com 67 itens): `cabecalhos_completos()` e o campo `corpo_html` na mensagem ingerida.
+- `scripts/integracoes/sink-imap-dev.py` — `--fixtures <jsonl>` para servir um corpus cru determinístico.
+
 ## [W0 — Governança e Baseline] — 29/09/2026
 
 ### Added

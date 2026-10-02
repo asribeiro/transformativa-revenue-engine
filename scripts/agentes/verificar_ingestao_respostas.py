@@ -204,6 +204,16 @@ def suite(mod, contrato) -> None:
     item("assinatura removida", "Assinatura" not in mod.limpar_assinatura("corpo\n-- \nAssinatura"))
     item("HTML vira texto", "podemos conversar" in mod.normalizar(
         mod.html_para_texto("<p>Podemos <b>conversar</b></p>")))
+    # Caso medido no aceite: em mensagem só HTML o primitivo entrega as TAGS no campo de texto; sem
+    # esta rota o classificador casa padrao contra markup e devolve INDEFINIDO.
+    crua_html = {"identidade_mensagem": "999:9", "message_id": "<x>", "de": "maria@demo.test",
+                 "assunto": "Re: Proposta", "data": "",
+                 "corpo_texto": "<html><body><p>Podemos <b>conversar</b> amanha?</p></body></html>",
+                 "corpo_html": "", "cabecalhos_completos": {"Content-Type": "text/html; charset=utf-8"}}
+    analise_html = mod.mensagem_para_analise(crua_html)
+    item("mensagem só HTML: markup nao vira texto (tags removidas antes da regra)",
+         "<b>" not in analise_html["corpo_limpo"] and "podemos conversar" in mod.normalizar(analise_html["corpo_limpo"]),
+         repr(analise_html["corpo_limpo"])[:120])
     # Regra que casa TUDO e defeito: padrao vazio tem de reprovar o contrato.
     quebrado3 = json.loads(json.dumps(contrato))
     quebrado3["regras"][4]["deteccao"]["padroes"] = [""]

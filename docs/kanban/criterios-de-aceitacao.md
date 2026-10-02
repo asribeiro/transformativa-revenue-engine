@@ -350,3 +350,36 @@ card).
 `docs/runbooks/titan-imap.md`, `scripts/verificar_estrutura.sh`.
 **Depends on:** W6-E01-T01 (SMTP, fechado e medido — a branch do card ramifica dele) · **Destrava:**
 W6-E05-T01 (reply ingestion/classification) e, por consequência, o E2E Outbound #002.
+
+---
+
+## TRE-W6-E05-T01 — ingestão e classificação de respostas (v1)
+
+**Entregue:** `hermes/agentes/respostas/ingestao_respostas.py` (`ingestao-respostas-v1`) + contrato
+`ingestao-respostas-v1.json` (vocabulário fechado, 6 regras com `ordem` explícita, 2 exclusões e as
+lacunas declaradas) + `--ingerir/--conferir/--desfazer/--classificar`; leitura pelo primitivo do
+`TRE-W6-E01-T02` (mudanças **aditivas**: `cabecalhos_completos`, `corpo_html`); gravação só por `INSERT`
+em `interactions` + `sync_events` (idempotência `resposta:<UIDVALIDITY:UID>`, `SEM_VINCULO` quando não há
+vínculo, `DESFEITO` preservando a linha).
+**Test plan:** `python3 scripts/agentes/verificar_ingestao_respostas.py` (suite offline sem rede, banco e
+credencial — **50 itens**) + `--prova-de-dente` (6 mutações, cada uma reprovando o item que nomeia —
+**56 itens**) + `bash scripts/agentes/teste_ingestao_respostas_aceite.sh` (E2E em host com Docker:
+Postgres descartável com a migration 0001 + sink IMAP local com TLS próprio + corpus de 10 respostas;
+mede 12 tabelas antes/depois, categorias gravadas, replay sem duplicata, invariante de leitura no sink,
+guardas, `--desfazer`, escopo — **43 itens**) + regressão do pai
+(`verificar_imap_titan.py`, **67 OK**). Evidência = saída completa com exit code, anexada ao card.
+Runbooks: `docs/runbooks/respostas-ingestao.md`, `docs/integrations/respostas-titan-v1.md`,
+`docs/validation/registro-de-execucoes-e05-t01.md`.
+**Rollback:** `git revert` do commit do card — sem DDL, sem migration e sem ato em produção; a única
+escrita é `INSERT` em `interactions`/`sync_events` do banco do ambiente, e `--desfazer <identidade>` marca
+`DESFEITO` sem apagar nada. Nada é escrito na fonte IMAP em nenhum caso.
+**Risco:** Alto — mexe em canal externo de e-mail (leitura de caixa) **e** grava no banco. Mitigado por:
+`EXAMINE` + `BODY.PEEK` obrigatórios, auditoria da fonte executada no caminho de ingesta com prova de
+dente, invariante medido no sink (zero escrita, zero flag, zero lido), guarda de dev (loopback + login de
+dev), `--confirmo` obrigatório, idempotência por `UIDVALIDITY:UID` e fail-closed de segredo.
+**Components afetados:** `hermes/agentes/respostas/`, `hermes/integracoes/titan/imap_titan.py`,
+`scripts/agentes/`, `scripts/integracoes/sink-imap-dev.py`, `deploy/environments/dev-respostas.env`,
+`.env.example`, `scripts/verificar_estrutura.sh`, `docs/`.
+**Depends on:** W6-E01-T02 (IMAP, fechado e medido — a branch do card ramifica dele) · **Destrava:**
+W6-E06 (fluxo de resposta) e o E2E Outbound #002.
+

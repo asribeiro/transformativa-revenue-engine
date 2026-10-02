@@ -532,9 +532,20 @@ class PortaBanco:
                          f"a porta de banco nao devolveu JSON: {linhas[-1][:200]}") from e
 
     def executar(self, sql: str) -> list:
-        """Escreve (INSERT ... RETURNING) e devolve as linhas afetadas."""
-        comando = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c",
-                                        f"SELECT coalesce(json_agg(t), '[]'::json)::text FROM ({sql}) t;"]
+        """Escreve (INSERT ... RETURNING) e devolve as linhas afetadas.
+
+        INSERT nao pode ser envolvido por `SELECT ... FROM (...) t` (erro de sintaxe medido na rodada 1
+        do aceite); o envelope certo para leitura de INSERT ... RETURNING e a CTE.
+        """
+        comando_base = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c"]
+        # INSERT sem RETURNING nao pode ser lido por CTE ("WITH query does not have a RETURNING clause",
+        # defeito medido na rodada 2 do aceite): sem RETURNING nao ha linhas a devolver.
+        if "RETURNING" in sql.upper():
+            sql_exec = (f"WITH afetados AS ({sql}) "
+                        "SELECT coalesce(json_agg(afetados), '[]'::json)::text FROM afetados;")
+        else:
+            sql_exec = sql
+        comando = comando_base + [sql_exec]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
@@ -648,6 +659,9 @@ class Saida:
         self.relatorio["veredito"] = veredito
         texto = json.dumps(self.relatorio, ensure_ascii=False, sort_keys=True, indent=2)
         self._conferir(texto)
+        # O veredito tambem sai no stdout: aceite que so consegue ler o arquivo de relatorio nao mede
+        # a rodada quando o proprio relatorio e o que falhou em gravar.
+        print(f"# veredito: {veredito}")
         if self.caminho_relatorio:
             os.makedirs(os.path.dirname(os.path.abspath(self.caminho_relatorio)), exist_ok=True)
             with open(self.caminho_relatorio, "w", encoding="utf-8") as fh:
@@ -681,7 +695,7 @@ def consumir_caixa(config: Configuracao) -> dict:
     problemas = imap.validar(montada, config.ambiente)
     if problemas:
         raise Recusa("CONFIG_DO_PRIMITIVO", f"o primitivo de leitura recusou a configuracao: {problemas}")
-    sessao = imap.conectar(montada)
+    sessao, medidas = imap.conectar(montada)
     try:
         autenticado = imap.autenticar(sessao, montada)
         abertura = imap.abrir_caixa(sessao, montada)
@@ -691,7 +705,8 @@ def consumir_caixa(config: Configuracao) -> dict:
             crua = imap.ingerir_mensagem(sessao, uid, abertura.get("uidvalidity"))
             mensagens.append(crua)
         return {"autenticado_como": autenticado, "selecao": abertura.get("modo_de_abertura"),
-                "uidvalidity": abertura.get("uidvalidity"), "mensagens": mensagens}
+                "uidvalidity": abertura.get("uidvalidity"), "medidas": medidas,
+                "mensagens": mensagens}
     finally:
         try:
             sessao.logout()
@@ -709,6 +724,13 @@ def mensagem_para_analise(crua: dict) -> dict:
     texto = crua.get("corpo_texto") or ""
     htmls = crua.get("corpo_html") or ""
     cabecalhos = crua.get("cabecalhos_completos") or {}
+    # O primitivo entrega `corpo_texto` por `get_content()`: em mensagem SÓ HTML (sem text/plain) esse
+    # campo vem com as TAGS dentro (medido no aceite, caso html_sem_texto). Texto com cara de HTML e
+    # tratado como HTML — casar padrao contra markup e casar contra nada.
+    tipo = normalizar(str(cabecalhos.get("Content-Type", "")))
+    if "text/html" in tipo and "<" in texto:
+        htmls = htmls or texto
+        texto = ""
     corpo_limpo = limpar_assinatura(remover_citacao(texto or (html_para_texto(htmls) if htmls else "")))
     return {"identidade_mensagem": crua["identidade_mensagem"], "message_id": crua.get("message_id"),
             "de": cabecalhos.get("From", crua.get("de", "")), "para": cabecalhos.get("To", ""),
@@ -876,6 +898,7 @@ def main(argv=None) -> int:
         return CODIGO_FALHA
 
     saida.evento(evento="CAIXA_LIDA", selecao=caixa["selecao"], uidvalidity=str(caixa["uidvalidity"]),
+                 versao_tls=(caixa.get("medidas") or {}).get("versao_tls"),
                  mensagens=len(caixa["mensagens"]))
     ingeridas = excluidas = sem_vinculo = 0
     for crua in caixa["mensagens"]:

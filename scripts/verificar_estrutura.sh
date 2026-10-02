@@ -142,5 +142,36 @@ else
   FALHAS=$((FALHAS+1))
 fi
 
+# Artefatos da ingestao de respostas (TRE-W6-E05-T01) existem E estao versionados
+for f in hermes/agentes/respostas/ingestao_respostas.py hermes/agentes/respostas/ingestao-respostas-v1.json \
+         scripts/agentes/verificar_ingestao_respostas.py scripts/agentes/teste_ingestao_respostas_aceite.sh \
+         scripts/integracoes/gerar-fixtures-respostas.py \
+         deploy/environments/dev-respostas.env docs/integrations/respostas-titan-v1.md \
+         docs/runbooks/respostas-ingestao.md docs/validation/registro-de-execucoes-e05-t01.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# Mesma regra dos outros ambientes de dev: sem senha versionada e com host de sink local (loopback).
+if grep -qE '^TRE_TITAN_PASSWORD=.+$' deploy/environments/dev-respostas.env; then
+  echo "FALHOU dev-respostas.env carrega valor em TRE_TITAN_PASSWORD (dev-harness nao tem TRE_TITAN_*)"
+  FALHAS=$((FALHAS+1))
+elif grep -qE '^TRE_TITAN_IMAP_HOST=(127\.0\.0\.1|localhost)$' deploy/environments/dev-respostas.env; then
+  echo "OK    dev-respostas.env sem senha e com host de sink local (loopback)"
+else
+  echo "FALHOU dev-respostas.env sem host loopback (a prova de dev e contra sink local, ADR-005)"
+  FALHAS=$((FALHAS+1))
+fi
+# A ingesta escreve no banco: nada de DDL no componente e o caminho de ingesta tem de EXECUTAR a
+# auditoria da fonte (guard que existe e nao e chamado nao protege nada) e nao pode marcar lido.
+if grep -q 'auditar_fonte()' hermes/agentes/respostas/ingestao_respostas.py \
+   && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/respostas/ingestao_respostas.py \
+   && ! grep -qE 'add_flag|[.]store[(]|Seen' hermes/agentes/respostas/ingestao_respostas.py; then
+  echo "OK    ingestao_respostas.py: auditoria executada, sem DDL e sem escrita na fonte IMAP"
+else
+  echo "FALHOU ingestao_respostas.py sem auditoria executada / com DDL / com escrita na fonte"
+  FALHAS=$((FALHAS+1))
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
