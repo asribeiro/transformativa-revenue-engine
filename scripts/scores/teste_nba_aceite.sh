@@ -245,7 +245,7 @@ item "A1 auditoria guarda o id da recomendacao" 1 "$(conta "SELECT CASE WHEN out
 # ---------------------------------------------------------------------------------------
 SAIDA2=$(rodar "$CID2" --organizacao "$ORG_A")
 item "A2 replay: veredito JA_RECOMENDADA" 1 "$(echo "$SAIDA2" | grep -c '"veredito": "JA_RECOMENDADA"')"
-item "A2 replay: nada gravado" 1 "$(echo "$SAIDA2" | grep -c '"gravados": 0')"
+item "A2 replay: nada gravado" 1 "$(echo "$SAIDA2" | grep -c '"ja_existia": 1')"
 item "A2 replay: continua 1 recomendacao" 1 "$(conta "SELECT COUNT(*) FROM sales_intelligence.recommendations WHERE organization_id='$ORG_A';")"
 item "A2 replay: nenhuma supersedida ainda" 0 "$(conta "SELECT COUNT(*) FROM sales_intelligence.recommendations WHERE organization_id='$ORG_A' AND status='SUPERSEDED';")"
 
@@ -282,11 +282,11 @@ item "A3 cada empresa com UMA recomendacao aberta" 9 "$(conta "SELECT COUNT(*) F
 # ---------------------------------------------------------------------------------------
 SAIDA4=$(rodar "$CID2" --organizacao "$ORG_K")
 echo "$SAIDA4" | sed 's/^/  /' | head -4
-item "A6 sem TIER RECUSADA" 1 "$(echo "$SAIDA4" | grep -c 'SEM_TIER')"
+item "A6 sem TIER RECUSADA" 1 "$(echo "$SAIDA4" | grep -c 'veredito=RECUSADA motivo=SEM_TIER')"
 item "A6 sem TIER: zero recomendacao" 0 "$(conta "SELECT COUNT(*) FROM sales_intelligence.recommendations WHERE organization_id='$ORG_K';")"
 item "A6 auditoria registrou a recusa" "REJECTED" "$(conta "SELECT status FROM sales_intelligence.agent_runs WHERE correlation_id='$CID2' AND organization_id='$ORG_K';")"
 SAIDA5=$(rodar "$CID2" --organizacao "$ORG_FANTASMA")
-item "A7 empresa inexistente RECUSADA" 1 "$(echo "$SAIDA5" | grep -c 'ORGANIZACAO_NAO_ENCONTRADA')"
+item "A7 empresa inexistente RECUSADA" 1 "$(echo "$SAIDA5" | grep -c 'veredito=RECUSADA motivo=ORGANIZACAO_NAO_ENCONTRADA')"
 item "A7 nada gravado para a fantasma" 0 "$(conta "SELECT COUNT(*) FROM sales_intelligence.recommendations WHERE organization_id='$ORG_FANTASMA';")"
 
 # ---------------------------------------------------------------------------------------
@@ -308,6 +308,7 @@ item "A3 --planejar declara LLM nao executado" 1 "$(grep -c '"executado": false'
 # A10 — evidencia nova gera recomendacao NOVA e SUPERSEDE a anterior
 # ---------------------------------------------------------------------------------------
 interacao "$ORG_A" 0 "INBOUND" "POSITIVO"
+INTER_ANTES=$(conta "SELECT COUNT(*) FROM sales_intelligence.interactions;")
 SAIDA10=$(rodar "$CID2" --organizacao "$ORG_A" --relatorio "$TRABALHO/rodada2.json")
 item "A10 evidencia nova: veredito RECOMENDADA" 1 "$(echo "$SAIDA10" | grep -c '"veredito": "RECOMENDADA"')"
 item "A10 acao nova CREATE_MEETING" 1 "$(echo "$SAIDA10" | grep -c 'acao=CREATE_MEETING')"

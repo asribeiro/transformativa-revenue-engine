@@ -262,7 +262,7 @@ def avaliar_condicao(fatos: dict, condicao: dict) -> bool:
 
 def decidir(fatos: dict, politica: dict) -> tuple[dict | None, dict | None]:
     """PRIMEIRA regra que casa vence. Nenhuma casando: (None, None) -> ABSTEM."""
-    if not fatos.get("tier"):
+    if fatos.get("tier") in (None, ""):
         return None, None
     for regra in politica["regras"]:
         if all(avaliar_condicao(fatos, c) for c in regra["quando"]):
@@ -557,6 +557,31 @@ def montar_recomendacao(fatos: dict, politica: dict, regra: dict, organization_i
     }
 
 
+def registrar_auditoria(organization_id: str, veredito: str, motivo: str, detalhe: str, prefixo: str,
+                        correlation_id: str, triggered_by: str, fatos: dict | None = None) -> bool:
+    """Audita a rodada que NAO gravou recomendacao (recusa/abstencao). Falha nao e engolida: o
+    retorno diz se a auditoria entrou — a suite e o aceite cobram a recusa auditada."""
+    auditoria_id = str(uuid.uuid4())
+    output = {"veredito": veredito, "motivo": motivo, "detalhe": detalhe, "motivo_de_nao_gravar": motivo,
+              "recomendacoes": [], "llm": {"executado": False, "model": None, "tokens": None, "custo": None}}
+    if fatos:
+        output["tier"] = fatos.get("tier")
+        output["tier_registro_id"] = fatos.get("tier_registro_id")
+    sql = f"""
+INSERT INTO {TABELA_AGENT_RUNS}
+  (id, agent_name, agent_role, agent_version, workflow, workflow_version, organization_id,
+   triggered_by, correlation_id, input, output, model, started_at, finished_at, status,
+   tokens_input, tokens_output, estimated_cost)
+VALUES ({lit(auditoria_id)}, {lit(AGENTE)}, {lit(PAPEL)}, {lit(VERSAO)}, {lit(WORKFLOW)},
+        {lit(WORKFLOW_VERSAO)}, {lit(organization_id)}, {lit(triggered_by)},
+        {lit(correlation_id)}, {lit_json({'organizacao': organization_id, 'nba_version': NBA_VERSION,
+                                          'fatos': fatos or {}})}, {lit_json(output)}, NULL,
+        NOW(), NOW(), {lit(STATUS_AGENT_RUNS[veredito])}, NULL, NULL, NULL);
+"""
+    rc, _, _ = executar_sql(sql, prefixo)
+    return rc == 0
+
+
 def rodar_organizacao(organization_id: str, politica: dict, prefixo: str, correlation_id: str,
                       triggered_by: str, started_at: str) -> dict:
     """Uma rodada para UMA empresa: le os fatos, decide, grava. Nada de rede, nada de LLM."""
@@ -566,15 +591,23 @@ def rodar_organizacao(organization_id: str, politica: dict, prefixo: str, correl
                 "detalhe": (erro or saida).strip()[:500]}
     linhas = linhas_de_json(saida)
     if not linhas:
+        registrar_auditoria(organization_id, RECUSADA, MOTIVO_NAO_ENCONTRADA,
+                            "empresa inexistente ou removida", prefixo, correlation_id, triggered_by)
         return {"organizacao": organization_id, "veredito": RECUSADA,
                 "motivo": MOTIVO_NAO_ENCONTRADA, "detalhe": "empresa inexistente ou removida"}
     fatos = linhas[0]
     if not fatos.get("tier"):
+        registrar_auditoria(organization_id, RECUSADA, MOTIVO_SEM_TIER,
+                            "nenhum registro TIER em sync_events para a empresa", prefixo,
+                            correlation_id, triggered_by, fatos)
         return {"organizacao": organization_id, "veredito": RECUSADA, "motivo": MOTIVO_SEM_TIER,
                 "detalhe": "nenhum registro TIER em sync_events para a empresa",
                 "fatos": fatos}
     regra, _ = decidir(fatos, politica)
     if regra is None:
+        registrar_auditoria(organization_id, ABSTEVE, MOTIVO_SEM_REGRA,
+                            "nenhuma regra da politica casou com a evidencia (abstencao)", prefixo,
+                            correlation_id, triggered_by, fatos)
         return {"organizacao": organization_id, "veredito": ABSTEVE, "motivo": MOTIVO_SEM_REGRA,
                 "detalhe": "nenhuma regra da politica casou com a evidencia (abstencao)", "fatos": fatos}
     recomendacao = montar_recomendacao(fatos, politica, regra, organization_id)
