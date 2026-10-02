@@ -724,3 +724,87 @@ Rodada executada de 01/10 21h35 a 22h20 na VPS (-03); 02/10 00h35 a 01h20 UTC.
 - **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
   (perfil `tester`) e a ratificação da versão 19.0 / homologação (estágio 7) é do Anderson. A
   publicação do módulo na cópia operacional `/opt/tre/repo` segue como pendência herdada do E03-T01.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T05 (card `t_cb615018`): operacao de escrita de negocio `atividade_criar` (a ATIVIDADE comercial em `mail.activity`, na ancora declarada)
+
+Rodada executada em 02/10, 03h20 a 04h55 UTC (00h20 a 01h55 na VPS, -03).
+
+- **O que foi executado:** aceite completo e provas de dente, na VPS do dev, a partir do checkout
+  publicado por `git archive` do commit medido — `/opt/tre/evid-t_cb615018-r3/repo`, commit
+  **`e9f4c478c9f87c3970d53dd6e0803c9d9e9c97db`** (`feature/TRE-W3-E01-T05`, empilhado em
+  `feature/TRE-W3-E01-T03` com o `E01-T04` mesclado). Comando:
+  `sudo -n env TRE_LOG_DIR=/opt/tre/evid-t_cb615018-r3/logs-aceite bash scripts/odoo/verificar-atividade-criar.sh`
+  e, em seguida, o mesmo com `--prova-de-dente`. **Tem de rodar como root** — a dupla descartavel
+  exige `chown` do `odoo.conf` para o uid 100 do container `odoo:19.0`.
+- **Aceite (rodada `r3`):** `RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas)`, exit 0 — suite pura
+  `MOTOR_API_OK (123 itens, 0 falhas)`; instalacao em banco limpo `tre_e01_t05_atividade`
+  (`ir_module_module.state = installed`, e `installed` depois da suite); `0 failed, 0 error(s) of 166
+  tests` (piso 147; os **19** testes novos de `test_atividade_criar.py` presentes no log); fase HTTP
+  real medida por `curl` **de fora do processo** (401 sem token e com token invalido; operacao
+  declarada como `escrita` com chave exigida na politica `1.3.0`; criacao com `acao_efetiva=criar` e o
+  `id` na resposta; `correlation_id` ecoado; recusas nomeadas `campo_fixo_divergente` com `crm.lead`
+  (**0** atividades em `crm.lead`), `campo_nao_declarado` — inclusive pelo id interno `res_model_id` —,
+  `campo_obrigatorio_ausente` sem `res_id`, `idempotency_key_ausente`, `idempotency_key_invalida`;
+  `dry_run` que descreve sem criar; **chave sem escrita no documento ancorado -> `403 acesso_negado`
+  sem criar**); **leitura por SQL** no banco (a atividade nasceu ancorada em `ir_model.model =
+  res.partner` e com o `res_id` informado, resumo/prazo/tipo gravados, o rastro
+  `tf_idempotency_key`/`tf_correlation_id` registrado **na atividade** e `create_uid =
+  tf_api_integracao`, isto e, o dono da chave); **12 linhas `TF_API_AUDIT` para 12 chamadas
+  autenticadas**, sem `Bearer`, sem chave e sem payload de negocio (a recusa por ACL tambem deixa
+  linha); guarda de ambiente do ADR-005 **na escrita**, com o ambiente trocado para `homologacao`
+  **pelo ORM** e o servidor **reiniciado depois** da troca (`503 ambiente_nao_permitido`, nada
+  escrito); contrato do modulo (1 rota, `auth='bearer'`, so `POST`, **0 SQL** na API, motor puro,
+  override presente com `_inherit = "mail.activity"`); e limpeza com dev com os **mesmos 4 bancos**
+  antes e depois, `homolog`/`prod` com 0 arquivo e `/opt/tre/repo` intocado.
+- **Lacunas DECLARADAS e medidas (AC9):** o replay da **mesma** `idempotency_key` cria uma SEGUNDA
+  atividade (1 -> 3 registros no fim da fase, contando o replay) — a dedup por chave e' o
+  `TRE-W3-E02-T02`; e atividade ancorada em `crm.lead` **nao** e' servida (recusa nomeada, nunca
+  registro no lugar errado): aceitar um CONJUNTO declarado de ancoras exige vocabulario novo no
+  mecanismo de valor fixo, cujo dono e' o `E02-T02`.
+- **Dentes (harness fail-closed):** `RESULTADO: ATIVIDADE_CRIAR_DENTE_OK (4 provas + 2 controles do
+  proprio harness, 0 falhas)`, exit 0 — dente 1 (copia da politica **sem** a operacao) ->
+  `FALHOU (94 itens, 36 falhas)`, item `atividade_criar nao declarada como escrita com chave`;
+  dente 2 (copia da politica **sem o valor fixo** da ancora, `valores_fixos` = `{}`) ->
+  `FALHOU (94, 41)`, item `ancora divergente (crm.lead) -> HTTP 422 campo_fixo_divergente`;
+  dente 3 (copia do controlador **sem o ramo de criacao**) -> `FALHOU (94, 13)`, item
+  `a criacao nao devolveu id de atividade`; dente 4 (copia do **modulo sem a traducao da ancora**) ->
+  `FALHOU (94, 18)`, item de SQL `ancora gravada diferente` — este e' o dente desta entrega: prova
+  que a unica linha de codigo novo **nao e' decorativa**. Guarda externa: o artefato real saiu
+  intacto (33 arquivos, `sha256 6a7ca438…` antes e depois). Cada prova confere **antes** que a
+  mutacao foi aplicada e exige **o item esperado** entre os reprovados; prova que nao reprova, que
+  reprova por guarda/ambiente ou que mede o artefato intacto **reprova o harness**.
+- **Defeitos encontrados e consertados (ambos no PROPRIO aceite, remedidos na `r3`):** (1) rodada
+  `r1` (`/opt/tre/evid-t_cb615018-r1`) abortou na suite do Odoo com `1 failed, 0 error(s) of 166
+  tests`: o item 16 (AC7) mandava a chave de API no **corpo** em vez do cabecalho `Authorization` e
+  media o envelope (`400 payload_invalido`), nao a ACL — o helper `_criar()` misturava o parametro
+  `chave` nos campos do payload; (2) rodada `r2` (`/opt/tre/evid-t_cb615018-r2`, dentes verdes)
+  mediu `119 itens, 1 falha`: o item de contrato do passo 4 casava o padrao `idempotency=True`
+  enquanto o resumo que ele mesmo monta imprime `chave=True` — item que reprovava com a declaracao
+  certa na mao, e sem dente que o cobrisse (o modo dente roda so' a fase HTTP). As rodadas `r1` e
+  `r2` ficam na VPS com os `FALHOU` originais; a rodada que mede o artefato entregue e' a `r3`.
+- **O que NAO foi tocado:** `api/motor.py` (`2a79c952…`) e `controllers/api_controlada.py`
+  (`b8c53117…`) — `git diff` contra a base consolidada da onda (`9513335`) e' **vazio** nos dois: este
+  card declarou a operacao na politica (`d15f7e0a…`, versao `1.3.0`) e acrescentou **uma** superficie
+  de codigo, `models/mail_activity.py` (`33d520ee…`, a traducao do nome declarado para
+  `res_model_id`); `scripts/odoo/verificar-atividade-criar.sh` (`8317a501…`),
+  `tests/test_atividade_criar.py` (`d2ff36f2…`), `tests/__init__.py` (`15641b44…`),
+  `__manifest__.py` (`fc02aedc…`), `models/__init__.py` (`808687cb…`) e
+  `scripts/odoo/preparar_api_teste.py` (`435af3c6…`, ganhou `TRE_API_GRUPOS` com o comportamento
+  anterior como padrao — a segunda chave da prova de ACL). A instancia do dev (`odoo-dev`,
+  `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) ficou de pe com os **mesmos 4 bancos** antes e depois.
+- **Verificadores do projeto (no worktree do commit):** `scripts/verificar_estrutura.sh` -> `PASS`
+  RC=0; `scripts/secret_scan.sh` -> `PASS` RC=0; `scripts/verificar_papeis.sh` -> `PASS (0 falhas)`
+  RC=0; `python3 scripts/odoo/testar_motor_api.py` -> `MOTOR_API_OK (123 itens, 0 falhas)` RC=0. O
+  `verificar_estrutura.sh` ja' exigia versionados a suite nova e o runbook e executavel o verificador
+  do card.
+- **Logs brutos (agente, na VPS):** `/opt/tre/evid-t_cb615018-r3/` — `aceite.out`, `dente.out`,
+  `logs-aceite/` (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+  `3-preparo-sem-escrita.log`, `3b-servidor.log`, `3d-*.log`) e `logs-dente/`
+  (`dente-{1,2,3,4}-*.out`); rodadas anteriores em `evid-t_cb615018-r1/` e `evid-t_cb615018-r2/`.
+- **Segredos:** nenhum valor nesta entrada e nenhum no repositorio. As duas chaves de API da fase
+  HTTP nasceram **na VPS**, em arquivos `600` dentro do diretorio descartavel do preparo, lidas pelo
+  `curl` por arquivo de configuracao (nao aparecem em `ps`, stdout nem log) e morreram com o
+  diretorio; a chave do passo 3d foi gerada do mesmo jeito depois da troca de ambiente.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`) e a ratificacao da versao 19.0 / homologacao (estagio 7) e' do Anderson. A
+  publicacao do modulo na copia operacional `/opt/tre/repo` segue como pendencia herdada do E03-T01.

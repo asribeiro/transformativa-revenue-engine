@@ -163,7 +163,7 @@ O verificador **não** usa `pg-odoo-dev`/`odoo_dev`/`/opt/tre/repo`: sobe a pró
   exigida, validada e registrada — e a falta da dedup é **medida** (§3, replay);
 * **atividade ancorada em `crm.lead`** (reunião/proposta/lead): a âncora é fixa em `res.partner`
   nesta versão; aceitar um **conjunto** declarado de âncoras exige vocabulário novo no mecanismo de
-  valor fixo (dono: `E02-T02`), e o documento do E2E #001 não precisa dele nas passos 13..15;
+  valor fixo (dono: `E02-T02`), e o documento do E2E #001 não precisa dele nos passos 13..15;
 * **rate limit, cache de política, observabilidade durável**: card `TRE-W3-E05-T01`;
 * **views do Odoo exibindo `tf_idempotency_key`/`tf_correlation_id` na atividade**: os campos existem
   e são gravados (medidos), mas não foram colocados em nenhuma view — o rastro é para reconciliação,
@@ -213,4 +213,72 @@ O verificador **não** usa `pg-odoo-dev`/`odoo_dev`/`/opt/tre/repo`: sobe a pró
 
 ## §11 Aceite medido (rodada desta entrega)
 
-> Preenchido com os números lidos da VPS na rodada final.
+Rodada **`r3`** na VPS do dev (`vmi3619453`, `169.58.24.102`), **como root** (a dupla descartável
+exige `chown` do `odoo.conf` para o uid 100 do container `odoo:19.0`), a partir do checkout
+publicado por `git archive` do commit medido — `/opt/tre/evid-t_cb615018-r3/repo`, commit
+**`e9f4c478c9f87c3970d53dd6e0803c9d9e9c97db`** (`feature/TRE-W3-E01-T05`). Comandos:
+
+```bash
+sudo -n env TRE_LOG_DIR=/opt/tre/evid-t_cb615018-r3/logs-aceite \
+     bash scripts/odoo/verificar-atividade-criar.sh
+sudo -n env TRE_LOG_DIR=/opt/tre/evid-t_cb615018-r3/logs-dente \
+     bash scripts/odoo/verificar-atividade-criar.sh --prova-de-dente
+```
+
+| etapa | medido |
+| --- | --- |
+| suíte pura do motor (passo 0) | `RESULTADO: MOTOR_API_OK (123 itens, 0 falhas)` |
+| instalação em banco limpo (passo 1) | banco `tre_e01_t05_atividade` criado do zero; `ir_module_module.state = installed` (e `installed` **depois** da suíte) |
+| suíte do Odoo (passo 2) | `0 failed, 0 error(s) of 166 tests` (piso 147) — os **19** testes de `test_atividade_criar.py` no log |
+| fase HTTP real (passo 3) | `curl` **de fora do processo**, servidor em `127.0.0.1:32923`: 401 sem token e com token inválido; `atividade_criar` declarada `escrita` com chave exigida na `1.3.0`; criação → `200` com `acao_efetiva=criar` e id; `correlation_id` ecoado; **leitura por SQL** provando `ir_model.model=res.partner`, `res_id`, resumo, prazo, tipo e o rastro `tf_*` gravados, com `create_uid = tf_api_integracao`; recusas `campo_fixo_divergente` (`crm.lead`, **0** atividades em `crm.lead`), `campo_nao_declarado` (inclusive `res_model_id`), `campo_obrigatorio_ausente` (sem `res_id`), `idempotency_key_ausente`/`idempotency_key_invalida`; `dry_run` que **não** escreveu; replay da mesma chave criando a **segunda** atividade (lacuna do `E02-T02`, medida: 1 → 3 registros contando o replay); chave **sem escrita** no documento ancorado → `403 acesso_negado` sem criar |
+| auditoria (passo 3c) | **12 linhas `TF_API_AUDIT` para 12 chamadas autenticadas**; nenhum `Bearer`, nenhuma chave, nenhum payload de negócio na trilha; a recusa por ACL também deixa linha |
+| guarda de ambiente (passo 3d) | ambiente trocado para `homologacao` **pelo ORM** e servidor **reiniciado depois** → `503 ambiente_nao_permitido`, trilha nomeando o código, nada escrito |
+| contrato (passo 4) | **1 rota**, `auth='bearer'`, só `POST`, **0 SQL** na API, motor puro; o override presente com `_inherit = "mail.activity"`, `res_model_id`, `tf_idempotency_key`, `tf_correlation_id`; política lida: `tipo=escrita chave=True acao=criar identidade=(nenhuma) fixos={"res_model": "res.partner"} obrigatorios=res_id id_interno=False ambientes=dev` |
+| limpeza (AC8) | banco, container Postgres, rede e diretório de configuração descartáveis removidos; dev com os **mesmos 4 bancos** antes e depois; `homolog`/`prod` com 0 arquivo; `/opt/tre/repo` intocado |
+| **resultado** | **`RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas)`**, exit 0 |
+
+**Dentes (harness fail-closed):** **`ATIVIDADE_CRIAR_DENTE_OK (4 provas + 2 controles do próprio
+harness, 0 falhas)`**, exit 0 — cada mutação numa cópia própria do módulo, com a mutação conferida
+**antes** de medir e o item esperado conferido entre os reprovados:
+
+| dente | mutação | sub-run | item que reprovou |
+| --- | --- | --- | --- |
+| 1 | política **sem** a operação `atividade_criar` | `94 itens, 36 falhas` | `atividade_criar nao declarada como escrita com chave` |
+| 2 | política **sem o valor fixo** da âncora (`valores_fixos` = `{}`) | `94 itens, 41 falhas` | `ancora divergente (crm.lead) -> HTTP 422 campo_fixo_divergente` |
+| 3 | controlador **sem o ramo de criação** | `94 itens, 13 falhas` | `a criacao nao devolveu id de atividade` |
+| 4 | **módulo sem a tradução da âncora** (`models/mail_activity.py`) | `94 itens, 18 falhas` | `ancora gravada diferente` (item de SQL) |
+
+Guarda externa: o artefato real saiu **intacto** (33 arquivos, `sha256 6a7ca438…` antes e depois).
+O dente 4 é o deste card: ele é a prova de que a tradução da âncora — a única linha de código novo —
+**não é decorativa**.
+
+**Rodadas anteriores (ficam na VPS com os `FALHOU` originais):** `r1`
+(`/opt/tre/evid-t_cb615018-r1`) abortou na suíte do Odoo com `1 failed of 166 tests` — o item 16, de
+ACL, mandava a chave no **corpo** em vez do cabeçalho e media o envelope, não a ACL; `r2`
+(`/opt/tre/evid-t_cb615018-r2`, dentes verdes com 4 provas) mediu `119 itens, 1 falha` — o item de
+contrato do passo 4 casava `idempotency=True` enquanto o resumo que ele mesmo monta imprime
+`chave=True`. Os dois defeitos eram do **próprio aceite**, e ambos foram consertados e remedidos na
+`r3`, que é a rodada que mede o artefato entregue.
+
+**sha256 do conteúdo versionado (commit `e9f4c47`, conferido pelo `tester` contra o próprio
+`git archive`):** política `d15f7e0a…`, `models/mail_activity.py` `33d520ee…`, `models/__init__.py`
+`808687cb…`, `__manifest__.py` `fc02aedc…`, `tests/test_atividade_criar.py` `d2ff36f2…`,
+`tests/__init__.py` `15641b44…`, `scripts/odoo/verificar-atividade-criar.sh` `8317a501…`,
+`scripts/odoo/testar_motor_api.py` `a8f238ec…`, `scripts/odoo/preparar_api_teste.py` `435af3c6…`,
+`scripts/verificar_estrutura.sh` `37c0d783…`, `api/motor.py` `2a79c952…` e
+`controllers/api_controlada.py` `b8c53117…` (**este card não tocou nem o motor nem o controlador**:
+`git diff` contra a base consolidada da onda é vazio nos dois).
+
+**Logs brutos (agente, na VPS):** `/opt/tre/evid-t_cb615018-r3/` — `aceite.out`, `dente.out`,
+`logs-aceite/` (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+`3-preparo-sem-escrita.log`, `3b-servidor.log`, `3d-*.log`) e `logs-dente/`
+(`dente-{1,2,3,4}-*.out`).
+
+**Segredos:** nenhum valor de credencial neste runbook e nenhum no repositório (`scripts/secret_scan.sh`
+= PASS). As duas chaves da fase HTTP nasceram **na VPS**, em arquivos `600` dentro do diretório
+descartável do preparo, lidas pelo `curl` por arquivo de configuração (nunca em `ps`, stdout ou log),
+e morreram com o diretório.
+
+**Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
+(perfil `tester`) e a homologação (estágio 7) é do Anderson.
+
