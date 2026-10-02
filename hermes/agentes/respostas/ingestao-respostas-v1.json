@@ -1,0 +1,241 @@
+{
+  "versao": "ingestao-respostas-v1",
+  "componente": {
+    "nome": "ingestao_respostas",
+    "card": "TRE-W6-E05-T01",
+    "arquivo": "hermes/agentes/respostas/ingestao_respostas.py",
+    "papel": "ingerir as mensagens da caixa pelo primitivo de leitura do Titan IMAP (W6-E01-T02), classificar por regra declarada e gravar a interacao em sales_intelligence.interactions (+ trilha de idempotencia em sync_events)"
+  },
+  "vocabulario": {
+    "response_category": [
+      "INTERESSE",
+      "SEM_INTERESSE",
+      "OPT_OUT",
+      "BOUNCE",
+      "AUTO_RESPOSTA",
+      "RUIDO",
+      "INDEFINIDO",
+      "NAO_RESPOSTA"
+    ],
+    "intent": [
+      "PEDIDO_DE_CONVERSA",
+      "RECUSA",
+      "DESCADASTRO",
+      "FALHA_DE_ENTREGA",
+      "RESPOSTA_AUTOMATICA",
+      "RUIDO_COMERCIAL"
+    ],
+    "sentiment": [
+      "POSITIVO",
+      "NEUTRO",
+      "NEGATIVO"
+    ],
+    "observacao": "O Data Contract V1 define as COLUNAS (interactions.response_category/intent/sentiment) mas nao fecha o vocabulario delas: o vocabulario desta versao vive aqui, e categoria fora desta lista RECUSA (CONTRATO_INVALIDO) em vez de ser inventada pelo codigo.",
+    "nao_persistidas": {
+      "NAO_RESPOSTA": "mensagem que nao e resposta de lead (remetente do proprio dominio, sem remetente). Nao vira linha em interactions; fica registrada em sync_events com status NAO_RESPOSTA."
+    }
+  },
+  "regras": [
+    {
+      "ordem": 1,
+      "categoria": "BOUNCE",
+      "intent": "FALHA_DE_ENTREGA",
+      "sentiment": "NEGATIVO",
+      "confianca": 0.97,
+      "descricao": "relatorio de falha de entrega: cabecalho de relatorio ou remetente/assunto de sistema",
+      "deteccao": {
+        "minimo": 1,
+        "cabecalhos": {
+          "Content-Type": ["multipart/report", "message/delivery-status", "report-type=delivery-status"],
+          "From": ["MAILER-DAEMON", "postmaster", "Mail Delivery"],
+          "Return-Path": ["<>"]
+        },
+        "assunto": [
+          "undeliverable",
+          "mail delivery failed",
+          "delivery status notification",
+          "falha na entrega",
+          "mensagem nao entregue",
+          "returned mail"
+        ]
+      }
+    },
+    {
+      "ordem": 2,
+      "categoria": "AUTO_RESPOSTA",
+      "intent": "RESPOSTA_AUTOMATICA",
+      "sentiment": "NEUTRO",
+      "confianca": 0.95,
+      "descricao": "resposta automatica/ausencia: cabecalho padronizado ou assunto de ausencia",
+      "deteccao": {
+        "minimo": 1,
+        "cabecalhos": {
+          "Auto-Submitted": ["auto-replied", "auto-generated", "auto-notified"],
+          "X-Autoreply": ["yes", "true"],
+          "X-Autorespond": ["*"],
+          "X-Autoresponder": ["*"]
+        },
+        "assunto": [
+          "resposta automatica",
+          "automatic reply",
+          "auto reply",
+          "out of office",
+          "fora do escritorio",
+          "estou de ferias",
+          "away from"
+        ]
+      }
+    },
+    {
+      "ordem": 3,
+      "categoria": "OPT_OUT",
+      "intent": "DESCADASTRO",
+      "sentiment": "NEGATIVO",
+      "confianca": 0.9,
+      "descricao": "pedido explicito de descadastro/nao-contato. Vence sobre qualquer sinal de interesse: errar para menos aqui custa compliance (o oposto do interesse, onde errar para mais custa atencao comercial)",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["corpo", "assunto"],
+        "padroes": [
+          "remov[ae]r? (meu|o meu) (e-?mail|contato|cadastro)",
+          "remova-?me",
+          "n[aã]o quero (mais )?(receber|ser contatado|que me (mande|envie|contate))",
+          "n[aã]o me (contate|contacte|envie|mande)",
+          "pare de (me )?(enviar|mandar|contatar)",
+          "descadastr",
+          "cancelar (o )?(envio|contato|cadastro)",
+          "exclua (meu|o) (e-?mail|contato|nome)",
+          "unsubscribe",
+          "opt-?out",
+          "please remove",
+          "stop (e-?mails|emailing|contacting)",
+          "do not contact"
+        ]
+      }
+    },
+    {
+      "ordem": 4,
+      "categoria": "SEM_INTERESSE",
+      "intent": "RECUSA",
+      "sentiment": "NEGATIVO",
+      "confianca": 0.8,
+      "descricao": "recusa explicita sem pedido de descadastro",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["corpo", "assunto"],
+        "padroes": [
+          "n[aã]o (temos|tenho|h[aá]) interesse",
+          "sem interesse",
+          "n[aã]o [eé] o momento",
+          "n[aã]o temos previs[aã]o",
+          "n[aã]o vai dar",
+          "declin",
+          "not interested",
+          "no,? thanks",
+          "no thanks",
+          "we( are|'re) not interested",
+          "obrigado,? mas (no momento )?n[aã]o"
+        ]
+      }
+    },
+    {
+      "ordem": 5,
+      "categoria": "INTERESSE",
+      "intent": "PEDIDO_DE_CONVERSA",
+      "sentiment": "POSITIVO",
+      "confianca": 0.75,
+      "descricao": "sinal comercial explicito: pedido de conversa, proposta, mais informacao ou agendamento",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["corpo", "assunto"],
+        "diminui_com_citacao": true,
+        "padroes": [
+          "podemos (conversar|marcar|falar|agendar|avaliar)",
+          "podemos nos falar",
+          "tenho interesse",
+          "temos interesse",
+          "quero (entender|saber|conhecer|avancar|ver)",
+          "gostaria de (entender|saber|conhecer|marcar|conversar|receber)",
+          "vamos (conversar|marcar|avancar)",
+          "me (manda|mande|envie) (a |uma )?(proposta|apresentacao|mais (informacoes|detalhes))",
+          "manda(r|me) mais (informacoes|detalhes)",
+          "qual (o )?(melhor|seu) hor[aá]rio",
+          "quando (podemos|voce pode|podemos conversar)",
+          "faz sentido (conversarmos|uma conversa|avancar|para n[oó]s)",
+          "vamos avancar",
+          "agendar (uma )?(call|reuniao|conversa)",
+          "hora marcada",
+          "quero marcar"
+        ]
+      }
+    },
+    {
+      "ordem": 6,
+      "categoria": "RUIDO",
+      "intent": "RUIDO_COMERCIAL",
+      "sentiment": "NEUTRO",
+      "confianca": 0.6,
+      "descricao": "mail comercial nao solicitado, newsletter ou aviso de sistema — nao e o lead respondendo",
+      "deteccao": {
+        "minimo": 1,
+        "cabecalhos": {
+          "List-Unsubscribe": ["*"],
+          "Precedence": ["bulk", "list", "junk"],
+          "X-Campaign-Id": ["*"],
+          "X-Mailer": ["mailchimp", "sendgrid", "rdstation", "hubspot", "mailchimp.com"]
+        },
+        "campos": ["corpo", "assunto"],
+        "padroes": [
+          "newsletter",
+          "promo[cç][aã]o",
+          "oferta especial",
+          "webinar",
+          "convite para (o )?evento",
+          "nossos servi[cç]os de",
+          "aumente suas vendas",
+          "somos especializados em",
+          "orcamento para sua empresa"
+        ]
+      }
+    }
+  ],
+  "exclusoes": [
+    {
+      "motivo": "remetente do proprio dominio: mensagem NOSSA (copia, eco de thread, aviso interno), nao resposta de lead",
+      "campos": ["remetente_proprio"]
+    },
+    {
+      "motivo": "mensagem sem remetente: nao ha contato a vincular",
+      "campos": ["remetente_vazio"]
+    }
+  ],
+  "persistencia": {
+    "tabela": "sales_intelligence.interactions",
+    "colunas": {
+      "channel": "email",
+      "direction": "INBOUND",
+      "interaction_type": "EMAIL_RESPOSTA",
+      "content_reference": "identidade da mensagem no primitivo de leitura (UIDVALIDITY:UID)",
+      "content_summary": "corpo limpo (citacao e assinatura removidas), ate 400 caracteres",
+      "response_category": "veredito da regra que casou (ou INDEFINIDO com confianca 0)",
+      "intent": "intencao declarada na regra",
+      "sentiment": "sentimento declarado na regra",
+      "ai_confidence": "confianca declarada na regra (sem LLM: e a forca da regra, nao um score de modelo)"
+    },
+    "idempotencia": {
+      "tabela": "sales_intelligence.sync_events",
+      "chave": "resposta:<UIDVALIDITY:UID>",
+      "replay": "JA_INGERIDO — nao grava de novo e nao rele o corpo da caixa",
+      "sem_vinculo": "remetente fora de sales_intelligence.contacts: status SEM_VINCULO (organizacao nao e inventada)",
+      "nao_resposta": "status NAO_RESPOSTA"
+    }
+  },
+  "lacunas": [
+    "NAO responde e NAO aprova: envio e W6-E04, aprovacao humana e W6-E03",
+    "NAO escreve no Odoo nem altera contacts.opt_out_email/do_not_contact (dono operacional do contato e o Odoo, Data Contract V1 doc 05 §4): o descadastro e classificado e fica em interactions; a propagacao e do card W6-E06",
+    "NAO apaga, marca, move nem copia nada no servidor de e-mail (EXAMINE + BODY.PEEK do primitivo; o modulo nao contem comando de escrita IMAP)",
+    "NAO usa LLM: classificacao por regra declarada, com evidencia (campos que casaram) e fail-closed em INDEFINIDO",
+    "NAO cria organizacao/contato: remetente desconhecido fica SEM_VINCULO ate existir vinculo real",
+    "NAO toca qualquer tabela alem de interactions e sync_events (somente INSERT; sem DDL, UPDATE, DELETE ou TRUNCATE)"
+  ]
+}

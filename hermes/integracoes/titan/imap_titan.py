@@ -519,6 +519,41 @@ def cabecalhos(conteudo: bytes) -> dict:
     return {nome: (msg.get(nome) or "") for nome in CABECALHOS_DE_ENVELOPE}
 
 
+def cabecalhos_completos(conteudo: bytes) -> dict:
+    """Todos os cabecalhos da mensagem (aditivo, card TRE-W6-E05-T01).
+
+    O envelope do card E01-T02 traz os cinco cabecalhos de triagem; a CLASSIFICACAO precisa de mais
+    que isso: `Content-Type` de relatorio de entrega (bounce), `Auto-Submitted`/`X-Autoreply`
+    (auto-resposta) e `Reply-To`/`Return-Path` sao cabecalhos, nao corpo. Nada muda no envelope
+    existente — este e um campo NOVO do registro de ingesta.
+    """
+    try:
+        msg = BytesParser(policy=policy.default).parsebytes(conteudo)
+    except Exception:  # noqa: BLE001 — cabecalho quebrado de terceiro nao pode derrubar a rodada
+        return {}
+    return {nome: str(valor) for nome, valor in msg.items()}
+
+
+def corpo_html(conteudo: bytes) -> str:
+    """Texto do `text/html` da mensagem (aditivo, card TRE-W6-E05-T01).
+
+    `corpo_texto()` devolve so `text/plain`: mensagem que so tem HTML chegava vazia ao classificador
+    e era classificada como INDEFINIDO por falta de texto, nao por falta de sinal. Aqui o HTML sai
+    cru (quem converte em texto e o consumidor, que declara como faz).
+    """
+    try:
+        msg = BytesParser(policy=policy.default).parsebytes(conteudo)
+    except Exception:  # noqa: BLE001
+        return ""
+    try:
+        if msg.is_multipart():
+            return "".join(parte.get_content() for parte in msg.walk()
+                           if parte.get_content_type() == "text/html")
+        return msg.get_content() if msg.get_content_type() == "text/html" else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def corpo_texto(conteudo: bytes) -> str:
     try:
         msg = BytesParser(policy=policy.default).parsebytes(conteudo)
@@ -668,6 +703,9 @@ def ingerir_mensagem(sessao, uid: str, uidvalidity: str | None) -> dict:
         "tamanho_bytes": len(conteudo),
         "sha256_corpo": hashlib.sha256(conteudo).hexdigest(),
         "corpo_texto": corpo_texto(conteudo),
+        # Campos ADITIVOS do card TRE-W6-E05-T01 (classificacao): o envelope acima nao muda.
+        "corpo_html": corpo_html(conteudo),
+        "cabecalhos_completos": cabecalhos_completos(conteudo),
     }
 
 
