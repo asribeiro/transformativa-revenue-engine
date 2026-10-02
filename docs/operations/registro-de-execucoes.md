@@ -755,3 +755,76 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   `8-secret-scan.log`); anexados ao card.
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card vai para o estagio 6 (perfil
   `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E05-T01 (card `t_0b77a689`): observabilidade de sincronizacao (outbox -> trilha), aceite + dentes
+
+- **Publicacao do autor:** `git archive` do head **`a58c0a7`** do worktree `.worktrees/t_0b77a689` (branch
+  `feature/TRE-W3-E05-T01`, base `a38585d` = `origin/feature/TRE-W3-E02-T02`), publicado em
+  `origin/feature/TRE-W3-E05-T01`; copia propria na VPS em `/opt/tre/evid-t_0b77a689-r6/repo` (nunca a copia
+  de rodada anterior). 14 arquivos novos + `CHANGELOG.md`, `docs/operations/registro-de-execucoes.md` e
+  `scripts/verificar_estrutura.sh` **aditivos** (nenhum arquivo existente alterado em logica: `git diff --stat`
+  da base mostra so' as adicoes).
+- **Aceite (medicao real, banco e n8n DESCARTaveis, banco `tre_obs_263498525799`):** `RESULTADO: OBSERVABILIDADE_SYNC_OK (119 itens, 0 falhas) banco=tre_obs_263498525799 imagens=postgres:16+n8nio/n8n:latest workflow=/opt/tre/evid-t_0b77a689-r6/repo/n8n/workflows/TRE-observabilidade-sync.json` —
+  **OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens itens, 0 falhas** — com 8 estados semeados, cada metrica medida por **dois caminhos
+  independentes** (`psql` direto e pelo workflow no n8n descartavel) e o **retrato das duas tabelas identico
+  antes/depois** de uma rodada completa (somente-leitura provado em execucao real, nao por grep).
+- **Prova de dente:** `RESULTADO: OBSERVABILIDADE_SYNC_DENTE_OK (12/12 dentes cumpridos; juiz conferido; baseline nao mutado verde)` (INFO  resumo do dente: 12/12 dentes cumpridos; baseline=verde; juiz=conferido); baseline **nao mutado** verde
+  (OK    baseline nao mutado: RESULTADO: OBSERVABILIDADE_SYNC_OK (116 itens, 0 falhas) banco=tre_obs_base_2641163 imagens=postgres:16+n8nio/n8n:latest workflow=/opt/tre/evid-t_0b77a689-r6/repo/n8n/workflows/TRE-observabilidade-sync.json); juiz conferido por 8 saidas sinteticas (dente, sem dente, ambiente, ancora, fase de codigo,
+  item indentado, FALHOU vence OK, ambiente quebrado nomeado) + 2 do sha256. Veredito por mutacao:
+  DENTE dead_letter_sem_motivo_nao_conta         DENTE_CUMPRIDO
+  DENTE processado_sem_trilha_nao_conta          DENTE_CUMPRIDO
+  DENTE direcao_nao_declarada_nao_conta          DENTE_CUMPRIDO
+  DENTE sem_conclusao_nao_conta                  DENTE_CUMPRIDO
+  DENTE falha_da_trilha_nao_conta                DENTE_CUMPRIDO
+  DENTE detalhe_perde_o_motivo                   DENTE_CUMPRIDO
+  DENTE contrato_afrouxa_o_limiar                DENTE_CUMPRIDO
+  DENTE sem_fail_closed_de_metrica_ausente       DENTE_CUMPRIDO
+  DENTE sanitizacao_removida                     DENTE_CUMPRIDO
+  DENTE sem_conferencia_cruzada                  DENTE_CUMPRIDO
+  DENTE metrica_nao_declarada_ignorada           DENTE_CUMPRIDO
+  DENTE placeholder_vira_indeterminado           DENTE_CUMPRIDO
+- **Defeito achado pelo proprio aceite e corrigido na raiz (1):** a consulta de detalhes rodava **uma vez por
+  linha de metrica** (o n8n executa no' com entrada multipla uma vez por item): a primeira rodada mediu
+  `outbox_dead_letter (20)` para **um** dead-letter e o estado sem detalhe virou 20 linhas vazias. Corrigido com
+  `executeOnce` nos dois nos Postgres, declarado no contrato (`workflow.consulta_uma_vez`), medido pela lente e
+  travado por item do aceite (`outbox_dead_letter (1)`).
+- **Defeito (2):** `alwaysOutputData` (necessario para a cadeia nao parar sem detalhe) entrega **um item vazio**
+  e o nucleo lia isso como "detalhe com tipo nao declarado" — **toda rodada saudavel fechava INDETERMINADO**
+  (`tipo_de_detalhe_nao_declarado:(vazio)`), ou seja o relatorio gritava exatamente quando estava tudo bem.
+  Corrigido na raiz (linha totalmente vazia = ausencia de detalhe, regra declarada em `detalhes.linha_vazia`),
+  com item proprio na suite e dente proprio (`placeholder_vira_indeterminado`).
+- **Defeito (3), nos proprios itens do aceite:** (a) o item do MOTIVO do dead-letter usava `\(` no padrao BRE —
+  em BRE o parentese e' literal **sem** barra e `\(` e' agrupamento, entao o `grep` **nunca casava** (o aceite
+  r2 reprovou por causa do proprio padrao); (b) o dente do placeholder saiu `MUTACAO_SEM_DENTE` porque a ancora
+  tambem existia num item vizinho que continuava OK. Corrigido na raiz: ancora virou **trecho unico**, o juiz
+  julga **FALHOU antes de OK** e ganhou controle proprio para o caso (7 saidas sinteticas).
+- **Ambiente (4):** durante a rodada r5 o **trio descartavel foi removido por fora** (a VPS e' compartilhada com
+  outra rodada; o n8n passou a devolver `The DNS server returned an error`) e o aceite **se recusou a contar o
+  dente** (`NAO_CONTA`, sem inventar veredito) — o comportamento fail-closed funcionou, mas a mensagem dizia
+  "ancora quebrada". Conserto na raiz em duas frentes: o juiz passou a **nomear ambiente quebrado** (com o motivo
+  real) e o aceite passou a **restabelecer o trio** (mesmo nome, esquema reaplicado, cofre do n8n preservado em
+  bind mount) registrando isso como **item** — re-medido em r6.
+- **Verificadores do projeto (worktree):** `verificar_estrutura.sh` **PASS (0 falhas)** — com os 14 artefatos
+  novos **cobertos** (existencia + versionamento + permissao de execucao); `secret_scan.sh` PASS; `verificar_papeis.sh`
+  PASS (0 falhas).
+- **Ambiente medido:** dev com os **mesmos bancos** antes/depois, `homolog`/`prod` sem arquivo novo, nenhum
+  segredo em claro no cofre do n8n descartavel, `sha256` dos 10 artefatos sob teste **identico ao das guardas**
+  (nada mudou durante a medicao) e nada publicado em nenhuma instancia (o workflow nasce **inativo**).
+- **sha256 dos artefatos sob teste (medidos no aceite):**
+```
+8e85ad20fafeda0be46f9ff938d467b652e7a89d86baea812517cf3146b4207b  n8n/contracts/observabilidade-sync.v1.json
+01eb3059f05293c0640e6c304de1a32fb964557443d47bed36f9c23bf309aaed  n8n/codigo/observabilidade-sync.js
+67dafb99bb4f90b1496155ab900f4b6432d5e00bd200adb7b32e71753b80baa7  n8n/sql/observabilidade-sync.sql
+3001d22770254eab991b3cefaafb1fb313d8c08f802e43911baf385244559916  n8n/sql/observabilidade-sync-dead-letters.sql
+064faff6f3e9ea990dc8401dd7ac46da9cdf5de632b1070a96b3b3ec07f9986d  n8n/workflows/TRE-observabilidade-sync.json
+9c4428466d791d74da26984c3a547ee43bd5d1740fb50c88254066a87d5ba5f7  scripts/n8n/montar_workflow_observabilidade.py
+0a527d5c33bbfccf449d8720c5bdff4b46b777bd83406bfdeac7c71103345d11  scripts/n8n/mutar_workflow_observabilidade.py
+460df0687fa0ac07aaf56e3ad0491e4453fd70394bcc3b61958608b103ef625c  scripts/n8n/conferir_observabilidade.py
+2360e84196829a2a76ba826d9b90f9f60d3ace381c9d1dd3f1d0bbde3c73fb3e  scripts/n8n/testar_observabilidade_sync.js
+f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/massa-observabilidade.sql
+```
+- **Evidencia guardada:** `/opt/tre/evid-t_0b77a689-r6/aceite.out`, `/opt/tre/evid-t_0b77a689-r6/dente.out`,
+  `/opt/tre/evid-t_0b77a689-r6/logs-aceite/` (lente, suite, os 8 estados, sha256 antes/depois, normalizacao) e
+  `/opt/tre/evid-t_0b77a689-r6/logs-dente/` (baseline + 12 mutantes + saida de cada sub-run) na VPS.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil `tester`)
+  e a homologacao (**estagio 7**) e' do Anderson.
