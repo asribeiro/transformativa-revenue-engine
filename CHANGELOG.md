@@ -847,6 +847,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (3 provas + 2 controles do próprio harness, 0 falhas)`**. Runbook:
   `docs/runbooks/odoo-contato-upsert.md`.
 
+### Fixed
+
+- **Cobertura do verificador de estrutura: os artefatos passam a ser DESCOBERTOS, não listados**
+  (`TRE-W3-E03-T01-D01`, defeito da revisão independente do `TRE-W3-E03-T01`; card `t_c77ca273`) —
+  `scripts/verificar_estrutura.sh` mantinha lista fixa e **não citava nenhum** dos artefatos novos do
+  E03-T01: medido na árvore de `597f2dd`, **0 citações de 20** e o verificador daquele commit imprimia
+  `RESULTADO: PASS (0 falhas)`, exit 0, **mesmo com o arquivo fora da árvore versionada** (controle:
+  contrato do n8n removido do disco e model de evento fora do índice — o gate era cego à classe inteira).
+  Conserto pela **opção C — híbrida**, decidida pelo dono (Anderson Ribeiro, 02/10/2026, Telegram "C";
+  ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md`, commit `70e86e3`; linha 100 do
+  `docs/operations/registro-de-aprovacoes.md`): (1) **descoberta automática** por `git ls-files` nas áreas
+  de artefato, com o conjunto coberto acumulado pelas próprias listas do script; (2) **isenções
+  declaradas** em `scripts/estrutura/isencoes.txt` (`padrao | justificativa | responsavel | data` —
+  isenção **sem justificativa é inválida** e reprova); (3) **fail-closed** para artefato versionado que
+  não está coberto nem isento, nomeando o arquivo e como cobrir ou como isentar. Medido depois: os 20
+  artefatos do E03-T01 (os 17 do card + os 2 SQL e o workflow de n8n que a medição achou) e mais 5 achados
+  de ondas **anteriores** entram na cobertura; `PASS (0 falhas)` exit 0; contrato do n8n removido →
+  `FALHOU ausente` exit 1; arquivo **novo** versionado → `FALHOU nao coberto` exit 1; o mesmo arquivo
+  **isentado** → passa **citando a isenção**; isenção sem justificativa → `FALHOU isencao invalida`
+  exit 1. Única isenção: `*/.gitkeep`. Verificadores do projeto no worktree do fix (estrutura,
+  `secret_scan`, papéis, contrato de dados, modos executáveis): todos PASS. Commit de código `2d817bd`.
+
 ### Notas de estado
 
 - **As escritas de negócio passam a entrar na política real** a partir do `TRE-W3-E01-T04`: a

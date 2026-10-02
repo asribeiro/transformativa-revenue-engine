@@ -874,3 +874,60 @@ Rodada executada em 02/10, 03h20 a 04h55 UTC (00h20 a 01h55 na VPS, -03).
   vivem em arquivos `600` dentro do diretório descartável `700` e morrem com ele.
 - **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
   (perfil `tester`) e a homologação (estágio 7) é do Anderson.
+
+## 2026-10-02 — host do Hermes (worktree local do card, sem VPS, sem banco e sem credencial) — TRE-W3-E03-T01-D01 (card `t_c77ca273`): cobertura do verificador de estrutura (opcao C do dono)
+
+- **Objeto:** defeito de cobertura achado pela revisao independente do `TRE-W3-E03-T01` (card
+  `t_85cb2838`): `scripts/verificar_estrutura.sh` citava lista fixa e nao conhecia os artefatos novos do
+  card — o gate imprimia `PASS (0 falhas)` mesmo com qualquer um deles fora da arvore versionada.
+- **Decisao executada (nao tomada aqui):** opcao **C — hibrida**, Anderson Ribeiro, 02/10/2026 (Telegram
+  "C"), ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md` (commit `70e86e3`) e **linha
+  100** de `docs/operations/registro-de-aprovacoes.md`. Nada tocado em producao; nenhuma credencial usada.
+- **ANTES (arvore de `597f2dd`, o commit que a revisao mediu):** `grep -F -c` = **0 de 20** artefatos
+  citados no verificador daquele commit; e o verificador **daquele** commit — com o contrato do n8n
+  **fora do disco** (`mv n8n/contracts/odoo-events-ingest.v1.json`) e com o model de evento **fora do
+  indice** (`git rm --cached odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py`) — imprime
+  `RESULTADO: PASS (0 falhas)` com **exit 0**: o controle que reproduz o defeito. Saidas brutas:
+  `00-antes-grep-citacoes.out`, `01-antes-baseline.out`, `02-antes-mut-a-arquivo-ausente.out`,
+  `03-antes-mut-b-nao-versionado.out`, `04-antes-baseline-restaurado.out` (cada uma com `.rc`;
+  `git status --porcelain` vazio ao fim).
+- **Conserto (commit `2d817bd`, pai `a4c9e0e`):** descoberta automatica por `git ls-files` nas
+  AREAS_DE_ARTEFATO + `COBERTOS` acumulado pelas proprias listas do script (uma linha por bloco de
+  "existe E esta versionado") + arquivo de isencoes versionado `scripts/estrutura/isencoes.txt`
+  (`padrao | justificativa | responsavel | data`) + fail-closed com mensagem que nomeia o arquivo e diz
+  como cobrir ou como isentar.
+- **DEPOIS (mesmo worktree, `bash scripts/verificar_estrutura.sh`):** `RESULTADO: PASS (0 falhas)`
+  **exit 0**; `OK    descoberta de artefatos (opcao C): 96 versionados nas areas, 4 isentos, 0 nao
+  cobertos`; `OK    isencoes declaradas: 1 (revisao obrigatoria na abertura de onda)`.
+- **MUTACOES (cada uma desfeita e remedida ate o baseline verde):** D1 artefato coberto removido ->
+  `FALHOU ausente n8n/contracts/odoo-events-ingest.v1.json` + `FALHOU (1)` exit 1; D2 artefato fora do
+  git -> `FALHOU nao versionado .../tf_evento_outbox.py` exit 1; D3 arquivo **novo** versionado sem
+  cobertura nem isencao -> `FALHOU nao coberto n8n/sql/evidencia-sondagem.sql` + as linhas de
+  `COBRIR:`/`ISENTAR:` exit 1; D4 **o mesmo arquivo isentado** -> `OK    isento
+  n8n/sql/evidencia-sondagem.sql (isencao ...; Anderson Ribeiro, 02/10/2026: ...)` + `PASS` exit 0;
+  D5 isencao **sem justificativa** -> `FALHOU isencao invalida em scripts/estrutura/isencoes.txt (sem
+  justificativa)` exit 1; D6 arquivo de isencoes fora do git -> `FALHOU nao versionado
+  scripts/estrutura/isencoes.txt` exit 1. Saidas: `11-`..`18-depois-*.out` (com `.rc`).
+- **Cobertura por medicao:** entram os 20 artefatos do E03-T01 — os **17** que o card cita (models de
+  evento, `data/ir_cron_tf_eventos.xml`, `tests/test_eventos_odoo_pg.py`, contrato e nucleo do fluxo n8n,
+  5 scripts de `scripts/n8n`, 3 de `scripts/odoo`, runbook) **mais** os 2 SQL e o workflow de n8n que a
+  medicao achou — e mais 5 achados de ondas **anteriores** que tambem estavam fora da rede
+  (`models/mail_activity.py` e 4 runbooks). A unica isencao declarada e' `*/.gitkeep` (arquivo vazio de
+  marcacao de diretorio: nao e' artefato de card).
+- **Verificadores do projeto no worktree do fix:** `verificar_estrutura.sh` PASS (0 falhas) exit 0;
+  `secret_scan.sh` PASS (nenhum segredo versionado) exit 0; `verificar_papeis.sh` PASS (0 falhas) exit 0;
+  `verificar_contrato_dados.py` PASS (26 itens, 0 falhas) exit 0; `verificar-modos-executaveis.sh`
+  MODOS_OK (4 itens, 0 falhas, 2 provas efetivas) exit 0; `bash -n scripts/verificar_estrutura.sh` exit 0.
+- **Identidade do artefato (no commit `2d817bd`):** `scripts/verificar_estrutura.sh` blob
+  `196621a2a4ca8391e3ffd63cb0b7473ca577a04e`, modo `100755`, sha256
+  `85cb3878cee6b7b0132cf7497f4231fff5a134c496c89e47362ef7d6a067bb95`, 325 linhas;
+  `scripts/estrutura/isencoes.txt` blob `bf451094df6af1ad8bdc315a61d1bb1ccb51754c`, modo `100644`,
+  sha256 `870cefdc59dd3d567097dc02589db2de0f6ab92b27a093db62ce26a1c8616fe0`, 16 linhas.
+- **Limite declarado:** a descoberta vale para as AREAS_DE_ARTEFATO do proprio script (modulo odoo,
+  `n8n`, `scripts/n8n`, `scripts/odoo`, `docs/runbooks`, `scripts/estrutura`); area nova entra por edicao
+  explicita, na mesma revisao de onda das isencoes (Risco 2 do ADR). O ADR vive no commit `70e86e3` (a
+  linha do trunk compartilhado onde ele foi registrado), nao neste branch do fix — citado por caminho,
+  commit e linha.
+- **Nada de credencial nesta entrada e nada em producao:** toda a medicao rodou em worktree local do host
+  do Hermes, sem VPS, sem banco e sem token. **Verificacao independente:** quem entrega nao homologa — o
+  veredito deste defeito e' do estagio 6 (perfil `tester`); a homologacao e' do Anderson.
