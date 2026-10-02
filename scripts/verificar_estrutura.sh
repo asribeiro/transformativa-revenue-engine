@@ -149,12 +149,18 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          odoo/addons/transformativa_sales_ai/tests/test_api_controlada.py \
          odoo/addons/transformativa_sales_ai/tests/test_empresa_upsert.py \
          odoo/addons/transformativa_sales_ai/tests/test_contato_upsert.py \
+         odoo/addons/transformativa_sales_ai/tests/test_oportunidade_upsert.py \
+         odoo/addons/transformativa_sales_ai/tests/test_atividade_criar.py \
          odoo/addons/transformativa_sales_ai/tests/politicas/politica_de_teste.json \
          odoo/addons/transformativa_sales_ai/tests/politicas/politica_invalida.json \
          scripts/odoo/verificar-api-controlada.sh scripts/odoo/testar_motor_api.py \
          scripts/odoo/verificar-empresa-upsert.sh docs/runbooks/odoo-empresa-upsert.md \
          scripts/odoo/verificar-contato-upsert.sh docs/runbooks/odoo-contato-upsert.md \
+         scripts/odoo/verificar-oportunidade-upsert.sh \
+         scripts/odoo/verificar-atividade-criar.sh \
          scripts/odoo/preparar_api_teste.py docs/runbooks/odoo-api-controlada.md \
+         docs/runbooks/odoo-oportunidade-upsert.md \
+         docs/runbooks/odoo-atividade-criar.md \
          docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
          docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
          docs/runbooks/odoo-crm-lead-sales-ai.md docs/runbooks/odoo-views-sales-ai.md; do
@@ -169,7 +175,8 @@ for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo
          scripts/odoo/provar_acl_modulo.py scripts/odoo/verificar-crm-lead-odoo.sh \
          scripts/odoo/verificar-res-partner.sh scripts/odoo/verificar-views-sales-ai.sh \
          scripts/odoo/verificar-api-controlada.sh scripts/odoo/testar_motor_api.py \
-         scripts/odoo/verificar-empresa-upsert.sh scripts/odoo/verificar-contato-upsert.sh; do
+         scripts/odoo/verificar-empresa-upsert.sh scripts/odoo/verificar-contato-upsert.sh \
+         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

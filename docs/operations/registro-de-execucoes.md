@@ -578,7 +578,7 @@ docker daemon, entao toda execucao vira esta linha):**
 - **Dentes (rodada 1, o artefato real):** `CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio
   harness, 0 falhas)` — politica sem a operacao reprova o item de AC1 e o aceite cai junto (96 itens,
   34 falhas); controlador sem o portao de ambiguidade deixa o `409` de ser exigido (96 itens, 4
-  falhas); motor sem aplicar o valor fixo deixa o registro-empresa como empresa (96 itens, 4 falhas).
+  falhas); motor sem aplicar o valor fixo deixa o registro-empresa como empresa (96 itens, 1 falha).
   Os 2 controles (sub-run que reprova por ambiente e mutacao inocua) foram reportados como
   **inconclusivo** / **mutacao sem dente**, e a guarda externa confirmou o **mesmo** `sha256` do modulo
   antes e depois das mutacoes.
@@ -606,3 +606,121 @@ docker daemon, entao toda execucao vira esta linha):**
   configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T03-D01 (card `t_1062ccc0`): correcao **documental** do registro e do runbook §11 (defeito achado pela revisao independente do T03)
+
+**O que este card e':** defeito **documental**, achado pela revisao independente (estagio 6, perfil
+`tester`) do `TRE-W3-E01-T03`. **Nenhum arquivo de codigo muda** — o artefato de comportamento
+aprovado (`88323c4`) segue intacto e esta correcao entra **depois** dele, como commit documental no
+branch `feature/TRE-W3-E01-T03` (o card preve esse caminho e pede que o runbook §11 cite o commit
+medido, o que ele passou a fazer).
+
+- **Item 1 — numero medido errado no registro (unico erro factual):** a frase do dente 3 trazia o
+  numero do dente 2 (`96 itens, 4 falha(s)`); passou a `(96 itens, 1 falha)`. Medido por mim, por SSH
+  na VPS, nos **dois** `dente.out` do proprio autor e na reproducao da revisao:
+  `dente-1-sem-operacao.out` -> `RESULTADO: CONTATO_UPSERT_FALHOU (96 itens, 34 falha(s))
+  banco=tre_e01_t03_contato_d1`; `dente-2-sem-portao.out` -> `(96 itens, 4 falha(s))
+  banco=..._d2`; `dente-3-sem-valor-fixo.out` -> `(96 itens, 1 falha(s)) banco=..._d3`. Os dentes 1 e 2
+  estavam corretos e **nao** foram tocados.
+- **Item 2 — lista de logs de etapa inexistentes no runbook §11:** `3-http.log`, `3d-http.log` e
+  `4-contrato.log` nao existem em arvore nenhuma de evidencia (`find /opt/tre -name '3-http.log' -o
+  -name '3d-http.log' -o -name '4-contrato.log'` -> `0`), e o proprio harness nao os escreve. Os logs
+  de etapa que ele realmente escreve (medidos no entregue) sao `0-motor-puro.out`, `1-instalacao.log`,
+  `2-teste.log`, `3-preparo.log`, `3b-servidor.log`, `3d-preparo-homolog.log`, `3d-servidor.log` — e
+  foi essa a lista que passou a valer no runbook. Os tres nomes errados **saem** de la' (a conferencia
+  do card os procura no runbook e espera 0); o registro deles fica **aqui**.
+- **Item 3 — enumeracao incompleta dos arquivos da entrega (mesma §11):** a frase listava 9 dos 11
+  arquivos conferidos por `sha256`; passou a nomear os **11** — faltavam
+  `docs/operations/registro-de-execucoes.md` e `scripts/odoo/testar_motor_api.py`.
+- **Convencao da casa (citar o commit medido):** o §11 passou a nomear o commit medido (`88323c4`) e a
+  registrar que esta correcao entra depois dele, sem tocar codigo; os `sha256` citados na secao sao os
+  do commit medido, e os dois arquivos tocados aqui divergem por construcao (eram justamente os que
+  carregavam as duas afirmacoes erradas).
+- **Conferencia depois do conserto (os greps do card, medidos nesta rodada):** no registro de
+  execucoes, a frase do dente 3 deixou de trazer o numero do dente 2 (agora mede `(96 itens, 1 falha)`)
+  e a do dente 2 segue intacta (`96 itens, 4 falha(s)`) — o padrao que o card manda conferir casa uma
+  linha so'; no runbook, **0** ocorrencias dos tres nomes de log removidos e **presentes** as linhas
+  com os logs reais (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+  `3b-servidor.log`, `3d-preparo-homolog.log`, `3d-servidor.log`).
+- **Diff:** so' `.md` — `git diff --name-only` = `docs/operations/registro-de-execucoes.md`,
+  `docs/runbooks/odoo-contato-upsert.md`.
+- **Publicacao para conferencia externa:** o commit documental e' publicado por `git archive` em
+  `/opt/tre/rev-t_1062ccc0-d01` (copia do commit, sem build e sem Odoo), para quem quiser conferir
+  fora do worktree.
+- **Verificacao independente:** quem conserta nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`); a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-01 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T04 (card `t_8b2ed1b7`): operacao de escrita de negocio `oportunidade_upsert` (espelho da oportunidade canonica em `crm.lead`)
+
+Rodada executada de 01/10 21h35 a 22h20 na VPS (-03); 02/10 00h35 a 01h20 UTC.
+
+- **O que foi executado:** aceite completo e provas de dente, na VPS do dev, a partir do checkout
+  publicado por `git archive` do commit medido — `/opt/tre/evid-t_8b2ed1b7-r7/repo`, commit
+  **`c0a248b590a983fc9a2d5e6b1b719285bd58a13b`** (`feature/TRE-W3-E01-T04`). Comando:
+  `sudo -n env TRE_LOG_DIR=/opt/tre/evid-t_8b2ed1b7-r7/logs-aceite bash scripts/odoo/verificar-oportunidade-upsert.sh`
+  e, em seguida, o mesmo com `--prova-de-dente`. **Tem de rodar como root** — a dupla descartável
+  exige `chown` do `odoo.conf` para o uid 100 do container `odoo:19.0` (foi a falha da rodada 1).
+- **Aceite (rodada `r7`):** `RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)`, exit 0 —
+  suíte pura `MOTOR_API_OK (68 itens, 0 falhas)`; instalação em banco limpo
+  `tre_e01_t04_oportunidade` (`ir_module_module.state = installed`); `0 failed, 0 error(s) of 109
+  tests` (piso 109; os **27** testes novos de `test_oportunidade_upsert.py` presentes no log); fase
+  HTTP real medida por `curl` **de fora do processo** (401 sem token e com token inválido; operação
+  declarada como `escrita` na `1.1.0`; `criar` na primeira chamada e `atualizar` na segunda, com o
+  mesmo `id`; recusas nomeadas `campo_nao_declarado`/`campo_obrigatorio_ausente`/`valor_invalido`/
+  `idempotency_key_ausente`/`idempotency_key_invalida`/`payload_invalido`/`operacao_nao_declarada`
+  404, todas sem criar registro); **leitura por SQL** no banco (1 registro por UUID depois de 3
+  chamadas; espelho com `name`, `tf_idempotency_key`, `tf_correlation_id`, `tf_next_best_action`;
+  `stage_id` e `expected_revenue` de dono do Odoo **idênticos antes e depois**; dois leads
+  homônimos seguem dois registros e o upsert pelo UUID de um **não** toca o outro; o lead nasce sob
+  o usuário de integração); **18 linhas `TF_API_AUDIT` para 18 chamadas autenticadas** (as 2 sem
+  token válido param no Odoo antes do controlador), sem chave, sem `Bearer` e sem payload — nem o
+  payload plantado, que é medido de volta na resposta; guarda de ambiente do ADR-005 **na escrita**,
+  com o ambiente trocado para `homologacao` **pelo ORM** e o servidor **reiniciado depois** da troca
+  (`503 ambiente_nao_permitido`, nada escrito); e limpeza com dev/homolog/prod medidos antes e
+  depois.
+- **Dentes (harness fail-closed):** `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas)`,
+  exit 0 — dente 1 (cópia da política **sem** a operação) → `FALHOU (108 itens, 47 falhas)`, com o
+  item esperado reprovado e **61 itens medidos**; dente 2 (cópia do motor **sem** a checagem de campo
+  na escrita) → `FALHOU (108, 10)`, item esperado, **98 medidos**; dente 3 (cópia do controlador
+  **sem** o upsert por identidade) → `FALHOU (108, 12)`, item esperado, **96 medidos** — com dois
+  registros no mesmo UUID a terceira chamada é recusada com `valor_ambiguo` (a API não escolhe
+  registro por conta própria). Guarda externa: o artefato real saiu intacto (29 arquivos,
+  `sha256 2f95f8827576e95658e007bc809c36519fc368a7fb1499e39d4e64a95738a6cd`). Cada prova confere
+  **antes** que a mutação foi aplicada, roda o aceite de verdade e exige **o item esperado** entre
+  os reprovados; prova que mede menos de 20 itens, que não reprova ou que reprova por outro motivo
+  **reprova o harness**.
+- **Defeitos encontrados e consertados nas rodadas 1..6 (todos em código meu; cada conserto
+  remedido com a bateria inteira):** (1) rodada como usuário comum → `chown` negado, `odoo.conf`
+  ilegível para o container (`Connection to the database failed`, 13 falhas); (2) `url_open` com
+  `json={}` **vira GET** e o roteador responde `405` antes do controlador (2 itens não mediam nada);
+  (3) **semente criada pelo ORM da suíte é invisível** para a conexão que serve o HTTP — o upsert
+  criava outro registro e 3 itens mediam o oposto do que afirmam; (4) `tf_idempotency_key` é campo
+  **declarado** escrito com o valor enviado, não preenchido pelo envelope (2 itens), e o corpo de
+  criação do verificador não o enviava (1 item de SQL media campo que nunca foi enviado); (5) o
+  extrator de campo `campo()` do verificador não carregava o JSON (`d` indefinido) e **19 itens**
+  comparavam vazio; (6) no harness de dentes, o dente 1 acusava falso `FALHOU` (conferia a ausência
+  da operação por `grep` no arquivo, e a `descricao` da política citava o nome) e os dentes 1 e 3
+  apontavam como item esperado o rótulo do **OK** em vez do rótulo do **FALHOU**. As rodadas
+  `r1..r6` ficam na VPS com os `FALHOU` originais; a rodada que mede o artefato entregue é a `r7`.
+- **O que NÃO foi tocado (medido pelo próprio verificador):** `api/motor.py` (`6a3e52d1…`) e
+  `controllers/api_controlada.py` (`9a52f642…`) com o **mesmo sha256 do E01-T01** — este card não
+  mexeu no motor nem no controlador, só declarou a operação na política (`dccf10a7…`, versão
+  `1.1.0`); a instância do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pé e com
+  os **mesmos 4 bancos** antes e depois; `/opt/tre/homolog` e `/opt/tre/prod` sem nenhum arquivo;
+  nenhum container, rede ou `/tmp` residual `e01t04-*`; `/opt/tre/repo` sem escrita (a cópia medida
+  é o `git archive` do commit em `evid-t_8b2ed1b7-r7`).
+- **Verificadores do projeto (no worktree do commit):** `scripts/verificar_estrutura.sh` → `PASS`
+  RC=0; `scripts/secret_scan.sh` → `PASS` RC=0; `scripts/verificar_papeis.sh` → `PASS (0 falhas)`
+  RC=0; `python3 scripts/odoo/testar_motor_api.py` → `MOTOR_API_OK (68 itens, 0 falhas)` RC=0. O
+  `verificar_estrutura.sh` foi estendido para exigir **versionados** a suíte nova e o runbook, e
+  **executável** o verificador do card.
+- **Logs brutos (agente, na VPS):** `/opt/tre/evid-t_8b2ed1b7-r7/` — `aceite.out`, `dente.out`,
+  `logs-aceite/` (`0-motor-puro.out`, `1-instalacao.log`, `2-teste.log`, `3-preparo.log`,
+  `3b-servidor.log`) e `logs-dente/` (`dente-{1,2,3}-*.out`).
+- **Segredos:** nenhum valor nesta entrada e nenhum no repositório. A chave de API da fase HTTP
+  nasceu **na VPS**, em arquivo `600` dentro do diretório descartável do preparo, lida pelo `curl`
+  por arquivo de configuração (não aparece em `ps`, stdout nem log) e morreu com o diretório; a
+  chave do passo 3d foi gerada do mesmo jeito depois da troca de ambiente.
+- **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
+  (perfil `tester`) e a ratificação da versão 19.0 / homologação (estágio 7) é do Anderson. A
+  publicação do módulo na cópia operacional `/opt/tre/repo` segue como pendência herdada do E03-T01.

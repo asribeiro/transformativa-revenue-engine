@@ -68,6 +68,26 @@ def recusa(motor, funcao, codigo_esperado, rotulo):
     falhou("%s -> NAO recusou (esperado %s)" % (rotulo, codigo_esperado))
 
 
+def recusa_uma_de(motor, funcao, codigos_esperados, rotulo):
+    """Recusa nomeada aceitando MAIS DE UM codigo — para o item cujo NOME do codigo esta em transicao.
+
+    ANCORA:CODIGO_EM_TRANSICAO — a identidade ausente na escrita e' `campo_obrigatorio_ausente` na
+    forma do E01-T01 e passa a `identificador_ausente` com a forma do E01-T02 (lista ordenada de
+    identidades). Nas duas formas a garantia e' a mesma: 422 NOMEADO e nada escrito. O item cobra a
+    garantia, nao o nome do dia (item datado quebra no dia em que o card seguinte entra).
+    """
+    try:
+        funcao()
+    except motor.ErroApi as erro:
+        if erro.codigo in codigos_esperados:
+            ok("%s -> recusa %s (HTTP %d)" % (rotulo, erro.codigo, erro.http))
+        else:
+            falhou("%s -> recusou com %s (esperado um de: %s)"
+                   % (rotulo, erro.codigo, ", ".join(codigos_esperados)))
+        return
+    falhou("%s -> NAO recusou (esperado um de: %s)" % (rotulo, ", ".join(codigos_esperados)))
+
+
 def politica_de_teste(caminho_de_teste, base):
     """Copia a politica real trocando o que o teste precisa, sem tocar no arquivo versionado."""
     with open(base, "r", encoding="utf-8") as fh:
@@ -118,21 +138,32 @@ def main():
     verificar("sistema_capacidades" in nomes and "crm_registros_ler" in nomes,
               "politica real declara as operacoes de leitura da porta unica: %s" % ", ".join(nomes))
     # ANCORA:ESCRITA_DECLARADA_TEM_CONTRATO — o que NAO expira: toda operacao de escrita declarada
-    # (de qualquer card) exige chave de idempotencia e identidade declarada. E' a garantia que o
-    # E02-T02 e o E04-T01 (reconciliacao) vao continuar lendo.
+    # (de qualquer card) exige chave de idempotencia; e a IDENTIDADE e' cobrada POR ACAO, nao por
+    # operacao. Quem casa registro (`upsert`/`atualizar`) tem de declarar POR ONDE casa
+    # (`campo_de_identidade` — forma do E01-T01 — ou `campos_de_identidade`, lista ordenada do
+    # E01-T02); quem so' CRIA (`criar`, caso do `atividade_criar`, TRE-W3-E01-T05) NAO pode declarar
+    # identidade: a atividade nasce uma vez por chamada e quem garante nao duplicar e' a dedup por
+    # chave (E02-T02). E' a garantia que o E02-T02 e o E04-T01 (reconciliacao) vao continuar lendo.
     escritas = [op for op in politica["operacoes"] if op.get("tipo") == "escrita"]
-    sem_contrato = [
-        op.get("nome") for op in escritas
-        if not op.get("requer_idempotency_key")
-        or not any(
-            declaracao.get("campo_de_identidade") or declaracao.get("campos_de_identidade")
-            for declaracao in (op.get("modelos") or {}).values()
-            if isinstance(declaracao, dict)
+    problemas = []
+    for op in escritas:
+        declaracoes = [d for d in (op.get("modelos") or {}).values() if isinstance(d, dict)]
+        casa_registro = [d for d in declaracoes if d.get("acao") in ("upsert", "atualizar")]
+        identidade_declarada = any(
+            d.get("campo_de_identidade") or d.get("campos_de_identidade") for d in declaracoes
         )
-    ]
-    verificar(bool(escritas) and not sem_contrato,
-              "toda operacao de escrita declarada exige idempotency_key e identidade: %s"
-              % ", ".join(op.get("nome") for op in escritas))
+        if not op.get("requer_idempotency_key"):
+            problemas.append("%s: sem exigir idempotency_key" % op.get("nome"))
+        if casa_registro and not all(
+            d.get("campo_de_identidade") or d.get("campos_de_identidade") for d in casa_registro
+        ):
+            problemas.append("%s: casa registro sem declarar a identidade" % op.get("nome"))
+        if not casa_registro and identidade_declarada:
+            problemas.append("%s: acao de criacao nao declara identidade" % op.get("nome"))
+    verificar(bool(escritas) and not problemas,
+              "toda escrita exige idempotency_key e a identidade e' cobrada por ACAO (%s): %s"
+              % (", ".join(op.get("nome") for op in escritas),
+                 "; ".join(problemas) or "sem problema"))
 
     print("== validacao da politica (politica ruim nao serve nada) ==")
     casos = [
@@ -491,6 +522,169 @@ def main():
         ambiente="dev")
     verificar(plano["dry_run"] is True and plano["acao"] == "upsert",
               "dry_run do contato e' plano valido (quem nao escreve e' o controlador)")
+    print("== operacao de negocio da oportunidade (oportunidade_upsert) ==")
+    # Os itens abaixo leem a DECLARACAO do artefato (`api/politica_api.json`) em vez de repetir
+    # literais: e' a mesma licao dos itens datados — o que se cobra e' a garantia da declaracao.
+    op_upsert = motor.operacao(politica, "oportunidade_upsert")
+    verificar(op_upsert is not None and op_upsert.get("tipo") == "escrita",
+              "politica real declara oportunidade_upsert como escrita")
+    if op_upsert:
+        declaracao = op_upsert["modelos"]["crm.lead"]
+        campos = declaracao["campos"]
+        verificar(op_upsert.get("requer_idempotency_key") is True,
+                  "a escrita declara 'requer_idempotency_key' (doc 06 §7)")
+        verificar(declaracao.get("acao") == "upsert"
+                  and (declaracao.get("campo_de_identidade")
+                       or (declaracao.get("campos_de_identidade") or [None])[0])
+                  == "tf_opportunity_id",
+                  "identidade da operacao e' o UUID canonico tf_opportunity_id (contrato §3)")
+        # ANCORA:ITEM_DATADO — a lista de campos de DONO do Odoo vem do contrato §2 (estagio, valor,
+        # won/lost, atividade, reuniao, proposta); o que nao expira e' a FRONTEIRA: nenhum deles
+        # pode ser escrevivel pela operacao de espelho da inteligencia.
+        donos_do_odoo = ("stage_id", "expected_revenue", "probability", "date_deadline",
+                         "date_closed")
+        interseccao = sorted(set(campos) & set(donos_do_odoo))
+        verificar(not interseccao,
+                  "fronteira de dono (contrato §2): nenhum campo de dono do Odoo em 'campos' (%s)"
+                  % (interseccao or "nenhum"))
+        verificar("tf_priority_tier" not in campos,
+                  "campo derivado tf_priority_tier nao e' escrevivel (compute de tf_priority_score)")
+        verificar("name" in declaracao.get("campos_obrigatorios", []),
+                  "name e' obrigatorio na operacao (create sem nome falha fundo no ORM)")
+
+    UUID_MOTOR = "0f8fad5b-d9cb-469f-a165-70867728950e"
+    plano = motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0001", "correlation_id": "tre-e01-t04-motor",
+         "parametros": {"valores": {"name": "Oportunidade do motor",
+                                    "tf_opportunity_id": UUID_MOTOR,
+                                    "tf_priority_score": 91.5}}},
+        ambiente="dev")
+    verificar(plano["acao"] == "upsert" and plano["modelo"] == "crm.lead"
+              and plano["valores_de_identidade"].get("tf_opportunity_id") == UUID_MOTOR,
+              "plano de upsert da oportunidade montado com a identidade canonica")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0002",
+         "parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR,
+                                    "stage_id": 1}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo de dono do Odoo (stage_id) na escrita")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0003",
+         "parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR,
+                                    "tf_priority_tier": "A+"}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo derivado (tf_priority_tier) na escrita")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0004",
+         "parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR,
+                                    "is_company": True}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo de outro modelo (is_company, do res.partner) na escrita")
+    recusa_uma_de(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0005",
+         "parametros": {"valores": {"name": "sem identidade"}}}, ambiente="dev"),
+        ("campo_obrigatorio_ausente", "identificador_ausente"),
+        "upsert sem o UUID canonico no pedido")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR}}}, ambiente="dev"),
+        "idempotency_key_ausente", "escrita da oportunidade sem idempotency_key")
+    plano = motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0006", "dry_run": True,
+         "parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR}}}, ambiente="dev")
+    verificar(plano["dry_run"] is True and plano["acao"] == "upsert",
+              "dry_run da operacao de negocio e' planejado (quem descreve e nao escreve e o controlador)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "oportunidade_upsert",
+        {"idempotency_key": "tre-e01-t04-motor-0007",
+         "parametros": {"valores": {"name": "x", "tf_opportunity_id": UUID_MOTOR}}},
+        ambiente="homologacao"),
+        "ambiente_nao_permitido",
+        "escrita da oportunidade fora do ambiente permitido (ADR-005)")
+
+    # ------------------------------------------------------------------ atividade (E01-T05)
+    print("== operacao de escrita da ATIVIDADE (atividade_criar) ==")
+    # ANCORA:ANCORA_E_VALOR_FIXO — a atividade nasce em documento DECLARADO na politica: o chamador
+    # nao escolhe o modelo-alvo (`res_model` e' valor fixo) e nao declara identidade (a acao e' de
+    # criacao). O que se cobra aqui e' a GARANTIA da declaracao, lida do artefato — nunca um literal
+    # que expira quando a proxima operacao entrar.
+    op_atividade = motor.operacao(politica, "atividade_criar")
+    verificar(op_atividade is not None and op_atividade.get("tipo") == "escrita",
+              "politica real declara atividade_criar como escrita")
+    if op_atividade:
+        decl_atividade = op_atividade["modelos"]["mail.activity"]
+        verificar(op_atividade.get("requer_idempotency_key") is True,
+                  "a escrita da atividade declara 'requer_idempotency_key' (doc 06 §7)")
+        verificar(decl_atividade.get("acao") == "criar",
+                  "acao declarada e' 'criar' (a atividade nasce uma vez por chamada)")
+        verificar(decl_atividade.get("valores_fixos") == {"res_model": "res.partner"},
+                  "a ANCORA e' valor FIXO declarado na politica: %r"
+                  % (decl_atividade.get("valores_fixos"),))
+        verificar("res_model" in decl_atividade["campos"]
+                  and "res_model" not in decl_atividade.get("campos_obrigatorios", []),
+                  "res_model e' declarado e NAO e' obrigatorio do chamador (quem decide e' a politica)")
+        verificar(decl_atividade.get("campos_obrigatorios") == ["res_id"],
+                  "res_id e' o campo obrigatorio da operacao: %r"
+                  % (decl_atividade.get("campos_obrigatorios"),))
+        verificar(not (decl_atividade.get("campo_de_identidade")
+                       or decl_atividade.get("campos_de_identidade")),
+                  "acao 'criar' NAO declara identidade (quem garante nao duplicar e' a chave, E02-T02)")
+    PARCEIRO = 7
+    plano_atividade = motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0001", "correlation_id": "tre-e01-t05-motor",
+         "parametros": {"valores": {"res_id": PARCEIRO, "summary": "Ligar para o decisor"}}},
+        ambiente="dev")
+    verificar(plano_atividade["acao"] == "criar" and plano_atividade["modelo"] == "mail.activity",
+              "plano de criacao da atividade montado sobre mail.activity")
+    verificar(plano_atividade["valores"]["res_model"] == "res.partner",
+              "o valor fixo declarado entra no plano sem o chamador mandar (res_model=res.partner)")
+    verificar(plano_atividade["valores_de_identidade"] == {},
+              "plano de criacao NAO carrega identidade (a acao nao casa registro)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0002",
+         "parametros": {"valores": {"summary": "atividade sem ancora"}}}, ambiente="dev"),
+        "campo_obrigatorio_ausente", "atividade sem res_id")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0003",
+         "parametros": {"valores": {"res_id": PARCEIRO, "res_model": "crm.lead"}}}, ambiente="dev"),
+        "campo_fixo_divergente", "chamador tentando decidir a ANCORA (res_model)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0004",
+         "parametros": {"valores": {"res_id": PARCEIRO, "res_model_id": 1}}}, ambiente="dev"),
+        "campo_nao_declarado", "chamador tentando a ancora pelo id interno (res_model_id)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0005",
+         "parametros": {"valores": {"res_id": PARCEIRO, "note": "<p>texto</p>"}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo fora da declaracao da atividade (note)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"parametros": {"valores": {"res_id": PARCEIRO}}}, ambiente="dev"),
+        "idempotency_key_ausente", "escrita da atividade sem idempotency_key")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0007",
+         "parametros": {"identificador": str(PARCEIRO),
+                        "valores": {"res_id": PARCEIRO}}}, ambiente="dev"),
+        "payload_invalido", "'identificador' escalar em operacao que NAO declara identidade")
+    plano_atividade_dry = motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0008", "dry_run": True,
+         "parametros": {"valores": {"res_id": PARCEIRO}}}, ambiente="dev")
+    verificar(plano_atividade_dry["dry_run"] is True and plano_atividade_dry["acao"] == "criar",
+              "dry_run da atividade e' plano valido (quem nao escreve e' o controlador)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "atividade_criar",
+        {"idempotency_key": "tre-e01-t05-motor-0009",
+         "parametros": {"valores": {"res_id": PARCEIRO}}}, ambiente="homologacao"),
+        "ambiente_nao_permitido", "escrita da atividade fora do ambiente permitido (ADR-005)")
 
     print("== operacao de fonte ==")
     plano = motor.montar_plano(politica, "sistema_capacidades", {}, ambiente="dev")
@@ -502,6 +696,11 @@ def main():
     verificar(sorted(op["nome"] for op in capacidades["operacoes"])
               == sorted(motor.operacoes_declaradas(politica)),
               "capacidades listam exatamente as operacoes declaradas na politica em vigor")
+    # ANCORA:ITEM_DATADO — comparar com o proprio artefato, nao com uma lista literal: a lista de
+    # operacoes cresce a cada card da onda W3-E01 (E01-T02..T05).
+    verificar(sorted(op["nome"] for op in capacidades["operacoes"])
+              == sorted(motor.operacoes_declaradas(politica)),
+              "capacidades listam exatamente as operacoes declaradas na politica")
     recusa(motor, lambda: motor.montar_plano(
         politica, "sistema_capacidades",
         {"parametros": {"modelo": "res.partner"}}, ambiente="dev"),

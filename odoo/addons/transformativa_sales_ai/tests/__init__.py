@@ -14,3 +14,9 @@ from . import test_empresa_upsert
 
 # Card TRE-W3-E01-T03 (`t_e6e3b0b3`): aceite da operacao de escrita de negocio `contato_upsert`.
 from . import test_contato_upsert
+
+# Card TRE-W3-E01-T04 (`t_8b2ed1b7`): aceite da operacao de escrita de negocio `oportunidade_upsert`.
+from . import test_oportunidade_upsert
+
+# Card TRE-W3-E01-T05 (`t_cb615018`): aceite da operacao de escrita de negocio `atividade_criar`.
+from . import test_atividade_criar

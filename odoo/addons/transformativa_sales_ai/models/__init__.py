@@ -13,3 +13,7 @@ from . import crm_lead
 # Card TRE-W2-E05-T01: `tf.process.opportunity`, a oportunidade canonica do lado Odoo
 # (Data Contract V1.0, secao 2: `opportunity_owner: Odoo`).
 from . import tf_process_opportunity
+
+# Card TRE-W3-E01-T05 (`t_cb615018`): a ANCORA da atividade (`res_model` por nome de modelo, que o
+# Odoo 19 nao escreve direto — campo related-readonly) e os dois campos de rastreio da atividade.
+from . import mail_activity

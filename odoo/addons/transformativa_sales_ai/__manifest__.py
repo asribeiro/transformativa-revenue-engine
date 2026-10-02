@@ -52,6 +52,10 @@ medido em dev; homologacao e producao exigem aprovacao humana registrada.
         # alvo das customizacoes (crm.lead / crm.stage / crm.team) — declarado desde a base
         # para que a dependencia seja explicita e resolvivel no ambiente de dev
         'crm',
+        # Card TRE-W3-E01-T05: o modulo agora INHERITA `mail.activity` (ancora da atividade e
+        # campos de rastreio). O `crm` ja' traz o `mail`, mas dependencia de modelo herdado se
+        # declara: dependencia implicita e' a que quebra quando o de cima mudar.
+        'mail',
     ],
     'data': [
         # Grupos, regras de registro (carteira × tenant) e ACLs do modelo do módulo.
