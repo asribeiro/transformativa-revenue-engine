@@ -1772,3 +1772,50 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Limites declarados no doc de
   arquitetura (§6): a cadeia medida são os cinco agentes W4 em `dev`; W5 (score/tier/NBA), Odoo e Titan não
   estão no caminho.
+
+## 2026-10-02 — repositório TRE (worktree `t_11815e63`) + VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E02-T01 (card `t_11815e63`): Automation Fit Score v1 (score `AUTOMATION_FIT`)
+
+- **Base (agente):** `feature/TRE-W5-E02-T01` criada do head aprovado do card pai `TRE-W4-E06-T01` (`63d711c`),
+  head do card `d877402` (6 commits: componente, contrato legível por máquina, suíte, aceite, docs, portão).
+- **Passo 0 (agente, sem banco e sem rede, na própria máquina do Hermes):**
+  `python3 scripts/agentes/verificar_agente_automation_fit.py --autoteste` →
+  **`AUTOMATION_FIT_SUITE_OK (54 itens, 0 falhas)`** + **`AUTOTESTE OK (22/22 mutações detectadas)`** (cada
+  mutação reprovando **o item esperado**, não só "o aceite falhou") — `RESULTADO FINAL: AUTOMATION_FIT_OK`.
+- **Aceite E2E (agente, na VPS):** `scripts/agentes/teste_automation_fit_aceite.sh --prova-de-dente` no clone
+  `/opt/tre/w5e02t01-final/repo`, container **descartável próprio** `pg-automation-fit-acc` (postgres:16),
+  migration `0001` aplicada em schema limpo → **`ACEITE_AUTOMATION_FIT_001_OK (76 itens, 0 falhas)`**, exit 0,
+  e **prova de dente `DENTE OK (5/5 mutações detectadas, cada uma pelo item esperado)`**: cobertura-ignorada
+  (23 itens reprovados), score-constante (10), idempotencia-sem-o-estado (11), leitura-sem-filtro-de-empresa
+  (37), prod-liberado (4) — **baseline verde antes de cada mutação**. `sha256` conferido na VPS antes do run e
+  **fixado na própria saída**: código sob teste `d07da1562bd9b672f32c26f669c78576f2587d8c2b74e1aff15da8dccb5415fc`,
+  aceite `c0fa1c1500b2b5b315b2363c216460f27b126825cef2e8b5b7d630bc942d5fb6` (idênticos ao worktree do card).
+- **Medido no BANCO (não na narrativa):** rodada 1 sobre 5 empresas → vereditos
+  `CALCULADO=4 JA_CALCULADO=1 REVISAO_IDENTIDADE=1 RECUSADA=4 ERRO=0` e 4 linhas em `scores` com
+  `score_type=AUTOMATION_FIT` / `score_version=automation-fit-v1`, UUID v4, `valid_until` NULL, explicação com
+  os cinco componentes, `inputs` com snapshot + `input_hash`. Replay do MESMO estado (rodada 2) **não duplica**
+  (4 `JA_CALCULADO`, `sync_events` inalterados); **estado novo cria LINHA NOVA** (rodada 3: org A fica com 2
+  linhas, 85,00 preservado e 76,00 novo, cobertura 1,00); rodada 4 replica a 3 sem duplicar.
+  **Discriminação medida (AC8):** 4 faixas — 76,00 · 48,50 · 83,00 · 30,00 — margem de 53 pontos e desvio médio
+  de 20 pontos da constante 50. Fronteiras: `SEM_LASTRO` recusada **sem** escrever score, empresa inexistente /
+  sem identificador forte / identificador inválido recusadas, identidade ambígua vai para a fila humana
+  (`AUTOMATION_FIT_IDENTITY_REVIEW`, 1 `PENDING`) **sem** escrever score. Guardas: `--ambiente prod` recusado
+  nos 5 pedidos (exit 4) sem uma linha escrita e `--planejar` não abre conexão; **zero** escrita em
+  `organizations` (inclusive `data_quality_score`), `signals`, `pain_hypotheses`, `research_runs` e nas demais
+  tabelas. Desfazer: dry-run não apaga; `--confirmo` apaga **só** a linha da rodada (5 → 4) preservando 5
+  empresas, 12 sinais, 4 hipóteses e 40 `agent_runs`, registrando `ROLLBACK` em `sync_events`.
+- **Reprodutibilidade medida:** o aceite rodou **duas vezes** — a primeira em processo desanexado que sobreviveu
+  ao run do harness encerrado por limite de tempo, a segunda **dentro do run `235`** — com saída **byte a byte
+  idêntica** (sha256 da evidência igual), o que torna o aceite **reprodutível**, não apenas determinístico no
+  valor do score.
+- **Evidência guardada:** `/opt/tre/evid-e02t01-aufit-final.out` (sha256
+  `d4f22259405b780c928190f5b8a45f73a7442b305e0159c61417cd1757dcac12`, cópia **idêntica** anexada ao card
+  `t_11815e63`).
+- **Ambiente:** só o container descartável nasceu e foi **removido** (`docker ps -a | grep automation-fit` = 0) e
+  o diretório de trabalho `/tmp/automation-fit-aceite-trabalho` apagado; `proxy-dev` (Up 32h, healthy),
+  `odoo-dev` (Up 32h), `pg-odoo-dev` (Up 33h, healthy) e `pg-sales-dev` (Up 2d) **intactos**; nada em produção.
+  `scripts/verificar_estrutura.sh` → **PASS (0 falhas)**, com os 7 artefatos do card versionados e as duas
+  suítes (`verificar_agente_automation_fit.py`, `teste_automation_fit_aceite.sh`) executáveis.
+- **Limites declarados / não é homologação:** a **fórmula V1** (pesos, cobertura mínima 0,40 e faixas) é
+  proposta do worker — o baseline diz **o que** o score mede, não **como**; o número é reprodutível e
+  auditável, **não** validado comercialmente. Homologação é do Anderson (**estágio 7**); o veredito deste card é
+  do **estágio 6** (revisão independente, perfil `tester`).
