@@ -216,9 +216,23 @@ def main():
     texto_do_workflow = json.dumps(workflow, ensure_ascii=False)
     for proibido in ("xmlrpc", "execute_kw", "/jsonrpc", "psycopg", "res_partner"):
         confere("nenhum caminho paralelo para o Odoo no workflow (%s)" % proibido, proibido not in texto_do_workflow)
-    confere("nenhum host literal no workflow (a base vem do ambiente)",
-            not re.search(r"https?://", texto_do_workflow.replace("https://", "")) or
-            "http://127.0.0.1" not in texto_do_workflow)
+    # Nenhum host literal: a base da porta unica TEM de vir do ambiente. O item vale para o
+    # texto INTEIRO do workflow (inclusive o nucleo/SQL embutidos) e tambem para o parametro
+    # `url` das portas — que ja' e' medido acima por conter `$env.<base_env>` + a rota do
+    # contrato. A versao anterior so' reprovava `http://127.0.0.1`, o que deixava o item MORTO
+    # (medido com `http://host-literal.example:8069/tf/api/v1/...` gravado no parametro `url`:
+    # imprimia OK); corrigido na rodada 2.
+    fora_das_portas = texto_do_workflow
+    for porta in portas:
+        fora_das_portas = fora_das_portas.replace(porta["parameters"].get("url") or "", "")
+    literais_fora = sorted(set(re.findall(r"https?://[^\s\"'\\]+", fora_das_portas)))
+    literais_na_porta = sorted({achado for porta in portas
+                                for achado in re.findall(r"https?://[^\s\"'\\]+",
+                                                         porta["parameters"].get("url") or "")})
+    confere("nenhum host literal no workflow (nem fora da porta unica, nem dentro dela)",
+            not literais_fora and not literais_na_porta,
+            (("fora: %s " % ", ".join(literais_fora[:3])) if literais_fora else "") +
+            (("porta: %s" % ", ".join(literais_na_porta[:3])) if literais_na_porta else ""))
 
     # ---------------------------------------------------------- grafo do no
     alvos = set()

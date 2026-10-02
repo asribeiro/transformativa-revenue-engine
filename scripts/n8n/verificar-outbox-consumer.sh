@@ -37,7 +37,13 @@
 #   ciclo 2  Odoo PARADO -> falha de transporte (RETRY + attempts=1, trilha FAILED)
 #   ciclo 3  Odoo de volta -> o retry entrega (PROCESSED + attempts=2, trilha unica, sem duplicata)
 #   ciclo 4  evento ja no teto de tentativas -> DEAD_LETTER sem chamada e sem escrita
-#   final    contagem de chamadas autenticadas, segredo nos logs, ambiente depois, limpeza
+#   final    contagem de chamadas autenticadas, segredo nos logs, ambiente depois, fecho do
+#            sha256 (fixado nas guardas, reconferido no fim) e limpeza
+#
+# O modo --prova-de-dente e' FAIL-CLOSED: roda primeiro um sub-run NAO mutado (baseline) que
+# tem de ficar verde, depois os 4 mutantes, e so' fecha com DENTE_OK se TODOS os vereditos
+# forem DENTE_CUMPRIDO e os dois juizes (dente e sha256) estiverem conferidos. Qualquer outro
+# veredito (NAO_CONTA / MUTACAO_SEM_DENTE / MUTACAO_NAO_APLICADA) fecha com DENTE_FALHOU e exit 1.
 #
 # Uso (NA VPS, a partir de ARQUIVO — a prova de dente reinvoca o proprio script):
 #   bash scripts/n8n/verificar-outbox-consumer.sh
@@ -153,6 +159,24 @@ resumo() {
 }
 
 # ---------------------------------------------------------------------------
+# sha256 dos artefatos sob teste: fixado nas guardas e RECONFERIDO no fecho, item a item.
+# A reconferencia so' vale com o juiz conferido (`controle_do_juiz_sha`): sem isso o item
+# poderia comparar duas medidas do mesmo nada e sair verde (o registro ja' afirmou isso
+# antes de o item existir — corrigido na rodada 2).
+# ---------------------------------------------------------------------------
+sha256_dos_artefatos() { # $1 = arquivo onde gravar "<sha>  <caminho relativo>"
+    local destino="$1" arquivo
+    : >"$destino"
+    for arquivo in "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$WORKFLOW"; do
+        printf '%s  %s\n' "$(sha256sum "$arquivo" | cut -d' ' -f1)" "${arquivo#"$RAIZ_REPO"/}" >>"$destino"
+    done
+}
+
+veredito_sha256() { # $1=arquivo "antes"  $2=arquivo "depois"  ->  IDENTICO | MUDOU
+    if diff -q "$1" "$2" >/dev/null 2>&1; then echo IDENTICO; else echo MUDOU; fi
+}
+
+# ---------------------------------------------------------------------------
 # --apenas-codigo: lente estrutural (python) + suite do nucleo (node na imagem do n8n)
 # ---------------------------------------------------------------------------
 passo_codigo() {
@@ -233,21 +257,60 @@ controle_do_juiz() {
     fi
 }
 
+controle_do_juiz_sha() { # o item de sha256 nao pode ser vacuO: 2 saidas sinteticas
+    local dir="$1" certos=0
+    printf 'a1  n8n/contracts/outbox-consumer.v1.json\nb2  n8n/codigo/nucleo-outbox-consumer.js\n' >"$dir/sha-antes.txt"
+    cp "$dir/sha-antes.txt" "$dir/sha-igual.txt"
+    printf 'a1  n8n/contracts/outbox-consumer.v1.json\nzz  n8n/codigo/nucleo-outbox-consumer.js\n' >"$dir/sha-mudado.txt"
+    [ "$(veredito_sha256 "$dir/sha-antes.txt" "$dir/sha-igual.txt")" = "IDENTICO" ] && certos=$((certos + 1))
+    [ "$(veredito_sha256 "$dir/sha-antes.txt" "$dir/sha-mudado.txt")" = "MUDOU" ] && certos=$((certos + 1))
+    if [ "$certos" -eq 2 ]; then
+        ok "controle do juiz do sha256 (2 saidas sinteticas: identico e mudado)"
+    else
+        falhou "controle do juiz do sha256 (so' $certos de 2 saidas sinteticas julgadas certo)"
+    fi
+}
+
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e02t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     cabecalho "--prova-de-dente: o aceite tem dentes?"
     controle_do_juiz "$DENTE_DIR"
+    controle_do_juiz_sha "$DENTE_DIR"
+    FALHAS_JUIZ=$FALHAS   # o que os JUÍZES erraram — separado do resto para o veredito ser legivel
+
+    # Controle do proprio controle: o sub-run NAO mutado tem de estar VERDE antes de contar
+    # dente. Sem esta linha, ambiente quebrado devolveria NAO_CONTA em todos os dentes e o
+    # veredito final verde seria fail-open — o defeito da rodada 1 deste card.
+    cabecalho "--prova-de-dente: baseline NAO mutado (o ambiente mede?)"
+    BASELINE_OK=0
+    TRE_LOG_DIR="$DENTE_DIR/logs-baseline" TRE_WORKFLOW="$WORKFLOW" TRE_MANTER_BANCO=0 \
+        bash "$(readlink -f "$0")" --apenas-consumo >"$DENTE_DIR/baseline.out" 2>&1
+    BASELINE_RC=$?
+    BASELINE_RES="$(grep -E '^RESULTADO: ' "$DENTE_DIR/baseline.out" | tail -1)"
+    if [ "$BASELINE_RC" -eq 0 ] && printf '%s' "$BASELINE_RES" | grep -q 'OUTBOX_CONSUMER_OK'; then
+        BASELINE_OK=1
+        ok "baseline NAO mutado verde ($BASELINE_RES) — o ambiente mede antes de contar dentes"
+    else
+        falhou "baseline NAO mutado nao ficou verde (rc=$BASELINE_RC; ${BASELINE_RES:-sem linha de resultado}) — ambiente quebrado nao e' dente"
+    fi
+
+    cabecalho "--prova-de-dente: 4 mutacoes nomeadas"
     # mutacao|item esperado que TEM de reprovar|por que a mutacao quebra o item
     MUTACOES="sem_validacao_de_envelope|E3 sem event_version|sem a exigencia de event_version o evento passa e o estado final deixa de ser DEAD_LETTER
 sem_incremento_de_tentativas|E8 falha de transporte|sem o incremento o attempts do evento que falhou nao muda
 sem_teto_de_tentativas|E9 teto de tentativas|sem o teto o evento esgotado volta a ser entregue
 mapeamento_trocado|E1 o parceiro do CRM tem|com o mapeamento trocado o parceiro nasce com outro dominio"
+    # O laco roda em subshell (pipe): os vereditos vao para ARQUIVO e a agregacao vem depois.
+    # Antes (rodada 1) o laco so' imprimia e o script fechava com DENTE_OK incondicional.
+    VEREDITOS="$DENTE_DIR/vereditos.txt"
+    : >"$VEREDITOS"
     printf '%s\n' "$MUTACOES" | while IFS='|' read -r mutacao esperado porque; do
         [ -z "$mutacao" ] && continue
         ALVO="$DENTE_DIR/$mutacao.json"
         if ! python3 "$MUTADOR" --mutacao "$mutacao" --entrada "$WORKFLOW" --saida "$ALVO" >"$DENTE_DIR/$mutacao.mutacao" 2>&1; then
             printf 'DENTE %-32s MUTACAO_NAO_APLICADA (%s)\n' "$mutacao" "$(head -1 "$DENTE_DIR/$mutacao.mutacao")"
+            printf '%s|MUTACAO_NAO_APLICADA\n' "$mutacao" >>"$VEREDITOS"
             continue
         fi
         SAIDA_RUN="$DENTE_DIR/$mutacao.out"
@@ -257,9 +320,42 @@ mapeamento_trocado|E1 o parceiro do CRM tem|com o mapeamento trocado o parceiro 
         printf 'DENTE %-32s %s\n' "$mutacao" "$VEREDITO"
         printf '      item esperado: %s\n' "$esperado"
         printf '      razao: %s\n' "$porque"
+        printf '%s|%s\n' "$mutacao" "$VEREDITO" >>"$VEREDITOS"
     done
+
+    # Agregacao fail-closed: qualquer veredito que nao seja DENTE_CUMPRIDO (NAO_CONTA,
+    # MUTACAO_SEM_DENTE, MUTACAO_NAO_APLICADA) reprova o modo — e o juiz tambem decide.
+    TOTAL_DENTES=0
+    DENTES_CUMPRIDOS=0
+    SEM_DENTE=0
+    while IFS='|' read -r _mutacao _veredito; do
+        [ -z "$_mutacao" ] && continue
+        TOTAL_DENTES=$((TOTAL_DENTES + 1))
+        case "$_veredito" in
+            *DENTE_CUMPRIDO*) DENTES_CUMPRIDOS=$((DENTES_CUMPRIDOS + 1)) ;;
+            *) SEM_DENTE=$((SEM_DENTE + 1)) ;;
+        esac
+    done <"$VEREDITOS"
+
     echo
-    echo "RESULTADO: OUTBOX_CONSUMER_DENTE_OK (juiz conferido; veredito por dente acima)"
+    info "resumo do dente: $DENTES_CUMPRIDOS/$TOTAL_DENTES dentes cumpridos; baseline=$BASELINE_OK; juiz=$([ "$FALHAS_JUIZ" -eq 0 ] && echo conferido || echo COM_FALTA)"
+    if [ "$FALHAS_JUIZ" -ne 0 ]; then
+        echo "RESULTADO: OUTBOX_CONSUMER_DENTE_FALHOU (controle do juiz com falta; $DENTES_CUMPRIDOS/$TOTAL_DENTES dentes cumpridos)"
+        exit 1
+    fi
+    if [ "$TOTAL_DENTES" -eq 0 ]; then
+        echo "RESULTADO: OUTBOX_CONSUMER_DENTE_FALHOU (0 dente medido: nenhuma mutacao aplicada)"
+        exit 1
+    fi
+    if [ "$BASELINE_OK" != "1" ]; then
+        echo "RESULTADO: OUTBOX_CONSUMER_DENTE_FALHOU (baseline NAO mutado nao ficou verde; $SEM_DENTE sem dente de $TOTAL_DENTES)"
+        exit 1
+    fi
+    if [ "$DENTES_CUMPRIDOS" -ne "$TOTAL_DENTES" ]; then
+        echo "RESULTADO: OUTBOX_CONSUMER_DENTE_FALHOU ($SEM_DENTE sem dente de $TOTAL_DENTES) mutacoes=$TOTAL_DENTES dentes=$DENTES_CUMPRIDOS"
+        exit 1
+    fi
+    echo "RESULTADO: OUTBOX_CONSUMER_DENTE_OK ($DENTES_CUMPRIDOS/$TOTAL_DENTES dentes cumpridos; juiz conferido; baseline nao mutado verde)"
     exit 0
 fi
 
@@ -291,10 +387,14 @@ for arquivo in "$WORKFLOW" "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$M
                "$MODULO_DIR/api/politica_api.json" "$PREPARADOR" "$MIGRATION"; do
     if [ -f "$arquivo" ]; then ok "consumidor em disco: ${arquivo#"$RAIZ_REPO"/}"; else falhou "ausente: $arquivo"; resumo; fi
 done
-info "sha256 dos artefatos sob teste:"
-for arquivo in "$CONTRATO" "$NUCLEO" "$SQL_LER" "$SQL_REGISTRAR" "$WORKFLOW"; do
-    printf '      %s  %s\n' "$(sha256sum "$arquivo" | cut -d' ' -f1)" "${arquivo#"$RAIZ_REPO"/}"
-done
+info "sha256 dos artefatos sob teste (fixado agora e reconferido no fecho):"
+sha256_dos_artefatos "$LOG_DIR/sha256-antes.txt"
+sed 's/^/      /' "$LOG_DIR/sha256-antes.txt"
+if [ "$(wc -l <"$LOG_DIR/sha256-antes.txt" | tr -d ' ')" = "5" ]; then
+    ok "sha256 dos 5 artefatos sob teste fixado (base da reconferencia do fecho)"
+else
+    falhou "nao consegui fixar o sha256 dos 5 artefatos (ver $LOG_DIR/sha256-antes.txt)"
+fi
 case "$BANCO" in
     odoo_dev|sales_intelligence|postgres) falhou "banco $BANCO e' do ambiente — so' banco descartavel"; resumo ;;
 esac
@@ -807,6 +907,13 @@ for banco in $DEV_PG_DEPOIS; do
 done
 [ "$NAO_TOCADOS" = "0" ] && ok "o banco do contrato nao existe no dev (o schema so' vive no descartavel)" \
     || falhou "o banco $BANCO_SI apareceu na instancia do dev"
+SHA_DEPOIS="$LOG_DIR/sha256-depois.txt"
+sha256_dos_artefatos "$SHA_DEPOIS"
+if [ "$(veredito_sha256 "$LOG_DIR/sha256-antes.txt" "$SHA_DEPOIS")" = "IDENTICO" ]; then
+    ok "sha256 dos 5 artefatos sob teste reconferido no fecho: identico ao fixado nas guardas"
+else
+    falhou "sha256 dos 5 artefatos MUDOU durante a medicao: $(diff "$LOG_DIR/sha256-antes.txt" "$SHA_DEPOIS" 2>&1 | head -4 | tr '\n' ' ')"
+fi
 
 echo "FASE_CONSUMO_OK"
 resumo
