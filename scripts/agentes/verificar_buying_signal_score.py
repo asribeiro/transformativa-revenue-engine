@@ -184,7 +184,7 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     conf = [{"id": "y", "signal_type": "GROWTH", "confidence": "1.7",
              "event_date": agora.isoformat(timespec="seconds"), "detected_at": None}]
     item("descarte: confianca fora de 0..1", "CONFIANCA_FORA_DA_FAIXA",
-         modulo.calcular_score(conf, agora_iso)["descartados"][0]["motivo"])
+         _motivo_do_descarte(modulo, conf, agora_iso, "y"))
     muitos = [{"id": "m%02d" % i, "signal_type": "ERP_CHANGE", "confidence": "1",
                "event_date": agora.isoformat(timespec="seconds"), "detected_at": None}
               for i in range(25)]
@@ -230,13 +230,11 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
          sql_gravacao.strip().startswith("BEGIN;") and sql_gravacao.strip().endswith("COMMIT;"))
     item("SQL: gravacao passa pela guarda", "aceito", _tenta(modulo.validar_sql, sql_gravacao))
     item("SQL: gravacao ancora no sync_events (claim)", True, "idempotency_key" in sql_gravacao)
-    item("SQL: colunas do sync_events existem no DDL", sorted(
-        set(re.findall(r"INSERT INTO sales_intelligence\.sync_events \(([^)]*)\)", sql_gravacao)[0]
-            .replace("\n", " ").split(", "))), sorted(
-        set(re.findall(r"INSERT INTO sales_intelligence\.sync_events \(([^)]*)\)", sql_gravacao)[0]
-            .replace("\n", " ").split(", "))) if False else sorted(
-        c for c in set(re.findall(r"INSERT INTO sales_intelligence\.sync_events \(([^)]*)\)",
-                                  sql_gravacao)[0].replace("\n", " ").split(", ")) if c in colunas_sync))
+    colunas_sync_do_sql = sorted(set(
+        c.strip() for c in re.findall(r"INSERT INTO sales_intelligence\.sync_events \(([^)]*)\)",
+                                      sql_gravacao)[0].replace("\n", " ").split(",")))
+    item("SQL: colunas do sync_events do claim existem no DDL", [],
+         [c for c in colunas_sync_do_sql if c not in colunas_sync])
     sql_execucao = modulo.sql_registrar_execucao("r1", "cid-1", "org-1", "COMPLETED", "resumo",
                                                 "hash", 71.5, "score-1")
     item("SQL: agent_runs guarda a ancora do score", True, '"score_id"' in sql_execucao)
@@ -255,8 +253,10 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     item("idempotencia: hash determinista", h1, h2)
     item("idempotencia: hash muda com sinal novo", True,
          h1 != modulo.hash_das_entradas("org-1", modulo.calcular_score(mais, agora_iso)))
-    item("idempotencia: chave carrega tipo, empresa e hash", "score:BUYING_SIGNAL:org-1:" + h1,
-         modulo.chave_idempotencia("org-1", h1))
+    item("idempotencia: chave carrega tipo, empresa e hash",
+         "score:BUYING_SIGNAL:org-1:" + h1, modulo.chave_idempotencia("org-1", h1))
+    item("idempotencia: chave e a ENTRADA, nao a rodada", True,
+         modulo.chave_idempotencia("org-1", h1) == modulo.chave_idempotencia("org-1", h2))
 
     # --- ambiente e CLI ------------------------------------------------------------------
     item("ambiente: prod recusado",
@@ -275,7 +275,7 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     item("CLI: --planejar calcula sem porta", 0, codigo_planejar)
 
     # --- fluxo com porta de mentira (sem banco) -----------------------------------------
-    from_morta = PortaSemente(["0", "1", "1"], modulo)
+    from_morta = PortaSemente(["1", ""], modulo)
     ag = modulo.BuyingSignalScore(porta=from_morta, raiz=raiz, ambiente="dev",
                                  correlation_id="11111111-1111-4111-8111-111111111111",
                                  relogio=lambda: agora_iso)
@@ -309,7 +309,8 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     fonte = caminho_codigo.read_text(encoding="utf-8")
     item("codigo: sem requests/urllib/socket", False,
          bool(re.search(r"\b(import\s+requests|import\s+urllib|import\s+socket|http\.client)", fonte)))
-    item("codigo: um unico subprocess.run (a porta)", 1, len(re.findall(r"subprocess\.run", fonte)))
+    item("codigo: nenhum subprocess.run proprio (a porta importada fala com o banco)", 0,
+         len(re.findall(r"subprocess\.run", fonte)))
     item("codigo: nenhuma chamada de LLM", False, bool(re.search(r"(openai|anthropic|completions)", fonte, re.I)))
     item("codigo: nenhuma leitura de variavel de ambiente secreta", False,
          bool(re.search(r"os\.environ", fonte)))
@@ -378,6 +379,15 @@ def _colunas_ddl(ddl: str, tabela: str) -> set:
     return {linha.strip().split()[0] for linha in bloco.group(1).splitlines() if linha.strip()}
 
 
+def _motivo_do_descarte(modulo, linhas, agora_iso, ident):
+    """Motivo do descarte medido SEM estourar quando o sinal foi aceito (mutacao pode aceitar)."""
+    descartados = modulo.calcular_score(linhas, agora_iso)["descartados"]
+    for d in descartados:
+        if str(d.get("id")) == ident:
+            return d.get("motivo")
+    return "NAO_DESCARTADO"
+
+
 def _empresa_ausente(modulo, raiz, agora_iso, porta):
     agente = modulo.BuyingSignalScore(porta=porta, raiz=raiz, ambiente="dev",
                                       relogio=lambda: agora_iso)
@@ -390,26 +400,38 @@ def _empresa_ausente(modulo, raiz, agora_iso, porta):
 # Prova de dente: mutacao tem de REPROVAR o item esperado
 # ---------------------------------------------------------------------------------------
 MUTACOES = (
-    ("peso-de-tipo-zero", "PESOS_POR_TIPO[\"ERP_CHANGE\"] = 0.95",
-     'PESOS_POR_TIPO["ERP_CHANGE"] = 0.0', "calculo: score no intervalo 0..100"),
-    ("limite-de-sinais-infinito", "LIMITE_SINAIS = 10", "LIMITE_SINAIS = 1000",
+    ("peso-de-tipo-zero", [('"HIRING": 0.6,', '"HIRING": 0.0,')],
+     "vocabulario: todo peso dentro de (0, 1]"),
+    ("limite-de-sinais-infinito", [("LIMITE_SINAIS = 10", "LIMITE_SINAIS = 1000")],
      "limite: excedente registrado"),
-    ("decaimento-ignorado", "return 0.5 ** (idade_dias / meia_vida)", "return 1.0",
+    ("decaimento-ignorado", [("return 0.5 ** (idade_dias / meia_vida)", "return 1.0")],
      "decaimento: 720 dias vale menos que hoje"),
-    ("score-deixa-de-saturar", "forca = 1.0 - restante", "forca = sum(c[\"pontos\"] for c in usados)",
-     "limite: score nunca passa de 100"),
-    ("versao-sem-verificacao", "if not 0.0 <= confianca <= 1.0:", "if False:",
+    ("score-sem-teto", [("valor = max(0.0, min(100.0, 100.0 * forca))",
+                         "valor = 100.0 * forca * 2")],
+     "calculo: score no intervalo 0..100"),
+    ("confianca-sem-verificacao", [("if not 0.0 <= confianca <= 1.0:", "if False:")],
      "descarte: confianca fora de 0..1"),
-    ("guarda-aceita-update", 'if operacao == "update":', 'if operacao == "insert_nunca":',
+    ("guarda-aceita-update-de-score", [('if operacao == "update" and tabela == TABELA_SCORES:',
+                                        'if operacao == "update" and tabela == "nunca":')],
      "guarda: UPDATE em scores recusado (score historico)"),
-    ("guarda-aceita-signals", "if tabela in (TABELA_SINAIS, TABELA_ORGANIZACOES):",
-     "if tabela in ():", "guarda: INSERT em signals recusado"),
-    ("prod-permitido", 'AMBIENTES_PERMITIDOS = ("dev", "homolog")',
-     'AMBIENTES_PERMITIDOS = ("dev", "homolog", "prod")', "CLI: prod sai com exit 4"),
-    ("insert-sem-versao", '"score_type", "score_value",\n                                "score_version") if c not in colunas',
-     '"score_type", "score_value") if c not in colunas', "guarda: INSERT de score sem score_version recusado"),
-    ("data-ausente-aceita", 'raise ValueError("DATA_AUSENTE")', "raise ValueError(\"X\")",
+    ("guarda-aceita-signals", [("if tabela in (TABELA_SINAIS, TABELA_ORGANIZACOES):",
+                                "if tabela in ():"),
+                               ("TABELAS_PERMITIDAS = (TABELA_SCORES, TABELA_AGENT_RUNS, TABELA_SYNC_EVENTS)",
+                                "TABELAS_PERMITIDAS = (TABELA_SCORES, TABELA_AGENT_RUNS, TABELA_SYNC_EVENTS, TABELA_SINAIS, TABELA_ORGANIZACOES)")],
+     "guarda: INSERT em signals recusado"),
+    ("prod-permitido", [('AMBIENTES_PERMITIDOS = ("dev", "homolog")',
+                         'AMBIENTES_PERMITIDOS = ("dev", "homolog", "prod")'),
+                        ('AMBIENTE_RECUSADO = "prod"', 'AMBIENTE_RECUSADO = "prod-nunca"'),
+                        ('if ambiente == AMBIENTE_RECUSADO:', 'if ambiente == "prod-nunca":')],
+     "CLI: prod sai com exit 4"),
+    ("insert-sem-versao", [('"score_type", "score_value",\n                                "score_version") if c not in colunas',
+                            '"score_type", "score_value") if c not in colunas')],
+     "guarda: INSERT de score sem score_version recusado"),
+    ("data-ausente-aceita", [('raise ValueError("DATA_AUSENTE")', 'raise ValueError("X")')],
      "descarte: motivo DATA_AUSENTE"),
+    ("deixa-de-contar-descarte", [('descartados.append({"id": linha.get("id"), "motivo": str(exc)})',
+                                   'pass')],
+     "descarte: sem data nenhuma e descartado"),
 )
 
 
@@ -417,13 +439,19 @@ def prova_de_dente(raiz: Path, caminho_codigo: Path) -> int:
     fonte = caminho_codigo.read_text(encoding="utf-8")
     dir_tmp = Path(tempfile.mkdtemp(prefix="bss-dente-"))
     reprovacoes = 0
-    for nome, de, para, item_esperado in MUTACOES:
-        if de not in fonte:
-            print("FALHOU dente %s: ancora da mutacao nao encontrada no codigo" % nome)
+    for nome, trocas, item_esperado in MUTACOES:
+        codigo = fonte
+        for de, para in trocas:
+            if de not in codigo:
+                print("FALHOU dente %s: ancora da mutacao nao encontrada: %r" % (nome, de[:60]))
+                codigo = None
+                break
+            codigo = codigo.replace(de, para, 1)
+        if codigo is None:
             reprovacoes += 1
             continue
         copia = dir_tmp / ("mut_%s.py" % nome)
-        copia.write_text(fonte.replace(de, para, 1), encoding="utf-8")
+        copia.write_text(codigo, encoding="utf-8")
         p = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--raiz", str(raiz),
                             "--codigo", str(copia)], capture_output=True, text=True)
         linha = [l for l in p.stdout.splitlines() if l.startswith("FALHOU %s " % item_esperado)]
