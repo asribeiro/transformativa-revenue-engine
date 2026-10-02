@@ -262,3 +262,30 @@ com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D
 **Test plan:** Teste negativo por tenant + conferência das regras do módulo.
 **Rollback:** Reverter as ACLs pelo módulo.
 **Risco:** Alto — isolamento entre clientes.
+
+## TRE-W5-E08-T01 — Test scoring/NBA (aceite E2E da cadeia W5)
+
+- A cadeia **ICP → AUTOMATION_FIT → BUYING_SIGNAL → DATA_QUALITY → PRIORITY → TIER → NBA** roda em
+  sequência no **mesmo** banco, e o artefato de cada etapa é o **insumo** da seguinte: o `PRIORITY` é
+  a fórmula do contrato sobre os **quatro scores gravados**; o registro `TIER` cita o `score_id` do
+  `PRIORITY` lido; a recomendação cita o `tier` gravado pelo tiering.
+- **Fail-closed na cadeia**: empresa sem lastro (sem sinal e sem hipótese) não ganha score, tier nem
+  recomendação — cada etapa do caminho curto **RECUSA** com motivo nominal (`SEM_LASTRO`,
+  `SEM_LASTRO_COMPLETO`, `SEM_PRIORITY`, `SEM_TIER`) e **nada** é gravado.
+- **Escopo**: as tabelas de negócio saem idênticas (foto md5 antes/depois), a `outbox` fica 0 e
+  nenhuma rodada chama LLM (`model`/tokens/custo NULL).
+- **Replay** da cadeia com as mesmas entradas **não duplica** linha nenhuma.
+- `prod` é recusado (**exit 4**) sem escrita nos sete componentes; `--planejar`/`--regras` exit 0 sem
+  conexão; `--desfazer` é dry-run até o `--confirmo`.
+- Evidência OK/FALHOU item a item com exit code e prova de dente (cada mutação reprova o item
+  esperado); nada em produção (ADR-005).
+
+**Test plan:** `bash scripts/e2e/verificar-e2e-scoring-nba.sh` na VPS do ambiente (container
+descartável `pg-w5-acc`, migration 0001, 3 empresas sintéticas: duas com lastro completo e uma sem) +
+`--prova-de-dente` (4 mutações) + as sete suítes offline no mesmo commit; evidência = saída completa
+com exit code. Runbook: `docs/runbooks/e2e-scoring-nba.md`.
+**Rollback:** Reverter o commit do aceite (sem DDL, sem schema novo; nada em produção). O container
+descartável é removido pelo próprio aceite e o rollback operacional dos dados é o `--desfazer` de cada
+componente.
+**Risco:** Baixo-médio — é medição. O risco real é o instrumento (verde falso sobre cadeia quebrada),
+endereçado pelos itens de composição e pelos dentes.

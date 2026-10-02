@@ -1735,3 +1735,45 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   sentimento vem de `interactions.sentiment`.
 - `EXPIRED`/`APPROVED`/`EXECUTED` são do workflow humano (doc 12 §4/§5): aqui gravam-se `due_at` e
   `expires_at`.
+
+## [W5 — Aceite E2E da cadeia Score → Tier → NBA] — 02/10/2026
+
+### Added
+
+- **Aceite E2E da cadeia W5** (`TRE-W5-E08-T01`) — `scripts/e2e/verificar-e2e-scoring-nba.sh`: sobe um
+  PostgreSQL descartável próprio (`pg-w5-acc`, migration 0001), mede as **sete suítes offline** no
+  mesmo commit e roda a cadeia inteira em sequência sobre três empresas sintéticas (duas com lastro
+  completo — uma delas abordada há 5 dias sem resposta — e uma sem sinal e sem hipótese):
+  - **ICP → AUTOMATION_FIT → BUYING_SIGNAL → DATA_QUALITY → PRIORITY → TIER → NBA** no **mesmo**
+    banco, com o artefato de cada etapa entrando como insumo da seguinte: o `PRIORITY` é a fórmula do
+    contrato (`0,35·ICP + 0,30·AF + 0,25·BS + 0,10·DQ`) conferida em SQL contra os **quatro scores
+    gravados**; o registro `TIER` (sync_events) cita o `score_id` do `PRIORITY` lido; a recomendação
+    cita o `tier` que o tiering gravou (`rationale LIKE 'tier=<tier>'`);
+  - **fail-closed na cadeia**: a empresa sem lastro morre em cada portão pelo motivo nominal —
+    `SEM_LASTRO` (AUTOMATION_FIT), `SEM_LASTRO_COMPLETO` (PRIORITY), `SEM_PRIORITY` (TIER), `SEM_TIER`
+    (NBA) — sem gravar nada;
+  - **escopo**: foto md5 das tabelas de negócio idêntica antes/depois, `outbox` = 0, nenhum
+    `agent_runs` com modelo/token/custo; **replay** da cadeia não duplica; `prod` recusado (exit 4)
+    nos sete componentes sem escrita; `--planejar`/`--regras` exit 0 sem conexão; `--desfazer` dry-run
+    até o `--confirmo`;
+  - **prova de dente**: 4 mutações em cópia (motivo do TIER, motivo do PRIORITY, checagem de tier do
+    NBA e id determinístico do NBA), cada uma reprovando **o item esperado**;
+  - evidência: `ACEITE_E2E_SCORING_NBA_001_OK` — **72 OK / 0 FALHOU** no baseline e **76 OK / 0
+    FALHOU** com os dentes (exit 0 nos dois), em 02/10/2026 na VPS do ambiente;
+  - runbook `docs/runbooks/e2e-scoring-nba.md` (passo a passo, o que cada item mede, os três itens de
+    composição, limites declarados e rollback) e o contrato do card em
+    `docs/kanban/criterios-de-aceitacao.md`.
+
+### Fixed
+
+- **Portão de estrutura da W5** (`scripts/verificar_estrutura.sh`) passa a exigir o aceite E2E da
+  cadeia e o runbook versionados e executáveis — o veredito da onda não fica sem instrumento
+  conferível por terceiro.
+
+### Notas de estado
+
+- **Limites declarados (medidos):** a resolução por CNPJ casa a coluna **normalizada em dígitos**
+  (fonte pontuada encontra `11222333000181`, não `11.222.333/0001-81`); `DATA_QUALITY --planejar`
+  exige a porta do banco (recusa sem ela); o tier **não** é `score_type` (o contrato lista cinco) e o
+  aceite mede o encadeamento, **não** a acurácia dos scores nem a conversão das recomendações (W8).
+- Nada em produção (ADR-005): o aceite roda em container descartável removido por ele mesmo.

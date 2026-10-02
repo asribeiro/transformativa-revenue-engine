@@ -423,5 +423,20 @@ for f in scripts/agentes/teste_icp_score_aceite.sh scripts/agentes/teste_automat
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Aceite E2E da cadeia W5 (TRE-W5-E08-T01): o encadeamento ICP -> AUTOMATION_FIT -> BUYING_SIGNAL ->
+# DATA_QUALITY -> PRIORITY -> TIER -> NBA medido NUM UNICO banco descartavel, em que o artefato de
+# cada etapa e' o insumo da seguinte (PRIORITY = formula sobre os quatro scores gravados; o registro
+# TIER cita o PRIORITY lido; a recomendacao cita o tier gravado). Sem o aceite, o runbook e o
+# contrato do card versionados, o veredito da onda W5 nao e' conferivel por terceiro.
+for f in scripts/e2e/verificar-e2e-scoring-nba.sh docs/runbooks/e2e-scoring-nba.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/e2e/verificar-e2e-scoring-nba.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

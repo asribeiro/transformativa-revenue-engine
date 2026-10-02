@@ -2179,3 +2179,67 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Ficam **propostos**: a
   tabela de decisão (regras, ordem e prazos) e o `confidence` NULL (calibração é do W6+).
 - Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E08-T01: aceite E2E da cadeia W5 (Score → Tier → NBA) medido por execução real
+
+- **O que o card é:** o "test scoring/NBA" do plano (doc 11, W5-E08-T01) — o **aceite E2E da cadeia**
+  que os cards E05/E06/E07 declararam "fora do card" (`docs/architecture/score-priority-v1.md` §12,
+  `score-tiering-v1.md` §13, `next-best-action-v1.md` §8). Instrumento novo:
+  `scripts/e2e/verificar-e2e-scoring-nba.sh` (`76b8997006dc358c6a0eedf3f9cd1268aef8c5bc3370da4129605a13cf5858d1`,
+  `100755`), com runbook `docs/runbooks/e2e-scoring-nba.md` e o contrato do card (ACCEPTANCE/TEST/
+  ROLLBACK/RISK) em `docs/kanban/criterios-de-aceitacao.md`.
+- **Onde rodou:** na VPS do ambiente (ADR-0008 — o container do Hermes não tem daemon Docker nem rota
+  até o PostgreSQL), árvore sob teste `/opt/tre/w5e08t01-r1/repo`. O aceite sobe **um** container
+  descartável próprio (`pg-w5-acc`, `postgres:16`, sem porta publicada), aplica a migration 0001 e
+  roda os **sete** componentes no mesmo banco. `pg-sales-dev`, `pg-odoo-dev`, `odoo-dev` e `proxy-dev`
+  não foram tocados; ao fim, `docker ps -a | grep w5` = **0** container.
+- **Evidência de aceite (baseline):** `bash scripts/e2e/verificar-e2e-scoring-nba.sh` →
+  `RESULTADO: ACEITE E2E SCORING/NBA 72 OK / 0 FALHOU` / `ACEITE_E2E_SCORING_NBA_001_OK`, **exit 0**.
+  O que a execução mediu, item a item: as **sete suítes offline** no mesmo commit (ICP, AUTOMATION_FIT,
+  BUYING_SIGNAL, DATA_QUALITY, PRIORITY, TIER, NBA — exit 0 em todas); as três empresas sintéticas
+  (A: sinal de tecnologia + programa de eficiência + dor validada 85 + decisor com e-mail; B: dor 60 +
+  sinal `HIRING` + abordagem de 5 dias atrás sem resposta; C: sem sinal e sem hipótese); a cadeia em
+  sequência; a **composição** (PRIORITY = `0,35·ICP + 0,30·AF + 0,25·BS + 0,10·DQ` conferido em SQL
+  contra os quatro scores gravados; registro `TIER` citando o `score_id` do PRIORITY lido; a
+  recomendação citando o `tier` gravado pelo tiering); o **fail-closed** da empresa sem lastro
+  (`SEM_LASTRO` no AUTOMATION_FIT, `SEM_LASTRO_COMPLETO` no PRIORITY, `SEM_PRIORITY` no TIER,
+  `SEM_TIER` no NBA, sem gravar nada); o **escopo** (foto md5 das tabelas de negócio idêntica antes e
+  depois `4e397d71eb2b31e7c961a4a0866c84f6`, `outbox` = 0, `agent_runs` com `model`/tokens/custo
+  NULL); o **replay** da cadeia inteira sem duplicar (`scores` 13, `TIER` 2, `recommendations` 2, após
+  o replay idênticos); as **guardas** (`prod` exit 4 nos sete componentes com a foto de contagens
+  antes/depois idêntica; `--planejar`/`--regras` exit 0 com porta de banco inexistente) e o
+  **desfazer** do NBA (dry-run não apaga; `--confirmo` apaga as recomendações da correlação e preserva
+  a auditoria).
+- **Prova de dente (4 mutações em cópia, cada uma pelo item esperado):**
+  `bash scripts/e2e/verificar-e2e-scoring-nba.sh --prova-de-dente` →
+  `ACEITE E2E SCORING/NBA 76 OK / 0 FALHOU` / `ACEITE_E2E_SCORING_NBA_001_OK`, **exit 0**:
+  motivo do TIER `SEM_PRIORITY` → item `3.2 TIER RECUSOU a empresa SEM PRIORITY (SEM_PRIORITY)`;
+  motivo do PRIORITY `SEM_LASTRO_COMPLETO` → item `3.1 PRIORITY RECUSOU a empresa sem os quatro`;
+  `if not fatos.get("tier"):` → `if False:` (NBA) → item `3.3 NBA RECUSOU a empresa SEM tier
+  (SEM_TIER)`; id determinístico `uuid5` → `uuid.uuid4()` (NBA) → item `5.1 replay nao duplica
+  recomendacao`. Cada mutação reprovou **o item esperado** (não "o aceite falhou").
+- **Defeito do INSTRUMENTO corrigido durante a rodada (rodada 1: 52 OK / 20 FALHOU):** (i) a recursão
+  dos dentes passava `--raiz` e o tratamento de `--raiz` **sobrescrevia** as variáveis de caminho de
+  código — a cópia mutada nunca era usada e os 4 dentes "não reprovavam" (corrigido com
+  `definir_modulos()`, que respeita o override por ambiente); (ii) os itens contavam **quantas vezes**
+  o motivo aparecia (o módulo imprime o motivo na linha e no relatório: `4` em vez de `1`) —
+  trocado por `tem()` (aparece / não aparece), a mesma lição do E07; (iii) o NBA usa `--jsonl`, não
+  `--fonte`; (iv) o CNPJ da fonte pontuada **não** casa a coluna pontuada (medido em probe dedicado:
+  a resolução normaliza a fonte para dígitos e compara com a coluna — a massa passou a gravar CNPJ em
+  dígitos, limite declarado no runbook §5); (v) `DATA_QUALITY --planejar` **exige** a porta do banco
+  (recusa explícita, exit 1) — o item passou a medir a recusa e a ausência de escrita em vez de um
+  exit 0 que o componente não dá.
+- **Verificadores do repo depois da mudança:** `bash scripts/verificar_estrutura.sh` → `PASS (0
+  falhas)` (o portão passou a exigir o aceite e o runbook versionados e executáveis);
+  `bash scripts/secret_scan.sh` → `PASS`; `bash -n` no aceite → OK.
+- **Estado do ambiente:** nenhum container do card sobrou (`pg-w5-acc` e os `pg-w5-dente-*` removidos
+  pelos próprios testes); `/opt/tre/prod` e `/opt/tre/homolog` intocados; nenhuma DDL fora do
+  container descartável; nada em produção (ADR-005).
+- **Logs brutos** (anexos do card): `aceite-e2e-scoring-nba-72ok.out`,
+  `aceite-e2e-scoring-nba-dente-76ok.out`, `sha256-artefatos.out` (hash dos sete módulos, das sete
+  suítes e da migration 0001 no commit medido).
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Ficam **propostos** os
+  limites declarados no runbook §5 e a massa sintética (o aceite mede o encadeamento e o fail-closed,
+  não a acurácia dos scores — isso é W8).
+- Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.
