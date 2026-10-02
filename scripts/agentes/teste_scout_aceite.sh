@@ -19,8 +19,15 @@
 #   6. veredito ..... ACEITE_SCOUT_001_OK / ACEITE_SCOUT_001_FALHOU
 #
 # --prova-de-dente: aplica mutacoes em COPIA do scout.py (idempotencia, forte obrigatorio,
-#   recusa de prod) e exige que o aceite REPROVE; baseline verde antes e depois. Mutacao que
-#   nao se aplica na ancora tambem reprova (e buraco de verificacao, nao alivio).
+#   revisao na fila humana) e exige que o aceite REPROVE **o item esperado de cada mutacao**;
+#   baseline verde antes e depois. Mutacao que nao se aplica na ancora tambem reprova (e buraco
+#   de verificacao, nao alivio), e o veredito imprime a contagem MEDIDA.
+#
+# NOTA (defeito medido na revisao independente, rodada 1): o corpo do laco de mutacoes chama
+#   `docker exec -i`, que CONSOME o stdin do laco. Com `done <<< "$mutacoes"` isso matava as
+#   iteracoes 2 e 3 — o dente rodava 1 mutacao e imprimia "3/3". Aqui as mutacoes sao lidas
+#   numa LISTA antes do laco (o laco nao depende de stdin) e todo `docker exec` que nao le
+#   stdin leva `</dev/null`.
 #
 # Variaveis: TRE_RAIZ (raiz do repo), TRE_FIXTURE_IMAGEM (default postgres:16),
 #            TRE_SCOUT_CONTAINER (default pg-scout-acc), TRE_SCOUT_TRABALHO (dir de trabalho).
@@ -93,9 +100,11 @@ limpar() {
 trap limpar EXIT
 
 PSQL=(docker exec -i "$CONTAINER" psql -U "$USUARIO" -d "$BANCO" -v ON_ERROR_STOP=1 -tA -F'|')
-psql_t() { "${PSQL[@]}" "$@"; }
+# `</dev/null` em TODA chamada que nao le stdin: `docker exec -i` herda (e consome) o stdin de
+# quem o chamou. Dentro do laco de mutacoes isso matava as iteracoes seguintes.
+psql_t() { "${PSQL[@]}" "$@" </dev/null; }
 psql_stdin() { "${PSQL[@]}" -q -f -; }
-contagem() { "${PSQL[@]}" -c "$1" | tr -d '[:space:]'; }
+contagem() { "${PSQL[@]}" -c "$1" </dev/null | tr -d '[:space:]'; }
 
 subir_container() {
   docker run -d --name "$CONTAINER" \
@@ -105,7 +114,7 @@ subir_container() {
   # funcionar DUAS vezes, com intervalo — licao medida na W1.
   local tentativa repetiu=0
   for tentativa in $(seq 1 60); do
-    if "${PSQL[@]}" -c "SELECT 1" >/dev/null 2>&1; then
+    if "${PSQL[@]}" -c "SELECT 1" </dev/null >/dev/null 2>&1; then
       repetiu=$((repetiu + 1))
       [ "$repetiu" -ge 2 ] && return 0
       sleep 2
@@ -148,7 +157,9 @@ JSONL
 
 rodar_scout() { # <relatorio> <args...>
   local relatorio="$1"; shift
-  python3 "$SCOUT_PY" --raiz "$RAIZ" --relatorio "$relatorio" "$@"
+  # `</dev/null`: o agente nunca le stdin e a porta psql usa `input=` — nada aqui pode
+  # consumir o stdin de um laco que chame rodar_scout.
+  python3 "$SCOUT_PY" --raiz "$RAIZ" --relatorio "$relatorio" "$@" </dev/null
 }
 
 veredito_do_relatorio() { # <relatorio> <veredito>
@@ -185,6 +196,10 @@ rodar_aceite() { # <rotulo>
   item "rodada1-criadas-com-status-discovered" "3" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations WHERE id IN (SELECT (output->>'organization_id')::uuid FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND output->>'veredito'='CRIADA') AND status='DISCOVERED';")"
   item "rodada1-criadas-com-fonte-e-pais" "3" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations WHERE id IN (SELECT (output->>'organization_id')::uuid FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND output->>'veredito'='CRIADA') AND source IS NOT NULL AND country_code='BR';")"
   item "rodada1-uuid-v4-no-produtor" "3" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations WHERE id IN (SELECT (output->>'organization_id')::uuid FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND output->>'veredito'='CRIADA') AND id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';")"
+  # A2 nos carimbos: a organizacao nasce carimbada (created_at/updated_at), nao NULL.
+  item "rodada1-criadas-com-carimbos" "3" "$(contagem "SELECT count(*) FROM sales_intelligence.organizations WHERE id IN (SELECT (output->>'organization_id')::uuid FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND output->>'veredito'='CRIADA') AND created_at IS NOT NULL AND updated_at IS NOT NULL AND updated_at >= created_at;")"
+  # A4 no id casado (nao so na contagem): o JA_EXISTE aponta para a organizacao PRE-EXISTENTE.
+  item "rodada1-ja-existe-com-id-casado" "2" "$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND output->>'veredito'='JA_EXISTE' AND output->>'organization_id' IN ('aaaaaaaa-0000-4000-8000-000000000001','aaaaaaaa-0000-4000-8000-000000000002');")"
   item "rodada1-sync-events-success" "3" "$(contagem "SELECT count(*) FROM sales_intelligence.sync_events WHERE operation='INSERT' AND status='SUCCESS' AND request_payload->>'correlation_id'='$CORR_R1';")"
   item "rodada1-agent-runs-por-candidata" "10" "$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs WHERE agent_name='scout' AND agent_role='discovery' AND correlation_id='$CORR_R1';")"
   item "rodada1-agent-runs-completed" "5" "$(contagem "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id='$CORR_R1' AND status='COMPLETED';")"
@@ -276,16 +291,22 @@ prova_de_dente() {
     return 1
   fi
 
-  local falhas=0
-  local mutacoes
-  mutacoes=$(cat <<'EOF'
-sem-idempotencia|ON CONFLICT (idempotency_key) DO NOTHING|
-sem-forte-tambem-cria|        return VER_REVISAO, "SEM_IDENTIFICADOR_FORTE"|        return VER_CRIADA, None
-revisao-nao-vai-para-a-fila-humana|            elif veredito == VER_REVISAO:|            elif False:
+  # As mutacoes sao lidas numa LISTA antes do laco: o corpo chama `docker exec -i` (por
+  # psql_t/contagem), que consome o stdin do laco — com here-string as iteracoes 2+ morriam.
+  # Formato: nome|alvo|substituto|itens-esperados (o dente exige o item, nao so "falhou").
+  local linhas=() linha
+  while IFS= read -r linha; do
+    [ -n "$linha" ] && linhas+=("$linha")
+  done <<'EOF'
+sem-idempotencia|ON CONFLICT (idempotency_key) DO NOTHING||rodada3-exit-0,rodada3-sem-erro
+sem-forte-tambem-cria|        return VER_REVISAO, "SEM_IDENTIFICADOR_FORTE"|        return VER_CRIADA, None|rodada1-fila-humana-pendente,rodada1-relatorio-conflito-e-casamento
+revisao-nao-vai-para-a-fila-humana|            elif veredito == VER_REVISAO:|            elif False:|rodada1-fila-humana-pendente
 EOF
-)
-  local linha nome alvo substituto destino
-  while IFS='|' read -r nome alvo substituto; do
+
+  local total="${#linhas[@]}" detectadas=0 falhas=0
+  local nome alvo substituto esperados destino guardado faltando esperado
+  for linha in "${linhas[@]}"; do
+    IFS='|' read -r nome alvo substituto esperados <<< "$linha"
     [ -z "$nome" ] && continue
     destino="$TRABALHO/mut-$nome/scout.py"
     mkdir -p "$(dirname "$destino")"
@@ -294,23 +315,36 @@ EOF
       falhas=$((falhas + 1)); continue
     fi
     echo
-    echo "-- mutacao: $nome"
-    local guardado="$SCOUT_PY"
+    echo "-- mutacao: $nome (tem de reprovar: $(echo "$esperados" | tr ',' ' '))"
+    guardado="$SCOUT_PY"
     SCOUT_PY="$destino"
     if rodar_aceite "mutacao $nome" > "$TRABALHO/mut-$nome.out" 2>&1; then
       echo "FALHOU mutacao $nome NAO foi detectada pelo aceite"
       falhas=$((falhas + 1))
     else
-      echo "OK     mutacao $nome detectada: $(grep -c '^FALHOU' "$TRABALHO/mut-$nome.out") item(ns) reprovado(s) — $(grep '^FALHOU' "$TRABALHO/mut-$nome.out" | head -3 | cut -d' ' -f2 | tr '\n' ' ')"
+      # Detectada de verdade = o aceite reprovou O ITEM ESPERADO desta mutacao. "O aceite
+      # falhou" sozinho nao vale: mutacao que quebra a importacao contaria como detectada.
+      faltando=""
+      for esperado in $(echo "$esperados" | tr ',' ' '); do
+        grep -q "^FALHOU $esperado " "$TRABALHO/mut-$nome.out" || faltando="$faltando $esperado"
+      done
+      if [ -n "$faltando" ]; then
+        echo "FALHOU mutacao $nome detectada, mas SEM o item esperado:$faltando"
+        grep '^FALHOU' "$TRABALHO/mut-$nome.out" | head -3
+        falhas=$((falhas + 1))
+      else
+        detectadas=$((detectadas + 1))
+        echo "OK     mutacao $nome reprovou o(s) item(ns) esperado(s) — $(grep -c '^FALHOU' "$TRABALHO/mut-$nome.out") item(ns) reprovado(s) no total: $(grep '^FALHOU' "$TRABALHO/mut-$nome.out" | head -3 | cut -d' ' -f2 | tr '\n' ' ')"
+      fi
     fi
     SCOUT_PY="$guardado"
-  done <<< "$mutacoes"
+  done
 
   echo
   if [ "$falhas" -eq 0 ]; then
-    echo "DENTE OK (3/3 mutacoes detectadas)"
+    echo "DENTE OK ($detectadas/$total mutacoes detectadas, cada uma pelo item esperado)"
   else
-    echo "DENTE FALHOU ($falhas mutacao(oes) nao detectada(s))"
+    echo "DENTE FALHOU ($detectadas/$total detectadas; $falhas falha(s): nao aplicada, nao detectada ou sem o item esperado)"
   fi
   [ "$falhas" -eq 0 ]
 }
