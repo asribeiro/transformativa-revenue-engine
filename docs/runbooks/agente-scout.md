@@ -85,7 +85,8 @@ O desfazer apaga **somente** as organizações criadas por aquela correlação (
 ## 6. Verificação (antes de dizer que está certo)
 
 ```bash
-# suíte offline + autoteste por mutação (roda em qualquer máquina, sem banco)
+# suíte offline + autoteste por mutação (roda em qualquer máquina e de qualquer diretório,
+# sem banco: a raiz do repo é achada por marcador, não pela profundidade do arquivo)
 python3 scripts/agentes/verificar_agente_scout.py --autoteste
 
 # aceite E2E em container PostgreSQL descartável (na VPS)
@@ -98,12 +99,18 @@ bash scripts/verificar_estrutura.sh
 
 O aceite cria um container **novo** (`pg-scout-acc`) e se recusa a rodar se o nome já existir — ele
 nunca mexe em `pg-sales-dev`, `pg-odoo-dev` ou em qualquer container que não seja dele. Ao terminar, o
-container é removido (inclusive em falha). São **35 itens**: três rodadas de ingestão (criação, retry e
-replay com a chave já reivindicada), `prod` recusado sem escrita, `--planejar` sem porta e o ciclo do
-`--desfazer`. `--prova-de-dente` roda o aceite sobre cópias mutadas do agente (**3 mutações**, precisa
-reprovar em todas) e exige baseline verde antes e depois — mutação não detectada é falha do aceite, não
-do agente. `--manter` preserva container e diretório de trabalho para inspeção (o diretório e os
-relatórios são apagados por padrão).
+container é removido (inclusive em falha). São **37 itens**: três rodadas de ingestão (criação, retry e
+replay com a chave já reivindicada), carimbos e id casado das criadas, `prod` recusado sem escrita,
+`--planejar` sem porta e o ciclo do `--desfazer`. `--prova-de-dente` roda o aceite sobre cópias mutadas
+do agente (**3 mutações**) e, para **cada uma**, exige que o aceite reprove **o item esperado** daquela
+mutação (não basta "o aceite falhou": mutação que só quebra a importação não conta como detectada) —
+baseline verde antes e depois, contagem **medida** no veredito. Mutação não detectada, ou não aplicada
+na âncora, é falha do aceite, não do agente. `--manter` preserva container e diretório de trabalho para
+inspeção (o diretório e os relatórios são apagados por padrão).
+
+> Nota de manutenção: o corpo do laço das mutações usa `docker exec -i`, que **consome** o stdin de
+> quem o chamou. Por isso as mutações são lidas numa lista **antes** do laço e todo `docker exec` que não
+> lê stdin leva `</dev/null`. Sem isso o laço morre na primeira iteração e o dente mente.
 
 ## 7. Problemas conhecidos
 
@@ -115,7 +122,14 @@ relatórios são apagados por padrão).
 - **`FONTE_DESCONHECIDA`** — a fonte não está no vocabulário do agente (`agente-scout-v1.json`).
   Incluir uma fonte nova é mudança de contrato do agente, não ajuste local.
 - **`GuardaDeEscritaViolada`** — alguma instrução tentou DDL ou tabela fora das 4 declaradas. É a
-  guarda funcionando; investigue a alteração de código, não afrouxe a guarda.
+  guarda funcionando; investigue a alteração de código, não afrouxe a guarda. A guarda olha o **código
+  SQL** (o conteúdo dos literais é ignorado), então nome de empresa com `Drop`/`Create`/`Alter` no meio
+  não dispara — se disparar com a instrução legítima, o defeito está na guarda.
+- **Veredito `ERRO` em candidata ambígua** — a escrita em `human_approvals` falhou (`fila humana nao
+  registrada`): sem a linha, a ambiguidade **não** foi reportada, então o agente não afirma
+  `REVISAO_IDENTIDADE`. Idem para a auditoria: se o `INSERT` em `agent_runs` falhar, o motivo sai como
+  `AUDITORIA_NAO_REGISTRADA` e a execução **não** é reportada como concluída. Os dois são fail-closed,
+  não defeito.
 - **`sync_events` preso em `PENDING`** — o fechamento foi colocado dentro da CTE de escrita: as CTEs e a
   instrução principal rodam no **mesmo snapshot**, então ela não enxerga a linha que acabou de inserir.
   O fechamento tem de ser uma instrução própria (ver `sql_ingerir`); a suíte offline reprova a regressão.

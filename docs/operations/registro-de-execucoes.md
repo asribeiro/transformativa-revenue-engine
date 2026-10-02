@@ -1326,3 +1326,46 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   nenhum dado nem segredo permanece no disco da VPS).
 - **Nao e homologacao:** quem entrega nao homologa — o veredito do estagio 6 e' do perfil `tester` e a
   homologacao (estagio 7) e' do Anderson.
+
+### Rodada 2 — conserto dos defeitos da revisao independente (mesmo card `t_fd3e41f0`)
+
+- **Suite offline (agente, no container do Hermes):** `python3 scripts/agentes/verificar_agente_scout.py
+  --autoteste` -> `RESULTADO: SCOUT_SUITE_OK (58 itens, 0 falhas)` e `AUTOTESTE OK (12/12 mutacoes
+  detectadas)`, exit 0. Rodada TAMBEM com `TMPDIR=/tmp` — o ambiente em que a rodada 1 morria com
+  `IndexError: 3` em `scout.py:120` — com o MESMO veredito e exit 0.
+- **Sonda do mecanismo do defeito 1 (agente, local):** `bash evidencias-impl-r2/probe-stdin-laco.sh` ->
+  laco antigo (`done <<< "$linhas"` com filho que consome o stdin) `TOTAL_ITERACOES=1`; laco novo
+  (mutacoes numa lista lida ANTES do laco) `TOTAL_ITERACOES=3` -> `PROBE OK`. O anexo da rodada 1 tinha
+  **um unico** bloco `-- mutacao:` e o `3/3` era string literal no script.
+- **Aceite E2E (agente, na VPS, clone proprio do bundle):** bundle `sha256
+  c67eee44adc4acc40c9a6a2e18f24e968911ad4058149c72d819163d1eb3e014`, HEAD
+  `4b7a1ec70c70fa11e5db212984a5f6dd6ea9d3fa` (449 arquivos, `git status` limpo); `bash
+  scripts/agentes/teste_scout_aceite.sh --prova-de-dente` em container descartavel `pg-scout-acc`
+  (`postgres:16`, sem porta publicada) -> `RESULTADO: ACEITE_SCOUT_001_OK (37 itens, 0 falhas)` e `DENTE
+  OK (3/3 mutacoes detectadas, cada uma pelo item esperado)`, com 3 / 14 / 1 item(ns) reprovado(s) por
+  mutacao: `sem-idempotencia` (`rodada3-exit-0`, `rodada3-sem-erro`, `rodada3-ja-existe-cinco`),
+  `sem-forte-tambem-cria` (`rodada1-fila-humana-pendente` e mais 13) e
+  `revisao-nao-vai-para-a-fila-humana` (`rodada1-fila-humana-pendente`). Itens novos de banco verdes:
+  `rodada1-criadas-com-carimbos (3)` e `rodada1-ja-existe-com-id-casado (2)`.
+- **Portao de estrutura (agente):** `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0 falhas)`.
+- **Nenhum container do TRE foi tocado:** ao fim seguiam de pe `proxy-dev`, `odoo-dev`, `pg-odoo-dev` e
+  `pg-sales-dev` (mesmos `StartedAt`) e nao ficou residuo de container, rede ou diretorio temporario do
+  aceite.
+- **Consertos desta rodada (cada um com item proprio e mutacao que o reprova):** (1) o laco da prova de
+  dente chamava `docker exec -i`, que consome o stdin do here-string: rodava **1 de 3** mutacoes e
+  imprimia `3/3` literal -> mutacoes numa lista lida antes do laco, `</dev/null` em todo `docker exec`
+  sem stdin, veredito com a contagem **medida** e exigencia do **item esperado** de cada mutacao;
+  (2) `--autoteste` morria com `IndexError: 3` onde o temp e' `/tmp` (a raiz vinha de
+  `Path(__file__).parents[3]`) -> raiz do repo achada por **marcador** (contrato do agente), com item que
+  importa o agente de diretorio fora da arvore do repo; (3) o `rc` da escrita em `human_approvals` e em
+  `agent_runs` era descartado — o agente dizia `REVISAO_IDENTIDADE`/`REVIEW_REQUIRED` com `erro=None`
+  **sem nada escrito** -> fail-closed (`ERRO`/`FAILED` com `fila humana nao registrada` /
+  `AUDITORIA_NAO_REGISTRADA`); (4) O4: `validar_sql` varria o conteudo dos literais e recusava como DDL
+  uma candidata chamada `Drop Solucoes Ltda` -> a guarda le o **codigo SQL** (`_sem_literais`); (5) O5: o
+  aceite passou a aferir os carimbos `created_at`/`updated_at` (A2) e o **id casado** do `JA_EXISTE` (A4)
+  no banco.
+- **Evidencia bruta:** `evidencias-impl-r2/` no diretorio de trabalho do card (`aceite-r2-vps.out`,
+  `offline-tmpdir-real.out`, `estrutura-r2.out`, `probe-stdin-laco.sh` e `.out`) e anexo do card
+  `t_fd3e41f0`; o log completo do aceite tambem ficou em `/opt/tre/entrega-t_fd3e41f0-r2/` na VPS.
+- **Nao e homologacao:** quem entrega nao homologa — o veredito do estagio 6 e' do perfil `tester` e a
+  homologacao (estagio 7) e' do Anderson.

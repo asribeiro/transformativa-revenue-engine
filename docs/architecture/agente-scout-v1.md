@@ -145,37 +145,53 @@ python3 hermes/agents/scout/scout.py --desfazer <correlation_id>
 - **A4** candidata que casa por forte com organização existente **não** é criada; veredito `JA_EXISTE`
   com o id casado.
 - **A5** sem forte válido, ou com fortes conflitantes, **não** cria nem mescla: `human_approvals`
-  `PENDING` (`SCOUT_IDENTITY_REVIEW`) com evidência.
+  `PENDING` (`SCOUT_IDENTITY_REVIEW`) com evidência. Se a **escrita da fila humana falhar**, o
+  veredito é `ERRO` (`FAILED`) — fail-closed: sem a linha não se afirma ter reportado a ambiguidade.
 - **A6** candidata inválida (sem nome, ou forte declarado e nenhum válido) é `RECUSADA` com motivo.
 - **A7** auditoria: uma linha de `agent_runs` por candidata (`agent_name=scout`,
   `agent_role=discovery`, `correlation_id` do lote, `output` com o veredito) e `sync_events` com
-  operação, chave, payload de evidência e status.
+  operação, chave, payload de evidência e status. Se a **linha de auditoria não for escrita**, a
+  execução é reportada como `ERRO` (nada de `COMPLETED` sem auditoria) e o motivo fica em `motivos`.
 - **A8** `--ambiente prod` é recusado (exit 4) e nada é escrito; ambiente não declarado idem.
 - **A9** nenhuma chamada de LLM sem recibo válido do JEV (fail-closed).
 - **A10** nenhuma escrita fora das 4 tabelas declaradas; nenhum UPDATE/DELETE em `organizations` fora
-  do `--desfazer --confirmo`; nenhum acesso a Odoo/Titan/n8n.
+  do `--desfazer --confirmo`; nenhum acesso a Odoo/Titan/n8n. A guarda de escrita varre o **código
+  SQL**, não o conteúdo dos literais: nome de empresa (`Drop Solucoes Ltda`) não derruba candidata.
 - **A11** artefatos versionados e cobertos por `scripts/verificar_estrutura.sh`; a suíte passa com
   autoteste por mutação.
 
 ## 8. TEST
 
 - **Offline (contrato e regra):**
-  `python3 scripts/agentes/verificar_agente_scout.py --autoteste` — **54 itens**: espelho do contrato com
+  `python3 scripts/agentes/verificar_agente_scout.py --autoteste` — **58 itens**: espelho do contrato com
   o Data Contract V1.0, colunas do INSERT contra o DDL congelado (e a **contagem** de colunas × valores),
   normalização/validação, decisão de identidade, guarda de escrita, gate do JEV e o fluxo completo numa
-  porta de roteiro. O autoteste muta **cópia** do agente (**8 mutações**) e exige que o item
-  correspondente **reprove** — hoje 8/8.
+  porta de roteiro (incluindo os caminhos **fail-closed** da fila humana e da auditoria, e a importação
+  do agente de diretório fora da árvore do repositório). O autoteste muta **cópia** do agente
+  (**12 mutações**) e exige que o item correspondente **reprove** — hoje 12/12.
 - **E2E (banco real, descartável):** `bash scripts/agentes/teste_scout_aceite.sh` na VPS, em container
-  PostgreSQL descartável (`pg-scout-acc`) com a migration 0001 — **35 itens** medidos por contagem
-  antes/depois em 3 rodadas mais as guardas: criação (3), retry sem duplicata, **replay com a chave já
-  reivindicada e a organização ausente** — é este item que prova o `ON CONFLICT (idempotency_key)`;
+  PostgreSQL descartável (`pg-scout-acc`) com a migration 0001 — **37 itens** medidos por contagem
+  antes/depois em 3 rodadas mais as guardas: criação (3), carimbos `created_at`/`updated_at`, retry sem
+  duplicata, **replay com a chave já reivindicada e a organização ausente** — é este item que prova o
+  `ON CONFLICT (idempotency_key)`; `JA_EXISTE` apontando para o **id da organização pré-existente**;
   `prod` recusado sem escrita, `--planejar` sem porta, dry-run do desfazer e desfazer com `--confirmo`
-  preservando base e auditoria. O `--prova-de-dente` muta a cópia do agente e exige que o aceite
-  **REPROVE** (baseline verde antes e depois): **3/3**.
+  preservando base e auditoria. O `--prova-de-dente` muta a cópia do agente (**3 mutações**) e exige,
+  para **cada uma**, que o aceite reprove **o item esperado** (não apenas "falhou"): 3/3, com baseline
+  verde antes e depois e a contagem impressa **medida**.
 - **Defeitos que só o E2E pegou** (cada um virou item offline): colunas × valores fora de sincronia no
   INSERT; veredito de criação ignorando os problemas de validação (nome/fonte); carimbos
   `BEGIN`/`COMMIT` da porta lidos como "não ingerido"; e o fechamento do `sync_events` dentro da CTE —
   mesmo snapshot, o evento ficava `PENDING` para sempre.
+- **Defeitos da revisão independente (rodada 1) e seus consertos:** (1) o laço da prova de dente
+  **morria na 1ª mutação** porque o corpo chamava `docker exec -i`, que consome o stdin do here-string —
+  o dente rodava 1 de 3 e imprimia `3/3` literal; agora as mutações são uma lista lida antes do laço,
+  todo `docker exec` sem stdin leva `</dev/null`, e o veredito exige o item esperado de cada mutação;
+  (2) `--autoteste` **morria com `IndexError`** onde o temp é `/tmp` (a raiz vinha de
+  `Path(__file__).parents[3]`); agora a raiz do repo é achada por **marcador** e há item que importa o
+  agente de fora da árvore; (3) o `rc` da escrita em `human_approvals` e em `agent_runs` era
+  **descartado** (o agente dizia `REVISAO_IDENTIDADE`/`COMPLETED` sem nada escrito) — agora é
+  fail-closed; (4) a guarda de escrita casava DDL **dentro de literais** e derrubava candidata legítima
+  por causa do nome.
 - Evidência no `docs/operations/registro-de-execucoes.md` com comando e saída reais.
 
 ## 9. ROLLBACK

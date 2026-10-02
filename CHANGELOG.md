@@ -1111,7 +1111,15 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   - `--planejar` (sem banco, não exige ambiente) e `--desfazer <correlation_id>` (dry-run por padrão;
     `--confirmo` apaga só o que a rodada criou e registra o `ROLLBACK` em `sync_events`).
 - **Verificação do Scout** (`TRE-W4-E01-T01`) — `scripts/agentes/verificar_agente_scout.py` (suíte
-  offline, 54 itens, autoteste de 8 mutações) e `scripts/agentes/teste_scout_aceite.sh` (aceite E2E em
-  container PostgreSQL descartável na VPS, 35 itens + prova de dente com 3 mutações);
+  offline, 58 itens, autoteste de 12 mutações) e `scripts/agentes/teste_scout_aceite.sh` (aceite E2E em
+  container PostgreSQL descartável na VPS, 37 itens + prova de dente com 3 mutações, cada mutação
+  exigindo o **item esperado** e a contagem medida no veredito);
   `docs/architecture/agente-scout-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
   `docs/runbooks/agente-scout.md`.
+- **Correções depois da revisão independente da 1ª rodada** (todas fail-closed, cada uma com item próprio
+  e mutação que o reprova): a prova de dente rodava **1 de 3** mutações — o `docker exec -i` consumia o
+  stdin do laço — e imprimia `3/3` literal; o `--autoteste` morria com `IndexError` onde o diretório
+  temporário é `/tmp` (a raiz do repo agora é achada por **marcador**, não pela profundidade do arquivo);
+  o `rc` da escrita em `human_approvals` e em `agent_runs` era descartado (o agente afirmava
+  `REVISAO_IDENTIDADE`/`COMPLETED` sem nada escrito); e a guarda de escrita recusava candidata legítima
+  por causa de `Drop`/`Create`/`Alter` **dentro do nome da empresa** (a guarda agora lê o código SQL).
