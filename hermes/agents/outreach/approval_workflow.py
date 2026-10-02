@@ -1112,6 +1112,9 @@ def main(argv: list[str] | None = None) -> int:
     except RecusaDePolitica as recusa:
         print(f"RECUSADO {recusa}", file=sys.stderr)
         return EXIT_POLITICA_RECUSADA
+    except RecusaDeDecisao as recusa:
+        print(f"RECUSADO {recusa}", file=sys.stderr)
+        return EXIT_FALHOU
 
     if args.relatorio:
         caminho = Path(args.relatorio)
