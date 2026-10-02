@@ -1,0 +1,219 @@
+{
+  "nome": "politica-outreach-v1",
+  "card": "TRE-W6-E02-T01",
+  "onda": "W6",
+  "versao": "1.0.0",
+  "baseline": "V1.1.0",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "status_explicacao": "O VOCABULARIO das acoes (do qual saem as acoes que geram abordagem) e do Data Contract V1.0, lido a cada rodada -- aqui nao existe lista de acoes em forma executavel no codigo. O que este arquivo propoe e (a) QUAIS acoes recomendadas geram abordagem e por qual canal, (b) a GUARDA de contato/compliance que bloqueia a abordagem e (c) os LIMITES e as afirmacoes proibidas que a abordagem tem de respeitar. Homologacao e do Anderson.",
+  "vocabulario_das_acoes": "docs/data/data_contract_v1.json#vocabularies.next_best_action",
+  "vocabulario_do_status_de_aprovacao": "docs/data/data_contract_v1.json#vocabularies.human_approvals.status",
+  "regra_de_avaliacao": "A abordagem SO existe para uma acao recomendada que esteja declarada em `acoes_de_abordagem`. Acao do contrato sem abordagem declarada = ABSTEM (nada escrito). Acao da politica fora do vocabulario do contrato ou politica sem cobrir o vocabulario = RECUSA (POLITICA_INCOERENTE, exit 3).",
+  "ente_da_abordagem": "Uma abordagem e a proposta de UMA mensagem para UM contato, ligada a UMA recomendacao. O gerador NAO envia nada: ele grava o PEDIDO DE APROVACAO (human_approvals, status PENDING) e para.",
+  "acoes_de_abordagem": [
+    {
+      "acao": "SEND_EMAIL",
+      "canal": "EMAIL",
+      "tipo": "ABORDAGEM_INICIAL",
+      "bloqueio_do_canal": "opt_out_email",
+      "texto_do_cta": "uma conversa curta de diagnostico"
+    },
+    {
+      "acao": "FOLLOW_UP",
+      "canal": "EMAIL",
+      "tipo": "FOLLOW_UP",
+      "bloqueio_do_canal": "opt_out_email",
+      "texto_do_cta": "retomar o contato anterior"
+    },
+    {
+      "acao": "PREPARE_LINKEDIN",
+      "canal": "LINKEDIN",
+      "tipo": "ABORDAGEM_INICIAL",
+      "bloqueio_do_canal": "do_not_contact",
+      "texto_do_cta": "conversar pelo LinkedIn"
+    }
+  ],
+  "nao_alcancadas": [
+    "RESEARCH_MORE",
+    "FIND_DECISION_MAKER",
+    "WAIT",
+    "CREATE_MEETING",
+    "NURTURE",
+    "DISQUALIFY"
+  ],
+  "nao_alcancadas_explicacao": "Estas acoes do contrato sao reconhecidas e NAO geram abordagem nesta v1: RESEARCH_MORE (falta evidencia), FIND_DECISION_MAKER (falta contato), WAIT (esperar e a acao), CREATE_MEETING (reuniao e do humano via Odoo), NURTURE e DISQUALIFY (nao abordar agora). A cobertura e conferida a cada rodada: acao do contrato que nao esteja nem em `acoes_de_abordagem` nem aqui RECUSA.",
+  "guarda_de_contato": {
+    "bloqueios_absolutos": ["do_not_contact"],
+    "bloqueios_por_canal": {
+      "EMAIL": "opt_out_email",
+      "LINKEDIN": "do_not_contact"
+    },
+    "exige": ["contato existente", "contato da propria empresa", "contato indicado na recomendacao lida"],
+    "regra": "do_not_contact/opt_out_* sao BLOQUEIO, nao preferencia (Data Contract §9): contato bloqueado nao recebe abordagem em canal nenhum -- a rodada RECUSA (CONTATO_BLOQUEADO) e nao grava pedido de aprovacao"
+  },
+  "evidencia": {
+    "origem": "PostgreSQL (schema sales_intelligence), leitura somente",
+    "fontes": [
+      "recommendations (a acao recomendada lida: card irmao TRE-W5-E07-T01)",
+      "organizations",
+      "contacts",
+      "research_runs (summary da ultima pesquisa COMPLETED)",
+      "pain_hypotheses (VALIDATED/PARTIALLY_VALIDATED)",
+      "signals (sem expires_at vencido)",
+      "scores (PRIORITY mais recente)",
+      "sync_events (registro TIER mais recente, do card TRE-W5-E06-T01)",
+      "interactions (historico OUTBOUND para o follow-up)"
+    ],
+    "max_sinais": 3,
+    "max_dores": 2,
+    "max_interacoes": 2,
+    "fontes_de_fato": [
+      "research_runs",
+      "pain_hypotheses",
+      "signals",
+      "scores",
+      "sync_events",
+      "interactions"
+    ],
+    "fontes_de_fato_explicacao": "o NOME da empresa e o contato nao sao fato suficiente para abordar: a abordagem precisa de pesquisa, dor, sinal, score ou registro TIER lido. Sem nenhum destes, a rodada RECUSA (SEM_EVIDENCIA) -- abordagem sem fato e generica",
+    "minimo_itens": 1,
+    "regra": "SEM evidencia nenhuma (nenhuma pesquisa, nenhum sinal, nenhuma dor) a rodada RECUSA (SEM_EVIDENCIA): abordagem sem fato e abordagem generica, e generica nao e o produto deste componente",
+    "fato_citavel": "cada item da evidencia recebe um id (E1, E2, ...) e o texto citavel dele; numero/URL/e-mail/sigla de dado do setor so podem aparecer na abordagem se estiverem nesse texto (ou na assinatura declarada em `remetente`)"
+  },
+  "limites": {
+    "assunto_chars": 120,
+    "corpo_chars": 1800,
+    "cta_chars": 200
+  },
+  "exigencia_de_citacao": {
+    "minimo": 1,
+    "marcador": "[E{n}]",
+    "regra": "todo marcador citado tem de existir na evidencia desta rodada; marcador inexistente = fato inventado"
+  },
+  "afirmacoes_proibidas": [
+    "garantia de resultado",
+    "garantimos",
+    "melhor do mercado",
+    "sem custo",
+    "gratuito",
+    "gratis",
+    "100%",
+    "urgente",
+    "ultima chance"
+  ],
+  "remetente": {
+    "nome": "Anderson Ribeiro",
+    "cargo": "Consultor Senior de Eficiencia Operacional e IA",
+    "empresa": "Transformativa",
+    "email": "anderson.ribeiro@transformativa.com.br",
+    "regra": "a assinatura e acrescentada pelo gerador DEPOIS da validacao, a partir deste bloco declarado -- o modelo nao escreve assinatura e nao inventa remetente"
+  },
+  "idioma": "pt-BR",
+  "prompt": {
+    "arquivo": "hermes/agents/outreach/prompt-abordagem-v1.md",
+    "versao": "abordagem-v1",
+    "marcadores": [
+      "{{IDIOMA}}",
+      "{{MARCADOR}}",
+      "{{MINIMO_CITACOES}}",
+      "{{AFIRMACOES_PROIBIDAS}}",
+      "{{LIMITE_ASSUNTO}}",
+      "{{LIMITE_CORPO}}",
+      "{{LIMITE_CTA}}",
+      "{{ACAO}}",
+      "{{CANAL}}",
+      "{{EMPRESA}}",
+      "{{CONTATO}}",
+      "{{REMETENTE}}",
+      "{{EVIDENCIA}}"
+    ],
+    "regra": "o texto do prompt vive NESTE arquivo versionado, nunca no codigo: a suite reprova prompt em forma executavel dentro do modulo"
+  },
+  "tipos_e_operacoes": {
+    "origem": "valores de terceiros (contrato de dados, vocabularios do componente ou convencao de card irmao) que este gerador LE — declarados aqui para nao aparecerem em forma executavel no codigo",
+    "recomendacao": {
+      "recommendation_type": "NEXT_BEST_ACTION",
+      "status": "OPEN",
+      "card": "TRE-W5-E07-T01 (NBA v1)",
+      "regra": "a abordagem serve a ULTIMA recomendacao com este tipo e status; sem ela a rodada ABSTEM"
+    },
+    "score_priority": "PRIORITY",
+    "tier_operation": "TIER",
+    "tier_source_version": "tiering-v1",
+    "pesquisa_status": "COMPLETED",
+    "dores_status": ["VALIDATED", "PARTIALLY_VALIDATED"],
+    "interacao_outbound_direction": "OUTBOUND",
+    "nota": "os STATUS que este gerador ESCREVE sao os do vocabulario fechado do contrato (human_approvals.status) e sao conferidos na carga da politica: PENDING e EXPIRED. Mudar o vocabulario exige versao nova do contrato."
+  },
+  "provedor": {
+    "padrao": "offline",
+    "permitidos": ["offline", "chat-completions"],
+    "contrato_do_provedor": "HTTP POST {base_url}/chat/completions no formato compativel com OpenAI: {\"model\": <modelo>, \"messages\": [{\"role\":\"system\"...},{\"role\":\"user\"...}], \"temperature\": <temperatura>, \"response_format\": {\"type\": \"json_object\"}} -> choices[0].message.content com o JSON da abordagem",
+    "base_url_variavel": "TRE_OUTREACH_BASE_URL",
+    "modelo_variavel": "TRE_OUTREACH_MODELO",
+    "credencial_variavel": "TRE_OUTREACH_API_KEY",
+    "temperatura": 0.2,
+    "timeout_s": 60,
+    "tentativas": 2,
+    "catalogo_fora_da_politica": "nome e preco de modelo NAO ficam aqui (regra herdada da policy JEV): vem de --modelo/--base-url ou das variaveis de ambiente, na hora da configuracao",
+    "sem_credencial": "modo chat-completions sem credencial no ambiente RECUSA (PROVEDOR_INCOMPLETO) e nao abre conexao -- fail-closed, nunca 'segue sem modelo'",
+    "offline": "renderizador deterministico declarado em `modelo_offline`: monta a abordagem a partir da evidencia, sem modelo nenhum; a auditoria marca provider 'offline' e NAO conta token nem custo. Existe para medir o caminho de validacao/persistencia sem rede -- jamais para fingir resposta de modelo"
+  },
+  "modelo_offline": {
+    "rotulo": "renderizador-deterministico-v1",
+    "assunto": "{{EMPRESA}} — {{TIPO}} sobre {{TEMA}}",
+    "corpo": [
+      "Ola, {{PRIMEIRO_NOME}}. Vi que a {{EMPRESA}} {{GATILHO}} {{CITACAO}}.",
+      "Trabalho com eficiencia operacional e IA: automatizo tarefas repetitivas e organizo processo, para o time sair do modo apagar incendio. Imagino que {{HIPOTESE}} {{CITACAO_HIPOTESE}} — se fizer sentido, nao e diagnostico, e hipotese.",
+      "Faz sentido uma conversa curta para eu entender o cenario e dizer com honestidade se consigo ajudar?"
+    ],
+    "cta": "Conversa curta de diagnostico sobre o cenario acima."
+  },
+  "afirmacoes_do_renderizador": {
+    "tema_de_origem": "campo `tema` do item E1 da evidencia, sem alteracao",
+    "gatilho_de_origem": "campo `gatilho` do item E1 da evidencia, sem alteracao",
+    "hipotese_de_origem": "campo `hipotese` do primeiro item de dor da evidencia, sem alteracao",
+    "regra": "o renderizador so CONCATENA trechos da evidencia: nao cria fato, nao infere setor e nao arredonda numero. Fato que nao existe na evidencia faz o item nao ser renderizavel (o gerador RECUSA com SEM_EVIDENCIA_RENDERIZAVEL)"
+  },
+  "escrita": {
+    "tabelas_permitidas": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"],
+    "operacoes_permitidas": {
+      "sales_intelligence.human_approvals": [
+        "INSERT (o pedido de aprovacao, status PENDING)",
+        "UPDATE (SO status PENDING -> EXPIRED dos pedidos vencidos pela evidencia nova)",
+        "DELETE (SO no --desfazer --confirmo)"
+      ],
+      "sales_intelligence.agent_runs": ["INSERT"]
+    },
+    "proibido": [
+      "DDL",
+      "escrita em organizations, contacts, interactions, recommendations, scores, signals, pain_hypotheses, research_runs, sync_events, outbox_events",
+      "UPDATE em agent_runs (auditoria append-only)",
+      "DELETE fora do --desfazer --confirmo",
+      "envio de e-mail/mensagem, criacao de atividade no Odoo ou qualquer chamada externa alem do provedor de modelo"
+    ]
+  },
+  "supersessao": {
+    "regra": "evidencia nova (entrada_hash novo) gera pedido NOVO e os pedidos PENDING anteriores da MESMA empresa/contato/acao passam a EXPIRED. `human_approvals.status` e vocabulario fechado (PENDING, APPROVED, REJECTED, EXPIRED): o estado EXPIRED e o unico que expressa 'pedido que perdeu validade sem decisao humana' -- inventar SUPERSEDED aqui seria mudar contrato",
+    "excecao": "replay (mesma entrada) nao expira nada e nao duplica: o id e o mesmo (veredito JA_GERADA)"
+  },
+  "guardrails": {
+    "fail_closed": "empresa inexistente RECUSA; sem recomendacao OPEN de abordagem ABSTEM; contato ausente ou bloqueado RECUSA; sem evidencia RECUSA; provedor sem credencial RECUSA; abordagem invalida RECUSA (nada escrito em human_approvals); prod RECUSA exit 4; politica/contrato incoerente RECUSA exit 3",
+    "nada_e_enviado": "o componente NAO envia e NAO age: grava o pedido de aprovacao e espera decisao humana (doc 12 §4 + ADR-0004). O workflow de aprovacao (notificacao e decisao) e do card seguinte TRE-W6-E03-T01",
+    "sem_banco_nao_planeja": "--planejar e --regras nao abrem conexao nenhuma"
+  },
+  "fora_do_card": [
+    "Workflow de aprovacao humana (notificar, decidir, APPROVED/EDITED/REJECTED) — TRE-W6-E03-T01",
+    "Envio por SMTP Titan — TRE-W6-E04-T01",
+    "Leitura da resposta e classificacao — TRE-W6-E05-T01",
+    "Anexo/nome de arquivo de CV ou material de apoio — nao previsto no baseline para a abordagem v1",
+    "Selecao automatica de modelo/rota/benchmark de prompt — card proprio (W9)"
+  ],
+  "lacunas": [
+    "`agent_runs` nao tem colunas dedicadas `model_provider`/`model_name`/`prompt_version`/`input_hash` (o DDL do contrato so oferece `model`): os quatro campos vao ESTRUTURADOS dentro de `agent_runs.input` (JSONB) e a lacuna fica registrada para o contrato V1.1 — nao se cria coluna (governanca §10)",
+    "O baseline nao define o TEXTO do prompt nem a rubrica de qualidade da abordagem: o prompt e a rubrica (limites, citacao, afirmacoes proibidas) sao PROPOSTA deste card, declarados e testados",
+    "Nao ha avaliacao de resposta (interesse real) nesta v1: qualidade da abordagem e medida por validacao deterministica (fatos, limites, compliance), nao por taxa de resposta — calibracao e W9",
+    "Selecao de provedor/modelo e comparacao de qualidade entre modelos ficam fora do card: o adaptador e um so contrato (chat-completions) e o modelo vem do ambiente",
+    "`interactions` nao tem coluna de rascunho/abordagem proposta: o rascunho vive em `human_approvals.proposed_action` (JSONB) ate a decisao humana, e so a interacao SENT e registrada no envio (W6-E04)"
+  ]
+}

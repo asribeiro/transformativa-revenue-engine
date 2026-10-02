@@ -1,0 +1,129 @@
+{
+  "agente": "outreach",
+  "nome": "gerador-abordagem-v1",
+  "papel": "agente_outreach",
+  "versao": "1.0.0",
+  "card": "TRE-W6-E02-T01",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#vocabularies.next_best_action — DONO das acoes (RESEARCH_MORE, FIND_DECISION_MAKER, SEND_EMAIL, PREPARE_LINKEDIN, WAIT, FOLLOW_UP, CREATE_MEETING, NURTURE, DISQUALIFY); o codigo NAO carrega a lista em forma executavel, o vocabulario e lido do contrato a cada rodada",
+    "docs/data/data_contract_v1.json#vocabularies.human_approvals.status — DONO dos estados do pedido de aprovacao (PENDING, APPROVED, REJECTED, EXPIRED)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §3 (Fluxo outbound Titan) — Hermes -> GPT: gerar abordagem; GPT --> Hermes: subject/body/CTA; Hermes -> PG: human_approval PENDING. Este card implementa exatamente esses tres passos, sem enviar nada",
+    "04_PROJETO_FISICO_DE_DADOS.md §10 — DDL de `human_approvals` (proposed_action JSONB, action_type, entity_type/entity_id, requested_by, status) e de `agent_runs`: nenhuma coluna nova, nenhum DDL",
+    "12_CONTRATOS_E_GOVERNANCA.md §4 + ADR-0004 — acao sensivel exige approval; quem executa e o humano, com operador registrado",
+    "DATA_CONTRACT_V1.md §9 — compliance: nao contatar opt-out (do_not_contact/opt_out_* sao bloqueio, nao preferencia); inferencia marcada como inferencia",
+    "03_ARQUITETURA_DE_NEGOCIO.md §13 — ICP e dores de eficiencia operacional/IA que sustentam a abordagem",
+    "hermes/scores/nba/politica-nba-v1.json — a recomendacao lida (NEXT_BEST_ACTION, status OPEN) e a ENTRADA deste componente; o NBA e do card TRE-W5-E07-T01",
+    "hermes/agents/outreach/politica-outreach-v1.json — canal por acao, guarda de contato, limites, afirmacoes proibidas, prompt e contrato do provedor",
+    "card irmao TRE-W5-E06-T01 (tiering) e TRE-W5-E05-T01 (priority): tier/PRIORITY lidos da evidencia, nunca recalculados aqui"
+  ],
+  "entrada": {
+    "formato": "jsonl (opcional) OU --organizacao <uuid>",
+    "uma_organizacao_por_linha": true,
+    "campo_obrigatorio": ["organization_id"],
+    "descricao": "a fonte escolhe o SUJEITO da rodada. O dado NAO vem da fonte: no modo real tudo e lido do banco (a recomendacao OPEN, a organizacao, o contato, a pesquisa, as dores, os sinais, os scores e o registro TIER). Em --planejar/--regras a fonte nem e lida."
+  },
+  "modelo": {
+    "nome": "gerador-abordagem-v1",
+    "status": "PROPOSTA_A_HOMOLOGAR",
+    "status_explicacao": "O contrato do baseline diz QUE a abordagem gera subject/body/CTA e QUE ela vira pedido de aprovacao; ele NAO define o prompt, quais acoes geram abordagem, os limites nem as afirmacoes proibidas. Isso e proposta declarada em `politica-outreach-v1.json`, testada. Homologacao e do Anderson.",
+    "entrada_de_negocio": "recomendacao NEXT_BEST_ACTION (status OPEN) do card TRE-W5-E07-T01",
+    "fonte_das_acoes": "docs/data/data_contract_v1.json#vocabularies.next_best_action",
+    "llm": "SIM — unico componente do board que chama modelo, e de forma declarada: provedor por adaptador (chat-completions compativel com OpenAI) ou renderizador deterministico `offline`. A auditoria grava provider/modelo/versao de prompt/hash de entrada; o `offline` e rotulado como offline e nao conta token nem custo",
+    "deterministico_no_offline": true,
+    "prompt_versionado": "hermes/agents/outreach/prompt-abordagem-v1.md (versao `abordagem-v1`)",
+    "confianca": "NULL no pedido de aprovacao: nao existe calibracao de qualidade de abordagem na v1 (lacuna declarada); o que existe e validacao deterministica de fatos/limites/compliance",
+    "persistencia": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"]
+  },
+  "persistencia": {
+    "tabelas_escritas": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"],
+    "registro": {
+      "tabela": "sales_intelligence.human_approvals",
+      "action_type": "codigo da acao recomendada lida (vocabularies.next_best_action)",
+      "entity_type": "CONTACT (a abordagem e para uma pessoa)",
+      "entity_id": "contacts.id do contato indicado na recomendacao",
+      "requested_by": "quem pediu a aprovacao (triggered_by da rodada)",
+      "proposed_action": "{canal, tipo, assunto, corpo, cta, fatos_citados[], evidencia_ids[], recommendation_id, organization_id, contact_id, gerador_version, prompt_version, politica, provedor{provider,model}, entrada_hash}",
+      "status": "PENDING (estado inicial do vocabulario do contrato)",
+      "requested_at": "NOW()",
+      "decided_at / decided_by / decision_notes": "NULL — a decisao e do workflow humano (TRE-W6-E03-T01), com operador registrado (doc 12 §9)"
+    },
+    "supersessao": {
+      "regra": "evidencia nova => pedido NOVO; os pedidos PENDING anteriores da MESMA empresa/contato/acao passam a EXPIRED (unico estado do vocabulario que expressa pedido que perdeu validade sem decisao)",
+      "excecao": "replay (mesma entrada) nao expira nada e nao duplica"
+    },
+    "auditoria": {
+      "tabela": "sales_intelligence.agent_runs",
+      "conteudo": "uma linha por empresa pedida: veredito, motivo, `input` ESTRUTURADO (organization_id, recommendation_id, contact_id, acao, canal, entrada_hash, prompt_version, model_provider, model_name, politica@versao, evidencia_ids) e `output` (assunto/corpo/cta quando houve abordagem, human_approval_id, fatos_citados, problemas de validacao). RECUSA e ABSTENCAO tambem sao auditadas (REJECTED); falha de rede/banco em FAILED",
+      "tokens_e_custo": "tokens_input/tokens_output/estimated_cost vem da resposta do provedor quando ela os traz (uso declarado pelo provedor); no modo offline ficam NULL",
+      "lacuna_de_coluna": "`agent_runs` nao tem colunas model_provider/model_name/prompt_version/input_hash: vao dentro de `input` (JSONB) e a lacuna fica registrada para o contrato V1.1 (governanca §10 — nao se cria coluna em card de componente)"
+    },
+    "nao_escrito": {
+      "coluna_nova": "nenhuma — criar coluna exige versao nova do contrato (governanca §10 + ADR-0004)",
+      "recommendations / scores / contacts / interactions / sync_events / outbox_events": "LEITURA apenas: a guarda de escrita RECUSA INSERT/UPDATE/DELETE fora das duas tabelas e RECUSA qualquer DDL",
+      "envio": "nada e enviado, agendado ou criado no Odoo: o pedido fica PENDING e espera decisao humana"
+    }
+  },
+  "idempotencia": {
+    "id": "uuid5(NAMESPACE_URL, 'gerador-abordagem-v1:<organization_id>:<entrada_hash>') — o id E a chave",
+    "entrada_hash": "sha256 canonico (JSON com chaves ordenadas) de: gerador_version, prompt_version, politica@versao, organizacao, recomendacao (id+acao+contato), canal, provedor (provider+modelo), o texto do prompt renderizado e o texto citavel da evidencia (ids+conteudo citavel)",
+    "nao_entram_no_hash": ["o relogio da rodada", "o correlation_id", "o triggered_by", "o texto da assinatura (declarado, constante)", "a ordem de leitura das linhas (a evidencia e ordenada antes do hash)"],
+    "regra": "mesma entrada => mesmo id => mesma abordagem => replay (JA_GERADA, nada novo). Evidencia/recomendacao/modelo/prompt novos => id novo => pedido NOVO com os PENDING anteriores EXPIRED",
+    "prova_da_gravacao": "a contagem da linha DESTE id e lida na mesma transacao: 1 com ja_existia=0 = gravado agora; 1 com ja_existia=1 = replay"
+  },
+  "vereditos": {
+    "GERADA": "abordagem valida: pedido gravado em human_approvals (PENDING) e auditado em agent_runs",
+    "JA_GERADA": "a mesma entrada ja tinha pedido: nada duplicado, nada expirado",
+    "RECUSADA": "empresa inexistente, sem contato, contato bloqueado, sem evidencia, provedor incompleto, abordagem invalida ou fato nao sustentado: NADA escrito em human_approvals",
+    "ABSTEVE": "sem recomendacao OPEN ou acao do contrato sem abordagem declarada: nada escrito (ausencia de resposta e abstencao)",
+    "ERRO": "falha de rede/banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "GERADA": "COMPLETED",
+    "JA_GERADA": "COMPLETED",
+    "RECUSADA": "REJECTED",
+    "ABSTEVE": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "validacao_da_abordagem": {
+    "campos_obrigatorios": ["assunto", "corpo", "cta"],
+    "limites": "limites.assunto_chars / corpo_chars / cta_chars da politica",
+    "citacao": "todo marcador [E{n}] citado existe na evidencia desta rodada; minimo de citacoes da politica",
+    "fatos": "todo numero, percentual, valor, URL, e-mail e CNPJ do texto tem de estar no texto citavel da evidencia ou no bloco `remetente` da politica — comparação por forma normalizada (espacos e separadores). Fato que nao esta la = RECUSA (FATO_NAO_SUSTENTADO): o texto nao pode afirmar o que a evidencia nao sustenta",
+    "afirmacoes_proibidas": "lista declarada na politica (promessa de resultado, gratuidade, superlativos, urgencia)",
+    "assinatura": "acrescentada pelo gerador a partir do bloco `remetente` da politica, DEPOIS da validacao: o modelo nao escreve assinatura"
+  },
+  "guardrails": {
+    "fail_closed": "empresa inexistente RECUSA; sem recomendacao OPEN ABSTEM; contato ausente/bloqueado RECUSA; sem evidencia RECUSA; provedor sem credencial RECUSA sem abrir conexao; abordagem invalida RECUSA; DDL e escrita fora das duas tabelas RECUSAM; prod RECUSA com exit 4; politica/contrato incoerente RECUSA exit 3",
+    "compliance": "do_not_contact e opt_out_* bloqueiam a abordagem; incompatibilidade de canal (opt_out_email para EMAIL) bloqueia o canal, nao a empresa",
+    "sem_execucao": "o componente nao envia, nao agenda e nao escreve no Odoo: a execucao e do W6-E04 depois da decisao humana (W6-E03)",
+    "sem_segredo": "a credencial do provedor vem de variavel de ambiente, nunca de argv, arquivo de politica ou log; o relatorio e a auditoria nao carregam chave"
+  },
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "ADR-005: nada nasce em producao; promocao exige card proprio com aprovacao humana registrada",
+    "planejar": "--planejar e --regras nao abrem conexao nenhuma (nenhuma porta e construida)"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "os pedidos de aprovacao gravados pela rodada (ids ligados ao output de agent_runs da correlacao)",
+    "dry_run": "padrao: informa quantos seriam apagados e nao apaga",
+    "auditoria": "as linhas de agent_runs NAO sao apagadas: a rodada continua auditavel depois de desfeita"
+  },
+  "fora_do_card": [
+    "Workflow de aprovacao humana (notificacao, decisao, EDITED) — TRE-W6-E03-T01",
+    "Envio por SMTP Titan e registro da interacao SENT — TRE-W6-E04-T01",
+    "Leitura/classificacao da resposta — TRE-W6-E05-T01",
+    "Evento de outbox NEXT_BEST_ACTION_CHANGED / espelhamento no Odoo — W3/W6",
+    "Calibracao de qualidade por taxa de resposta — W9"
+  ],
+  "lacunas": [
+    "O TEXTO do prompt e a RUBRICA da abordagem (limites, citacao obrigatoria, afirmacoes proibidas) sao proposta deste card: o baseline define o fluxo (subject/body/CTA -> approval PENDING), nao o conteudo",
+    "`agent_runs` sem colunas de model_provider/prompt_version/input_hash: vao estruturados em `input` (JSONB), lacuna registrada para o contrato V1.1",
+    "Sem avaliacao de resposta nesta v1: a prova de qualidade e validacao deterministica (fato sustentado, limite, compliance), nao taxa de resposta",
+    "Um unico contrato de provedor (chat-completions compativel com OpenAI) e um modelo por rodada; comparacao de modelos e rota e do W9",
+    "Varios contatos da mesma empresa: a v1 aborda UM contato (o indicado pela recomendacao). Abordagem paralela a varios decisores exige decisao de politica e cadencia (card futuro)"
+  ]
+}
