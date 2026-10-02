@@ -365,5 +365,28 @@ for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Automation Fit Score v1 (TRE-W5-E02-T01): primeiro componente da W5 e primeiro produtor de SCORE
+# (`scores`). Le o estado que a onda W4 gravou, calcula `AUTOMATION_FIT` por formula declarada
+# (`automation-fit-v1`) e grava a linha do score — sem escrever nas tabelas de negocio (inclusive
+# `organizations.data_quality_score`, que e' o card W5-E04) e sem sobrescrever score (historico).
+# Se o contrato do componente, o codigo, o exemplo de fonte, a suite, o aceite, a arquitetura ou o
+# runbook sumirem do git, o card entrega fica sem artefato verificavel — o gate reprova por nome.
+# Um arquivo por linha de proposito: o aceite da classe mede `grep -c`.
+for f in hermes/agents/automation_fit/automation_fit.py \
+         hermes/agents/automation_fit/agente-automation-fit-v1.json \
+         hermes/agents/automation_fit/exemplos/perfis-exemplo.jsonl \
+         scripts/agentes/verificar_agente_automation_fit.py \
+         scripts/agentes/teste_automation_fit_aceite.sh \
+         docs/architecture/agente-automation-fit-v1.md docs/runbooks/agente-automation-fit.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_automation_fit_aceite.sh \
+         scripts/agentes/verificar_agente_automation_fit.py; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
