@@ -1134,7 +1134,7 @@ PY
         *) falhou "a politica declara res_model_id entre os campos (porta pelo id interno): $RESUMO_OPERACAO" ;;
     esac
     case "$RESUMO_OPERACAO" in
-        *"idempotency=True"*) ok "a escrita exige idempotency_key (contrato §7 do doc 06)" ;;
+        *"chave=True"*) ok "a escrita exige idempotency_key (contrato §7 do doc 06)" ;;
         *) falhou "a escrita nao exige idempotency_key: $RESUMO_OPERACAO" ;;
     esac
     case "$RESUMO_OPERACAO" in
