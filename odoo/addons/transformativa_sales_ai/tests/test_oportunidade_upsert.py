@@ -442,7 +442,7 @@ class TestOportunidadeUpsert(HttpCase):
         dados = resposta.json()["dados"]
         self.assertEqual(dados["acao_efetiva"], "atualizar")
         self.assertEqual(dados["id"], criado["ids"][0])
-        self.assertEqual(dados["atualizaria"], ["name"])
+        self.assertEqual(dados["atualizaria"], ["name", "tf_opportunity_id"])
         self.assertEqual(self._lead(UUID_G).name, "Existe")
 
     def test_20_envelope_traz_chave_e_correlacao(self):
