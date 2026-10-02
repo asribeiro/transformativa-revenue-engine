@@ -1222,3 +1222,56 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   para `entity_type='signal'`/`entity_id=<sinal>` (a empresa fica no payload) e coberto por item próprio
   (`sync-event-do-sinal-aponta-o-sinal`) mais mutação que o reprova.
 
+## [W4 — Hermes Sales AI · Pain Hypothesis] — 02/10/2026
+
+### Added
+
+- **Agente Pain Hypothesis v1 — hipótese de dor com lastro em evidência** (`TRE-W4-E04-T01`) — o quarto
+  agente da onda W4 fecha o penúltimo elo da cadeia do doc 06 (`empresa → pesquisa → signal → hipótese →
+  contato`) e o passo 9 do E2E #001 do doc 08 §3: recebe hipóteses da fonte, resolve a empresa **que já
+  existe** pelos identificadores fortes do contrato, **confere que o lastro declarado existe de verdade e
+  é da MESMA empresa** e grava a inferência marcada como inferência em `pain_hypotheses`:
+  - `hermes/agents/pain_hypothesis/pain_hypothesis.py`, `hermes/agents/pain_hypothesis/agente-pain-hypothesis-v1.json`
+    (contrato legível por máquina) e `hermes/agents/pain_hypothesis/exemplos/hipoteses-exemplo.jsonl`;
+  - vereditos `REGISTRADA`, `JA_REGISTRADA`, `REVISAO_IDENTIDADE`, `RECUSADA`, `ERRO`; **nunca cria
+    empresa**: identidade que não casa é `RECUSADA` (`ORGANIZACAO_NAO_ENCONTRADA`) e identidade ambígua
+    vai para a fila humana (`human_approvals.action_type = PAIN_IDENTITY_REVIEW`);
+  - **hipótese sem lastro não é gravada**: ≥1 evidência declarada tem de existir no banco
+    (`SINAL → signals.id`, `PESQUISA → research_runs.id`) **e** ser da empresa resolvida — evidência
+    inexistente (`EVIDENCIA_NAO_ENCONTRADA`) e evidência **de outra empresa**
+    (`EVIDENCIA_DE_OUTRA_ORGANIZACAO`, o caso que engana: o id existe) são descartadas com motivo e, sem
+    nenhuma válida, o veredito é `RECUSADA` (`SEM_EVIDENCIA_VALIDA`);
+  - `pain_category` vem do vocabulário da baseline (doc 01 §5: `FINANCEIRO`, `COMERCIAL`, `ATENDIMENTO`,
+    `OPERACOES`, `DOCUMENTOS`), declarado no contrato **deste** agente — o Data Contract V1.0 fecha apenas
+    `pain_hypotheses.status`, e não se inventa vocabulário dentro de contrato congelado;
+  - **`status` é sempre o inicial do contrato** (`HYPOTHESIS`) e **nenhum impacto é calculado**:
+    `business_impact_score`, `estimated_impact_description` e `validated_at` ficam fora da escrita (não há
+    fórmula de impacto homologada e validação é ato humano) e a guarda **recusa** quem tentar;
+  - `evidence` conserva o lastro com o **fato de origem** (`signal_type`/`signal_category`/`event_date`
+    ou `research_type`/`status`), a evidência primária, o `input_hash`, o `correlation_id` e **todo
+    descarte com campo, motivo e valor**; `evidence.inferencia = true` cumpre o "inferência marcada como
+    inferência" do doc 12 §8;
+  - **nenhuma coluna de `organizations`, `signals` ou `research_runs` é tocada** (o registro é aditivo): a
+    guarda recusa escrita em empresa **pelo motivo de desenho**, com mensagem que nomeia a regra;
+  - idempotência na **entrada declarada** (`pain:org:<uuid>:<input_hash>` em `sync_events.idempotency_key`
+    UNIQUE) numa transação de **dois comandos de escrita**: claim + `INSERT` ancorado no claim, e
+    fechamento ancorado na hipótese **desta rodada** — o replay não insere e não marca sucesso; a fila
+    humana tem o mesmo claim (`pain:revisao:…`);
+  - o vínculo de origem (`pain_hypotheses.research_run_id`, **FK de verdade** no DDL — ao contrário do
+    vínculo lógico do sinal) é conferido por existência **e dono** antes de ser escrito: vínculo quebrado é
+    descartado com motivo e a hipótese segue sem ele (escrever um id inexistente derrubaria o `INSERT`);
+  - guardas fail-closed: `--ambiente prod` recusado (exit 4), escrita só nas 4 tabelas declaradas,
+    `DELETE` só no desfazer, LLM só com recibo válido do JEV, nenhum cliente HTTP no código, ambiente não
+    declarado recusado; `--planejar` não abre conexão;
+  - `--desfazer <correlation_id>` (dry-run por padrão; `--confirmo` apaga as hipóteses da rodada e os
+    `sync_events` delas e registra o `ROLLBACK`, sem tocar `organizations`, `research_runs`, `signals`,
+    `agent_runs` nem `human_approvals`).
+- **Verificação do Pain Hypothesis** (`TRE-W4-E04-T01`) — `scripts/agentes/verificar_agente_pain_hypothesis.py`
+  (suíte offline, **85 itens**, autoteste de **27 mutações** com guarda da própria prova) e
+  `scripts/agentes/teste_pain_hypothesis_aceite.sh` (aceite E2E em container PostgreSQL descartável na VPS,
+  **85 itens** + prova de dente com 5 mutações, cada uma exigindo o **item esperado**);
+  `docs/architecture/agente-pain-hypothesis-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/agente-pain-hypothesis.md`.
+- **Portão de estrutura** (`TRE-W4-E04-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
+  artefatos do agente Pain Hypothesis (versionados no git, aceite executável).
+

@@ -1562,3 +1562,89 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
 - **Score.** `buying_signal_points`/`relevance_score`/`decay_factor`/`expires_at` **não** são escritos:
   o Buying Signal Score é `TRE-W5-E03-T01`. O aceite mede justamente a **ausência** de score.
 - **Busca ativa.** Sem LLM, sem HTTP e sem crawler na v1: a fonte entrega a observação e a evidência.
+
+## TRE-W4-E04-T01 — Agente Pain Hypothesis v1 (hipotese de dor com lastro)
+
+- **Card:** `t_b4e01433` (board `transformativa-revenue-engine`) · branch `feature/TRE-W4-E04-T01`,
+  base no head aprovado dos dois pais (`feature/TRE-W4-E03-T01` @ `c52167b`, que já contém o Research
+  `82ff096`).
+- **Momento do registro:** toda evidência abaixo foi produzida **antes** deste texto — nada é narrado
+  de memória. Data do registro: 02/10/2026 (UTC).
+- **Código sob teste (sha256, igual nas duas pontas — container do Hermes e VPS):**
+  `hermes/agents/pain_hypothesis/pain_hypothesis.py`
+  `d53754f268e5a63be6865046e592bbc2af7cd5f0a73bf286c89a742fb2abb908`;
+  `scripts/agentes/teste_pain_hypothesis_aceite.sh`
+  `e3976eb7831d5b2527980789c8a8d2b61d46005bff3406fc1a83c313306ee18c`.
+
+### Suite offline (agente, no container do Hermes)
+
+- `python3 scripts/agentes/verificar_agente_pain_hypothesis.py --autoteste` ->
+  `RESULTADO: PAIN_SUITE_OK (85 itens, 0 falhas)` e `AUTOTESTE OK (27/27 mutacoes detectadas)`,
+  exit 0. Saída integral em `evidencias-impl/suite-offline-verif.out` (reprodução própria, além da
+  do autor: `evidencias-impl/suite-offline.out`).
+- O autoteste muta **cópia** do arquivo sob teste e exige que o item correspondente **reprove**; a
+  própria prova tem guarda (item esperado inexistente ou mutação sem item declarado reprova).
+
+### Aceite E2E (agente, na VPS, árvore própria `/opt/tre/e04t01`)
+
+- Container **descartável** `pg-pain-acc` (`postgres:16`, sem porta publicada), schema limpo com a
+  migration 0001, **3 organizações pré-existentes** (`updated_at` fixo em `2000-01-01`, de propósito,
+  para acusar qualquer toque em coluna de empresa), **3 `research_runs`** e **4 `signals`** semeados
+  por SQL — o lastro real das hipóteses.
+- `bash scripts/agentes/teste_pain_hypothesis_aceite.sh --prova-de-dente` ->
+  `RESULTADO: ACEITE_PAIN_001_OK (85 itens, 0 falhas)`, baseline verde, `DENTE OK (5/5 mutacoes
+  detectadas, cada uma pelo item esperado)`, exit 0. Saída integral em
+  `evidencias-impl/aceite-e2e-vps.out` (log do run independente desta sessão; o run do autor ficou em
+  `evidencias-impl/aceite-pain-dente.log`).
+- Medições do aceite (todas por SQL no container descartável): alvo medido
+  `current_database()=sales_intelligence` / `current_user=sales_ai`; 14 hipóteses processadas na
+  rodada 1 (`REGISTRADA=4 JA_REGISTRADA=1 REVISAO_IDENTIDADE=1 RECUSADA=8 ERRO=0`) e **4 linhas** em
+  `pain_hypotheses` (2 na ORG_A, 1 na ORG_B, 1 na ORG_C) com `pain_statement` preenchido, id UUID v4,
+  `status='HYPOTHESIS'` nas 4 e categoria do vocabulário (FINANCEIRO/COMERCIAL/ATENDIMENTO/OPERACOES);
+  **0** coluna proibida preenchida (`business_impact_score`, `estimated_impact_description`,
+  `validated_at` todas NULL); `evidence` com `inferencia`, `marcada_como_inferencia`, `evidencias`,
+  `evidencia_primaria` e `input_hash` nas 4; o lastro amarrado às origens reais com o **fato de
+  origem** conservado (`signal_type`/`signal_category`/`event_date` do sinal e `research_type`/`status`
+  da pesquisa) e o vínculo com o `research_run` real (1); 7 descartes com motivo medidos no SQL
+  (evidência de outra empresa, evidência não encontrada, confiança fora da faixa, derivado, campo não
+  declarado, resumo acima do limite, vínculo quebrado); a hipótese **sem lastro não foi gravada**
+  (`SEM_EVIDENCIA_VALIDA`); **3** organizações intactas com `updated_at` no valor semeado e nenhuma
+  criada; `research_runs=3` e `signals=4` intactos; **0** linha nas tabelas não declaradas (`contacts`,
+  `scores`, `interactions`, `recommendations`, `outbox_events`); 14 linhas de `agent_runs` (5
+  `COMPLETED`, 8 `REJECTED`, 1 `REVIEW_REQUIRED`, 0 `FAILED`), 4 delas apontando a hipótese gravada; 4
+  `sync_events` `PAIN_HYPOTHESIS` `SUCCESS` amarrados à hipótese (com o formato da chave
+  `pain:org:<uuid>:<hash>`) e 1 `PAIN_REVIEW` com a fila humana `PENDING`
+  (`PAIN_IDENTITY_REVIEW`, duas candidatas). Rodada 2 (mesma fonte) não duplica (4 linhas), dá 5
+  replays e não cria claim novo; rodada 3 (hipótese apagada por fora, chave já reivindicada) é replay
+  silencioso (exit 0, sem `ERRO`, sem recriar); `--ambiente prod` recusado (exit 4) sem escrita e sem
+  auditoria; `--planejar` sem conectar; desfazer dry-run não apaga e `--confirmo` apaga só o que a
+  rodada criou, registra `ROLLBACK` e preserva auditoria (14), fila humana, empresa (3), pesquisa (3)
+  e o lastro (4 `signals`).
+- **Itens reprovados por cada mutação (contagem medida no log):** `sem-idempotencia` 9 itens,
+  `fechamento-sem-ancora-na-hipotese` 4, `lastro-nao-conferido` 25,
+  `lastro-de-outra-empresa-aceito` 2 (`rodada1-lastro-l4-so-o-valido`,
+  `rodada1-descarte-de-evidencia-de-outra-empresa`), `status-chumbado-validado` 1
+  (`rodada1-status-inicial`).
+
+### Portão de estrutura (agente)
+
+- `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0 falhas)` (240 linhas `OK`), com os 7
+  artefatos do Pain Hypothesis versionados no git e o aceite executável. Saída integral em
+  `evidencias-impl/estrutura.out`.
+
+### Nenhum container do TRE foi tocado
+
+- Medição depois do aceite: `proxy-dev` Up 30 horas (healthy), `odoo-dev` Up 30 horas, `pg-odoo-dev`
+  Up 31 horas (healthy), `pg-sales-dev` Up 2 dias — nenhum reiniciado; `pg-pain-acc` **não existe**
+  mais. O aceite aborta se o container já existir. Medição em
+  `evidencias-impl/verificacao-vps.txt`.
+
+### O que este card NÃO mede
+
+- **Homologação.** Quem entrega não homologa — o veredito do estágio 6 é do perfil `tester` e a
+  homologação (estágio 7) é do Anderson.
+- **Impacto e validação.** `business_impact_score`, `estimated_impact_description` e `validated_at`
+  **não** são escritos (não há fórmula de impacto homologada e validar é ato humano): o aceite mede
+  justamente a **ausência** deles.
+- **Busca ativa e inferência por LLM.** Sem LLM, sem HTTP e sem crawler na v1: a fonte entrega a
+  hipótese e o lastro; o agente **confere** o lastro (existência e dono), não o produz.

@@ -317,5 +317,26 @@ for f in scripts/agentes/teste_signal_aceite.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Agente Pain Hypothesis v1 (TRE-W4-E04-T01): quarto agente da W4 e o produtor da HIPOTESE DE DOR
+# (`pain_hypotheses`) — resolve a empresa que JA existe pelos identificadores fortes do contrato,
+# CONFERE que o lastro declarado existe no banco e e da MESMA empresa (SINAL -> signals.id,
+# PESQUISA -> research_runs.id) e grava a hipotese marcada como inferencia, sem criar organizacao,
+# sem score de impacto e sem validar status (ato humano). Se o contrato do agente, o codigo, a
+# suite, o aceite ou o runbook sumirem do git, o card entrega fica sem artefato verificavel — o
+# gate reprova por nome.
+for f in hermes/agents/pain_hypothesis/pain_hypothesis.py \
+         hermes/agents/pain_hypothesis/agente-pain-hypothesis-v1.json \
+         hermes/agents/pain_hypothesis/exemplos/hipoteses-exemplo.jsonl \
+         scripts/agentes/verificar_agente_pain_hypothesis.py scripts/agentes/teste_pain_hypothesis_aceite.sh \
+         docs/architecture/agente-pain-hypothesis-v1.md docs/runbooks/agente-pain-hypothesis.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_pain_hypothesis_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
