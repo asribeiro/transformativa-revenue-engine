@@ -340,6 +340,27 @@ for f in hermes/agents/pain_hypothesis/pain_hypothesis.py \
          hermes/agents/pain_hypothesis/exemplos/hipoteses-exemplo.jsonl \
          scripts/agentes/verificar_agente_pain_hypothesis.py scripts/agentes/teste_pain_hypothesis_aceite.sh \
          docs/architecture/agente-pain-hypothesis-v1.md docs/runbooks/agente-pain-hypothesis.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_pain_hypothesis_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
+# Aceite E2E Sales Intelligence (TRE-W4-E06-T01): o encadeamento dos cinco agentes da onda W4
+# (Scout -> Research -> Signal -> Pain Hypothesis -> Contact Research) medido NUM UNICO banco
+# descartavel, com o id que um agente devolve entrando como entrada do proximo. O aceite sozinho
+# nao basta como artefato: sem o contrato (ACCEPTANCE/TEST/ROLLBACK/RISK) e o runbook versionados,
+# quem citar o veredito nao tem onde conferir o escopo — o gate reprova por nome.
+for f in scripts/e2e/verificar-e2e-sales-intelligence.sh \
+         docs/architecture/e2e-sales-intelligence.md docs/runbooks/e2e-sales-intelligence.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
