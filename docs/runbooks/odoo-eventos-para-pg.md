@@ -161,17 +161,29 @@ cria os fatos de negócio pelo ORM, entrega pela porta e mede **coluna a coluna*
 reprova se: a lista de eventos divergir do contrato, o workflow divergir do montado, o módulo ganhar
 caminho paralelo para o PostgreSQL, o reenvio criar segunda linha, a recusa não vier nomeada, o
 retry estourar o teto, o token aparecer no versionado/na trilha, ou o ambiente de dev/homolog/produção
-mudar durante a medição.
+mudar durante a medição. Resultado da rodada publicada (`597f2dd`): `EVENTOS_ODOO_PG_OK (84 itens,
+0 falhas)` com a suíte do card em `0 failed, 0 error(s) of 22 tests`, e a prova de dente em
+`EVENTOS_ODOO_PG_OK (6 itens, 0 falhas)`.
+
+As **quatro recusas** medidas no passo E são: envelope sem `event_version`, evento fora da lista
+fechada, campo exigido ausente e chave de idempotência fora do formato — todas com HTTP 422, motivo
+nomeado e rastro `REFUSED` na trilha.
 
 A **prova de dente** roda primeiro um baseline **não mutado** (que tem de ficar verde) e depois 4
 mutações nomeadas; cada dente só conta se o item declarado daquela mutação **reprovar**:
 
-| Mutação | Item que tem de reprovar |
+| Mutação | Trecho do item que tem de reprovar |
 | --- | --- |
-| `sem_versao` | `envelope sem event_version e recusado (422 + REFUSED na trilha)` |
-| `sem_formato_da_chave` | `chave de idempotencia fora do formato e recusada (422 + REFUSED)` |
-| `sem_campos_exigidos` | `campo exigido ausente e recusado (422 + REFUSED)` |
-| `sem_on_conflict` | `reenvio do mesmo fato nao cria segunda linha na trilha (duplicado: true)` |
+| `sem_versao` | `envelope sem event_version` |
+| `sem_formato_da_chave` | `chave de idempotencia fora do formato` |
+| `sem_campos_exigidos` | `campo exigido ausente` |
+| `sem_on_conflict` | `reenvio do mesmo fato nao cria segunda linha na trilha` |
+
+O juiz casa `^FALHOU .*<trecho>` na saída da sub-rodada, então o item que uma mutação deve reprovar
+tem de ter **a mesma identidade nos dois ramos** (`ok` e `falhou`) — item cujo ramo de falha tem
+outra redação é lido como "mutação sem dente" e reprova o harness. A sub-rodada recebe o nome da
+mutação em `TRE_MUTACAO` e, por isso, a divergência em relação ao montador é declarada como INFO
+naquela rodada (é o propósito dela), nunca silenciada.
 
 Escopo declarado do que o aceite **não** mede: a suíte do Odoo roda **só a classe do card**
 (`--test-tags=/transformativa_sales_ai:TestEventosOdooPg`); as demais classes do módulo são de outros

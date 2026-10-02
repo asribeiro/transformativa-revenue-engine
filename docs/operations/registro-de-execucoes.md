@@ -808,3 +808,69 @@ Rodada executada em 02/10, 03h20 a 04h55 UTC (00h20 a 01h55 na VPS, -03).
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a ratificacao da versao 19.0 / homologacao (estagio 7) e' do Anderson. A
   publicacao do modulo na copia operacional `/opt/tre/repo` segue como pendencia herdada do E03-T01.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E03-T01 (card `t_85cb2838`): a fila de saída do Odoo e a PORTA ÚNICA de ingestão dos eventos no PostgreSQL
+
+- **O que o card entrega (e o que ele recusa a fazer).** O trecho `Odoo → PostgreSQL` dos eventos do
+  contrato (`events.odoo_to_pg`, 7 tipos: 5 de funil + `ACTIVITY_COMPLETED` + `MEETING_CREATED`): o
+  fato nasce no ORM (`crm.lead`, `mail.activity`, `calendar.event`), vira linha de uma fila de saída
+  do próprio Odoo (`tf.evento.outbox`, `models/tf_evento_outbox.py`) e sai por **uma única porta** —
+  webhook autenticado do n8n (`/webhook/tre/odoo-eventos`), núcleo JS puro
+  (`n8n/codigo/nucleo-ingest-eventos.js`) que valida o envelope na ordem declarada pelo contrato,
+  escreve a trilha em `sales_intelligence.sync_events` e recusa o resto com motivo nomeado. **O
+  módulo não tem caminho paralelo para o banco** — provado, não prometido: `test_22` roda uma lente
+  AST sobre o pacote do módulo e reprova `psycopg`/`pg8000`/`sales_intelligence`/`cr.execute`/
+  `dbname` (lista de exceções explícita, sem afrouxar a regra).
+- **Ordem das recusas = contrato.** `envelope.ordem_da_validacao` é executada nessa ordem e cada
+  quebra tem nome (`envelope_sem_versao`, `versao_nao_suportada`, `idempotency_key_invalida`,
+  `campo_exigido_ausente:<campo>`, `evento_fora_do_contrato`, ...); a recusa nomeada é **decisão
+  final, sem retry** (HTTP 422) e deixa rastro na trilha (`status REFUSED`).
+- **O cron nasce INATIVO** (`data/ir_cron_tf_eventos.xml`, `active = False`) de propósito: ligar a
+  varredura periódica é passo operacional, não efeito colateral de instalação (runbook
+  `docs/runbooks/odoo-eventos-para-pg.md`).
+- **Aceite (o artefato medido é o commit publicado `597f2dd`).** `bash
+  scripts/n8n/verificar-odoo-eventos.sh` na VPS → **`EVENTOS_ODOO_PG_OK (84 itens, 0 falhas)`**, em
+  trio descartável próprio (`postgres:16` + `odoo:19.0` + `n8n`) com rede própria, e a suíte do
+  módulo rodando dentro da instalação: **`0 failed, 0 error(s) of 22 tests`** da classe do card
+  (`TestEventosOdooPg`). Passos: 0 lente estrutural (60 itens) + conferidor de contrato + montador +
+  suíte do núcleo (98 itens); 1 schema e módulo instalado; 2 remetente configurado por token de
+  arquivo `600`; 3 n8n com cofre, workflow ATIVO e servidor no ar; A porta sem token → 403 e **nada
+  escrito** na trilha; B os fatos de negócio viram os 7 tipos na fila (8 eventos, multiplicidade
+  declarada); C entrega pela porta e trilha no PostgreSQL (7 `operation`, `entity_type` da origem,
+  UUID canônico da oportunidade, `source_version` do envelope, 8 chaves de idempotência distintas);
+  D reenvio do mesmo envelope não cria segunda linha; E **4 recusas nomeadas** (sem versão, fora da
+  lista fechada, campo exigido ausente, chave fora do formato) + token errado; F porta fora do ar →
+  `RETRY` com `last_error` e teto de 3 tentativas e, com a porta de volta, entrega; fecho: o token
+  não aparece no repo nem em `request_payload` da trilha, a instância do dev tem os mesmos bancos
+  antes/depois e o `sha256` dos 9 artefatos sob teste não muda durante a medição.
+- **Prova de dente (fail-closed).** `bash scripts/n8n/verificar-odoo-eventos.sh --prova-de-dente` →
+  **`EVENTOS_ODOO_PG_OK (6 itens, 0 falhas)`**: baseline sem mutação verde + 4 mutações nomeadas
+  (`sem_versao`, `sem_formato_da_chave`, `sem_campos_exigidos`, `sem_on_conflict`), cada uma exigindo
+  que **o item declarado** reprove; o juiz é conferido com saídas sintéticas (cumprido / nada / item
+  errado) e mutação que não se aplica (âncora ausente) reprova o harness.
+- **Defeitos encontrados e consertados no caminho** (todos medidos): (1) `odoo.conf` `600` não é
+  lido pelo uid 100 do container → `644` (o diretório continua `700`); (2) n8n rodando com o `--user`
+  do host precisa do **HOME inteiro** montado — ele escreve `~/.n8n` **e** `~/.cache`, e montar só o
+  `.n8n` morria com `EACCES mkdir '/home/node/.cache'`; (3) `--without-demo=all` é inválido →
+  `True`; (4) o contrato de dados não existe dentro do container (só o diretório do módulo é
+  montado) → o teste congela o contrato nele mesmo; (5) `crm.lead.company_currency_id.name` não
+  existe na 19.0 → `company_currency.name`; (6) `mail.activity._action_done` **arquiva**
+  (`active=False`) e grava `date_done` — o teste media `exists()`, o que dava falso positivo;
+  (7) `test_13` (usuário sem ACL na fila) reescrito para o desenho real (o detector grava a fila com
+  `sudo`); (8) a guarda fatal pós-postgres abortava a sub-rodada do dente antes do passo que ela
+  existe para medir — passou a abortar só com o ambiente quebrado; (9) os trechos declarados no
+  mutador não eram os textos dos itens do aceite e o ramo `FALHOU` tinha outra redação — o item que
+  uma mutação deve reprovar passou a ter a mesma identidade nos dois ramos, e o dente **achou um
+  buraco real**: o aceite não media recusa por **formato de chave de idempotência**, que virou o
+  quarto item do passo E.
+- **Rodadas anteriores ficam na VPS com os `FALHOU` originais** (`/opt/tre/e03t01-r{6..10}/`,
+  `/tmp/verificacao-e03-r*`); as rodadas que medem o artefato entregue são `r14` (aceite) e `r15`
+  (dente), em `/opt/tre/e03t01-r11/aceite.log` e `/opt/tre/e03t01-r11/dente.log`.
+- **Verificadores do projeto (no worktree do commit):** `scripts/verificar_estrutura.sh` → `PASS (0
+  falhas)`; `scripts/secret_scan.sh` → `PASS` (o próprio aceite tinha um falso positivo: a chave
+  `db_password` do `odoo.conf` agora sai de variável, com o valor do segredo só em memória).
+- **Segredos:** nenhum valor nesta entrada e nenhum no repositório. Senha do Postgres, chave de
+  admin do Odoo, token da porta e chave de criptografia do n8n nascem **na VPS** (`openssl rand`),
+  vivem em arquivos `600` dentro do diretório descartável `700` e morrem com ele.
+- **Verificação independente:** quem entrega não homologa — o veredito deste card é do estágio 6
+  (perfil `tester`) e a homologação (estágio 7) é do Anderson.
