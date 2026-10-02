@@ -398,14 +398,19 @@ for f in \
   hermes/scores/priority/exemplos/organizacoes-exemplo.jsonl \
   scripts/scores/verificar_score_priority.py \
   scripts/scores/teste_priority_aceite.sh \
-  docs/architecture/score-priority-v1.md docs/runbooks/score-priority.md; do
+  docs/architecture/score-priority-v1.md docs/runbooks/score-priority.md \
+  hermes/scores/tiering/tiering.py \
+  hermes/scores/tiering/score-tiering-v1.json \
+  scripts/scores/verificar_score_tiering.py \
+  scripts/scores/teste_tiering_aceite.sh \
+  docs/architecture/score-tiering-v1.md docs/runbooks/score-tiering.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
 for f in scripts/agentes/teste_icp_score_aceite.sh scripts/agentes/teste_automation_fit_aceite.sh \
          scripts/agentes/teste_buying_signal_aceite.sh scripts/scores/teste_data_quality_aceite.sh \
-         scripts/scores/teste_priority_aceite.sh; do
+         scripts/scores/teste_priority_aceite.sh scripts/scores/teste_tiering_aceite.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

@@ -1356,6 +1356,53 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
     próximo resolve.
 
+## [W5 — Scoring · Tiering v1] — 02/10/2026
+
+**Card:** TRE-W5-E06-T01 (baseline V1.1.0, base `feature/TRE-W5-E05-T01`) ·
+**O que é:** classifica a empresa na **faixa de tier** do Data Contract — lê o **último score
+`PRIORITY`** já gravado em `sales_intelligence.scores`, aplica as faixas de `scores.tiers`
+(`A+` 90–100 · `A` 80–89,99 · `B` 65–79,99 · `C` 50–64,99 · `Nurture` < 50) e grava a classificação no
+**registro auditado** da rodada.
+
+### Added
+
+- **Tiering v1** (`hermes/scores/tiering/tiering.py` + `score-tiering-v1.json`) — as **faixas são lidas
+  do Data Contract** (`scores.tiers`) e **nenhum limite nem nome de faixa existe em forma executável no
+  código** (item `C3` da suíte, por AST, reprova se aparecer); a cobertura da escala (0 a 100, sem
+  lacuna e sem sobreposição) é conferida a cada rodada e um contrato que não represente a escala
+  **RECUSA** (`CONTRATO_INCOERENTE`) em vez de classificar com regra própria.
+- **Fail-closed na ausência e no vencimento:** empresa **sem `PRIORITY` RECUSA** (`SEM_PRIORITY`) e não
+  registra nada — `Nurture` é a faixa dos scores **baixos**, nunca o rótulo de quem não tem evidência;
+  `PRIORITY` com `valid_until` no passado RECUSA (`PRIORITY_VENCIDO`), lido do banco (política de
+  validade nascida no E05).
+- **Persistência sem mudar o contrato:** o tier vive em `sync_events` (`operation='TIER'`,
+  `source_version='tiering-v1'`, `idempotency_key` única e `request_payload` com tier, faixa, faixas
+  vigentes, escala e a identidade do `PRIORITY` lido) + `agent_runs` (auditoria, inclusive da recusa).
+  **Nada em `scores`**: tier não é score e criar coluna/`score_type` novo exige versão nova do contrato
+  (governança §10 + ADR-0004) — a guarda de escrita **recusa** qualquer escrita em `scores`. Mesma
+  decisão do precedente `entity_match_confidence` (TRE-W1-E04-T02).
+- **Suíte offline** (`scripts/scores/verificar_score_tiering.py`) — **26 itens / 0 falhas** e autoteste
+  com **10/10 mutações** detectadas, cada uma pelo item esperado.
+- **Aceite E2E** (`scripts/scores/teste_tiering_aceite.sh`) — PostgreSQL descartável `pg-tier-acc`
+  (removido pelo próprio aceite): `ACEITE_TIERING_001_OK (53 OK / 0 FALHOU)` com **6 dentes**, cada um
+  reprovando o item esperado (ausência virando registro, vencimento desligado, fronteira aberta,
+  idempotência desligada, leitura virando o primeiro score, operation trocada).
+- **Docs do card:** `docs/architecture/score-tiering-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/score-tiering.md`; portão da W5 (`scripts/verificar_estrutura.sh`) cobre os artefatos.
+
+### Changed
+
+- **Portão de estrutura da W5** (`scripts/verificar_estrutura.sh`) passa a exigir os artefatos do
+  tiering (código, contrato do card, suíte, aceite executável, arquitetura e runbook).
+
+### Lacunas declaradas (proposta a homologar — decisão do dono)
+
+- O Data Contract V1.0 **não define casa física** para o tier: proposto `organizations.tier` (contrato
+  1.1) ou `score_type='TIER'`; **não feito por conta própria**.
+- A política de ausência (**sem PRIORITY ⇒ sem tier**) é proposta deste card; a alternativa (`Nurture`
+  como default) foi recusada por inverter o sentido do dado.
+- O tier reflete o último `PRIORITY` e não vence por si — quem vence é o `PRIORITY` (30 dias, E05).
+
 ## [W5 — Scoring · Priority Score v1] — 02/10/2026
 
 **Card:** TRE-W5-E05-T01 (baseline V1.1.0, base `63d711c` + branch dos quatro componentes) ·

@@ -2062,3 +2062,59 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   (`A+/A/B/C/Nurture`) é o card W5-E06-T01 e não foi tocado aqui.
 - Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável, sem senha em
   argumento de linha de comando, arquivo de log ou repositório.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E06-T01: Tiering v1 (aceite E2E em PostgreSQL descartável)
+
+- **Objeto:** o tiering (`hermes/scores/tiering/tiering.py`) lê o **último score `PRIORITY`** de
+  `sales_intelligence.scores`, aplica as **faixas do Data Contract** (`scores.tiers`) e grava a
+  classificação em `sync_events` (`operation='TIER'`, `source_version='tiering-v1'`) + `agent_runs`.
+  **Não escreve em `scores`** (tier não é score) e não cria coluna nenhuma.
+- **Comandos reais (na VPS, árvore em `/opt/tre/tiering-e06t01-r1/repo`):**
+  `python3 scripts/scores/verificar_score_tiering.py --autoteste` →
+  `RESULTADO: VERIFICACAO_TIERING_OK (26 itens, 0 falhas)` e
+  `RESULTADO: AUTOTESTE OK (10/10 mutações detectadas, cada uma pelo item esperado)`, exit 0;
+  `bash scripts/scores/teste_tiering_aceite.sh --raiz "$PWD" --prova-de-dente` →
+  **`== ACEITE 53 OK / 0 FALHOU`** + `ACEITE_TIERING_001_OK`, **EXIT=0**, com os **6 dentes**
+  reprovando **o item esperado**: `ausencia-vira-registro` (A5 nenhum registro para a empresa),
+  `sem-checagem-de-vencido` (A6 vencido RECUSADA), `fronteira-aberta` (A7 fronteira 65,00 -> B),
+  `sem-idempotencia` (A4 replay: continua 1 registro TIER), `ultimo-vira-primeiro` (A7 o PRIORITY
+  lido é o mais recente), `operation-trocada` (A1 um registro TIER para a empresa).
+- **Valores conferidos no banco (container descartável `pg-tier-acc`, `postgres:16`, migration 0001
+  do zero):** 86,45 → **A** (faixa 80,0–89,99 gravada no `request_payload`, 5 faixas vigentes, escala
+  0–100, `fonte_das_faixas` apontando `scores.tiers`); PRIORITY novo 95,00 → **A+** em **registro
+  novo** com o anterior (A) preservado; replay → `gravados=0`, continua **1** registro;
+  sem PRIORITY → `RECUSADA SEM_PRIORITY` com **0** linha em `sync_events` e `agent_runs` `REJECTED`;
+  PRIORITY vencido → `RECUSADA PRIORITY_VENCIDO` e, com `valid_until` em +10 dias, 55,00 → **C**;
+  ÚLTIMO PRIORITY (92,00 → A+), não a média (40,00 antigo); 65,00 → **B** (fronteira); fantasma →
+  `ORGANIZACAO_NAO_ENCONTRADA` sem registro; desfazer dry-run **6→6** e `--confirmo` **6→5**, com a
+  auditoria preservada e os `scores` intactos (**8** antes e depois).
+- **Nada tocado em `scores`:** contagem e impressão digital md5 (`score_type:score_value:score_version`)
+  idênticas antes/depois da rodada; **0** linhas com `score_type='TIER'`; `organizations` intactas.
+- **Ambiente:** apenas o container descartável `pg-tier-acc` e o `pg-tier-dente` das mutações,
+  **removidos pelo próprio aceite** (`docker ps -a | grep tier` = **0** ao fim); `pg-sales-dev`,
+  `pg-odoo-dev`, `odoo-dev` e `proxy-dev` **intactos**; **nada em produção** (`prod` recusado, exit 4,
+  sem escrita).
+- **Código sob teste na VPS = o versionado:** `sha256` conferido dos dois lados —
+  `tiering.py 380f79272858c153866aa98c78845bda5a8a684fe013c1ef644ded7936d602ae`,
+  `verificar_score_tiering.py d619340cce7cfff9b44f334c9f903247d33137c1a91f8547e418384510b97e05`,
+  `teste_tiering_aceite.sh 153050689189d18882cf5e71f8ec342ddf018cfc988e9026f56c4e7bb1082e62`.
+- **Defeitos do próprio instrumento, encontrados por medição e corrigidos nesta rodada:**
+  1. a rodada 1 do aceite reprovou um item por **formato**, não por regra: o limite da faixa era
+     comparado como `80|89.99` e o contrato traz `80.0` — o item passou a esperar o literal do
+     contrato (a rodada 1 fechou 46 OK / 1 FALHOU por isso; a rodada 2, 53/0 com os dentes);
+  2. o item `C2` da suíte comparava o limite com `Decimal.normalize()` e acusava `9E+1`/`1E+2` —
+     passou a comparar **Decimal** com Decimal;
+  3. os itens `C3`/`C4` liam o arquivo **original** em vez do módulo sob teste, então a mutação
+     `faixa-hardcoded-no-codigo` aparecia como **inerte** — a leitura passou a ser de `M.__file__` e
+     a mutação passou a reprovar o item esperado (dente honesto);
+  4. o item `S3` exigia a prova da gravação **depois do `COMMIT`**, quando ela é contada depois do
+     fechamento do claim dentro da transação — o item passou a medir a ordem real
+     (`UPDATE …` → `SELECT COUNT(*) … PROCESSED`);
+  5. dois dentes do aceite foram trocados **antes** da rodada por ancoragem frágil (uma mutação com
+     `\n` dentro de heredoc e uma âncora textual que não existe no código — `"entity_type":
+     "organization"` é gerado por `lit(ENTITY_TYPE)`) — viraram mutações de uma linha com âncora real.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Ficam **propostos**:
+  a casa física do tier (contrato 1.1: `organizations.tier` ou `score_type='TIER'`) e a política de
+  ausência (sem PRIORITY ⇒ sem tier).
+- Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável.
