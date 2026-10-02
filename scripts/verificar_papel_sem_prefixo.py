@@ -42,7 +42,28 @@ O QUE ESTA SUITE TRAVA (os dois lados exigidos nos cards)
      NAO foram tocados — o prefixo continua onde ele ajuda;
   4. FLEXAO (D01-D01): as 3 frases medidas voltam a acionar (papel e/ou decisao humana) e
      o desfecho e BLOCK; a flexao NAO pode afrouxar — o radical declarado nao casa
-     "contagem"/"contrato" com "contatar" nem "testes" com "testar".
+     "contagem"/"contrato" com "contatar" nem "testes" com "testar";
+  5. ALTERNANCIA (D01-D01-D01): a troca `qu` -> `c` vale SO no FIM do radical — a regra
+     deixa de viver so no comentario: `publiqu` -> `public` (fim), e `adequ`/`question`
+     (com `qu` no MEIO do radical) ficam INTACTOS. Sem este lado, aplicar a troca em
+     qualquer posicao passava na suite (buraco A2 medido no card `t_b8adfe6c`).
+
+LIMITACAO DECLARADA (achado A1 do card `t_b8adfe6c`, defeito TRE-W3-E04-T03-D01-D01-D01):
+o recall de flexao NAO esta fechado. As formas `contato`, `envio`, `publico`, `aplico`
+(1a pessoa em `-o`), `contatas`, `envias`, `publicas`, `aplicas` (2a pessoa em `-s`/`-as`),
+`contatem` (3a plural do subjuntivo em `-em`) e `envia` (3a singular de radical curto,
+`envi`) NAO acionam o encaixe. Nao entram por terminacao porque a terminacao e cega a classe
+da palavra: entre as 10 formas, 4 sao tambem substantivo/adjetivo em portugues (`contato`,
+`envio`, `publico`, `publicas`) e 1 cai na regra de radical minimo de 5 para terminacao de
+uma letra (a mesma regra que sustenta `conta` !~ `contar`). Medicao no
+corpus de 7710 textos do board (card `t_79156ab2`, `logs-medicao-A1.txt`): restaurar as
+formas por terminacao ampliada cria 28 BLOCKs em 4540 textos afetados (inclusive uma linha
+so com "ENTREGA EXIGIDA:") e afrouxa 1; por tabela de formas declaradas cria 5 BLOCKs
+(ex.: "resumo do contato com o cliente") e AFROUXA a frase canonica "contatar lead, cliente
+ou decisor" de BLOCK para ESCALATE — quebraria o lado 2d DESTA suite. Sem um segundo
+mecanismo decidido item a item (paradigma verbal por termo declarado), a limitacao fica
+declarada — nao ha item de suite que a "trave", porque um item que exigisse o FALSO
+resistiria a correcao futura.
 
 ACHADO FORA DO ESCOPO (nao e regressao deste conserto, ja existia antes): a lista de
 entradas do guardrail `do_not_contact` inclui a prosa de `pode`/`nao_pode` dos papeis, e
@@ -270,6 +291,28 @@ def checar() -> None:
          and "em" not in r.TERMINACOES_VERBAIS,
          f"{sorted(r.TERMINACOES_VERBAIS)}")
 
+    # --------- lado 5: a alternancia ortografica vale SO no FIM do radical (A2)
+    # Regra DECLARADA em `ALTERNANCIAS_DO_RADICAL` ("a troca so vale no FIM do radical — a
+    # fronteira do termo", comentario do codigo + mensagem do commit 7882b57). Um item que
+    # so exercita `publiquei` NAO trava a regra: com o `qu` ja no FIM do radical, aplicar a
+    # troca em QUALQUER posicao devolve o MESMO `public` e a suite passa — buraco medido
+    # pelo tester (mutacao M6 do card `t_b8adfe6c`: exit 0, 85 itens, 0 falhas). Este lado
+    # usa palavras com `qu` no MEIO do radical, onde a troca NAO pode acontecer.
+    item("alternancia so no FIM do radical: _aplicar_alternancias('publiqu') == 'public'",
+         r._aplicar_alternancias("publiqu") == "public",
+         f"{r._aplicar_alternancias('publiqu')!r}")
+    item("alternancia NAO vale no MEIO do radical: _aplicar_alternancias('question') == 'question'",
+         r._aplicar_alternancias("question") == "question",
+         f"{r._aplicar_alternancias('question')!r}")
+    item("alternancia so no FIM do radical: _radical_verbal('publiquei') == 'public'",
+         r._radical_verbal("publiquei") == "public", f"{r._radical_verbal('publiquei')!r}")
+    item("'qu' no MEIO do radical fica intacto: _radical_verbal('questionando') == 'question'",
+         r._radical_verbal("questionando") == "question",
+         f"{r._radical_verbal('questionando')!r}")
+    item("'qu' no MEIO do radical fica intacto: _radical_verbal('equivalente') == 'equivalent'",
+         r._radical_verbal("equivalente") == "equivalent",
+         f"{r._radical_verbal('equivalente')!r}")
+
     # ------------------------- regressao: o prefixo continua onde ele ajuda
     for a, b in (("produto", "producao"), ("implementador", "implantacao"),
                  ("versionado", "versao"), ("promocao", "promover")):
@@ -297,6 +340,14 @@ def autoteste() -> int:
     def sempre_prefixo(acao, entradas, comparador=None):
         return original_entradas(acao, entradas)  # ignora o comparador de palavra inteira
 
+    def alternancia_em_qualquer_posicao(radical: str) -> str:
+        # Mutacao do achado A2: aplica a alternancia em QUALQUER posicao do radical, em vez
+        # de so no FIM. Com o `qu` ja no fim (`publiqu` -> `public`) o resultado e o mesmo e
+        # nada reprovava; com `qu` no MEIO (`adequ` -> `adec`) a regra declarada e violada.
+        for de, para in r.ALTERNANCIAS_DO_RADICAL:
+            radical = radical.replace(de, para)
+        return radical
+
     mutacoes = {
         "volta o prefixo de 4 caracteres no vocabulario de papel":
             lambda: setattr(r, "_token_casa_inteiro", r._token_casa),
@@ -307,6 +358,8 @@ def autoteste() -> int:
                             lambda a, b: r._singular(a) == r._singular(b)),
         "alternancia ortografica do radical removida (qu -> c)":
             lambda: setattr(r, "ALTERNANCIAS_DO_RADICAL", ()),
+        "alternancia aplicada em QUALQUER posicao do radical (fora do fim)":
+            lambda: setattr(r, "_aplicar_alternancias", alternancia_em_qualquer_posicao),
         "radical minimo declarado removido (afrouxa a flexao)":
             lambda: (setattr(r, "_RADICAL_MINIMO", 1),
                      setattr(r, "_RADICAL_MINIMO_UMA_LETRA", 1)),
@@ -324,7 +377,8 @@ def autoteste() -> int:
         originais = {k: getattr(r, k) for k in ("_token_casa_inteiro", "_entradas_que_casam",
                                                 "_papel_para_acao", "acao_de_decisao_humana",
                                                 "_e_acao_outbound", "ALTERNANCIAS_DO_RADICAL",
-                                                "_RADICAL_MINIMO", "_RADICAL_MINIMO_UMA_LETRA")}
+                                                "_aplicar_alternancias", "_RADICAL_MINIMO",
+                                                "_RADICAL_MINIMO_UMA_LETRA")}
         mutar()
         buffer, codigo = io.StringIO(), 0
         try:
