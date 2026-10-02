@@ -202,6 +202,15 @@ juizo_do_dente() { # $1=arquivo de saida do sub-run  $2=marcador da fase  $3=tre
         echo "NAO_CONTA (o sub-run nao chegou a' fase $marcador)"
         return
     fi
+    # Ambiente quebrado NAO e' "ancora quebrada": se a propria rodada reprovou o ambiente
+    # (massa que nao aplica, execucao do workflow que falha, trio que sumiu), o veredito diz
+    # isso — quem le o log do dente precisa do erro real, nao de uma pista falsa.
+    local quebrado
+    quebrado="$(grep -m1 -E '^[[:space:]]*FALHOU[[:space:]]+(estado [A-H]: a massa do bloco nao aplicou|estado [A-H]: a execucao do workflow no n8n falhou|trio descartavel|nao consegui)' "$saida")"
+    if [ -n "$quebrado" ]; then
+        echo "NAO_CONTA (ambiente quebrado na fase: $(printf '%s' "$quebrado" | sed 's/^[[:space:]]*//' | cut -c1-100))"
+        return
+    fi
     # A reprovacao e' checada PRIMEIRO: um OUTRO item que por acaso contenha o mesmo
     # trecho de texto nao pode esconder o dente (aconteceu: "combinacao ausente nao vira
     # indeterminado" mascarava "linha VAZIA ... nao vira indeterminado").
@@ -233,7 +242,9 @@ controle_do_juiz() {
     # 7) dois itens com o MESMO trecho (um OK, outro FALHOU): o FALHOU vence — o dente nao
     #    pode ser mascarado por um item vizinho de texto parecido
     printf 'FASE_CODIGO_OK\nOK    combinacao ausente nao vira indeterminado nem critico\nFALHOU linha VAZIA nao vira indeterminado\n' >"$dir/controle_7.out"
-    local c1 c2 c3 c4 c5 c6 c7
+    # 8) ambiente quebrado dentro da fase (massa nao aplicou): NAO_CONTA com o motivo do ambiente
+    printf 'FASE_MEDICAO_OK\nFALHOU estado E: a massa do bloco nao aplicou (ver /tmp/x/semear-estado-E.sql.log)\nFALHOU estado F: a massa do bloco nao aplicou (ver /tmp/x/semear-estado-F.sql.log)\n' >"$dir/controle_8.out"
+    local c1 c2 c3 c4 c5 c6 c7 c8
     c1="$(juizo_do_dente "$dir/controle_1.out" FASE_MEDICAO_OK 'estado C')"
     c2="$(juizo_do_dente "$dir/controle_2.out" FASE_MEDICAO_OK 'estado C')"
     c3="$(juizo_do_dente "$dir/controle_3.out" FASE_MEDICAO_OK 'estado C')"
@@ -241,6 +252,7 @@ controle_do_juiz() {
     c5="$(juizo_do_dente "$dir/controle_5.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
     c6="$(juizo_do_dente "$dir/controle_6.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
     c7="$(juizo_do_dente "$dir/controle_7.out" FASE_CODIGO_OK 'nao vira indeterminado')"
+    c8="$(juizo_do_dente "$dir/controle_8.out" FASE_MEDICAO_OK 'estado E: veredito CRITICO pelo PROCESSED sem trilha de sucesso')"
     case "$c1" in *MUTACAO_SEM_DENTE*) ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c2" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c3" in *NAO_CONTA*)        ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
@@ -248,10 +260,11 @@ controle_do_juiz() {
     case "$c5" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c6" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c7" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
+    case "$c8" in *"NAO_CONTA (ambiente quebrado"*) ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     if [ "$faltas" -eq 0 ]; then
-        ok "controle do juiz do dente (7 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo, item indentado, FALHOU vence OK)"
+        ok "controle do juiz do dente (8 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo, item indentado, FALHOU vence OK, ambiente quebrado nomeado)"
     else
-        falhou "controle do juiz do dente ($faltas de 7 saidas sinteticas julgadas errado)"
+        falhou "controle do juiz do dente ($faltas de 8 saidas sinteticas julgadas errado)"
     fi
 }
 
