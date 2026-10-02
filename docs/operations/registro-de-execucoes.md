@@ -1473,3 +1473,92 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   também em `/opt/tre/evid-t_d9be7d3c-r2/` na VPS.
 - **O que esta rodada NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
   perfil `tester` e a homologação (estágio 7) é do Anderson.
+
+## TRE-W4-E03-T01 — Agente Signal Detector v1 (deteccao de sinais)
+
+- **Card:** `t_61a620b4` (board `transformativa-revenue-engine`) · branch `feature/TRE-W4-E03-T01`,
+  base no head aprovado do card pai (`feature/TRE-W4-E02-T01` @ `82ff096`).
+- **Momento do registro:** toda evidência abaixo foi produzida **antes** deste texto — nada é narrado
+  de memória. Data do registro: 02/10/2026 (UTC).
+- **Código sob teste (sha256, igual nas duas pontas — container do Hermes e VPS):**
+  `hermes/agents/signal/signal.py` `86bb15ce2ff0468fb9f9d556bf2c8e74fa50620590ba73858a4c02efb7aa7a9b`;
+  `scripts/agentes/teste_signal_aceite.sh` `175867d1f7bd2441f63f2f28a3407e70e7bde9a4abad959b1c00b041d10be402`.
+
+### Suite offline (agente, no container do Hermes)
+
+- `python3 scripts/agentes/verificar_agente_signal.py --autoteste` ->
+  `RESULTADO: SIGNAL_SUITE_OK (75 itens, 0 falhas)` e `AUTOTESTE OK (21/21 mutacoes detectadas)`,
+  exit 0. Saída integral em `evidencias-impl/suite-offline.out`.
+- O autoteste muta **cópia** do arquivo sob teste e exige que o item correspondente **reprove**; a
+  própria prova tem guarda (item esperado inexistente ou mutação sem item declarado reprova).
+
+### Aceite E2E (agente, na VPS, árvore própria `/opt/tre/t_61a620b4`)
+
+- Container **descartável** `pg-signal-acc` (`postgres:16`, sem porta publicada), schema limpo com a
+  migration 0001, **3 organizações pré-existentes** (uma com `updated_at` fixo em `2000-01-01`, de
+  propósito, para acusar qualquer toque em coluna de empresa) e **1 `research_run`** (o vínculo lógico
+  real da detecção).
+- `bash scripts/agentes/teste_signal_aceite.sh --prova-de-dente` ->
+  `RESULTADO: ACEITE_SIGNAL_001_OK (64 itens, 0 falhas)`, baseline verde, `DENTE OK (4/4 mutacoes
+  detectadas, cada uma pelo item esperado)`, exit 0. Saída integral em
+  `evidencias-impl/aceite-e2e-vps.out` (também em `/tmp/signal-aceite-dente.log` na VPS).
+- Medições do aceite (todas por SQL no container descartável): 5 sinais gravados (12 observações;
+  `DETECTADO=5 JA_DETECTADO=1 REVISAO_IDENTIDADE=1 RECUSADA=5 ERRO=0`), categoria derivada do tipo
+  conferida linha a linha, **0** coluna de score preenchida (`decay_factor` no default 1), **3**
+  organizações intactas com `updated_at` no valor semeado, **0** linha nas tabelas não declaradas
+  (`contacts`, `pain_hypotheses`, `scores`, `interactions`, `recommendations`, `outbox_events`),
+  12 linhas de `agent_runs` (6 `COMPLETED`, 5 `REJECTED`, 1 `REVIEW_REQUIRED`), 5 `sync_events`
+  `SIGNAL` amarrados ao sinal, 1 `SIGNAL_REVIEW` na fila humana, 1 vínculo com o `research_run` real e
+  os 6 descartes com motivo (data, confiança, derivado, campo não declarado, título acima do limite,
+  vínculo quebrado). Rodada 2 (mesma fonte) não duplica e não reabre pedido na fila humana; rodada 3
+  (chave já reivindicada com o sinal ausente) é replay silencioso (exit 0, sem `ERRO`); `--ambiente prod`
+  recusado (exit 4) sem escrita; `--planejar` sem conectar; desfazer dry-run não apaga e `--confirmo`
+  apaga só o que a rodada criou, registra `ROLLBACK` e preserva auditoria, fila humana, empresa e
+  pesquisa.
+- **Itens reprovados por cada mutação (contagem medida no log):** `sem-idempotencia` 8 itens,
+  `fechamento-sem-ancora-no-sinal` 4 itens, `categoria-chumbada` 1 item
+  (`rodada1-categoria-derivada-do-tipo`) e `vinculo-quebrado-aceito` 1 item
+  (`rodada1-descarte-de-vinculo-quebrado`).
+
+### Portão de estrutura (agente)
+
+- `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0 falhas)` (232 linhas `OK`), com os 7
+  artefatos do Signal Detector versionados no git e o aceite executável. Saída integral em
+  `evidencias-impl/estrutura.out`.
+
+### Nenhum container do TRE foi tocado
+
+- Medição depois do aceite: `proxy-dev` Up 29 horas, `odoo-dev` Up 29 horas, `pg-odoo-dev` Up 30 horas,
+  `pg-sales-dev` Up 2 dias — nenhum reiniciado; `pg-signal-acc` **não existe** mais
+  (`docker ps -a --filter name=pg-signal-acc` vazio). O aceite aborta se o container já existir.
+
+### Defeitos próprios encontrados e corrigidos ANTES de entregar
+
+1. **`sync_events.entity_type/entity_id` do sinal apontavam para a empresa** — achado pelo E2E: com
+   `entity_id = organization_id` a consulta do desfazer (`e.entity_id = s.id`) não achava nada e o
+   `--desfazer --confirmo` **não apagava sinal nenhum** (4 itens reprovados: claims e `ROLLBACK`).
+   Corrigido para `entity_type='signal'`/`entity_id=<sinal>` (a empresa passou para o
+   `request_payload`) e coberto por item próprio (`sync-event-do-sinal-aponta-o-sinal`) **mais** mutação
+   `sync-event-aponta-a-empresa` que o reprova.
+2. **Aritmética do meu próprio critério de auditoria** (`rodada1-agent-runs-completed` esperava 7 e o
+   correto é 6: 5 `DETECTADO` + 1 `JA_DETECTADO`): critério corrigido — o agente estava certo.
+3. **Expectativa errada sobre o desfazer** (`desfazer-apagou-os-claims-dos-sinais` esperava 0 claims e o
+   correto é **1**): o sinal apagado por fora (rodada 3) deixa o `sync_events` dele **órfão e visível**,
+   que é o comportamento declarado no doc §9. Item renomeado
+   (`desfazer-deixa-o-claim-orfao-visivel`) e somado a ele o item
+   `desfazer-nao-deixou-sinal-orfao-de-claim` (nenhum sinal sem claim).
+4. **Duas mutações mudas e uma não detectada** no autoteste: as âncoras de `sem-idempotencia` e
+   `data-invalida-aceita`/`confianca-fora-da-faixa-aceita` não casavam (a âncora do claim aparecia 2x
+   depois da fila humana ganhar claim próprio; e a indentação era de 4 espaços, não 8) e a mutação da
+   data não mudava nada observável (o `fromisoformat` já recusava o caso testado). Correções: âncora de
+   4 linhas para o claim do sinal, indentação correta e item reforçado com a **forma básica**
+   (`20260928`) — o formato declarado é ISO-8601 estendido e a variante básica é recusada com motivo,
+   não adivinhada.
+
+### O que este card NÃO mede
+
+- **Homologação.** Quem entrega não homologa — o veredito do estágio 6 é do perfil `tester` e a
+  homologação (estágio 7) é do Anderson.
+- **Score.** `buying_signal_points`/`relevance_score`/`decay_factor`/`expires_at` **não** são escritos:
+  o Buying Signal Score é `TRE-W5-E03-T01`. O aceite mede justamente a **ausência** de score.
+- **Busca ativa.** Sem LLM, sem HTTP e sem crawler na v1: a fonte entrega a observação e a evidência.
