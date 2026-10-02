@@ -367,14 +367,53 @@ def verificar(roteador, caminho_politica=POLITICA, diretorio_papeis=PAPEIS, area
             problemas.append(f"outbound sem marcacao: {resumo(sem_marca)}")
         interna = decisao("ajuste de texto simples", acao_codigo="ajuste_de_texto",
                           sinais={"empresa_do_not_contact": True})
+        # Card `t_60fac84b` (revisao declarada): com o registro anotado a acao NAO executa
+        # automaticamente — quem a proibe e o guardrail `registro_marcado`, nao este. O item
+        # deste guardrail checa o que e dele: o VOCABULARIO nao aciona numa acao interna.
         if ("do_not_contact" in interna["decisao"]["guardrails_acionados"]
-                or interna["decisao"]["decidido"] != "executar"):
+                or "registro_marcado" not in interna["decisao"]["guardrails_acionados"]):
             problemas.append(f"marcada + acao interna: {resumo(interna)}")
         return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
-                "outbound sem marcacao executa; empresa marcada em acao interna executa")
+                "outbound sem marcacao executa; empresa marcada em acao interna nao aciona o "
+                "guardrail de VOCABULARIO (a execucao automatica e proibida pelo registro_marcado)")
 
     itens.checar("guardrail do_not_contact — APROVA: sem marcacao ou sem outbound executa",
                  _do_not_contact_aprova)
+
+    def _registro_marcado_reprova():
+        problemas = []
+        casos = (("acao interna", {"acao": "ajuste de texto simples",
+                                   "acao_codigo": "ajuste_de_texto"}),
+                 ("acao de abordagem", {"acao": "enviar e-mail pelo Titan"}))
+        for nome, extra in casos:
+            resultado = decisao(**extra, sinais={"empresa_do_not_contact": True})
+            acionados = resultado["decisao"]["guardrails_acionados"]
+            recibo = resultado["recibo"]
+            rastro = (recibo.get("override") or {}).get("registro_marcado") or {}
+            if not ("registro_marcado" in acionados and _bloqueia(resultado, roteador)
+                    and bool(resultado["decisao"]["exige_aprovacao_humana"])
+                    and not resultado["decisao"]["pode_executar"]
+                    and len(recibo) == 13 and rastro.get("motivo")):
+                problemas.append(f"{nome}: {resumo(resultado)}")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                "registro anotado: BLOCK, aprovacao humana exigida e motivo dentro do recibo")
+
+    itens.checar("guardrail registro_marcado — REPROVA: registro anotado nao executa "
+                 "automaticamente (acao interna ou de abordagem)",
+                 _registro_marcado_reprova)
+
+    def _registro_marcado_aprova():
+        limpo = decisao("ajuste de texto simples", acao_codigo="ajuste_de_texto")
+        problemas = []
+        if ("registro_marcado" in limpo["decisao"]["guardrails_acionados"]
+                or limpo["decisao"]["decidido"] != "executar"
+                or limpo["decisao"]["exige_aprovacao_humana"]):
+            problemas.append(f"registro limpo: {resumo(limpo)}")
+        return ("OK" if not problemas else "FALHOU", "; ".join(problemas) or
+                "registro limpo segue o fluxo normal e executa (o encaixe nao bloqueia tudo)")
+
+    itens.checar("guardrail registro_marcado — APROVA: registro limpo segue o fluxo e executa",
+                 _registro_marcado_aprova)
 
     def _ddl_reprova():
         problemas = []
@@ -1150,6 +1189,12 @@ def mutacoes():
         return codigo.replace("        do_not_contact and _e_acao_outbound(acao, politica, papeis),",
                               "        False,")
 
+    def registro_marcado_ignorado(codigo):
+        # Card `t_60fac84b`: o registro anotado volta a ser executavel automaticamente.
+        return codigo.replace(
+            "    registro_marcado = bool(sinais.get(SINAL_DE_REGISTRO_MARCADO))",
+            "    registro_marcado = False")
+
     def ddl_sempre_permitido(codigo):
         return codigo.replace(
             '        ddl_acionado = ambiente != "desenvolvimento" and ambiente != "dev"',
@@ -1250,6 +1295,8 @@ def mutacoes():
         ("guardrail segredo removido (payload com segredo passa)", segredo_ignorado, identidade),
         ("guardrail do_not_contact removido (empresa marcada e contatada)",
          do_not_contact_ignorado, identidade),
+        ("guardrail de registro marcado removido (registro anotado volta a executar sozinho)",
+         registro_marcado_ignorado, identidade),
         ("guardrail DDL removido (DDL nasce em producao)", ddl_sempre_permitido, identidade),
         ("guardrail de papel/credencial removido (Sales AI com deploy)", papel_liberado, identidade),
         ("fail-closed removido no sinal desconhecido", fail_closed_sinal_ignorado, identidade),

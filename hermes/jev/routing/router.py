@@ -215,6 +215,30 @@ GUARDRAILS_EXIGIDOS = {
 }
 
 # ---------------------------------------------------------------------------
+# Guardrail de REGISTRO MARCADO (defeito [encaixe] do card `t_60fac84b`, 02/10/2026)
+#
+# REGRA JA DECIDIDA PELA POLITICA, implementada aqui (nao e decisao nova):
+#   * `guardrails` da politica: "empresa com do_not_contact ou opt_out nao e contatada";
+#   * fonte da camada Human Approval (`hermes/policies/human-approval.yaml`, secao
+#     `nunca_automatico`): "contatar empresa com do_not_contact / opt_out marcado".
+#
+# O QUE FALTAVA: o registro anotado nao tinha a marca de PROIBIDA PARA EXECUCAO
+# AUTOMATICA. O guardrail de contato decidia por VOCABULARIO (`_e_acao_outbound`) se a
+# acao era abordagem — e vocabulario tem recall finito (medido: frases de abordagem que
+# nao casam, e casos de rotulo humano `outbound_para_terceiro: false` que casam — ver os
+# cards `t_fa344342` e `t_60fac84b`). Com o registro ANOTADO, a decisao nao pode depender
+# do casamento de prosa: a acao sobre registro anotado NAO EXECUTA SOZINHA (guardrail
+# declarado "falha de guardrail bloqueia, nao libera": duvida na avaliacao = BLOCK), e o
+# recibo sai BLOCK com `exige_aprovacao_humana: true` — a maquina nunca executa, quem
+# decide e o humano. O contrato de recibo continua com 13 campos: o rastro entra no campo
+# `override`, o mesmo canal do piso por ambiente e da aprovacao humana registrada.
+# ---------------------------------------------------------------------------
+IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO = "registro_marcado"
+SINAL_DE_REGISTRO_MARCADO = "empresa_do_not_contact"
+GUARDRAILS_PROIBIDOS_PARA_EXECUCAO_AUTOMATICA = frozenset(
+    {IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO})
+
+# ---------------------------------------------------------------------------
 # Fonte da camada Human Approval (correcao do defeito D03, card TRE-W0-E04-T02-D03)
 #
 # `hermes/policies/human-approval.yaml` declara as acoes da camada 2 da precedencia
@@ -1170,6 +1194,37 @@ def _guardrail(id_, regra, verifica, acionado, detalhe="") -> dict:
             "acionado": bool(acionado), "detalhe": detalhe}
 
 
+def _guardrails_proibidos_para_execucao_automatica(acionados) -> list:
+    """Guardrails acionados que PROIBEM a execucao automatica (nao basta bloquear: a
+    decisao exige humano registrado). Hoje: o registro anotado (card `t_60fac84b`)."""
+    return [g for g in (acionados or [])
+            if g.get("id") in GUARDRAILS_PROIBIDOS_PARA_EXECUCAO_AUTOMATICA]
+
+
+def _registrar_proibicao_automatica_no_plano(plano: dict, acionados: list) -> None:
+    """Marca a decisao como PROIBIDA PARA EXECUCAO AUTOMATICA e registra o motivo.
+
+    Mesma postura do piso por ambiente: a exigencia sobe em `decisao`
+    (`exige_aprovacao_humana`) e o rastro entra no campo `override` do recibo — o contrato
+    de 13 campos NAO cresce e quem for decidir ve o motivo dentro do proprio recibo.
+    """
+    marcados = _guardrails_proibidos_para_execucao_automatica(acionados)
+    motivos = [str(g.get("detalhe") or g.get("regra") or "") for g in marcados]
+    motivo = "; ".join(m for m in motivos if m)
+    plano["exige_aprovacao_humana"] = True
+    plano["exige_escalacao"] = True
+    registro = {"guardrails": [g["id"] for g in marcados],
+                "sinal": SINAL_DE_REGISTRO_MARCADO,
+                "motivo": motivo,
+                "exige_aprovacao_humana": True}
+    plano["demais"]["proibicao_de_execucao_automatica"] = registro
+    humano = plano.get("override")
+    if isinstance(humano, dict) and humano:
+        plano["override"] = {"humano": humano, "registro_marcado": registro}
+    else:
+        plano["override"] = {"registro_marcado": registro}
+
+
 def _guardrails_de_codigo(tarefa: dict) -> list:
     """Guardrails que nao dependem da politica: sempre rodam, sempre fail-closed."""
     guardrails = []
@@ -1294,6 +1349,22 @@ def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
         do_not_contact and _e_acao_outbound(acao, politica, papeis),
         "empresa marcada como do_not_contact/opt_out em acao outbound"
         if do_not_contact else ""))
+
+    # Guardrail de REGISTRO MARCADO (defeito [encaixe] de 02/10/2026, card `t_60fac84b`):
+    # registro anotado como nao-perturbe/opt-out NAO TEM EXECUCAO AUTOMATICA. O acionamento
+    # e a ANOTACAO do registro — nunca o casamento de vocabulario (`_e_acao_outbound`), cujo
+    # recall e finito e ja produziu falso positivo (card `t_fa344342`) e omissao de abordagem
+    # no mesmo encaixe. Este guardrail NAO substitui o de contato: os dois convivem, e a acao
+    # classificada como abordagem aciona os dois.
+    registro_marcado = bool(sinais.get(SINAL_DE_REGISTRO_MARCADO))
+    guardrails.append(_guardrail(
+        IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO,
+        "registro anotado como do_not_contact/opt_out nao tem execucao automatica",
+        "anotacao do registro declarada pelo encaixe (sinais.empresa_do_not_contact)",
+        registro_marcado,
+        "registro anotado como do_not_contact/opt_out: acao proibida para execucao "
+        "automatica (nunca decidida por maquina; aprovacao humana exigida)"
+        if registro_marcado else ""))
 
     # Guardrail de DDL (defeito D08): so aciona com DDL/migration REAL — comando SQL de
     # definicao ou declaracao nos campos da propria tarefa. O motivo diz qual operacao
@@ -1906,6 +1977,15 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         plano["outcome"] = OUTCOME_BLOQUEAR
         plano["motivos"] = [f"guardrail {g['id']}: {g['regra']}"
                             + (f" ({g['detalhe']})" if g["detalhe"] else "") for g in acionados]
+        # Registro anotado como nao-perturbe/opt-out: a acao nao e so "bloqueada" — ela e
+        # PROIBIDA PARA EXECUCAO AUTOMATICA (card `t_60fac84b`). A marca sobe para a decisao
+        # (`exige_aprovacao_humana: true`) e o motivo entra no recibo pelo campo `override`
+        # (contrato de 13 campos, sem campo novo). Vale SO quando um guardrail que proibe a
+        # execucao automatica esta entre os acionados: bloqueio por segredo/DDL/papel segue
+        # registrando o motivo como sempre registrou.
+        proibidos = _guardrails_proibidos_para_execucao_automatica(acionados)
+        if proibidos:
+            _registrar_proibicao_automatica_no_plano(plano, proibidos)
         plano["lane"] = _lane_segura(politica, tarefa)
         return _fechar(politica, tarefa, plano, agora)
 
