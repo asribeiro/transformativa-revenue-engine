@@ -71,17 +71,27 @@ Regras que sustentam a tabela:
 
 A chave é a **identidade**, não a rodada: `scout:org:<tipo>:<valor>` (ex.: `scout:org:cnpj:11222333000181`),
 gravada em `sync_events.idempotency_key` (**UNIQUE** no contrato). Cada candidata é ingerida por **uma
-única instrução SQL** com CTEs de escrita:
+transação com duas instruções**:
 
 ```sql
-WITH claim AS (INSERT INTO ...sync_events (...) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id),
-     org   AS (INSERT INTO ...organizations (...) SELECT ... FROM claim RETURNING id)
-UPDATE ...sync_events SET status='SUCCESS' ... WHERE id = (SELECT id FROM claim) AND EXISTS (SELECT 1 FROM org);
+BEGIN;
+WITH claim AS (INSERT INTO ...sync_events (...) ON CONFLICT (idempotency_key) DO NOTHING RETURNING id)
+INSERT INTO ...organizations (...) SELECT ... FROM claim ON CONFLICT (id) DO NOTHING RETURNING id;
+UPDATE ...sync_events SET status='SUCCESS', response_payload=...
+ WHERE idempotency_key = '<chave>' AND EXISTS (SELECT 1 FROM ...organizations WHERE id = '<orgid>')
+RETURNING 'SCOUT_CRIADA';
+COMMIT;
 ```
 
-- Replay (a chave já existe): `claim` volta vazia, `org` **não insere nada** e o `UPDATE` fecha **0
-  linhas**. A saída vazia é a prova de que nada foi duplicado; o veredito vira `JA_EXISTE` com o motivo
-  `IDEMPOTENCIA_REPLAY`.
+- Replay (a chave já existe): `claim` volta vazia, a organização **não é inserida** e o `UPDATE` fecha
+  **0 linhas** — sem a marca `SCOUT_CRIADA`. Nada foi duplicado; o veredito vira `JA_EXISTE` com o
+  motivo `IDEMPOTENCIA_REPLAY`.
+- **Por que duas instruções** (e não uma, com o fechamento dentro da CTE): as CTEs de escrita e a
+  instrução principal rodam no **mesmo snapshot**, então a instrução principal **não enxerga** a linha
+  que a CTE acabou de inserir. Medido no aceite E2E: com `UPDATE ... WHERE id = (SELECT id FROM claim)`
+  o `UPDATE` fecha 0 linhas e o evento fica `PENDING` para sempre. O fechamento tem de ser um comando
+  próprio (snapshot novo) — e ele se ancora na existência da organização **desta** rodada, não na chave,
+  para que o replay não marque sucesso. A suíte reprova se o fechamento voltar para dentro da CTE.
 - A história de **cada tentativa** fica em `agent_runs` (uma linha por candidata, com o
   `correlation_id` do lote) — auditoria não depende da narrativa de quem rodou.
 - UUID v4 é gerado **no produtor** (o agente), antes de qualquer escrita (`canonical_ids.generation_rule`).

@@ -383,11 +383,25 @@ def _ (ctx):
     sql = ctx.modulo.sql_ingerir("11111111-1111-1111-1111-111111111111",
                                  "22222222-2222-2222-2222-222222222222",
                                  "scout:org:domain:x.com.br", valores, {"origem": "scout"})
-    exigidos = ["ON CONFLICT (idempotency_key) DO NOTHING", "RETURNING status",
+    exigidos = ["ON CONFLICT (idempotency_key) DO NOTHING", "RETURNING 'SCOUT_CRIADA'",
                 "sales_intelligence.sync_events", "sales_intelligence.organizations",
-                "'DISCOVERED'", "RETURNING id"]
+                "'DISCOVERED'", "BEGIN;", "COMMIT;", "ON CONFLICT (id) DO NOTHING"]
     faltando = [t for t in exigidos if t not in sql]
-    return not faltando, "faltando: %s" % faltando if faltando else "7 clausulas"
+    return not faltando, "faltando: %s" % faltando if faltando else "%d clausulas" % len(exigidos)
+
+
+@item("ingestao-fecha-a-sincronia-em-instrucao-propria")
+def _ (ctx):
+    # As CTEs de escrita e a instrucao principal rodam no MESMO snapshot: fechar o sync_event
+    # dentro da mesma instrucao do INSERT nao enxerga a linha recem-inserida (medido no aceite).
+    # Por isso o fechamento TEM de ser uma instrucao propria, depois de um `;`.
+    linha = ctx.modulo.montar_linha_organizacao(
+        candidata(domain="x.com.br"), {"fonte": "WEB", "validos": [("domain", "x.com.br")]})
+    sql = ctx.modulo.sql_ingerir("11111111-1111-1111-1111-111111111111",
+                                 "22222222-2222-2222-2222-222222222222",
+                                 "scout:org:domain:x.com.br", linha, {"origem": "scout"})
+    ok = re.search(r"RETURNING id;\s*\nUPDATE sales_intelligence\.sync_events", sql) is not None
+    return ok, "fechamento em instrucao propria" if ok else "fechamento dentro da CTE (snapshot errado)"
 
 
 @item("consulta-de-identidade-e-somente-leitura")
@@ -588,7 +602,7 @@ def _ (ctx):
 # ---------------------------------------------------------------------------------------
 @item("fluxo-cria-organizacao-e-registra-execucao")
 def _ (ctx):
-    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "SUCCESS\n", ""), (0, "", "")],
+    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "SCOUT_CRIADA\n", ""), (0, "", "")],
                          modulo=ctx.modulo)
     agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev",
                               correlation_id="corr-teste")
@@ -654,11 +668,11 @@ def _ (ctx):
         "veredito=%s escritas=%d" % (r["veredito"], len(escritas))
 
 
-@item("sucesso-conta-mesmo-com-carimbo-de-comando-na-saida")
+@item("marca-de-criada-conta-mesmo-com-carimbo-de-comando")
 def _ (ctx):
     # A porta real (psql) imprime carimbos de comando junto do RETURNING. Confundir isso com
     # replay ja custou uma rodada inteira de aceite: aqui a saida suja tem de dar CRIADA.
-    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "BEGIN\nSUCCESS\nCOMMIT\n", ""),
+    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "BEGIN\nSCOUT_CRIADA\nCOMMIT\n", ""),
                                     (0, "", "")], modulo=ctx.modulo)
     agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
     r = agente.processar(candidata(domain="nova-empresa.com.br"))
@@ -694,7 +708,7 @@ def _ (ctx):
 
 @item("auditoria-uma-linha-por-candidata-com-correlacao-do-lote")
 def _ (ctx):
-    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "SUCCESS\n", ""), (0, "", ""),
+    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "SCOUT_CRIADA\n", ""), (0, "", ""),
                                     (0, "", ""), (0, "", "")], modulo=ctx.modulo)
     agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev", correlation_id="lote-1")
     agente.rodar([candidata(domain="a.com.br"), candidata(domain="b.com.br")])
@@ -722,7 +736,7 @@ def _ (ctx):
 @item("toda-rodada-passaria-pela-guarda-de-escrita")
 def _ (ctx):
     porta = PortaRoteiro(respostas=[(0, "id-a\n", ""), (0, "", ""), (0, "", ""),
-                                    (0, "SUCCESS\n", ""), (0, "", "")], modulo=ctx.modulo)
+                                    (0, "SCOUT_CRIADA\n", ""), (0, "", "")], modulo=ctx.modulo)
     agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
     agente.rodar([candidata(trade_name="Sem ident", source="EVENTOS"),
                   candidata(domain="c.com.br")])

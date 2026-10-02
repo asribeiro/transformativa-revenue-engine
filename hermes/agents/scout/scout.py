@@ -459,12 +459,19 @@ def montar_linha_organizacao(candidata: dict, identificacao: dict) -> dict:
     return valores
 
 
+MARCA_CRIADA = "SCOUT_CRIADA"
+
+
 def sql_ingerir(organizacao_id: str, sync_event_id: str, chave: str, valores: dict,
                 evidencia: dict) -> str:
-    """Uma unica instrucao: claim da chave de idempotencia -> insere a organizacao -> fecha o evento.
+    """Uma transacao, DUAS instrucoes: claim da chave -> insere a organizacao -> fecha o evento.
 
-    Se a chave ja existe, `claim` volta vazia, `org` nao insere nada e o UPDATE fecha 0 linhas:
-    a saida vazia E a prova de que nada foi duplicado (retry nao cria duplicata).
+    Por que duas instrucoes e nao uma: as CTEs de escrita e a instrucao principal rodam com o
+    MESMO snapshot, entao a instrucao principal NAO enxerga a linha que a CTE acabou de inserir.
+    Medido no aceite E2E: um `UPDATE ... WHERE id = (SELECT id FROM claim)` fecha 0 linhas e o
+    evento fica PENDING para sempre. Aqui a segunda instrucao e um comando proprio — snapshot
+    novo — e so fecha a sincronia quando a organizacao DESTA rodada existe de fato, devolvendo
+    a marca `SCOUT_CRIADA`. Sem a marca (chave ja existia), nada foi duplicado: e replay.
     """
     colunas = [c.strip() for c in _COLUNAS_ORGANIZACAO.split(",")]
     # id + campos de negocio (tudo que fica ENTRE id e status) + status + source + os dois carimbos.
@@ -486,20 +493,21 @@ def sql_ingerir(organizacao_id: str, sync_event_id: str, chave: str, valores: di
         "{chave}, 'PENDING', {payload}, now())\n"
         "  ON CONFLICT (idempotency_key) DO NOTHING\n"
         "  RETURNING id\n"
-        "), org AS (\n"
-        "  INSERT INTO {orgs} ({cols})\n"
-        "  SELECT {vals} FROM claim\n"
-        "  RETURNING id\n"
         ")\n"
+        "INSERT INTO {orgs} ({cols})\n"
+        "SELECT {vals} FROM claim\n"
+        "ON CONFLICT (id) DO NOTHING\n"
+        "RETURNING id;\n"
         "UPDATE {sync} SET status = 'SUCCESS', completed_at = now(),\n"
         "  response_payload = jsonb_build_object('organization_id', {orgid}, "
         "'veredito', 'CRIADA', 'idempotency_key', {chave})\n"
-        "WHERE id = (SELECT id FROM claim) AND EXISTS (SELECT 1 FROM org)\n"
-        "RETURNING status;\n"
+        "WHERE idempotency_key = {chave} AND EXISTS (SELECT 1 FROM {orgs} WHERE id = {orgid})\n"
+        "RETURNING {marca};\n"
         "COMMIT;\n"
     ).format(sync=TABELA_SYNC_EVENTS, orgs=TABELA_ORGANIZACOES, sevid=lit(sync_event_id),
              orgid=lit(organizacao_id), versao=lit(VERSAO), chave=lit(chave),
-             payload=lit_json(payload), cols=lista_colunas, vals=lista_valores)
+             payload=lit_json(payload), cols=lista_colunas, vals=lista_valores,
+             marca=lit(MARCA_CRIADA))
 
 
 def sql_registrar_execucao(run_id: str, correlation_id: str, organizacao_id, status: str,
@@ -743,7 +751,7 @@ class Scout:
                                 valores, evidencia))
                 if rc != 0:
                     raise PortaIndisponivel("ingestao falhou: %s" % (erro or saida))
-                if "SUCCESS" in [l.strip() for l in saida.splitlines()]:
+                if MARCA_CRIADA in [l.strip() for l in saida.splitlines()]:
                     resultado["organization_id"] = organizacao_id
                     resultado["sync_event_id"] = sync_event_id
                 else:
