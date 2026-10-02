@@ -1087,3 +1087,31 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   commit `519d8c5`, com os 4 aceites de origem em `--apenas-codigo` no MESMO run; `--prova-de-dente`
   `E2E_FOUNDATION_001_DENTE_OK (3/3, baseline nao mutado verde, juiz e ancoras conferidos)`. Evidencia em
   `/opt/tre/evid-t_fcbe3d7d-r2/` (aceite.out/dente.out/logs) e no `docs/operations/registro-de-execucoes.md`.
+
+## [W4 — Hermes Sales AI · Scout] — 02/10/2026
+
+### Added
+
+- **Agente Scout v1 — descoberta e ingestão de empresa candidata** (`TRE-W4-E01-T01`) — o primeiro agente
+  da onda W4: recebe candidatas da fonte, normaliza e valida o forte de identidade (CNPJ com dígito
+  verificador, domínio, LinkedIn), decide o veredito (`CRIADA`, `JA_EXISTE`, `REVISAO_IDENTIDADE`,
+  `RECUSADA`, `ERRO`) e ingere **sem nunca dar UPDATE em `organizations`**:
+  - `hermes/agents/scout/scout.py`, `hermes/agents/scout/agente-scout-v1.json` (contrato legível por
+    máquina do próprio agente) e `hermes/agents/scout/exemplos/candidatas-exemplo.jsonl`;
+  - identidade por forte: forte válido casado = mesma entidade (`JA_EXISTE`); **dois fortes distintos**
+    casando com organizações diferentes = `REVISAO_IDENTIDADE` para a fila humana
+    (`human_approvals.action_type = SCOUT_IDENTITY_REVIEW`); sem forte válido **nunca** cria;
+  - ingestão idempotente pela chave de identidade em `sync_events.idempotency_key`
+    (`ON CONFLICT DO NOTHING`) numa **transação de duas instruções** — o fechamento do evento é comando
+    próprio porque as CTEs de escrita e a instrução principal rodam no **mesmo snapshot** (medido no
+    aceite: fechando dentro da CTE o evento fica `PENDING` para sempre) — com a marca `SCOUT_CRIADA`
+    conferida linha a linha, porque a porta imprime carimbos `BEGIN`/`COMMIT`;
+  - guardas fail-closed: sem porta psql declarada **recusa** em vez de improvisar; `--ambiente prod`
+    recusado (exit 4); escrita só nas 4 tabelas declaradas, sem DDL; LLM só com recibo válido do JEV;
+  - `--planejar` (sem banco, não exige ambiente) e `--desfazer <correlation_id>` (dry-run por padrão;
+    `--confirmo` apaga só o que a rodada criou e registra o `ROLLBACK` em `sync_events`).
+- **Verificação do Scout** (`TRE-W4-E01-T01`) — `scripts/agentes/verificar_agente_scout.py` (suíte
+  offline, 54 itens, autoteste de 8 mutações) e `scripts/agentes/teste_scout_aceite.sh` (aceite E2E em
+  container PostgreSQL descartável na VPS, 35 itens + prova de dente com 3 mutações);
+  `docs/architecture/agente-scout-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK) e
+  `docs/runbooks/agente-scout.md`.

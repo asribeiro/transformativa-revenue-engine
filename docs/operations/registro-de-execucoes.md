@@ -1297,3 +1297,32 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   arquivo); (5) falha de gate do passo 0 nao aborta mais o cenario (snapshot de falhas antes do trio).
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil
   `tester`) e a homologacao (**estagio 7**) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — agente Scout (TRE-W4-E01-T01)
+
+- **Aceite E2E do agente Scout v1 (agente):** `bash scripts/agentes/teste_scout_aceite.sh
+  --prova-de-dente` sobre a branch `feature/TRE-W4-E01-T01` (commit de codigo `a93e18c`), em container
+  **descartavel** `pg-scout-acc` (`postgres:16`, **sem porta publicada**, removido ao final) com a
+  migration `0001` aplicada do zero → `RESULTADO: ACEITE_SCOUT_001_OK (35 itens, 0 falhas)` e
+  `DENTE OK (3/3 mutacoes detectadas)`.
+- **Suite offline (agente):** `python3 scripts/agentes/verificar_agente_scout.py --autoteste` →
+  `RESULTADO: SCOUT_SUITE_OK (54 itens, 0 falhas)` e `AUTOTESTE OK (8/8 mutacoes detectadas)`.
+- **Portao de estrutura (agente):** `bash scripts/verificar_estrutura.sh` → `RESULTADO: PASS (0 falhas)`.
+- **Nenhum container do TRE foi tocado:** no fim do aceite seguiam de pe `proxy-dev`, `odoo-dev`,
+  `pg-odoo-dev` e `pg-sales-dev` (nenhuma escrita em `dev`, `homolog` ou `prod`; nenhum DDL fora do
+  container descartavel). O par `--desfazer` foi exercitado **no container descartavel**, nao no dev.
+- **Achados de execucao (todos com conserto na raiz, ja cobertos por item da suite):** (1) o INSERT de
+  `organizations` montava 23 valores para 21 colunas — a suite passou a conferir a **contagem** de
+  colunas x valores, nao so' os nomes; (2) o veredito de criacao ignorava os problemas de validacao
+  (nome/fonte ausentes) e tentava inserir — a recusa de forma agora vence a identidade; (3) a porta
+  imprime `BEGIN`/`COMMIT` junto do resultado e a comparacao da saida inteira fazia uma criacao
+  legitima parecer replay — a conferencia passou a ser **linha a linha** e o agente devolve a marca
+  `SCOUT_CRIADA`; (4) o fechamento do `sync_events` estava **dentro da CTE de escrita**: como as CTEs e a
+  instrucao principal rodam no **mesmo snapshot**, o `UPDATE` fechava 0 linhas e o evento ficava
+  `PENDING` para sempre — o fechamento virou comando proprio (snapshot novo), ancorado na existencia da
+  organizacao da rodada.
+- **Evidencia bruta:** saida completa do aceite e da suite guardadas como anexo do card
+  `t_fd3e41f0` (relatorios por rodada ficaram so' no diretorio temporario do aceite, removido com ele —
+  nenhum dado nem segredo permanece no disco da VPS).
+- **Nao e homologacao:** quem entrega nao homologa — o veredito do estagio 6 e' do perfil `tester` e a
+  homologacao (estagio 7) e' do Anderson.

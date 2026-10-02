@@ -98,7 +98,12 @@ bash scripts/verificar_estrutura.sh
 
 O aceite cria um container **novo** (`pg-scout-acc`) e se recusa a rodar se o nome já existir — ele
 nunca mexe em `pg-sales-dev`, `pg-odoo-dev` ou em qualquer container que não seja dele. Ao terminar, o
-container é removido (inclusive em falha).
+container é removido (inclusive em falha). São **35 itens**: três rodadas de ingestão (criação, retry e
+replay com a chave já reivindicada), `prod` recusado sem escrita, `--planejar` sem porta e o ciclo do
+`--desfazer`. `--prova-de-dente` roda o aceite sobre cópias mutadas do agente (**3 mutações**, precisa
+reprovar em todas) e exige baseline verde antes e depois — mutação não detectada é falha do aceite, não
+do agente. `--manter` preserva container e diretório de trabalho para inspeção (o diretório e os
+relatórios são apagados por padrão).
 
 ## 7. Problemas conhecidos
 
@@ -111,3 +116,9 @@ container é removido (inclusive em falha).
   Incluir uma fonte nova é mudança de contrato do agente, não ajuste local.
 - **`GuardaDeEscritaViolada`** — alguma instrução tentou DDL ou tabela fora das 4 declaradas. É a
   guarda funcionando; investigue a alteração de código, não afrouxe a guarda.
+- **`sync_events` preso em `PENDING`** — o fechamento foi colocado dentro da CTE de escrita: as CTEs e a
+  instrução principal rodam no **mesmo snapshot**, então ela não enxerga a linha que acabou de inserir.
+  O fechamento tem de ser uma instrução própria (ver `sql_ingerir`); a suíte offline reprova a regressão.
+- **Saída da porta com carimbos** — o `psql` imprime `BEGIN`/`COMMIT` junto do resultado. Confira o
+  resultado **linha a linha** (é o que o agente faz com a marca `SCOUT_CRIADA`); comparar a saída inteira
+  com uma string única faz uma criação legítima parecer replay.

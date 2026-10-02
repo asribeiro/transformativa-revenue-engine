@@ -160,14 +160,22 @@ python3 hermes/agents/scout/scout.py --desfazer <correlation_id>
 ## 8. TEST
 
 - **Offline (contrato e regra):**
-  `python3 scripts/agentes/verificar_agente_scout.py --autoteste` — 50 itens: espelho do contrato com
-  o Data Contract V1.0, colunas do INSERT contra o DDL congelado, normalização/validação, decisão de
-  identidade, guarda de escrita, gate do JEV e o fluxo completo numa porta de roteiro. O autoteste
-  muta **cópia** do agente (7 mutações) e exige que o item correspondente **reprove**.
+  `python3 scripts/agentes/verificar_agente_scout.py --autoteste` — **54 itens**: espelho do contrato com
+  o Data Contract V1.0, colunas do INSERT contra o DDL congelado (e a **contagem** de colunas × valores),
+  normalização/validação, decisão de identidade, guarda de escrita, gate do JEV e o fluxo completo numa
+  porta de roteiro. O autoteste muta **cópia** do agente (**8 mutações**) e exige que o item
+  correspondente **reprove** — hoje 8/8.
 - **E2E (banco real, descartável):** `bash scripts/agentes/teste_scout_aceite.sh` na VPS, em container
-  PostgreSQL descartável com a migration 0001 — mede A2–A8 por contagem antes/depois. O
-  `--prova-de-dente` muta a cópia do agente e exige que o aceite **REPROVE** (baseline verde antes e
-  depois).
+  PostgreSQL descartável (`pg-scout-acc`) com a migration 0001 — **35 itens** medidos por contagem
+  antes/depois em 3 rodadas mais as guardas: criação (3), retry sem duplicata, **replay com a chave já
+  reivindicada e a organização ausente** — é este item que prova o `ON CONFLICT (idempotency_key)`;
+  `prod` recusado sem escrita, `--planejar` sem porta, dry-run do desfazer e desfazer com `--confirmo`
+  preservando base e auditoria. O `--prova-de-dente` muta a cópia do agente e exige que o aceite
+  **REPROVE** (baseline verde antes e depois): **3/3**.
+- **Defeitos que só o E2E pegou** (cada um virou item offline): colunas × valores fora de sincronia no
+  INSERT; veredito de criação ignorando os problemas de validação (nome/fonte); carimbos
+  `BEGIN`/`COMMIT` da porta lidos como "não ingerido"; e o fechamento do `sync_events` dentro da CTE —
+  mesmo snapshot, o evento ficava `PENDING` para sempre.
 - Evidência no `docs/operations/registro-de-execucoes.md` com comando e saída reais.
 
 ## 9. ROLLBACK
