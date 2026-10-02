@@ -282,5 +282,22 @@ for f in scripts/agentes/teste_scout_aceite.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Agente Research v1 (TRE-W4-E02-T01): segundo agente da W4 e o produtor da PESQUISA
+# (`research_runs`) e do enriquecimento da empresa descoberta. Se o contrato do agente, o codigo,
+# a suite, o aceite ou o runbook sumirem do git, o card entrega fica sem artefato verificavel —
+# o gate reprova por nome. Um arquivo por linha de proposito: o aceite da classe mede `grep -c`.
+for f in hermes/agents/research/research.py hermes/agents/research/agente-research-v1.json \
+         hermes/agents/research/exemplos/pesquisas-exemplo.jsonl \
+         scripts/agentes/verificar_agente_research.py scripts/agentes/teste_research_aceite.sh \
+         docs/architecture/agente-research-v1.md docs/runbooks/agente-research.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_research_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

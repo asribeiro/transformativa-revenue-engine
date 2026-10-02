@@ -1123,3 +1123,46 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   o `rc` da escrita em `human_approvals` e em `agent_runs` era descartado (o agente afirmava
   `REVISAO_IDENTIDADE`/`COMPLETED` sem nada escrito); e a guarda de escrita recusava candidata legítima
   por causa de `Drop`/`Create`/`Alter` **dentro do nome da empresa** (a guarda agora lê o código SQL).
+
+## [W4 — Hermes Sales AI · Research] — 02/10/2026
+
+### Added
+
+- **Agente Research v1 — pesquisa e enriquecimento da empresa descoberta** (`TRE-W4-E02-T01`) — o segundo
+  agente da onda W4 e o produtor que faltava entre *Descoberto* e *Pesquisado* (doc 03 §2, doc 07 §7):
+  resolve a empresa **que já existe** pelos identificadores fortes do contrato, grava a execução da
+  pesquisa em `research_runs` (com evidência, `input_hash` e `source_count`) e **enriquece as colunas
+  vazias** da organização, sem nunca sobrescrever o que já estava preenchido:
+  - `hermes/agents/research/research.py`, `hermes/agents/research/agente-research-v1.json` (contrato
+    legível por máquina do próprio agente) e `hermes/agents/research/exemplos/pesquisas-exemplo.jsonl`;
+  - veredito por identidade: forte válido casado com **uma** organização = `PESQUISADA`; replay da mesma
+    entrada = `JA_PESQUISADO` (`IDEMPOTENCIA_REPLAY`); dois casamentos distintos = `REVISAO_IDENTIDADE`
+    para a fila humana (`human_approvals.action_type = RESEARCH_IDENTITY_REVIEW`); identidade que não casa
+    = `RECUSADA` (`ORGANIZACAO_NAO_ENCONTRADA`) — a pesquisa **não cria** empresa, **não escreve**
+    identidade forte, `status`, `data_quality_score` nem `deleted_at`, e não detecta sinais, dor ou
+    contato (W4-E03/E04/E05);
+  - **não sobrescrever é garantido no SQL** (`COALESCE(NULLIF(coluna,''), valor)` em texto e
+    `COALESCE(coluna, valor)` em número) e a guarda de escrita **exige** esse formato: um `UPDATE` por
+    atribuição direta é recusado pelo próprio agente (medido por mutação, no offline e no E2E);
+  - enriquecimento limitado ao **tipo** do pedido (`COMPANY_PROFILE`, `SIZE_AND_STRUCTURE`, `INDUSTRY`,
+    `DIGITAL_PRESENCE`), com `employee_band` **derivada** de `employee_count` pelo vocabulário fechado do
+    contrato; achado inválido, fora do tipo ou forte é **descartado com motivo** em
+    `structured_output.achados_descartados` — nunca escrito em silêncio;
+  - ingestão idempotente por `research:org:<uuid>:<tipo>:<input_hash>` em `sync_events.idempotency_key`
+    (`ON CONFLICT (idempotency_key) DO NOTHING`), em **três comandos próprios** (claim, enriquecimento e
+    fechamento) porque as CTEs de escrita e a instrução principal rodam no **mesmo snapshot** — medido no
+    aceite com a chave já reivindicada e o `research_run` ausente (replay silencioso, sem `UNIQUE`
+    violation);
+  - guardas fail-closed: `--ambiente prod` recusado (exit 4), escrita só nas 5 tabelas declaradas, `DELETE`
+    de organização bloqueado, LLM só com recibo válido do JEV, nenhum cliente HTTP no código;
+  - a regra de identidade é **importada** do produtor (Scout), não reescrita;
+  - `--planejar` (sem banco) e `--desfazer <correlation_id>` (dry-run por padrão; `--confirmo` restaura os
+    valores anteriores com o tipo da coluna, apaga os `research_runs`/`sync_events` da rodada e registra o
+    `ROLLBACK`, sem tocar `agent_runs` nem `human_approvals`).
+- **Verificação do Research** (`TRE-W4-E02-T01`) — `scripts/agentes/verificar_agente_research.py` (suíte
+  offline, **64 itens**, autoteste de **15 mutações**) e `scripts/agentes/teste_research_aceite.sh` (aceite
+  E2E em container PostgreSQL descartável na VPS, **55 itens** + prova de dente com 4 mutações, cada uma
+  exigindo o **item esperado**); `docs/architecture/agente-research-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK)
+  e `docs/runbooks/agente-research.md`.
+- **Portão de estrutura** (`TRE-W4-E02-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
+  artefatos do agente Research (versionados no git, aceite executável).
