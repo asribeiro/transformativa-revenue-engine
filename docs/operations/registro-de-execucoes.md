@@ -1473,3 +1473,61 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   também em `/opt/tre/evid-t_d9be7d3c-r2/` na VPS.
 - **O que esta rodada NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
   perfil `tester` e a homologação (estágio 7) é do Anderson.
+
+## TRE-W4-E05-T01 — Agente Contact Research v1 (contato comercial da empresa já pesquisada)
+
+- **Card:** `t_1a85a424` (board `transformativa-revenue-engine`) · branch `feature/TRE-W4-E05-T01`,
+  base no head aprovado do card irmão (`feature/TRE-W4-E02-T01`, agente Research).
+- **Momento do registro:** toda evidência abaixo foi produzida **antes** deste texto — nada é narrado
+  de memória. Data do registro: 02/10/2026.
+
+### Rodada 1 — implementação, suíte offline e aceite E2E
+
+- **Suíte offline (agente, no container do Hermes):**
+  `python3 scripts/agentes/verificar_agente_contact_research.py --autoteste` ->
+  `RESULTADO: CONTACT_RESEARCH_SUITE_OK (60 itens, 0 falhas)` e
+  `AUTOTESTE OK (25/25 mutacoes detectadas)`, exit 0. Saída integral em
+  `evidencias-impl/suite-autoteste.out` (anexo do card).
+- **Aceite E2E (agente, na VPS, árvore própria em `/opt/tre/e05t01-r1`):** container descartável
+  `pg-contact-acc` (`postgres:16`, sem porta publicada) com a migration 0001 em schema limpo, **3
+  organizações** pré-existentes (uma com `industry_name` curado) e **1 contato** pré-existente com
+  e-mail em CAIXA ALTA, cargo curado e `do_not_contact`/`opt_out_email` ligados -> `RESULTADO:
+  ACEITE_CONTACT_RESEARCH_001_OK (65 itens, 0 falhas)`, exit 0.
+- **Prova de dente (mesmo aceite):** `DENTE OK (4/4 mutacoes detectadas, cada uma pelo item
+  esperado)`, baseline verde antes das mutações — `sem-idempotencia` 5 itens (`rodada2-exit-0`,
+  `rodada2-ja-identificado-cinco`, `rodada3-exit-0`, …), `enriquecimento-sem-coalesce` 14 itens
+  (`rodada1-enriquecimento-nao-sobrescreve`, …), `identidade-sem-lower` 12 itens
+  (`rodada1-identidade-casa-sem-diferenca-de-caixa`, …) e `rollback-sem-guarda-de-espelho` 4 itens
+  (`desfazer-recusa-contato-espelhado`, …). Saída integral em `evidencias-impl/aceite-e2e.out` e
+  `evidencias-impl/aceite-e2e-dente.out` (anexos do card); log completo também em
+  `/opt/tre/evid-e05t01-r1-aceite.out` e `/opt/tre/evid-e05t01-r1-dente.out` na VPS.
+- **Portão de estrutura (agente):** `bash scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0
+  falhas)`, com os 7 artefatos do Contact Research versionados e o aceite executável.
+- **Nenhum container do TRE foi tocado:** só `pg-contact-acc` nasceu e foi removido; `proxy-dev`,
+  `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` seguem de pé.
+
+### Correções medidas nesta rodada (defeito da PROVA, não do agente)
+
+Cinco provas mediam a coisa errada e passavam (ou reprovavam pelo motivo errado). O agente não
+apresentou defeito no que foi medido — o buraco era do verificador:
+
+- `insert-sem-guarda-de-coluna` e `outbox-nas-tabelas-permitidas`: a âncora citava texto que a
+  implementação já não tinha (a guarda do INSERT passou a ler `COLUNAS_DE_INSERT`, e a ordem de
+  `TABELAS_PERMITIDAS` é `contacts, organizations, agent_runs, …`) -> a mutação **não aplicava** e o
+  autoteste reprovava por buraco de verificação (comportamento correto da guarda da própria prova).
+  Âncoras passaram a ser o texto real do código.
+- `email-como-coluna-de-enriquecimento`: a mutação ampliava a lista declarada de enriquecimento, mas o
+  item só media o SQL gerado com colunas fixas. O item passou a medir a **declaração**
+  (`COLUNAS_ENRIQUECIMENTO` sem coluna de identidade) e a **guarda** (`conferir_enriquecimento` tem de
+  recusar a identidade mesmo a pedido explícito).
+- `raiz-por-profundidade-do-arquivo`: o item copiava o **código canônico** em vez do módulo sob teste —
+  com `--codigo`/autoteste, media o agente certo enquanto a mutação passava. Agora copia
+  `Path(modulo.__file__)`.
+- No aceite E2E, duas expectativas do próprio aceite estavam erradas (e a mutação declarava o item
+  errado): a evidência de `evento_de_espelho` existe em **5** dos 11 pedidos (só quem chegou a escrever
+  contato tem rodada a espelhar); a fila humana tem **2** `PENDING` (a ambiguidade de identidade da
+  empresa reaparece na rodada 2, porque é do conflito, não da rodada); e `sem-idempotencia` declarava
+  `rodada2-nao-duplica` — que **passa** justamente porque a rodada 2 morre antes de escrever. O item
+  que mede o defeito é `rodada2-exit-0`/`rodada2-ja-identificado-cinco`.
+- **O que esta rodada NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
+  perfil `tester` e a homologação (estágio 7) é do Anderson.
