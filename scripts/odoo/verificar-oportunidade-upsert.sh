@@ -629,7 +629,10 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
         ULTIMA_RESPOSTA="$DESC_DIR/resposta-$CHAMADAS.json"
         [ "$codigo" = "$2" ] && ok "$1 -> HTTP $codigo" || falhou "$1 -> HTTP $codigo (esperado $2)"
     }
-    campo() { python3 -c "import json,sys; print(eval(sys.argv[2]))" "$1" "$2"; }
+    campo() { # $1=arquivo de resposta $2=expressao python sobre `d` (o JSON carregado)
+        python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))" \
+            "$1" "$2"
+    }
     corpo() { cat >"$DESC_DIR/$1"; }
     codigo_de() { campo "$1" "d.get('codigo','')"; }
     sql() { psql_bd "$BANCO" "$1"; }
@@ -703,6 +706,7 @@ JSON
                             "tf_opportunity_id": "$UUID_HTTP", "tf_priority_score": 82.5,
                             "tf_icp_score": 80.0, "tf_next_best_action": "FOLLOW_UP",
                             "tf_correlation_id": "tre-e01-t04-http-correl-1",
+                            "tf_idempotency_key": "tre-e01-t04-http-0001",
                             "tf_last_sync_at": "2026-10-02 03:00:00",
                             "tf_last_event_type": "OPPORTUNITY_RECOMMENDED"}}}
 JSON
@@ -1038,7 +1042,13 @@ fi
 # limpeza e prova de que o ambiente do dev nao foi tocado (AC8)
 # ---------------------------------------------------------------------------
 cabecalho "limpeza e ambientes"
-for auxiliar in "$BANCO" "${BANCO}_d1" "${BANCO}_d2" "${BANCO}_d3"; do
+# Os bancos `_dN` sao das provas de dente: so' existem no modo dente. Conferi-los em outro modo
+# carimbaria OK de banco que nunca nasceu (item que nao mede nada).
+AUXILIARES=("$BANCO")
+if [ "$MODO" = "dente" ]; then
+    AUXILIARES+=("${BANCO}_d1" "${BANCO}_d2" "${BANCO}_d3")
+fi
+for auxiliar in "${AUXILIARES[@]}"; do
     if [ "$MANTER_BANCO" = "1" ]; then
         info "TRE_MANTER_BANCO=1: banco $auxiliar mantido para inspecao"
     else
