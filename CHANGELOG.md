@@ -896,6 +896,27 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **valor** da chave fora do cofre/workflow/log. A suite do módulo roda dentro do aceite
   (`0 failed, 0 error(s) of 192 tests`). Runbook: `docs/runbooks/n8n-reconciliacao.md`.
 
+- **Observabilidade de sincronizacao** (`TRE-W3-E05-T01`) — a superficie de leitura que o consumidor de
+  outbox e a trilha de escrita nao tinham: contrato `n8n/contracts/observabilidade-sync.v1.json` **1.0.0**
+  (15 metricas declaradas com unidade, regra de ausencia e limiares `alerta`/`critico`; veredito
+  `OK/ATENCAO/CRITICO/INDETERMINADO` com exit `0/1/2/3`; regras de fail-closed; vocabulario da trilha com as
+  **lacunas declaradas**), as duas consultas **somente-leitura** (`n8n/sql/observabilidade-sync.sql` — fila com
+  idade, dead-letter com motivo, grade declarada direcao x status, sucesso sem prova; e
+  `n8n/sql/observabilidade-sync-dead-letters.sql` — a lista que da' o MOTIVO), o nucleo
+  `n8n/codigo/observabilidade-sync.js` (nenhum id de metrica e nenhum limiar literal no codigo: tudo vem do
+  contrato, com verificacao que reprova se aparecer) e o workflow **DERIVADO**
+  `n8n/workflows/TRE-observabilidade-sync.json` (id estavel `TREOBSERVSYNC1`, gatilho de agenda + manual,
+  **nasce inativo**), montado por `scripts/n8n/montar_workflow_observabilidade.py` (o Code node embute o nucleo
+  versionado byte a byte e os nos Postgres embutem os arquivos SQL).
+  Medicao na VPS, sobre copia propria do commit: aceite `OBSERVABILIDADE_SYNC_OK` (**119 itens, 0 falhas**)
+  exit 0 — lente estrutural **118 itens**, suite do nucleo **58 itens**, montador `--conferir` OK — com 8 estados
+  reais semeados (saudavel, falha transitoria, dead-letter sem/com motivo, PROCESSED sem trilha, fila no teto,
+  direcao fora do vocabulario, trilha COMPLETED sem conclusao), cada metrica medida **por dois caminhos
+  independentes** (`psql` direto e pelo workflow no n8n descartavel) e o retrato das duas tabelas identico
+  antes/depois da rodada (somente-leitura provado em execucao real). Prova de dente:
+  `OBSERVABILIDADE_SYNC_DENTE_OK` (**12/12**, baseline nao mutado verde, juiz conferido com 7 saidas sinteticas).
+  Runbook: `docs/runbooks/observabilidade-sync.md`.
+
 ### Fixed
 
 - **Os dois SQL do dedup por chave ficaram fora do verificador de estrutura (`TRE-W3-E02-T02-D01`, defeito
@@ -976,6 +997,26 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **sem nenhum e-mail do payload** — dado pessoal fora da trilha). Dentes: **`CONTATO_UPSERT_DENTE_OK
   (3 provas + 2 controles do próprio harness, 0 falhas)`**. Runbook:
   `docs/runbooks/odoo-contato-upsert.md`.
+- **A consulta de detalhes rodava uma vez por linha de metrica (`TRE-W3-E05-T01`)** — achado do **proprio aceite
+  real**: a primeira rodada mediu `outbox_dead_letter (20)` para **um unico** dead-letter. O n8n executa um no'
+  com entrada multipla **uma vez por item** e as 20 linhas de metrica viravam 20 execucoes da consulta de
+  detalhes (a lista saia multiplicada e o estado sem detalhe virava 20 linhas vazias). Corrigido na raiz com
+  `executeOnce` nos dois nos Postgres, declarado no contrato (`workflow.consulta_uma_vez`) e medido pela lente;
+  o aceite passou a exigir `outbox_dead_letter (1)` no relatorio.
+
+- **Rodada saudavel fechava INDETERMINADO (`TRE-W3-E05-T01`)** — `alwaysOutputData` (necessario para a cadeia nao
+  parar quando nao ha detalhe) entrega **um item vazio**; o nucleo lia isso como "detalhe com tipo nao
+  declarado" e reprovava justamente a rodada em que tudo estava bem (`tipo_de_detalhe_nao_declarado:(vazio)`).
+  Corrigido na raiz: linha **totalmente vazia** e' AUSENCIA DE DETALHE (regra declarada no contrato,
+  `detalhes.linha_vazia`); linha com QUALQUER campo preenchido continua fechando INDETERMINADO. Coberto por item
+  proprio na suite e por dente proprio (`placeholder_vira_indeterminado`).
+
+- **Dois itens do aceite que nao mordiam (`TRE-W3-E05-T01`)** — (a) o item do MOTIVO do dead-letter usava `\(` no
+  padrao BRE: em BRE o parentese e' literal **sem** barra e `\(` e' agrupamento — o `grep` nunca casava (a falha
+  apareceu no aceite r2 e a causa era o proprio padrao); (b) o dente do placeholder saiu `MUTACAO_SEM_DENTE`
+  porque a ancora (`nao vira indeterminado`) tambem existia num item vizinho que continuava OK. Corrigido na
+  raiz: ancora virou trecho unico, o juiz do dente julga **FALHOU antes de OK** (item vizinho de texto parecido
+  nao pode esconder o dente) e o juiz ganhou controle proprio para esse caso (7 saidas sinteticas).
 
 ### Notas de estado
 
@@ -999,3 +1040,17 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - **Revisão independente e homologação abertas**: quem entrega não homologa — o veredito deste card
   é do estágio 6 (perfil `tester`) e a ratificação da versão 19.0/homologação (estágio 7) é do
   Anderson.
+- **Observabilidade de sync (`TRE-W3-E05-T01`) — lacunas declaradas, por desenho**: (1) **replay/dedup nao tem
+  contagem propria** — `outbox_events`/`sync_events` da V1 nao guardam a marca de entrega reaproveitada; contar
+  replay exigiria coluna nova (decisao do dono, nova versao do data contract) e o que pega replay quebrado e'
+  `outbox_processado_sem_trilha`; (2) **o alerta nao tem rota** — a entrega vai ate' o veredito com exit code e o
+  relatorio (canal de notificacao e' decisao do dono); (3) **o contrato da porta de ingestao**
+  (`n8n/contracts/odoo-events-ingest.v1.json`, card `TRE-W3-E03-T01`) **nao esta' na base deste card** (`a38585d`):
+  as direcoes `odoo->postgres` e os status dessa porta sao declarados a partir do fluxo documentado (doc 06 §7-8) e
+  a lente aceita `--ingest <arquivo>` para conferir o espelho de verdade quando o card E03 estiver no base.
+- **Observabilidade de sync — nada nasce ligado (ADR-005)**: o workflow `TREOBSERVSYNC1` nasce **inativo**, nao foi
+  publicado em nenhuma instancia e nao escreve em banco (nenhum DDL, nenhum DML). Ligar a agenda e' passo de
+  operacao, com limiares calibrados pelo dono (mudar limiar e' **nova versao do contrato**, nunca edicao
+  silenciosa).
+- **Revisao independente e homologacao abertas (`TRE-W3-E05-T01`)**: quem entrega nao homologa — o veredito deste
+  card e' do estagio 6 (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.

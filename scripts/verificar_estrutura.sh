@@ -218,6 +218,12 @@ done
 # Artefatos do job diario de reconciliacao (TRE-W3-E04-T01) existem E estao versionados. Mesma
 # classe do bloco do consumidor de outbox: o workflow e' DERIVADO do contrato + nucleo + SQL, e sem
 # a lista o gate imprimiria PASS com o card fora da arvore versionada. Um arquivo por linha.
+# Artefatos da OBSERVABILIDADE de sync (TRE-W3-E05-T01): o workflow de observabilidade tambem e'
+# DERIVADO (contrato + SQL + nucleo) e a medicao so' vale se o que foi medido na VPS estiver
+# versionado — inclusive o aceite, o montador, o mutador e o RUNBOOK (quem opera precisa do
+# procedimento versionado, nao de conhecimento de sessao).
+# Consolidacao da onda W3 (TRE-W3-E06-T01): as duas listas dos cards-irmaos entram JUNTAS aqui —
+# o merge da onda nao pode deixar nenhum artefato fora do gate.
 for f in n8n/contracts/reconciliation-job.v1.json n8n/codigo/nucleo-reconciliacao.js \
          n8n/sql/reconciliacao-origem.sql \
          n8n/sql/reconciliacao-pendentes.sql \
@@ -225,14 +231,25 @@ for f in n8n/contracts/reconciliation-job.v1.json n8n/codigo/nucleo-reconciliaca
          scripts/n8n/conferir_reconciliacao.py scripts/n8n/testar_nucleo_reconciliacao.js \
          scripts/n8n/mutar_reconciliacao.py scripts/n8n/ler_resultado_reconciliacao.py \
          scripts/n8n/massa-reconciliacao.sql scripts/odoo/massa_reconciliacao.py \
-         scripts/n8n/verificar-reconciliacao.sh docs/runbooks/n8n-reconciliacao.md; do
+         scripts/n8n/verificar-reconciliacao.sh docs/runbooks/n8n-reconciliacao.md \
+         n8n/contracts/observabilidade-sync.v1.json n8n/codigo/observabilidade-sync.js \
+         n8n/sql/observabilidade-sync.sql n8n/sql/observabilidade-sync-dead-letters.sql \
+         n8n/workflows/TRE-observabilidade-sync.json \
+         scripts/n8n/montar_workflow_observabilidade.py scripts/n8n/mutar_workflow_observabilidade.py \
+         scripts/n8n/conferir_observabilidade.py scripts/n8n/testar_observabilidade_sync.js \
+         scripts/n8n/massa-observabilidade.sql scripts/n8n/ler_resultado_n8n.py \
+         scripts/n8n/normalizar_medicao.py scripts/n8n/verificar-observabilidade-sync.sh \
+         docs/runbooks/observabilidade-sync.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
 for f in scripts/n8n/verificar-reconciliacao.sh scripts/n8n/montar_workflow_reconciliacao.py \
          scripts/n8n/conferir_reconciliacao.py scripts/n8n/mutar_reconciliacao.py \
-         scripts/n8n/ler_resultado_reconciliacao.py scripts/odoo/massa_reconciliacao.py; do
+         scripts/n8n/ler_resultado_reconciliacao.py scripts/odoo/massa_reconciliacao.py \
+         scripts/n8n/verificar-observabilidade-sync.sh scripts/n8n/montar_workflow_observabilidade.py \
+         scripts/n8n/mutar_workflow_observabilidade.py scripts/n8n/conferir_observabilidade.py \
+         scripts/n8n/ler_resultado_n8n.py scripts/n8n/normalizar_medicao.py; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
