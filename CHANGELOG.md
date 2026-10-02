@@ -1318,3 +1318,40 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `docs/runbooks/agente-contact-research.md`.
 - **Portão de estrutura** (`TRE-W4-E05-T01`) — `scripts/verificar_estrutura.sh` passa a cobrar os 7
   artefatos do agente Contact Research (versionados no git, aceite executável).
+
+## [W4 — E2E Sales Intelligence · a cadeia dos cinco agentes] — 02/10/2026
+
+### Added
+
+- **Aceite E2E da cadeia Sales Intelligence** (`TRE-W4-E06-T01`) — a onda W4 medida **de ponta a
+  ponta**, na ordem real e num único banco descartável: Scout → Research → Signal → Pain Hypothesis →
+  Contact Research, com o que cada agente escreve sendo exatamente o que o próximo resolve:
+  - `scripts/e2e/verificar-e2e-sales-intelligence.sh` (**76 itens** no cenário + **5 itens** no
+    passo 0, cada linha com o VALOR medido), `docs/architecture/e2e-sales-intelligence.md`
+    (ACCEPTANCE/TEST/ROLLBACK/RISK) e `docs/runbooks/e2e-sales-intelligence.md`;
+  - **passo 0 — regressão das cinco suítes offline** (58 + 65 + 75 + 85 + 60 itens) no **mesmo commit**
+    do aceite: o veredito diz em que commit a cadeia foi medida, e contrato de agente quebrado reprova
+    antes de qualquer banco;
+  - **o encadeamento é medido, não narrado**: as fontes do Signal e do Pain são **geradas** dos
+    relatórios de Research/Signal, e o `research_run_id`/`signal_id` que elas declaram saem do
+    **relatório da rodada** (não da fixture) — se um agente parar de gravar o vínculo, o item do
+    próximo reprova (`pesquisa-rodada1-run-aponta-a-empresa-do-scout`,
+    `cadeia-sinal-vincula-a-pesquisa-da-mesma-empresa`, `cadeia-hipotese-lastro-de-pesquisa`);
+  - **replay** das cinco rodadas com as **mesmas fontes** = zero duplicata nas cinco tabelas de negócio
+    (assinatura antes/depois); a fila humana é **re-reportada** (2 `PENDING`) e o contato ambíguo segue
+    **não escrito** — a idempotência vale para o dado de negócio, não para o pedido de revisão;
+  - **desfazer na ordem inversa** (contato → hipótese → sinal → pesquisa → scout) devolve o banco ao
+    estado inicial (`0|0|0|0|0`), **preserva a fila humana** e registra os 5 `ROLLBACK`; o desfazer do
+    Research restaura a coluna que ele enriqueceu e deixa intacto o que o Scout escreveu;
+  - guardas: `--ambiente prod` recusado **nos cinco** (exit 4) sem escrever nada; `--planejar` sem porta
+    de escrita; container descartável próprio (`pg-e2e-si-acc`) e os containers do TRE **intactos**;
+  - **prova de dente, 5/5**: uma mutação por agente, em cópia do código, cada uma exigindo o **item
+    esperado** — `scout-escreve-empresa-sem-identidade`, `pesquisa-run-sem-organizacao`,
+    `sinal-anexa-run-inexistente`, `hipotese-aceita-lastro-de-outra-empresa`,
+    `contato-sem-idempotencia`;
+  - **defeito da prova, corrigido nesta rodada (medido, não suposto)**: as mutações óbvias de "duplicar
+    no replay" (Scout) e "sobrescrever coluna" (Research) ficaram **inertes/verdes** — as duas
+    propriedades têm **duas camadas independentes** (claim por identidade + resolução na base;
+    escolha de coluna vazia + `COALESCE(NULLIF(coluna,''), valor)` exigido pela guarda). O dente do E2E
+    passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
+    próximo resolve.
