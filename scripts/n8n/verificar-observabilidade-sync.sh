@@ -544,6 +544,47 @@ retrato_tabelas() { # digest das DUAS tabelas: prova de somente-leitura em execu
       || '|' || (select count(*) from sales_intelligence.outbox_events)
       || '|' || (select count(*) from sales_intelligence.sync_events)")"
 }
+
+# ---------------------------------------------------------------------------
+# Resiliencia do trio descartavel: a VPS e' COMPARTILHADA com outras rodadas e a
+# higiene de outra sessao pode remover container alheio no MEIO da medicao (medido:
+# o postgres sumiu entre dois estados e o n8n passou a devolver "DNS server returned
+# an error"; com `--rm`, container que sai e' removido). O aceite mede a
+# OBSERVABILIDADE, nao a higiene da VPS: se o trio sumiu, ele e' restabelecido com o
+# MESMO nome e o esquema e' reaplicado (o cofre do n8n vive em bind mount e
+# sobrevive). Cada restabelecimento vira ITEM — ambiente remexido nao pode ser
+# invisivel na leitura do log.
+# ---------------------------------------------------------------------------
+garantir_trio() {
+    if ! docker network inspect "$NET_TMP" >/dev/null 2>&1; then
+        docker network create "$NET_TMP" >/dev/null 2>&1
+        docker network connect "$NET_TMP" "$PG_TMP" >/dev/null 2>&1
+        ok "rede descartavel $NET_TMP restabelecida e o postgres reconectado"
+    fi
+    if docker inspect -f '{{.State.Running}}' "$PG_TMP" 2>/dev/null | grep -q true; then
+        return 0
+    fi
+    if [ ! -f "$DESC_DIR/pg.env" ]; then
+        falhou "trio descartavel sumiu por fora e o diretorio 700 tambem (sem senha nao da' para restabelecer)"
+        return 1
+    fi
+    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    docker run -d --rm --name "$PG_TMP" --network "$NET_TMP" --env-file "$DESC_DIR/pg.env" "$IMAGEM_PG" \
+        >/dev/null 2>&1
+    local pronto=0
+    for _ in $(seq 1 30); do
+        if docker exec "$PG_TMP" pg_isready -U "$PG_USER" -d postgres >/dev/null 2>&1; then pronto=1; break; fi
+        sleep 2
+    done
+    if [ "$pronto" != "1" ]; then
+        falhou "trio descartavel restabelecido nao ficou pronto (a medicao nao continua)"
+        return 1
+    fi
+    docker exec "$PG_TMP" createdb -U "$PG_USER" "$BANCO" >/dev/null 2>&1
+    docker exec -i "$PG_TMP" psql -U "$PG_USER" -d "$BANCO" -v ON_ERROR_STOP=1 -q <"$MIGRATION" \
+        >"$LOG_DIR/0-restabelecimento-migration.log" 2>&1
+    ok "trio descartavel restabelecido com o MESMO nome e esquema reaplicado: o container tinha sumido por fora"
+}
 limpar_estado() { si "truncate table sales_intelligence.outbox_events, sales_intelligence.sync_events" >/dev/null; }
 semear_estado() { # $1 = letra do estado (bloco da massa)
     local bloco="$LOG_DIR/estado-$1.sql"
@@ -615,6 +656,7 @@ confere_duas_medicoes() { # $1=rotulo : as duas medicoes coincidem EXATAMENTE na
 
 rodada_do_estado() { # $1 = letra ; mede o estado por DOIS caminhos (psql e workflow)
     local letra="$1"
+    garantir_trio || return 1
     PREFIXO="$LOG_DIR/estado-$letra"
     limpar_estado
     if ! semear_estado "$letra"; then
@@ -744,6 +786,7 @@ rodada_do_estado H && {
 # passo 4 — somente leitura em execucao real: uma rodada a mais nao muda nada
 # ---------------------------------------------------------------------------
 cabecalho "passo 4 — a observabilidade nao escreve no que observa"
+garantir_trio || true
 RETRATO_ANTES="$(retrato_tabelas)"
 executar_rodada "$LOG_DIR/estado-H-extra"
 RC_EXTRA="$RC_RODADA"
