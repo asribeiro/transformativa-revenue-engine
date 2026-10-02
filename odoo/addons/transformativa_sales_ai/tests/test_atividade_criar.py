@@ -89,13 +89,13 @@ class TestAtividadeCriar(HttpCase):
             "/tf/api/v1/%s" % operacao, json=corpo, headers=cabecalhos, method="POST"
         )
 
-    def _criar(self, valores, chave_idempotencia="tre-e01-t05-teste-0001", **extra):
+    def _criar(self, valores, chave_idempotencia="tre-e01-t05-teste-0001", chave="__padrao__", **extra):
         corpo = {
             "idempotency_key": chave_idempotencia,
             "parametros": {"valores": valores},
         }
         corpo.update(extra)
-        return self._post(corpo)
+        return self._post(corpo, chave=chave)
 
     def _valores_do_caso(self, **extra):
         valores = {
@@ -337,7 +337,7 @@ class TestAtividadeCriar(HttpCase):
 
         A chave abaixo e' de um usuario com `base.group_user` (que da' LEITURA em `res.partner`) e
         SEM os grupos de vendas: a criacao da atividade morre em `AccessError` -> recusa nomeada 403,
-        sem registro criado "por baixo". O caminho feliziro (item 3) prova o outro lado: com a ACL de
+        sem registro criado "por baixo". O caminho feliz (item 3) prova o outro lado: com a ACL de
         escrita, a MESMA ancora cria.
         """
         sem_escrita = new_test_user(

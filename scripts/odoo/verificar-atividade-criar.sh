@@ -773,8 +773,8 @@ if [ "$MODO" = "completo" ] || [ "$MODO" = "http" ]; then
     TIPO_ATIVIDADE="$(psql_bd "$BANCO" \
         "select id from (select id from mail_activity_type order by sequence, id limit 1) as t")"
     case "$TIPO_ATIVIDADE" in
-        ''|*[!0-9]*) falhou "nao consegui ler um tipo de atividade da base ('$TIPO_ATIVIDADE')" ;;\
-        *) ok "base preparada com o tipo de atividade $TIPO_ATIVIDADE (fixture lido por SQL)" ;;\
+        ''|*[!0-9]*) falhou "nao consegui ler um tipo de atividade da base ('$TIPO_ATIVIDADE')" ;;
+        *) ok "base preparada com o tipo de atividade $TIPO_ATIVIDADE (fixture lido por SQL)" ;;
     esac
     PARCEIRO_ANCORA="$(semear_parceiro "Parceiro ancora HTTP do E01-T05" "ancora@atividade-t05.example")"
     case "$PARCEIRO_ANCORA" in ''|*[!0-9]*)
