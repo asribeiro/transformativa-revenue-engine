@@ -36,21 +36,21 @@ MUTACOES = {
                    "motivo: 'envelope_sem_versao' };"),
         "troca": ("if (false) return { ok: false, "
                   "motivo: 'envelope_sem_versao' };"),
-        "item": "envelope sem event_version e recusado",
+        "item": "envelope sem event_version",
         "porque": "sem a checagem de versao a porta aceitaria envelope sem `event_version`",
     },
     "sem_formato_da_chave": {
         "no": NO_NUCLEO,
         "ancora": "if (!formatoChave.test(texto(envelope.idempotency_key))) {",
         "troca": "if (false) {",
-        "item": "chave de idempotencia fora do formato e recusada",
+        "item": "chave de idempotencia fora do formato",
         "porque": "sem a checagem de formato a porta aceitaria chave torta",
     },
     "sem_campos_exigidos": {
         "no": NO_NUCLEO,
         "ancora": "if (ehVazio(envelope.payload[campo])) {",
         "troca": "if (false) {",
-        "item": "campo exigido ausente e recusado",
+        "item": "campo exigido ausente",
         "porque": "sem a checagem de campo exigido a porta aceitaria fato incompleto",
     },
     "sem_on_conflict": {

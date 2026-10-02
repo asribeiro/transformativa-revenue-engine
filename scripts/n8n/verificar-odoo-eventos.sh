@@ -177,6 +177,10 @@ passo_codigo() {
 
 # ---------------------------------------------------------------------------
 # prova de dente — juiz + mutacoes nomeadas (fail-closed)
+#
+# Regra de redacao que o dente impoe ao aceite: o item que uma mutacao deve reprovar tem o MESMO
+# nome nos dois ramos — o `ok` e o `falhou` daquele item comecam com o mesmo trecho. O juiz casa
+# `^FALHOU .*<trecho>`, entao um item cujo ramo de falha tem outra redacao aparece como "sem dente".
 # ---------------------------------------------------------------------------
 juizo_do_dente() { # $1=arquivo de saida do sub-run  $2=trecho do item esperado
     if grep -q "^FALHOU .*$2" "$1"; then
@@ -220,10 +224,12 @@ prova_de_dente() {
     fi
 
     local mutacoes=("sem_versao" "sem_formato_da_chave" "sem_campos_exigidos" "sem_on_conflict")
+    # Os trechos sao a IDENTIDADE do item e aparecem nos DOIS ramos (ok e falhou) daquele item —
+    # trecho que so' casa num ramo nao serve para o dente.
     local itens_esperados=(
-        "envelope sem event_version e recusado"
-        "chave de idempotencia fora do formato e recusada"
-        "campo exigido ausente e recusado"
+        "envelope sem event_version"
+        "chave de idempotencia fora do formato"
+        "campo exigido ausente"
         "reenvio do mesmo fato nao cria segunda linha na trilha"
     )
     local i=0
@@ -654,7 +660,7 @@ SAIDA="$(postar /prep/recusa-sem-versao.json /prep/token.txt)"
 if printf '%s' "$SAIDA" | grep -q 'HTTP 422' && printf '%s' "$SAIDA" | grep -q 'envelope_sem_versao'; then
     ok "envelope sem event_version e recusado (422 + motivo nomeado)"
 else
-    falhou "recusa por versao ausente nao veio como esperado: $SAIDA"
+    falhou "envelope sem event_version NAO recusado como esperado: $SAIDA"
 fi
 printf '{"event_type":"LEAD_CREATED","event_version":"1.0","timestamp":"2026-10-02 12:00:00","idempotency_key":"odoo:fora:do:contrato:0001","payload":{"lead_id":1}}' >"$DESC_DIR/recusa-fora-do-contrato.json"
 SAIDA="$(postar /prep/recusa-fora-do-contrato.json /prep/token.txt)"
@@ -668,7 +674,7 @@ SAIDA="$(postar /prep/recusa-campo-ausente.json /prep/token.txt)"
 if printf '%s' "$SAIDA" | grep -q 'HTTP 422' && printf '%s' "$SAIDA" | grep -q 'campo_exigido_ausente:valor_anterior'; then
     ok "campo exigido ausente e recusado (422 + motivo nomeado)"
 else
-    falhou "recusa por campo exigido ausente nao veio como esperado: $SAIDA"
+    falhou "campo exigido ausente NAO recusado como esperado: $SAIDA"
 fi
 # Chave de idempotencia fora do formato declarado (`^[A-Za-z0-9._:-]{8,255}$`): o envelope esta'
 # completo, so' a chave e' torta — se a porta aceitar, o `ON CONFLICT` deixa de ser confiavel.
@@ -677,7 +683,7 @@ SAIDA="$(postar /prep/recusa-chave-torta.json /prep/token.txt)"
 if printf '%s' "$SAIDA" | grep -q 'HTTP 422' && printf '%s' "$SAIDA" | grep -q 'idempotency_key_invalida'; then
     ok "chave de idempotencia fora do formato e recusada (422 + motivo nomeado)"
 else
-    falhou "recusa por chave fora do formato nao veio como esperado: $SAIDA"
+    falhou "chave de idempotencia fora do formato NAO recusada como esperado: $SAIDA"
 fi
 RECUSAS="$(limpar "$(si "select count(*) from sales_intelligence.sync_events where status='REFUSED'")")"
 [ "$RECUSAS" = "4" ] && ok "as 4 recusas ficaram VISIVEIS na trilha (status REFUSED)" \
