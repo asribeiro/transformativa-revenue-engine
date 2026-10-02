@@ -299,5 +299,23 @@ for f in scripts/agentes/teste_research_aceite.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Agente Contact Research v1 (TRE-W4-E05-T01): terceiro agente da W4 e o produtor do CONTATO
+# comercial (`contacts`) da empresa ja' pesquisada. Mesmo portao por nome do Research: contrato,
+# codigo, exemplo de fonte, suite offline, aceite E2E, arquitetura e runbook, todos versionados.
+# Um arquivo por linha de proposito: o aceite da classe mede `grep -c`.
+for f in hermes/agents/contact_research/contact_research.py \
+         hermes/agents/contact_research/agente-contact-research-v1.json \
+         hermes/agents/contact_research/exemplos/contatos-exemplo.jsonl \
+         scripts/agentes/verificar_agente_contact_research.py scripts/agentes/teste_contact_research_aceite.sh \
+         docs/architecture/agente-contact-research-v1.md docs/runbooks/agente-contact-research.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_contact_research_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
