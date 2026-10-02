@@ -145,7 +145,7 @@ HIP_E1="22222222-0000-4000-8000-0000000000e1"
 CNPJ_A="11.222.333/0001-81"
 CNPJ_B="45.723.174/0001-10"
 CNPJ_D="19.131.243/0001-97"
-CNPJ_E="28.213.728/0001-53"
+CNPJ_E="28.213.728/0001-10"
 CNPJ_INVALIDO="11.222.333/0001-00"
 SINAIS_SEMEADOS=11
 SINAIS_APOS_A3=12
@@ -468,7 +468,7 @@ PY
   item "planejar-ignora-a-porta" "0" "$?"
 
   # ---- desfazer: dry-run nao apaga; --confirmo apaga SO a rodada -------------------
-  rodar_score "$TRABALHO/dry.json" --desfazer "$CORR_R3" --prefixo "$PREFIXO" > "$TRABALHO/dry.out" 2>&1
+  rodar_score "$TRABALHO/dry.json" --ambiente dev --desfazer "$CORR_R3" --prefixo "$PREFIXO" > "$TRABALHO/dry.out" 2>&1
   item "desfazer-dry-run-exit-0" "0" "$?"
   item "desfazer-dry-run-nao-apaga" "5" \
     "$(contagem "SELECT count(*) FROM sales_intelligence.scores;")"
@@ -478,7 +478,7 @@ import json, sys
 print(len(json.load(open(sys.argv[1], encoding="utf-8")).get("scores", [])))
 PY
 )"
-  rodar_score "$TRABALHO/undo.json" --desfazer "$CORR_R3" --confirmo --prefixo "$PREFIXO" > "$TRABALHO/undo.out" 2>&1
+  rodar_score "$TRABALHO/undo.json" --ambiente dev --desfazer "$CORR_R3" --confirmo --prefixo "$PREFIXO" > "$TRABALHO/undo.out" 2>&1
   item "desfazer-confirmo-exit-0" "0" "$?"
   item "desfazer-apagou-so-a-rodada" "4" \
     "$(contagem "SELECT count(*) FROM sales_intelligence.scores;")"

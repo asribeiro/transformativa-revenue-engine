@@ -8,6 +8,6 @@
 {"organizacao": {"linkedin_url": "https://www.linkedin.com/company/clinica-sao-lucas"}}
 {"organizacao": {"cnpj": "45.723.174/0001-10", "domain": "agrosmart-analytics.com.br"}}
 # Empresa que nao esta na base: RECUSADA (ORGANIZACAO_NAO_ENCONTRADA) — o score nao cria empresa.
-{"organizacao": {"cnpj": "19.876.543/0001-91"}}
+{"organizacao": {"cnpj": "19.876.543/0001-03"}}
 # Sem identificador forte: RECUSADA (SEM_IDENTIFICADOR_FORTE) — nome+cidade e' dedup fraco.
 {"organizacao": {"cidade": "Santos", "razao_social": "Distribuidora Litoral Ltda"}}
