@@ -908,7 +908,7 @@ e1="$(estado_evento "$E1")"; e7="$(estado_evento "$E7")"
     && ok "E1 reenfileirado (chave ja' entregue) -> REPLAY: PROCESSED sem incrementar tentativas" \
     || falhou "E1 reenfileirado esperava PROCESSED/1/- (REPLAY nao incrementa attempts), medido $e1"
 case "$e7" in DEAD_LETTER/2/*valor_ambiguo*) ok "E7 (chave na trilha como REFUSED) NAO e' replay: voltou a ser entregue e recusado" ;; \
-    *) falhou "E7 esperava DEAD_LETTER/2 com valor_ambiguo (trilha REFUSED nao autoriza replay), medido $e7" ;; esac
+    *) falhou "E7 (chave na trilha como REFUSED) NAO e' replay: voltou a ser entregue e recusado (medido $e7)" ;; esac
 CHAMADAS5="$(limpar "$(( $(chamadas_api) - CHAMADAS_ANTES5 ))")"
 [ "$CHAMADAS5" = "1" ] \
     && ok "o ciclo com 2 eventos na fila chamou a API UMA vez: so' o E7 (o replay do E1 nao chamou)" \
