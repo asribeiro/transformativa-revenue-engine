@@ -365,21 +365,47 @@ for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
-# Agente ICP Score v1 (TRE-W5-E01-T01): primeiro score da onda W5. O que precisa ficar versionado
-# junto do codigo e' o MODELO (contrato do agente, onde vivem pesos/faixas/vocabulario), o contrato
-# do card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento), o runbook, a suite offline e o aceite no
-# banco. Sem qualquer um destes, o veredito do score nao e' conferivel por terceiro.
-for f in hermes/agents/icp_score/icp_score.py \
-         hermes/agents/icp_score/agente-icp-score-v1.json \
-         hermes/agents/icp_score/exemplos/organizacoes-exemplo.jsonl \
-         scripts/agentes/verificar_agente_icp_score.py \
-         scripts/agentes/teste_icp_score_aceite.sh \
-         docs/architecture/agente-icp-score-v1.md docs/runbooks/agente-icp-score.md; do
+# Onda W5 (Scoring). Cada score entrega o MESMO conjunto de artefatos: o MODELO (contrato legivel
+# por maquina, onde vivem pesos/faixas/vocabulario), o codigo, a suite offline, o aceite E2E no
+# banco, o contrato do card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento) e o runbook. Sem qualquer
+# um destes, o veredito do score nao e' conferivel por terceiro.
+for f in \
+  hermes/agents/icp_score/icp_score.py \
+  hermes/agents/icp_score/agente-icp-score-v1.json \
+  hermes/agents/icp_score/exemplos/organizacoes-exemplo.jsonl \
+  scripts/agentes/verificar_agente_icp_score.py \
+  scripts/agentes/teste_icp_score_aceite.sh \
+  docs/architecture/agente-icp-score-v1.md docs/runbooks/agente-icp-score.md \
+  hermes/agents/automation_fit/automation_fit.py \
+  hermes/agents/automation_fit/agente-automation-fit-v1.json \
+  hermes/agents/automation_fit/exemplos/perfis-exemplo.jsonl \
+  scripts/agentes/verificar_agente_automation_fit.py \
+  scripts/agentes/teste_automation_fit_aceite.sh \
+  docs/architecture/agente-automation-fit-v1.md docs/runbooks/agente-automation-fit.md \
+  hermes/agents/buying_signal/buying_signal_score.py \
+  hermes/agents/buying_signal/agente-buying-signal-v1.json \
+  scripts/agentes/verificar_buying_signal_score.py \
+  scripts/agentes/teste_buying_signal_aceite.sh \
+  docs/architecture/buying-signal-score-v1.md docs/runbooks/buying-signal-score.md \
+  hermes/scores/data_quality/data_quality.py \
+  hermes/scores/data_quality/score-data-quality-v1.json \
+  hermes/scores/data_quality/exemplos/organizacoes-exemplo.jsonl \
+  scripts/scores/verificar_score_data_quality.py \
+  scripts/scores/teste_data_quality_aceite.sh \
+  docs/architecture/score-data-quality-v1.md docs/runbooks/score-data-quality.md \
+  hermes/scores/priority/priority_score.py \
+  hermes/scores/priority/score-priority-v1.json \
+  hermes/scores/priority/exemplos/organizacoes-exemplo.jsonl \
+  scripts/scores/verificar_score_priority.py \
+  scripts/scores/teste_priority_aceite.sh \
+  docs/architecture/score-priority-v1.md docs/runbooks/score-priority.md; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
 done
-for f in scripts/agentes/teste_icp_score_aceite.sh; do
+for f in scripts/agentes/teste_icp_score_aceite.sh scripts/agentes/teste_automation_fit_aceite.sh \
+         scripts/agentes/teste_buying_signal_aceite.sh scripts/scores/teste_data_quality_aceite.sh \
+         scripts/scores/teste_priority_aceite.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done

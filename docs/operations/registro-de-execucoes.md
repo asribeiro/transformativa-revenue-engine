@@ -1988,3 +1988,77 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   (0 falhas); os containers do TRE (`proxy-dev`, `odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `pg-icp-acc`)
   ficaram **intactos** e o diretório de trabalho `/tmp/dq-aceite-trabalho` foi removido. Nenhuma
   credencial, nenhuma escrita fora do banco descartável, nada tocado em produção.
+
+## 2026-10-02 — repositório TRE (worktree `t_8ab79fb9`, branch `feature/TRE-W5-E05-T01`) + VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E05-T01 (card `t_8ab79fb9`): Priority Score v1 (agregador da W5)
+
+- **O que este card é:** o **agregador** da onda W5 — lê o ULTIMO score de cada componente já gravado
+  em `sales_intelligence.scores` (ICP, AUTOMATION_FIT, BUYING_SIGNAL, DATA_QUALITY) e grava a linha
+  `score_type='PRIORITY'`, `score_version='priority-v1'` pela fórmula do **Data Contract §8**
+  (`0,35*ICP + 0,30*AUTOMATION_FIT + 0,25*BUYING_SIGNAL + 0,10*DATA_QUALITY`). Os pesos são **lidos do
+  contrato** (`scores.priority_weights`): a suíte reprova peso em forma executável no código.
+- **Base da árvore:** `63d711c` + merge das quatro branches dos pais (`feature/TRE-W5-E01-T01`,
+  `-E02-`, `-E03-`, `-E04-T01`). Conflitos só nos três hotspots conhecidos (`CHANGELOG.md`,
+  `docs/operations/registro-de-execucoes.md` e `scripts/verificar_estrutura.sh`), resolvidos por
+  **união**; o bloco do portão de estrutura foi reescrito para cobrir os cinco cards da W5 (antes
+  eram cinco loops concorrentes — o portão reprovava quem chegasse depois).
+- **Decisões de projeto tomadas neste card (declaradas, não escondidas):** (1) **ausência de componente
+  RECUSA** — cobertura mínima 1,00, sem renormalização (renormalizar criaria um número que não é a
+  fórmula do contrato; fica como `priority-v2`, decisão do dono); (2) **política de validade do score
+  nasce aqui** (lacuna declarada nos cards irmãos): componente com `valid_until` vencido conta como
+  ausente (`COMPONENTE_VENCIDO`) e o PRIORITY vence em **30 dias**; (3) leitura do componente é sempre
+  o **último** por `score_type` (`DISTINCT ON ... ORDER BY score_type, calculated_at DESC, id DESC`).
+- **Suíte offline (container do Hermes, sem banco):** `python3 scripts/scores/verificar_score_priority.py`
+  → `RESULTADO: VERIFICACAO_PRIORITY_SCORE_OK (35 itens, 0 falhas)`, **exit 0**; `--autoteste` →
+  `RESULTADO: AUTOTESTE OK (12/12 mutacoes detectadas, cada uma pelo item esperado)`, **exit 0**
+  (`sha256` do código sob teste conferido antes de cada rodada: `b3f8103a1404929f85e567a63d027cda65da1a0ac259f44abedf3965ca82fe8d`).
+- **Aceite E2E (VPS, container descartável `pg-priority-acc`, imagem `postgres:16`, migration 0001
+  aplicada do zero; 3 empresas + 11 scores de componente):**
+  `bash scripts/scores/teste_priority_aceite.sh --raiz /opt/tre/priority-e05t01 --prova-de-dente`
+  → **`ACEITE_PRIORITY_001_OK` (51 itens, 0 falhas)**, **exit 0**, com **dente 5/5**
+  (`cobertura-afrouxada` → `A5 lastro incompleto RECUSADA`; `sem-checagem-de-vencido` → `A6 vencido
+  RECUSADA`; `sem-idempotencia` → `A4 replay: continua 1 score PRIORITY`; `sem-validade` →
+  `A9 valid_until = calculated_at + 30 dias`; `sem-soma-de-um-componente` → `A1 valor do contrato`).
+  Console bruto: `/tmp/priority-aceite-r3.console` (sha256
+  `7a3e37e1f9b5247ea65a7290d0278eeff02bead86a4ac2de12107f1936a63199`), copiado para o card.
+- **Valores conferidos NO BANCO (não narrados):** rodada 1 → `score_value = 86.45`
+  (`0,35*94 + 0,30*76 + 0,25*83 + 0,10*100`), `score_type=PRIORITY`, `score_version=priority-v1`,
+  `valid_until = calculated_at + 30 dias` = 1, `inputs.cobertura = 1.00`, `inputs.componentes` com os
+  quatro (identidade + versão), `explanation.soma_das_parcelas = 86.45`, `llm.executado = false`,
+  tokens/modelo/custo NULL em `agent_runs`; replay da MESMA entrada → `gravados=0` e continua **1**
+  score; componente novo (ICP 100) → **88.55** em linha NOVA com o 86.45 preservado;
+  falta `DATA_QUALITY` → **RECUSADA** (`SEM_LASTRO_COMPLETO` + `COMPONENTE_AUSENTE:DATA_QUALITY`),
+  **0** escrita e auditoria `REJECTED`; ao entrar o componente que faltava → **86.45**; DATA_QUALITY
+  **vencido** → RECUSADA com `COMPONENTE_VENCIDO:DATA_QUALITY` e, com a validade estendida no banco,
+  volta a **86.45**; empresa fantasma → RECUSADA sem escrita; `prod` → **exit 4** com **0** score novo;
+  `--planejar` → **exit 0** sem abrir conexão (prefixo de container inexistente); desfazer dry-run
+  **não apagou** (17 → 17) e `--confirmo` apagou **só a rodada** (17 → 16) preservando os **13** scores
+  de componente e a auditoria; rodada inexistente não apaga nada.
+- **Impressão digital dos componentes (prova de que a rodada não toca a entrada):** md5 de
+  `tipo:valor:versão` dos componentes medido ANTES e DEPOIS da rodada — igual. (O item antigo media
+  `score_value = ROUND(score_value,2)`, que é sempre verdadeiro em `NUMERIC(5,2)`: defeito do próprio
+  aceite, corrigido.)
+- **Defeitos corrigidos NESTA rodada (todos do próprio instrumento, encontrados por medição):**
+  1. o dente `sem-soma-de-um-componente` dizia "não reprovou" com o item reprovando: `grep` sem `-F`
+     interpretava `0,35*94` como expressão regular (`5*` = zero ou mais `5`) e a linha nunca casava —
+     passou a `grep -qF`;
+  2. o item `A2` media a coisa errada (acima) — virou impressão digital md5;
+  3. a mutação revelou um defeito REAL do componente: a linha de resumo assumia os quatro componentes
+     presentes e estourava `KeyError` em qualquer contrato sem cobertura total — passou a tratar
+     ausente (`detalhe[t].get("score_value", "-")`).
+- **Também mudou por medição:** `RECUSADA` passou a ser **auditada** em `agent_runs` (status
+  `REJECTED`) e o CLI passou a imprimir o **motivo** (`SEM_LASTRO_COMPLETO` / `COMPONENTE_VENCIDO:…`)
+  na linha do veredito — antes o operador só via os motivos nominais.
+- **Portão de estrutura:** `bash scripts/verificar_estrutura.sh` → **`RESULTADO: PASS (0 falhas)`**,
+  **exit 0**, com os 31 artefatos da W5 versionados (portão reescrito como **um** bloco da onda).
+- **Ambiente:** apenas o container descartável `pg-priority-acc` (e o `pg-priority-dente` das
+  mutações), **removidos pelo próprio aceite** (`docker ps -a | grep priority` = 0 ao fim);
+  `pg-sales-dev`, `pg-odoo-dev`, `odoo-dev` e `proxy-dev` **intactos**; árvore de trabalho na VPS em
+  `/opt/tre/priority-e05t01`; **nada em produção** (`prod` recusado com exit 4 e 0 escrita).
+- **Código sob teste na VPS = o versionado:** `sha256` conferido dos dois lados —
+  `priority_score.py b3f8103a…` e `teste_priority_aceite.sh 45b6c565…`; suíte `6454bd4c…`.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. As políticas de
+  cobertura (1,00, sem renormalização) e de validade (30 dias) são **propostas** deste card; tiering
+  (`A+/A/B/C/Nurture`) é o card W5-E06-T01 e não foi tocado aqui.
+- Segredos: nenhum valor nesta entrada; a conexão do aceite é pelo container descartável, sem senha em
+  argumento de linha de comando, arquivo de log ou repositório.

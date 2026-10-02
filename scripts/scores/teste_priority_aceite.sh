@@ -265,7 +265,7 @@ pathlib.Path(destino).write_text(texto.replace(de, para, 1), encoding="utf-8")
 PY
     SAIDA=$(TRE_PRIORITY_CONTAINER="pg-priority-dente" TRE_PRIORITY_TRABALHO="$D/t$nome" \
       bash "$0" --codigo "$D/mut_$nome.py" --raiz "$RAIZ" 2>&1) </dev/null
-    if echo "$SAIDA" | grep -q "FALHOU $item_esperado " && ! echo "$SAIDA" | grep -q "ACEITE_PRIORITY_001_OK"; then
+    if echo "$SAIDA" | grep -qF "FALHOU $item_esperado " && ! echo "$SAIDA" | grep -qF "ACEITE_PRIORITY_001_OK"; then
       echo "OK     dente $nome: reprovou o item esperado ($item_esperado)"
       ITENS_OK=$((ITENS_OK + 1))
     else

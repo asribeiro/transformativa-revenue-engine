@@ -1356,6 +1356,70 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
     próximo resolve.
 
+## [W5 — Scoring · Priority Score v1] — 02/10/2026
+
+**Card:** TRE-W5-E05-T01 (baseline V1.1.0, base `63d711c` + branch dos quatro componentes) ·
+**O que é:** o **agregador** da onda — lê o último score de cada componente já gravado em
+`sales_intelligence.scores` (ICP, AUTOMATION_FIT, BUYING_SIGNAL, DATA_QUALITY) e grava a linha
+`score_type='PRIORITY'`, `score_version='priority-v1'`.
+
+### Added
+
+- **Priority Score v1** (`hermes/scores/priority/priority_score.py`) — `PRIORITY = 0.35*ICP +
+  0.30*AUTOMATION_FIT + 0.25*BUYING_SIGNAL + 0.10*DATA_QUALITY`. Os **pesos são lidos do Data
+  Contract** (`scores.priority_weights`, que somam 1,00) e **nenhum peso existe em forma executável
+  no código** — item próprio da suíte reprova se aparecer um. Cada linha é reconstruível:
+  `inputs` guarda a identidade dos quatro componentes usados (id, versão, valor, `calculated_at`,
+  `valid_until`) e `explanation` guarda peso, valor e **parcela** de cada um.
+- **Fail-closed na ausência (sem renormalização)** — componente ausente ou **vencido** não pontua e
+  o score é **RECUSADO** (`SEM_LASTRO_COMPLETO` + motivo nominal por componente). Ler ausência como
+  zero puniria a empresa por um score que ninguém calculou; renormalizar criaria um número que não é
+  a fórmula do contrato (declarado como `priority-v2`, decisão do dono).
+- **Política de validade do score nasce aqui** (lacuna declarada pelos cards irmãos): componente com
+  `valid_until` no passado é lido do banco e tratado como ausente (`COMPONENTE_VENCIDO`), e o próprio
+  PRIORITY vence em **30 dias** (`valid_until = calculated_at + 30d`).
+- **Idempotência pela ENTRADA** — chave `score:PRIORITY:<org>:<entrada_hash>` em
+  `sync_events.idempotency_key` (UNIQUE), com o hash sobre a **identidade dos componentes** (nunca o
+  relógio da rodada, defeito medido no card irmão): replay não duplica; componente novo grava **linha
+  nova** e preserva a anterior (score é histórico).
+- **Guarda de escrita própria** — só `scores`/`agent_runs`/`sync_events`; `UPDATE` em `scores`,
+  `INSERT` com outro `score_type`, DDL e escrita nas tabelas de entrada (`signals`, `organizations`,
+  `pain_hypotheses`, `research_runs`) são **recusados** por `validar_sql` (porta própria: guarda de um
+  agente não vale como guarda de outro).
+- **A recusa é auditada** — `RECUSADA` grava `agent_runs` com status `REJECTED` e o relatório passou a
+  imprimir o **motivo** na linha do veredito (antes só os motivos nominais apareciam).
+- `hermes/scores/priority/score-priority-v1.json` (contrato legível por máquina),
+  `docs/architecture/score-priority-v1.md` (**ACCEPTANCE, TEST, ROLLBACK, RISK** — campos exigidos
+  pelo doc 11 §2 e não detalhados lá) e `docs/runbooks/score-priority.md` (operação item a item).
+
+### Fixed
+
+- **Defeito do próprio aceite (medido, não suposto):** o dente `sem-soma-de-um-componente` saía
+  "não reprovou" com o item reprovando — o `grep` sem `-F` interpretava `0,35*94` como expressão
+  regular (`5*` = "zero ou mais 5"), então a linha de reprovação **nunca casava**. Passou a `grep -qF`.
+- **Defeito do próprio aceite:** o item `A2` media "nenhum componente alterado" com
+  `score_value = ROUND(score_value,2)` (sempre verdadeiro em `NUMERIC(5,2)`). Passou a comparar uma
+  **impressão digital md5** (tipo+valor+versão) dos componentes antes e depois da rodada.
+- **Defeito medido pela mutação:** a linha de resumo do cálculo assumia os quatro componentes
+  presentes (`detalhe[t]["score_value"]`) e estourava `KeyError` em qualquer contrato sem cobertura
+  total — passou a tratar componente ausente (`-`).
+
+### Notas de estado
+
+- **Medido por execução real (não narrado):** suíte offline **35 itens / 0 falhas** + autoteste
+  **12/12 mutações detectadas, cada uma pelo item esperado**; aceite E2E em PostgreSQL descartável na
+  VPS (`pg-priority-acc`, `postgres:16`, migration 0001 aplicada do zero) → **`ACEITE_PRIORITY_001_OK`
+  (51 itens, 0 falhas)** com **dente 5/5**; portão de estrutura **PASS (0 falhas)**.
+- **Valores conferidos no banco:** `0,35*94 + 0,30*76 + 0,25*83 + 0,10*100 = 86,45`; componente novo
+  (ICP 100) ⇒ **88,55** em linha nova com o 86,45 preservado; falta DATA_QUALITY ⇒ **RECUSADA sem
+  escrever**; DATA_QUALITY vencido ⇒ **RECUSADA** com `COMPONENTE_VENCIDO` e, dentro da validade,
+  volta a calcular; `prod` recusado **exit 4** com **0** escrita; `--planejar` **não abre conexão**.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6**
+  (revisão independente, perfil `tester`) e a **homologação (estágio 7)** é do Anderson. A política de
+  cobertura (1,00, sem renormalização) e a de validade (30 dias) são **propostas** deste card.
+- **Fora do card**: tiering `A+/A/B/C/Nurture` (W5-E06-T01), Next Best Action (W5-E07-T01), evento de
+  outbox `PRIORITY_SCORE_CHANGED`/`COMPANY_QUALIFIED` (W3) e o aceite E2E da cadeia W5 (W5-E08).
+
 ## [W5 — Scoring · ICP Score V1] — 02/10/2026
 
 ### Added
