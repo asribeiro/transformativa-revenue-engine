@@ -1705,3 +1705,67 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   que mede o defeito é `rodada2-exit-0`/`rodada2-ja-identificado-cinco`.
 - **O que esta rodada NÃO mede:** homologação. Quem entrega não homologa — o veredito do estágio 6 é do
   perfil `tester` e a homologação (estágio 7) é do Anderson.
+
+## 2026-10-02 — repositório TRE (worktree `t_a32ae24f`) + VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W4-E06-T01 (card `t_a32ae24f`): aceite E2E Sales Intelligence (a cadeia dos cinco agentes)
+
+- **Base consolidada da onda W4 (agente):** `feature/TRE-W4-E06-T01` criada de `feature/TRE-W4-E04-T01` +
+  merge de `feature/TRE-W4-E05-T01` (Contact Research) — conflitos em `CHANGELOG.md`,
+  `docs/operations/registro-de-execucoes.md` e `scripts/verificar_estrutura.sh`, resolvidos por **UNIÃO**
+  (as duas seções); merge em `875baaa`, aceite em `552a250`, passo 0 + dente por vínculo em `a521caa`,
+  detecção do passo 0 + sha256 na evidência em `e15d4d6`, CHANGELOG em `22a39ef` (head medido
+  **`22a39ef`**).
+- **Aceite completo (agente):** `scripts/e2e/verificar-e2e-sales-intelligence.sh` no clone
+  `/opt/tre/e06t01-si-r1`, container descartável `pg-e2e-si-acc` (postgres:16) →
+  **`ACEITE_E2E_SALES_INTELLIGENCE_001_OK (76 itens, 0 falhas)`**, exit 0. **Passo 0** no mesmo run: as
+  cinco suítes offline no **mesmo commit** → 5 OK / 0 FALHOU (58 + 65 + 75 + 85 + 60 = **343 itens**).
+  sha256 do código sob teste fixado na evidência:
+  `65af917603a8be90cf89d09bf692abf32c6fdf673c5303c6aaad3d4a91c11323`.
+- **Prova de dente (agente):** `--prova-de-dente` → **`DENTE OK (5/5 mutações detectadas, cada uma pelo
+  item esperado)`**: `scout-escreve-empresa-sem-identidade` (38 itens reprovados, incluindo o esperado),
+  `pesquisa-run-sem-organizacao` (7, incluindo `cadeia-sinal-vincula-a-pesquisa-da-mesma-empresa` e
+  `cadeia-hipotese-lastro-de-pesquisa`), `sinal-anexa-run-inexistente` (2),
+  `hipotese-aceita-lastro-de-outra-empresa` (8), `contato-sem-idempotencia` (2). Baseline verde **antes**
+  de cada mutação.
+- **Medido no BANCO (não na narrativa):** 3 empresas `DISCOVERED` criadas pelo Scout (id de cada uma lido do
+  **relatório da rodada**, não de fixture) → 4 `research_runs` das MESMAS empresas, enriquecendo coluna
+  vazia (`website_url`, `unit_count`, `revenue_estimate`) e **preservando** indústria/porte/cidade do Scout,
+  com o derivado declarado pela fonte descartado com motivo (`DERIVADO_NAO_ACEITO`) → 4 sinais, 2 deles
+  vinculados ao `research_run_id` **produzido na rodada anterior** (o vínculo com run inexistente é
+  descartado com motivo e o sinal fica sem o vínculo) → 4 hipóteses (3 registradas, 1 recusada por lastro de
+  **outra empresa** (`EVIDENCIA_DE_OUTRA_ORGANIZACAO`)) → 1 contato identificado, 1 recusado e 1 ambiguidade
+  que abre fila humana **sem escrever contato**. Replay das cinco rodadas com as **mesmas fontes**:
+  assinatura das cinco tabelas de negócio idêntica antes/depois (zero duplicata) e a rodada ambígua
+  **re-reportada** (1 → 2 `PENDING`, contato continua não escrito). Desfazer na ordem inversa (contato →
+  hipótese → sinal → pesquisa → scout) devolve `0|0|0|0|0` nas tabelas de negócio, **preserva a fila
+  humana** e registra os 5 `ROLLBACK`; o desfazer do Research restaura `website_url`/`unit_count`/
+  `revenue_estimate` e **não** toca no derivado do Scout. Guardas: `--ambiente prod` recusado nos **cinco**
+  (exit 4) sem escrever uma linha, `--planejar` sem porta de escrita, nenhuma escrita em
+  `scores`/`outbox_events`/`interactions`/`recommendations` (W5 fora do escopo).
+- **Evidência guardada:** `/opt/tre/evid-e06t01-si-final.out` (sha256
+  `4bc83b7884e75d879a1dbd6401f2d389ed41cad5c3d96f709fb294faa2d1d027`, cópia **idêntica** em
+  `attachments/t_a32ae24f/aceite-e2e.out`) e as rodadas anteriores `/opt/tre/evid-e06t01-si-dente-r1.out`
+  (dente 3/5) e `…-r2.out` (4/5) — as duas que revelaram os defeitos da prova abaixo.
+- **Ambiente:** só o container descartável nasceu e foi **removido** (`docker ps -a | grep e2e-si` = 0);
+  `proxy-dev` (Up 31h, healthy), `odoo-dev` (Up 31h), `pg-odoo-dev` (Up 32h, healthy) e `pg-sales-dev`
+  (Up 2d) intactos; nada em produção; `scripts/verificar_estrutura.sh` → **PASS** com os três artefatos do
+  card versionados e o aceite executável.
+- **Defeitos da PROVA corrigidos nesta rodada (medidos — o agente não apresentou defeito no que foi medido):**
+  1. **falso verde no fingerprint**: `foto_das_contagens` juntava os `count(*)` com `|` **dentro do SQL**, e
+     `|` é OU bit a bit — as duas pontas viravam `7` e "zero duplicata" passava sem comparar nada. Agora a
+     concatenação é `||`.
+  2. **passo 0 cego**: o item casava `(0 falhas)` enquanto a suíte imprime `(58 itens, 0 falhas)` → 0/5 com
+     as suítes verdes. Padrão corrigido para `[0-9]+ itens, 0 falhas`.
+  3. **duas mutações inertes**: tirar o `ON CONFLICT` do claim do Scout **não** duplica (a rodada seguinte
+     resolve a empresa antes) e tornar a consulta de identidade inerte **também não** (o claim por
+     identidade barra) — a idempotência do replay tem **duas camadas**; trocar o `COALESCE(NULLIF(...))` do
+     Research por atribuição direta faz a **guarda recusar a escrita** (não há mutação de um ponto que
+     produza sobrescrita). O dente passou a mirar o que **só a cadeia** mede: o **vínculo** entre o que um
+     agente escreve e o que o próximo resolve.
+  4. **expectativa errada do aceite**: o item do desfazer do Research exigia `employee_band IS NULL` quando
+     o porte deriva do `employee_count` **do Scout** (o Research nunca escreveu ali) — passou a medir as
+     colunas que o Research de fato enriquece; e o item da fila humana esperava `1 PENDING` quando a rodada
+     ambígua re-reporta (`2`), que é o contrato declarado no runbook.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Limites declarados no doc de
+  arquitetura (§6): a cadeia medida são os cinco agentes W4 em `dev`; W5 (score/tier/NBA), Odoo e Titan não
+  estão no caminho.
