@@ -335,7 +335,7 @@ function piorVeredito(a, b) {
 function linhaDeDetalheVazia(linha) {
     return ehVazio(linha.tipo) && ehVazio(linha.id) && ehVazio(linha.event_type) &&
         ehVazio(linha.direcao) && ehVazio(linha.status) && ehVazio(linha.quando) &&
-        ehVazio(linha.motivo);
+        ehVazio(linha.motivo) && ehVazio(linha.tentativas);
 }
 
 /**
