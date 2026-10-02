@@ -1156,8 +1156,14 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   `INDETERMINADO`, **nenhuma** divergencia e a regra nomeada. **Somente-leitura** medido por digest nas
   tres tabelas do PostgreSQL e nos parceiros do Odoo em **cada** uma das 7 rodadas (inclusive a que nao
   mediu o destino). `sha256` dos **12 artefatos sob teste** fixado nas guardas e **identico no fecho** —
-  e reconferido aqui contra o worktree ja' commitado (mesmos 12 digests). Instancia do **dev intocada**
-  (mesmos bancos antes/depois); o **valor** da chave nao aparece no cofre do n8n, no workflow nem no log.
+  e reconferido aqui contra o worktree ja' commitado (mesmos 12 digests). Instancia do **dev**: o item
+  de fecho existia, mas **nao media nada** — as duas pontas eram lidas com o usuario do banco
+  descartavel (`tre`) contra o `pg-odoo-dev`, cujo dono e' `odoo`, entao o `psql` falhava
+  (`FATAL: role "tre" does not exist`, rc=2), as duas pontas ficavam vazias e `[ "" = "" ]` fechava
+  **OK sem medir** (defeito de medicao, consertado em `TRE-W3-E04-T01-D01` / card `t_359c528a` — secao
+  no fim deste arquivo). O ambiente do dev nao foi alterado (containers de pe, so' recursos `tre_*`
+  descartaveis criados), mas **este log nao sustenta** a afirmacao de intocada. O **valor** da chave
+  nao aparece no cofre do n8n, no workflow nem no log.
 - **Verificadores do projeto (worktree do card, comando + exit code):** `bash scripts/verificar_estrutura.sh`
   -> `PASS (0 falhas)` exit 0 (**185** linhas `OK`, incluindo o bloco novo do card: os 14 artefatos
   existem **E** estao versionados, 6 scripts executaveis); `bash scripts/secret_scan.sh` ->
@@ -1180,6 +1186,67 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   codigo: medicao que nao mede e' pior que medicao ausente, porque da' verde.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card vai para o estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+- Segredos: nenhum valor nesta entrada.
+
+---
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E04-T01-D01 (card `t_359c528a`): o item "instancia do dev INTOCADA" do aceite passa a MEDIR o dev (defeito de medicao achado na revisao independente do E04-T01)
+
+- **Objeto do defeito (medicao, nao comportamento):** no aceite `scripts/n8n/verificar-reconciliacao.sh`
+  (head entregue `10fbb15`) o item de fecho `instancia do dev INTOCADA (mesmos bancos antes e depois)`
+  imprimia **OK sem ter medido nada**. As duas pontas eram lidas com `psql -U "$PG_USER"` e `PG_USER` e'
+  `tre` (`TRE_PG_USER`, default `tre`), enquanto o dono do `pg-odoo-dev` e' `odoo`
+  (`POSTGRES_USER=odoo`); logo `docker exec pg-odoo-dev psql -U tre -d postgres -tAc ...` falha
+  (`FATAL: role "tre" does not exist`, **rc=2**), as **duas** pontas ficavam vazias e `[ "" = "" ]`
+  fechava `OK`. Medicao que nao mede e' pior que medicao ausente, porque da' verde.
+- **Reproducao do defeito (comando + saida bruta, medidos nesta correcao):**
+  `docker inspect -f '{{range .Config.Env}}...' pg-odoo-dev` -> `POSTGRES_USER=odoo`;
+  `docker exec pg-odoo-dev psql -U odoo -d postgres -tAc 'select string_agg(datname, chr(44) || chr(32)
+  order by datname) from pg_database'` -> `odoo_dev, postgres, template0, template1` (**rc=0**);
+  `docker exec pg-odoo-dev psql -U tre -d postgres -tAc 'select 1'` -> `psql: error: connection to
+  server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  role "tre" does not exist`
+  (**rc=2**).
+- **Correcao (branch `fix/TRE-W3-E04-T01-D01`, commit `1290e6b`, nascido de `10fbb15`):** (1) o dev
+  passa a ser medido com o **usuario do proprio dev** — variavel propria `TRE_DEV_PG_USER`, default
+  `odoo`, com o helper `medir_bancos_do_dev` que exige container de pe, `psql` com rc 0 **e** linha de
+  resultado; (2) o item de fecho **falha fechado**: sem as **duas** medicoes ele imprime
+  `FALHOU instancia do dev ... NAO MEDIDA ...` (nomeado), nunca `[ "" = "" ]` -> `OK`; (3) as frases do
+  runbook §5 e da entrada `TRE-W3-E04-T01` acima passam a dizer o que o log bruto sustenta.
+  `git diff --stat 10fbb15..1290e6b` -> 1 arquivo, 32 insercoes, 13 remocoes
+  (`scripts/n8n/verificar-reconciliacao.sh`, 690 -> 709 linhas; blob `651f15454d7ac1ace8841f18851ee1bbbcf6cbf8`,
+  sha256 `c2c89f54d3cfb6822b6f5cb708e35acad72741ccb77092e8d42c5bd4448c9038`; antes: blob
+  `04e70de3e19a3588176ae3159eabdf59fb87bb34`). Nenhum arquivo de `n8n/`, nenhum teste, nenhuma
+  migration, nenhum comportamento do job.
+- **Aceite — rodada 1 (positiva), console `aceite-r1.console` (sha256
+  `5faa0586d5a3b1e24c44f8ec3b80185dd15e337f1cda4ae644e54cb73e97f58f`, igual ao bruto da VPS), com o
+  `RC` capturado dentro do proprio console:** linha 43
+  `INFO  instancia do dev (pg-odoo-dev) ANTES: odoo_dev, postgres, template0, template1 (usuario odoo)`;
+  linha 148 `OK    instancia do dev INTOCADA (mesmos bancos antes e depois, medidos com odoo): odoo_dev,
+  postgres, template0, template1`; linha 153
+  `RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas)` e linha 154 **`RC=0`** (INICIO `08:22:42Z`, FIM
+  `08:27:32Z`; banco `tre_d01_r1_20261002`; `TRE_LOG_DIR=/opt/tre/d01/logs-r1`; `sha256` dos 12
+  artefatos sob teste identico antes/depois). Dentro dele: lente `RECONCILIACAO_LENTE_OK (150 itens, 0
+  falhas)`, suite `RECONCILIACAO_NUCLEO_OK (61 itens, 0 falhas)`, 8 mutacoes nomeadas com baseline verde.
+- **Controle negativo — rodada 2 (mesmo aceite, so' `TRE_DEV_PG_USER=naoexiste`), console
+  `aceite-r2.console` (sha256 `fe26f9879f0ecb0eed41f01cfcc6df578abdc7e3ddf3e4086445070d81349653`):**
+  linha 43 `INFO  instancia do dev (pg-odoo-dev) NAO MEDIDA antes ... (usuario naoexiste)`; linha 148
+  `FALHOU instancia do dev (pg-odoo-dev) NAO MEDIDA com o usuario naoexiste (antes=vazio depois=vazio) —
+  sem as duas medicoes nao se afirma INTOCADA`; linha 153
+  `RESULTADO: RECONCILIACAO_FALHOU (96 itens, 1 falha(s))`, linha 154 **`RC=1`**. Diff item a item das
+  duas rodadas (96 itens em ambas; rotulo do banco e sufixo dos `e04t01-*` normalizados): **1 unica
+  linha diferente** — o proprio item do dev (`93a` linha), `OK` na rodada que mediu e `FALHOU` na
+  rodada que nao mediu; os outros 95 itens identicos.
+- **O que NAO foi tocado:** o comportamento do job (SQL, nucleo, workflow, contrato), os testes e as
+  migrations; `/opt/tre/repo` e `/opt/tre/{homolog,prod}`; o container do dev (`pg-odoo-dev`, de pe ha
+  20h no inicio e no fim) — a correcao so' **le** o dev. Residuo do aceite: `e04t01-*` (containers e
+  rede) destruidos pela propria limpeza; ficam como evidencia do card os diretorios `/opt/tre/d01`
+  (repo do aceite commitado, logs e os dois consoles) e os anexos deste card.
+- **Aprendizado:** o defeito nao estava no job, estava no **juiz** — o item media o dev com o usuario do
+  banco descartavel. Fail-closed no juiz e' o que separa "verde" de "verde vazio", e o controle negativo
+  (rodada com usuario inexistente reprovando **exatamente 1** item) e' o que prova que o item morde.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste defeito e' do estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson. A origem (`TRE-W3-E04-T01`, card
+  `t_2ee17829`) so' fecha de vez com este defeito resolvido.
 - Segredos: nenhum valor nesta entrada.
 
 ---
