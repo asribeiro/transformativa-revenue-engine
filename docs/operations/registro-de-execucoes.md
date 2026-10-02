@@ -546,3 +546,56 @@ docker daemon, entao toda execucao vira esta linha):**
   configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
   (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T03 (card `t_e6e3b0b3`): a escrita de **contato comercial** (pessoa) na API controlada (`contato_upsert`)
+
+**O que foi executado (por mim, por SSH com a chave de operacoes — o container do agente nao tem
+docker daemon, entao toda execucao vira esta linha):**
+
+- **Envio do artefato:** `tar` do worktree `.worktrees/t_e6e3b0b3` (branch `feature/TRE-W3-E01-T03`,
+  base = commit aprovado do E01-T02 = `8439f7b`) para `/opt/tre/rev-t_e6e3b0b3-r1..r3`; os arquivos da
+  entrega foram conferidos por `sha256` contra o worktree. O aceite mede uma copia byte a byte, nunca
+  o worktree.
+- **Suite pura do motor (na VPS, sem Odoo):** `python3 scripts/odoo/testar_motor_api.py` →
+  `MOTOR_API_OK (90 itens, 0 falhas)` (75 do E01-T02 + 15 deste card).
+- **Aceite proprio (`scripts/odoo/verificar-contato-upsert.sh`), rodada 1:**
+  `RESULTADO: CONTATO_UPSERT_FALHOU (109 itens, 47 falha(s))`. **O defeito era do harness, nao da API:**
+  a linha do cabecalho de autorizacao foi escrita a partir da leitura do harness do E01-T02, e a
+  leitura devolveu o valor **mascarado** — copiada assim, a chave de API nunca era enviada e as 18
+  chamadas autenticadas viraram `401 Invalid apikey`. Correcao: linha reescrita do zero e conferida
+  em **bytes** (`od -c`), comparada com o arquivo original (que traz o especificador de formatacao).
+  A rodada tambem mostrou o harness reprovando o preparo por permissao de `chown` do diretorio
+  descartavel quando roda como usuario nao privilegiado — a dupla descartavel roda como **root**.
+- **Rodada 2:** `RESULTADO: CONTATO_UPSERT_FALHOU (109 itens, 6 falha(s))`, os 6 por **uma** causa: o id
+  do fixture semeado por SQL vinha com a **etiqueta do comando** colada (`psql` imprime `INSERT 0 1` em
+  STDOUT e o `-tA` nao a suprime) — `"63\nINSERT01"`, e as tres medicoes que dependiam dele mediram
+  outra coisa. Correcao: o id sai de `select` sobre **CTE** (SELECT nao imprime etiqueta) e passou a
+  ser validado como numerico (preparo sujo = falha nomeada, nao cascata de itens reprovados).
+- **Rodada 3 (artefato final):** `CONTATO_UPSERT_OK (110 itens, 0 falhas)`, com
+  `0 failed, 0 error(s) of 120 tests` do Odoo (19 testes novos deste card + 101 dos cards anteriores,
+  sem regressao) e auditoria lida do log do servidor (`15 linhas para 15 chamadas autenticadas`, sem
+  token e **sem nenhum e-mail do payload** — dado pessoal fora da trilha).
+- **Dentes (rodada 1, o artefato real):** `CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio
+  harness, 0 falhas)` — politica sem a operacao reprova o item de AC1 e o aceite cai junto (96 itens,
+  34 falhas); controlador sem o portao de ambiguidade deixa o `409` de ser exigido (96 itens, 4
+  falhas); motor sem aplicar o valor fixo deixa o registro-empresa como empresa (96 itens, 4 falhas).
+  Os 2 controles (sub-run que reprova por ambiente e mutacao inocua) foram reportados como
+  **inconclusivo** / **mutacao sem dente**, e a guarda externa confirmou o **mesmo** `sha256` do modulo
+  antes e depois das mutacoes.
+- **Defeito fechado neste card (codigo, nao harness):** o motor so recusava `parametros.identificador`
+  quando a lista de identidade resultante tinha mais de um campo — com identidade declarada por lista
+  de **um** elemento (o caso desta operacao) o parametro era **aceito e descartado em silencio**
+  (medido: HTTP 200 com o parametro ignorado). Passou a decidir pela **forma da declaracao**:
+  `400 payload_invalido` nomeado, com item na suite pura do motor e item HTTP no aceite.
+- **Limpeza medida:** 0 container, 0 rede e 0 diretorio `/tmp` residual do aceite (`e01t03-*`); os 4
+  containers do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pe o tempo todo;
+  `/opt/tre/homolog` e `/opt/tre/prod` com 0 arquivo antes e depois.
+- **Verificadores do projeto (no worktree do commit):** `bash scripts/verificar_estrutura.sh` →
+  `PASS (0 falhas)`; `bash scripts/secret_scan.sh` → `PASS (nenhum segredo versionado)`;
+  `bash scripts/verificar_papeis.sh` → `PASS (0 falhas)`. O `verificar_estrutura.sh` foi estendido para
+  exigir versionados os artefatos deste card (a suite de aceite, o verificador proprio e o runbook).
+- **Segredos:** nenhum valor nesta entrada e nenhum valor no repositorio. A chave da API nasceu na VPS,
+  em arquivo `600` dentro do diretorio descartavel do preparo, lida pelo `curl` por arquivo de
+  configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.

@@ -28,8 +28,8 @@ O QUE ESTE ARQUIVO NAO FAZ (lacuna declarada):
   * nao implementa o motor de deduplicacao por `idempotency_key` (card `TRE-W3-E02-T02`, filho);
     aqui a chave e' exigida, validada e devolvida no plano, para ser registrada;
   * nao declara as operacoes de negocio: `empresa_upsert` entra pela politica no card
-    `TRE-W3-E01-T02` (a primeira escrita de negocio), e contact/opportunity upsert e activity
-    create sao dos cards `TRE-W3-E01-T03..T05`;
+    `TRE-W3-E01-T02`, `contato_upsert` no `TRE-W3-E01-T03`, e opportunity upsert e activity
+    create sao dos cards `TRE-W3-E01-T04..T05`;
   * nao persiste auditoria: emite a decisao; a linha de auditoria e' do controlador e a
     persistencia/observabilidade e' do `TRE-W3-E05-T01`.
 
@@ -43,6 +43,17 @@ O QUE O CARD E01-T02 ACRESCENTOU AQUI (e por que a decisao continua sendo DECLAR
     o que o chamador disse";
   * sem NENHUM identificador com valor, a escrita abstém-se com `identificador_ausente` — a API
     nao inventa identidade nem escolhe registro por conta propria.
+
+O QUE O CARD E01-T03 ACRESCENTOU AQUI:
+  * `identificador` (o parametro escalar da forma de UM campo) passa a ser recusado sempre que a
+    DECLARACAO usa a lista ordenada — inclusive quando a lista tem um elemento so', caso da
+    operacao de contato (`campos_de_identidade: ["email"]`). Antes o portao olhava o TAMANHO da
+    lista (`len(ordem) != 1`) e, numa lista de um, aceitava e DESCARTAVA o parametro em silencio:
+    o chamador informava a identidade e o plano usava outra coisa (ou abstinha) sem nomear nada.
+    Nenhum mecanismo novo: e' o mesmo portao, olhando a forma declarada em vez do resultado dela.
+  * nenhuma operacao de negocio entrou pela politica por causa deste card — `contato_upsert` e'
+    declarada em `politica_api.json` (identidade por `email`, `is_company` como valor fixo), e o
+    motor continua sem conhecer nome de operacao: so' executa o que a politica declara.
 """
 
 import datetime
@@ -631,7 +642,15 @@ def _plano_de_escrita(op, declaracao, parametros):
     else:
         ordem = [identidade] if identidade else []
     identificador = parametros.get("identificador")
-    if identificador is not None and len(ordem) != 1:
+    # Quem decide se 'identificador' existe e' a FORMA DA DECLARACAO, nao o tamanho da lista
+    # resultante. A politica pode identificar por UM campo (`campo_de_identidade`, forma do
+    # E01-T01 — e' para ela que `identificador` foi criado) ou por uma LISTA ORDENADA
+    # (`campos_de_identidade`, forma do E01-T02): declarada por lista, a identidade vem dos VALORES.
+    # Aceitar `identificador` numa lista de um elemento so' (caso da operacao de contato,
+    # `contato_upsert`, TRE-W3-E01-T03) o descartaria EM SILENCIO — o oposto da regra da casa
+    # ("nunca ignorar o que o chamador disse", a mesma razao de `campo_fixo_divergente`).
+    por_lista = declaracao.get("campos_de_identidade") is not None
+    if identificador is not None and (por_lista or len(ordem) != 1):
         raise ErroApi(
             "payload_invalido",
             "'identificador' so' vale para operacao que identifica por um campo; esta identifica "

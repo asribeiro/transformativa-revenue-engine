@@ -763,16 +763,51 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   artefato** — a próxima operação de negócio não os quebra de novo. Runbook:
   `docs/runbooks/odoo-empresa-upsert.md`.
 
+- **Upsert de contato pela API controlada (`TRE-W3-E01-T03`, `t_e6e3b0b3`)** — a operação de escrita
+  do **contato comercial** (pessoa), pela qual o consumidor espelha o evento `DECISION_MAKER_FOUND`
+  (contrato §6) no espelho operacional: `contato_upsert` entra declarada em `api/politica_api.json`
+  (versão da política **1.1.0 → 1.2.0**, de forma aditiva, reusando o vocabulário de escrita do
+  E01-T02 — sem segundo mecanismo para o mesmo conceito) para escrever em `res.partner` os campos
+  `name`, `email`, `is_company`, `function` e `phone` — e **mais nada** (campo fora da declaração é
+  422, inclusive `tf_cnpj`, que é campo de empresa). **A identidade é declarada e é o e-mail**
+  (`campos_de_identidade: ["email"]`): o mapa canônico da V1 **não** dá UUID de contato do lado Odoo
+  (o UUID de `contacts.id` chega ao parceiro por `odoo_partner_id`, coluna **do lado PostgreSQL**),
+  então a operação casa pelo identificador natural que existe nos dois lados e é indexado pelo
+  contrato §4. Consequências declaradas: contato **sem e-mail** não entra (422 `identificador_ausente`,
+  nunca identidade inventada) e e-mail repetido ⇒ **409 `valor_ambiguo`** com **nada** escrito nem
+  alterado (ambiguidade é reportada, nunca resolvida — contrato §5). Semântica de **pessoa** por
+  **valor fixo declarado** (`valores_fixos: {is_company: false}`) — o mesmo caminho do E01-T02 para
+  empresa, sem código; o valor fixo também é aplicado na atualização, e por isso um parceiro-empresa
+  que case por e-mail é reescrito como pessoa (risco residual **medido** e declarado no runbook).
+  **Defeito fechado neste card:** o motor só recusava o parâmetro `identificador` quando a lista de
+  identidade resultante tinha mais de um campo — numa identidade declarada por lista de **um** elemento
+  (exatamente este caso) o parâmetro era **aceito e descartado em silêncio** (medido: HTTP 200 com o
+  parâmetro ignorado). Passou a decidir pela **forma da declaração**, não pelo tamanho da lista: agora
+  é `400 payload_invalido` nomeado, e o item de teste ficou na suíte pura do motor e no aceite HTTP.
+  **Fronteira de compliance declarada (AC9):** `do_not_contact`, `opt_out_email`, `opt_out_whatsapp`,
+  `preferred_channel` e `legal_basis` são do schema do PostgreSQL (contrato §9) e **não** existem
+  neste espelho — enviá-los é recusa nomeada, nunca "ignorado em silêncio". Aceite na VPS (dupla
+  descartável própria, banco `tre_e01_t03_contato`): **`CONTATO_UPSERT_OK (110 itens, 0 falhas)`**,
+  exit 0 — inclui a suíte pura do motor `MOTOR_API_OK (90 itens)`, instalação em banco limpo,
+  `0 failed, 0 error(s) of 120 tests` (19 testes novos + 101 dos cards anteriores, sem regressão),
+  HTTP real por `curl` de fora do processo (criar → atualizar no **mesmo** registro com **1** contato
+  após 3 chamadas, `409` ambíguo com contagem conferida antes/depois, dry-run que não escreve, `503`
+  fora do ambiente medido com servidor novo em `homologacao`, `422` de identidade/valor fixo/campo/
+  chave) e auditoria lida do log do servidor (**15 linhas para 15 chamadas autenticadas**, sem token e
+  **sem nenhum e-mail do payload** — dado pessoal fora da trilha). Dentes: **`CONTATO_UPSERT_DENTE_OK
+  (3 provas + 2 controles do próprio harness, 0 falhas)`**. Runbook:
+  `docs/runbooks/odoo-contato-upsert.md`.
+
 ### Notas de estado
 
 - **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por
   `idempotency_key` é do `TRE-W3-E02-T02` — aqui a chave é exigida, validada e registrada, e a
   garantia de "não duplicar" **das operações de escrita de negócio** vem da **identidade declarada**
-  (`campos_de_identidade`), medida por contagem no banco; cache de política, rate limit e
-  observabilidade durável são do `TRE-W3-E05-T01`. A primeira operação de escrita de negócio
-  (`empresa_upsert`, `TRE-W3-E01-T02`) já está declarada na política real (versão 1.1.0); as demais
-  (contact/opportunity upsert e activity create) são dos cards `TRE-W3-E01-T03..T05`, que só precisam
-  **declarar** a operação com o mesmo vocabulário de escrita (`campos_de_identidade`, `valores_fixos`)
+  (`campos_de_identidade`, `valores_fixos`), medida por contagem no banco; cache de política, rate limit e
+  observabilidade durável são do `TRE-W3-E05-T01`. Duas operações de escrita de negócio já estão
+  declaradas na política real (versão 1.2.0): `empresa_upsert` (`TRE-W3-E01-T02`) e `contato_upsert`
+  (`TRE-W3-E01-T03`); as demais (opportunity upsert e activity create) são dos cards
+  `TRE-W3-E01-T04..T05`, que só precisam **declarar** a operação com o mesmo vocabulário de escrita
   — o mecanismo já está entregue e medido.
 - **Módulo segue não publicado em `/opt/tre/repo`** (pendência herdada do E03-T01): a API vive no
   módulo, medido em dupla descartável própria; `homolog` e `prod` seguem sem arquivo e sem container.

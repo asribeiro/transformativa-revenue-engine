@@ -11,3 +11,6 @@ from . import test_api_controlada
 
 # Card TRE-W3-E01-T02 (`t_cdc21b43`): aceite da operacao de escrita de negocio `empresa_upsert`.
 from . import test_empresa_upsert
+
+# Card TRE-W3-E01-T03 (`t_e6e3b0b3`): aceite da operacao de escrita de negocio `contato_upsert`.
+from . import test_contato_upsert

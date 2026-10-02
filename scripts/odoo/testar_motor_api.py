@@ -413,6 +413,85 @@ def main():
               and plano["valor_de_identidade"] == "8f14e45f-ceea-467f-a0e0-000000000011",
               "forma de um campo: plano traz campo e valor de identidade")
 
+    print("== escrita de negocio: contato_upsert (politica real, card E01-T03) ==")
+    op_contato = motor.operacao(politica, "contato_upsert")
+    if op_contato is None:
+        falhou("politica real NAO declara a operacao contato_upsert (sem ela nao ha' o que medir)")
+        return resumo()
+    verificar(op_contato["tipo"] == "escrita"
+              and op_contato["requer_idempotency_key"] is True,
+              "politica real declara contato_upsert como escrita com idempotency_key exigida")
+    declaracao_contato = op_contato["modelos"]["res.partner"]
+    verificar(declaracao_contato["acao"] == "upsert"
+              and declaracao_contato["campos_de_identidade"] == ["email"],
+              "identidade do contato e' o identificador natural dos dois lados (email): %s"
+              % ", ".join(declaracao_contato["campos_de_identidade"]))
+    verificar(declaracao_contato["valores_fixos"] == {"is_company": False},
+              "is_company e' valor FIXO declarado na politica (a operacao e' de PESSOA)")
+    verificar(declaracao_contato["campos_obrigatorios"] == ["name"],
+              "campo obrigatorio do contato e' o nome (a identidade tem codigo proprio)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-sem-identidade",
+         "parametros": {"valores": {"name": "Contato sem e-mail"}}}, ambiente="dev"),
+        "identificador_ausente", "upsert de contato sem o valor de identidade (e-mail)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-sem-nome",
+         "parametros": {"valores": {"email": "contato@exemplo.example"}}}, ambiente="dev"),
+        "campo_obrigatorio_ausente", "upsert de contato sem o campo obrigatorio (name)")
+    plano = motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-identidade",
+         "parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example",
+                                    "function": "Diretora de Operacoes"}}},
+        ambiente="dev")
+    verificar(plano["valores_de_identidade"] == {"email": "ana@exemplo.example"},
+              "plano carrega o valor de identidade declarado (email)")
+    verificar(plano["valores"]["is_company"] is False,
+              "valor fixo declarado entra no plano (is_company false) sem o chamador mandar")
+    verificar(plano["campos_de_identidade"] == declaracao_contato["campos_de_identidade"],
+              "lista de identidade do plano e' a declarada na politica")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-fixo-divergente",
+         "parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example",
+                                    "is_company": True}}}, ambiente="dev"),
+        "campo_fixo_divergente", "chamador tentando tornar o contato empresa")
+    # O portao novo do E01-T03: declaracao por LISTA recusa 'identificador' mesmo com UM elemento.
+    # Sem ele o parametro era aceito e descartado em silencio (a identidade usada era outra).
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-escalar",
+         "parametros": {"identificador": "ana@exemplo.example",
+                        "valores": {"name": "Ana Souza"}}}, ambiente="dev"),
+        "payload_invalido", "'identificador' escalar em lista de um elemento (nunca ignorado)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-campo-empresa",
+         "parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example",
+                                    "tf_cnpj": "11.222.333/0001-81"}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo de EMPRESA na operacao de contato (fronteira declarada)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-compliance",
+         "parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example",
+                                    "do_not_contact": True}}}, ambiente="dev"),
+        "campo_nao_declarado",
+        "campo de opt-out (escopo do PostgreSQL, contrato §9) recusado, nunca ignorado")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "contato_upsert",
+        {"parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example"}}},
+        ambiente="dev"),
+        "idempotency_key_ausente", "escrita de contato sem idempotency_key")
+    plano = motor.montar_plano(
+        politica, "contato_upsert",
+        {"idempotency_key": "tre-e01-t03-dry-run", "dry_run": True,
+         "parametros": {"valores": {"name": "Ana Souza", "email": "ana@exemplo.example"}}},
+        ambiente="dev")
+    verificar(plano["dry_run"] is True and plano["acao"] == "upsert",
+              "dry_run do contato e' plano valido (quem nao escreve e' o controlador)")
+
     print("== operacao de fonte ==")
     plano = motor.montar_plano(politica, "sistema_capacidades", {}, ambiente="dev")
     verificar(plano["acao"] == "capacidades", "operacao de fonte nao resolve modelo de negocio")

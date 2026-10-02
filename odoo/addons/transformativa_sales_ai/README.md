@@ -17,7 +17,8 @@ O que já existe e quem entrega o quê:
 | Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | entregue |
 | Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
 | API controlada | `TRE-W3-E01-T01` | entregue |
-| Upsert de empresa pela API (`empresa_upsert`) | `TRE-W3-E01-T02` | **neste card** |
+| Upsert de empresa pela API (`empresa_upsert`) | `TRE-W3-E01-T02` | entregue |
+| Upsert de contato pela API (`contato_upsert`) | `TRE-W3-E01-T03` | **neste card** |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
 
@@ -103,6 +104,16 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   `idempotency_key` ausente/fora do formato, `dry_run` que descreve sem criar **nem** atualizar,
   UUID fora do formato (a recusa **não** deixa registro) e a auditoria da escrita (ids na trilha,
   sem payload e sem token).
+- `tests/test_contato_upsert.py` (card W3-E01-T03, 19 testes, tag `post_install`): a operação de
+  escrita de negócio `contato_upsert` — operação declarada nas capacidades (lendo a versão da
+  política do **próprio artefato**), criar/atualizar sem duplicar pela identidade declarada
+  (`email`, o identificador natural dos dois lados), `422 identificador_ausente` sem o valor de
+  identidade, `409 valor_ambiguo` quando mais de um parceiro tem o mesmo e-mail (nada escrito nem
+  alterado), `422 campo_fixo_divergente` quando o chamador tenta tornar o contato empresa,
+  `422 campo_nao_declarado` para campo de empresa (`tf_cnpj`) e para campo de compliance/opt-out
+  (escopo do PostgreSQL, contrato §9), `identificador` escalar **recusado** (nunca descartado em
+  silêncio), `idempotency_key` ausente/fora do formato, `dry_run` que descreve sem criar **nem**
+  atualizar, e a auditoria da escrita (ids na trilha, **sem** nome e **sem** e-mail).
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -197,13 +208,14 @@ POST /tf/api/v1/<operacao>     Authorization: Bearer <chave de API do Odoo>
 | `api/motor.py` | Valida a chamada contra a política e monta o plano — **sem importar `odoo`**, para a decisão ser exercitável sem subir Odoo (`scripts/odoo/testar_motor_api.py`) |
 | `controllers/api_controlada.py` | UMA rota, UM verbo: não há rota genérica de "execute qualquer modelo/método/campo" (doc 02 §3). Executa o plano **pelo ORM** (as ACLs do dono da chave valem — não é `sudo`) e grava uma linha `TF_API_AUDIT` por chamada |
 
-Operações declaradas nesta versão da política (1.1.0):
+Operações declaradas nesta versão da política (1.2.0):
 
 | Operação | O que faz |
 |---|---|
 | `sistema_capacidades` | Sonda de saúde do consumidor: devolve a versão da política e as operações declaradas, sem tocar modelo de negócio |
 | `crm_registros_ler` | Leitura controlada de `res.partner` (campos `tf_*` do E04-T01) e `crm.lead` (rastreio do E04-T02): só campos declarados, só filtros declarados, com teto |
 | `empresa_upsert` | **Escrita de negócio** (`TRE-W3-E01-T02`): upsert do parceiro-**empresa** em `res.partner` (`name`, `tf_company_id`, `tf_cnpj`, `tf_domain`, `tf_linkedin_url`, `tf_priority_score`), identidade declarada em `campos_de_identidade` (canônico → CNPJ → domínio → LinkedIn), `is_company` como **valor fixo** declarado e recusa `409 valor_ambiguo` quando os identificadores do pedido casam mais de um registro — runbook `docs/runbooks/odoo-empresa-upsert.md` |
+| `contato_upsert` | **Escrita de negócio** (`TRE-W3-E01-T03`): upsert do parceiro-**pessoa** (contato comercial) em `res.partner` (`name`, `email`, `is_company`, `function`, `phone`), identidade declarada em `campos_de_identidade` (**`email`** — o identificador natural que existe nos dois lados e é indexado pelo contrato §4), `is_company` como **valor fixo** declarado (`false`) e `409 valor_ambiguo` quando mais de um parceiro tem o mesmo e-mail. Os campos de opt-out/`legal_basis`/`preferred_channel` são do PostgreSQL (contrato §9) e **não** existem neste espelho: enviá-los é recusa nomeada — runbook `docs/runbooks/odoo-contato-upsert.md` |
 
 Guarda de ambiente (ADR-005): sem `ir.config_parameter` `tf.api.ambiente` **declarado** e presente
 em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exigem aprovação humana
@@ -227,3 +239,16 @@ versão permite `dev` e só.
   do log (`15 linhas para 15 chamadas autenticadas`) e greps de contrato. `--prova-de-dente` com 3
   mutações **mais 2 controles do próprio harness** (sub-run que reprova por ambiente não conta como
   dente; mutação inócua é reportada como `mutacao sem dente`).
+- **Aceite da operação de escrita de contato (`TRE-W3-E01-T03`):**
+  `bash scripts/odoo/verificar-contato-upsert.sh` (na VPS, script próprio — o aceite do E01-T01
+  **não** foi ampliado) — 110 itens: suíte pura do motor (`90 itens`), instalação em banco limpo,
+  `120 testes` do Odoo sem falha (os 19 deste card + 101 dos anteriores, sem regressão), HTTP real
+  por `curl` de fora do processo (criar → atualizar no mesmo registro com `1` contato após 3
+  chamadas, `409 valor_ambiguo` sem escrever **nem** alterar com os dois registros do fixture lidos
+  de volta pelo caminho declarado, `422` de identidade ausente / valor fixo divergente / campo de
+  empresa / campo de compliance / chave, **`400` do `identificador` escalar** — o parâmetro que antes
+  era descartado em silêncio, agora recusado por nome, dry-run que não escreve, `503` fora do
+  ambiente), auditoria lida do log do servidor (`15 linhas para 15 chamadas autenticadas`, sem token
+  e **sem nenhum e-mail do payload**) e greps de contrato. `--prova-de-dente` com 3 mutações (política
+  sem a operação, controlador sem o portão de ambiguidade, motor sem aplicar o valor fixo) **mais 2
+  controles do próprio harness**.
