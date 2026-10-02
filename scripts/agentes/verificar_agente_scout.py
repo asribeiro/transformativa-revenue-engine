@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
 import shutil
 import sys
@@ -144,6 +145,30 @@ def lista_sql(texto):
 @item("agente-existe-e-importa")
 def _ (ctx):
     return ctx.modulo.AGENTE == "scout" and ctx.modulo.PAPEL == "discovery", "modulo carregado"
+
+
+@item("raiz-do-agente-nao-depende-da-profundidade-do-arquivo")
+def _ (ctx):
+    # Defeito medido na revisao independente (rodada 1): com a copia do agente fora da arvore
+    # do repo (TMPDIR=/tmp), `Path(__file__).resolve().parents[3]` estourava IndexError na
+    # IMPORTACAO e o `--autoteste` morria com traceback, sem veredito. Aqui a copia e importada
+    # de diretorio sem marcador, com o diretorio de trabalho na raiz do repo: a raiz TEM de ser
+    # achada por marcador (profundidade do arquivo nao decide) e tem de ser a raiz do repo.
+    anterior = os.getcwd()
+    raso = Path(tempfile.mkdtemp(prefix="scout-raso-"))
+    try:
+        copia = raso / "scout.py"
+        copia.write_text(Path(ctx.modulo.__file__).read_text(encoding="utf-8"), encoding="utf-8")
+        os.chdir(RAIZ)
+        modulo = carregar_modulo(copia)
+        raiz = modulo.RAIZ_PADRAO
+        return (isinstance(raiz, Path) and raiz.resolve() == Path(RAIZ).resolve()), \
+            "importou de %s (fora da arvore); RAIZ_PADRAO=%s" % (raso, raiz)
+    except Exception as exc:  # noqa: BLE001 — aqui excecao e reprovacao, nao traceback
+        return False, "nao importou de diretorio fora da arvore: %s: %s" % (type(exc).__name__, exc)
+    finally:
+        os.chdir(anterior)
+        shutil.rmtree(raso, ignore_errors=True)
 
 
 @item("contrato-do-agente-tem-os-campos-exigidos")
@@ -516,6 +541,21 @@ def _ (ctx):
         "4/4 recusados; desfazer explicito liberado=%s" % ok_desfazer
 
 
+@item("guarda-nao-confunde-nome-de-empresa-com-ddl")
+def _ (ctx):
+    # Defeito medido na revisao independente (rodada 1): a guarda varria o texto inteiro e um
+    # nome comum ("Drop Solucoes Ltda") fazia o INSERT ser recusado como DDL -> ERRO e rodada
+    # com exit 1, derrubando candidata legitima. A guarda olha o CODIGO SQL, nao o literal.
+    nomes = ["Drop Solucoes Ltda", "Create Tecnologia ME", "Alter Data Ltda", "Grant Servicos SA"]
+    # Cada candidata consome 3 respostas da porta: consulta, ingestao e auditoria.
+    respostas = [(0, "", ""), (0, "SCOUT_CRIADA\n", ""), (0, "", "")] * len(nomes)
+    porta = PortaRoteiro(respostas=respostas, modulo=ctx.modulo)
+    agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
+    vereditos = [agente.processar(candidata(legal_name=nome, domain="nome-comum%d.com.br" % i))
+                 ["veredito"] for i, nome in enumerate(nomes)]
+    return (vereditos == [ctx.modulo.VER_CRIADA] * len(nomes)), "vereditos=%s" % vereditos
+
+
 @item("desfazer-e-escopado-na-rodada-e-nao-apaga-o-que-nao-criou")
 def _ (ctx):
     sql = ctx.modulo.sql_desfazer(["id-1", "id-2"], "corr-1", "se-1")
@@ -655,6 +695,36 @@ def _ (ctx):
             and r["organization_id"] is None and so_approval
             and r["status_agent_runs"] == "REVIEW_REQUIRED"), \
         "veredito=%s escritas=%d" % (r["veredito"], len(escritas))
+
+
+@item("fila-humana-que-nao-registra-vira-erro")
+def _ (ctx):
+    # Fail-open medido na revisao independente (rodada 1): com rc=1 na escrita de
+    # human_approvals o agente dizia REVISAO_IDENTIDADE/REVIEW_REQUIRED com erro=None, tendo
+    # escrito NADA. Sem a linha da fila humana a ambiguidade nao foi reportada: e ERRO.
+    porta = PortaRoteiro(respostas=[(1, "", "porta caiu"), (0, "", "")], modulo=ctx.modulo)
+    agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
+    r = agente.processar(candidata(trade_name="Sem Identificador", source="EVENTOS"))
+    return (r["veredito"] == ctx.modulo.VER_ERRO and r.get("human_approval_id") is None
+            and r["status_agent_runs"] == "FAILED"
+            and "fila humana" in " ".join(r["motivos"])), \
+        "veredito=%s approval=%s status=%s motivos=%s" % (
+            r["veredito"], r.get("human_approval_id"), r["status_agent_runs"], r["motivos"])
+
+
+@item("auditoria-que-nao-registra-vira-erro")
+def _ (ctx):
+    # Mesmo defeito do lado da auditoria: a execucao nao pode ser reportada como concluida
+    # quando a propria linha de agent_runs nao foi escrita.
+    porta = PortaRoteiro(respostas=[(0, "", ""), (0, "SCOUT_CRIADA\n", ""), (1, "", "porta caiu")],
+                         modulo=ctx.modulo)
+    agente = ctx.modulo.Scout(porta=porta, raiz=RAIZ, ambiente="dev")
+    r = agente.processar(candidata(domain="nova.com.br"))
+    return (r["veredito"] == ctx.modulo.VER_ERRO and r["auditoria_registrada"] is False
+            and r["status_agent_runs"] == "FAILED"
+            and any("AUDITORIA_NAO_REGISTRADA" in m for m in r["motivos"])), \
+        "veredito=%s auditoria_registrada=%s status=%s motivos=%s" % (
+            r["veredito"], r["auditoria_registrada"], r["status_agent_runs"], r["motivos"])
 
 
 @item("fluxo-recusa-nao-escreve-nada-alem-da-auditoria")
@@ -801,13 +871,33 @@ MUTACOES = [
      "    for pesos, pos in ():",
      ["cnpj-digito-verificador"]),
     ("guarda-deixa-passar-ddl",
-     "    if _DDL.search(sql):",
-     "    if False and _DDL.search(sql):",
+     "    if _DDL.search(codigo):",
+     "    if False and _DDL.search(codigo):",
      ["guarda-recusa-ddl"]),
+    ("guarda-le-o-literal-como-codigo",
+     "    codigo = _sem_literais(sql)",
+     "    codigo = sql",
+     ["guarda-nao-confunde-nome-de-empresa-com-ddl"]),
     ("escrita-em-contacts-liberada",
      "            if tabela.lower() not in TABELAS_PERMITIDAS:",
      "            if False:",
      ["guarda-recusa-escrita-fora-do-declarado"]),
+    ("raiz-por-profundidade-do-arquivo",
+     "    for base in (Path(__file__).resolve().parent, Path.cwd()):\n"
+     "        for pasta in (base,) + tuple(base.parents):\n"
+     "            if (pasta / CONTRATO_AGENTE_PADRAO).is_file():\n"
+     "                return pasta\n"
+     "    return Path.cwd()",
+     "    return Path(__file__).resolve().parents[3]",
+     ["raiz-do-agente-nao-depende-da-profundidade-do-arquivo"]),
+    ("fila-humana-sem-conferir-o-rc",
+     "                if rc_rev != 0:",
+     "                if False:",
+     ["fila-humana-que-nao-registra-vira-erro"]),
+    ("auditoria-sem-conferir-o-rc",
+     "        if rc_run != 0:",
+     "        if False:",
+     ["auditoria-que-nao-registra-vira-erro"]),
 ]
 
 
@@ -827,15 +917,25 @@ def autoteste():
     try:
         for mutacao in MUTACOES:
             nome = mutacao[0]
-            copia = temporario / ("scout-%s.py" % nome)
+            # A copia vive um nivel ABAIXO do tempdir: assim ela importa de qualquer TMPDIR
+            # (a prova de que o agente importa de diretorio raso e item proprio da suite).
+            copia = temporario / "mut" / ("scout-%s.py" % nome)
+            copia.parent.mkdir(parents=True, exist_ok=True)
             esperados, detalhe = aplicar_mutacao(mutacao, copia)
             if esperados is None:
                 falhas_total += 1
                 print("FALHOU mutacao %s -> %s (mutacao nao aplicada e buraco de verificacao)"
                       % (nome, detalhe))
                 continue
+            try:
+                modulo = carregar_modulo(copia)
+            except Exception as exc:  # noqa: BLE001 — sem veredito na tela, so' falha medida
+                falhas_total += 1
+                print("FALHOU mutacao %s nao pode ser importada (%s: %s) — sem o item esperado "
+                      "(%s) nao ha' deteccao" % (nome, type(exc).__name__, exc,
+                                                 ", ".join(esperados)))
+                continue
             print("\n-- mutacao %s (tem de reprovar: %s)" % (nome, ", ".join(esperados)))
-            modulo = carregar_modulo(copia)
             resultados = executar_suite_silencioso(modulo)
             reprovados = sorted(i for i, v in resultados.items() if not v)
             nao_reprovados = [i for i in esperados if resultados.get(i)]
