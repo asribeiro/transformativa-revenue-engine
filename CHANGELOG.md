@@ -1372,7 +1372,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 - `hermes/scores/data_quality/score-data-quality-v1.json` — o contrato do score (pesos, cortes de
   atualidade, vocabulário de fontes, colunas escritas). **É a fonte da verdade**: o módulo confere
   contrato × código no `__init__` e **recusa carregar** se divergirem (provado por dente de carga).
-- `scripts/scores/verificar_score_data_quality.py` — suite de bancada: **24 itens** e **14 dentes**
+- `scripts/scores/verificar_score_data_quality.py` — suite de bancada: **25 itens** e **15 dentes**
   (mutação em cópia do código, cada uma exigindo o item que ela tem de reprovar).
 - `scripts/scores/teste_data_quality_aceite.sh` — aceite E2E em PostgreSQL descartável
   (`pg-dq-acc`), com prova de dente própria.
@@ -1395,9 +1395,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 **Medição**
 
 - bancada: `python3 scripts/scores/verificar_score_data_quality.py --autoteste` → `DQ_SUITE_OK`
-  (24 itens, 0 falhas; 14/14 dentes reprovando o item esperado);
-- aceite E2E: rodado em container descartável na VPS, com o veredito em
+  (25 itens, 0 falhas; 15/15 dentes reprovando o item esperado);
+- aceite E2E (`--prova-de-dente`) no clone `/opt/tre/w5e04t01-si-r4`, container descartável
+  `pg-dq-acc` → `ACEITE_DATA_QUALITY_001_OK (35 itens, 0 falhas, 0 dentes reprovados)`, exit 0;
+  evidência `/opt/tre/evid-w5e04t01-dq.out` (sha256 `aa7f2c0c…`) e o detalhe em
   `docs/operations/registro-de-execucoes.md`.
+
+**Defeitos que a própria execução pegou (consertados na raiz, não remendados)**
+
+- **identidade:** o SQL comparava a forma **bruta** da coluna com o valor **normalizado** — CNPJ gravado
+  com pontuação nunca casava e a empresa ficava sem medição. Agora o SQL **pré-filtra** (superset) e o
+  **módulo de identidade decide** normalizando a forma guardada, como o Scout faz: score e produtor não
+  podem discordar sobre quem é quem;
+- **o aceite era um falso verde:** a rodada roda dentro de substituição de comando, os contadores de shell
+  morriam no subshell e o veredito imprimia `0 itens, 0 falhas` com **exit 0** mesmo com item reprovado —
+  contagem por **arquivo**, veredito vazio **reprova** e o que caiu é **nomeado**.
 
 **Dentes que ficaram inertes (medido, não suposto)**
 

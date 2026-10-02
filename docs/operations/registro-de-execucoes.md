@@ -1772,3 +1772,68 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Limites declarados no doc de
   arquitetura (§6): a cadeia medida são os cinco agentes W4 em `dev`; W5 (score/tier/NBA), Odoo e Titan não
   estão no caminho.
+
+## 2026-10-02 — repositório TRE (worktree `t_701c574f`) + VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E04-T01 (card `t_701c574f`): Score Data Quality v1 (o primeiro score da W5)
+
+- **Base e commits:** `feature/TRE-W5-E04-T01` criada de `63d711c` (baseline **V1.1.0** = a cadeia E2E
+  dos cinco agentes). Entrega em `5beba62` (motor, contrato, suíte, aceite, arquitetura, runbook, gate e
+  CHANGELOG); conserto do casamento de identidade + veredito do aceite em `4caf3c6`; caminho do arquivo de
+  itens no escopo global em `87bdc55`; âncora do dente de confiabilidade em `7218c34`. **Versão do aceite
+  medida: `7218c34`** (sha256 de `scripts/scores/teste_data_quality_aceite.sh` =
+  `ccd161ad713f39664a8f87630f9e09d7088e1154a111b3ab622715ef1839e774`, conferido na VPS antes do run);
+  **código sob teste** (o motor) = `bafe476c7380f21dbc7b4b9b4f0ad5f8c84dc06e66d4df100147cb3fd63fe1f9`,
+  contrato do score = `b88b09f963bc866d8e2d33e3ac892a3a08ebdeac74315e3488621f16ed86954c`, suíte =
+  `cd6531322605ffe3b2550fbb1dca8c8e85899ba4d85f88a36b1f3c0cbca7fa64`. O motor **não** mudou entre
+  `4caf3c6` e `7218c34` (só o script de aceite mudou).
+- **Bancada (offline, sem banco e sem rede):** `python3 scripts/scores/verificar_score_data_quality.py
+  --autoteste` → **`DQ_SUITE_OK (25 itens, 0 falhas)`** e **15/15 dentes** reprovando o item esperado
+  (cada mutação aplicada a uma cópia do código; mutação que não se aplica, que não declara item ou que
+  declara item inexistente **reprova**).
+- **Aceite E2E:** `scripts/scores/teste_data_quality_aceite.sh --prova-de-dente` no clone
+  `/opt/tre/w5e04t01-si-r4`, container descartável `pg-dq-acc` (postgres:16), migration `0001` aplicada
+  do zero → **`ACEITE_DATA_QUALITY_001_OK (35 itens, 0 falhas, 0 dentes reprovados)`**, exit 0.
+  **Evidência:** `/opt/tre/evid-w5e04t01-dq.out` (53 linhas, sha256
+  `aa7f2c0c829bd8905d6ca8d0f3cd9cd58d1eb9ce8cd04ceea2eebf5dd41d8866`, cópia idêntica no anexo do card).
+- **Valores conferidos na mão e medidos NO BANCO:** empresa completa (tudo preenchido, válida, pesquisa
+  `COMPLETED` com 3 fontes, dado fresco) = **100.00**; parcial (domínio + site + cidade + `unit_count=0`,
+  1 fonte) = **65.71**; só a razão social, fonte fora do vocabulário e dado velho = **0.00**; com defeito
+  de dado (CNPJ inválido + DV, faixa de porte incoerente, site de outro domínio, pesquisa sem fonte) =
+  **77.00**; dado novo (indústria entra na conta) sobe a parcial para **70.21**. Números da bancada
+  conferidos contra a fixture **antes** de virarem expectativa do aceite.
+- **Medido no banco, não na narrativa:** replay com o banco igual → 4 `JA_EXISTE`, **0 escrita** e
+  `scores` seguindo com 4 linhas (zero duplicata); identidade forte por **CNPJ gravado com pontuação** e
+  por **domínio em forma de URL** resolvem a MESMA empresa (o produtor grava normalizado, mas a coluna é
+  `VARCHAR` livre); CNPJ com DV inválido e organização inexistente viram `RECUSADA` **sem escrever**;
+  `--planejar` mede e não escreve; `--ambiente prod` recusado com **exit 4** e sem escrita; espelho
+  `organizations.data_quality_score` bate com o último score e a **foto das colunas de negócio**
+  (inclusive `updated_at`) não muda em nenhuma rodada; auditoria: **1 linha por empresa processada**
+  (16 no total) e 5 delas com `score_id`; desfazer **frio** não apaga nada (`dry_run: true`) e o
+  `--confirmo` apaga **só** a rodada E, restaura o espelho anterior (65.71) e **preserva a auditoria**.
+- **Defeitos encontrados e consertados nesta execução (3, todos achados executando e remedidos):**
+  1. **Casamento de identidade** comparava a forma **BRUTA** da coluna com o valor **normalizado**: CNPJ
+     gravado com pontuação nunca casava (medido: a rodada por CNPJ gravou **0** e a auditoria daquela
+     empresa ficou `RECUSADA`). Conserto **na raiz**, em duas camadas — o SQL **pré-filtra** (superset:
+     `regexp_replace` no CNPJ, `LIKE` de ida e volta no domínio, `LIKE` do slug no LinkedIn) e o **módulo
+     de identidade decide** normalizando a forma guardada (mesma regra do Scout, para score e produtor
+     não discordarem). Item novo na suíte mede as duas camadas, inclusive o host **maior** que o `LIKE`
+     deixa passar e o decider rejeita.
+  2. **O próprio aceite era um falso verde:** `ciclo` roda dentro de substituição de comando e os
+     contadores de shell morriam no subshell — com itens reprovados o veredito imprimia
+     `(0 itens, 0 falhas)` e saía com **exit 0**. A contagem passou a ser **por arquivo**, veredito vazio
+     (0 itens) **reprova**, e os itens reprovados são **nomeados** no log. Na terceira rodada o caminho do
+     arquivo de itens ainda voltava vazio para o veredito (atribuição feita dentro do subshell) — caminho
+     fixado no **escopo global** e o ciclo apenas trunca o arquivo.
+  3. **Dente que não se aplica reprova** (é buraco, não alívio): a âncora de `confiabilidade-sem-pesquisa`
+     saiu de sincronia com o código (`Decimal(0)`, não `Decimal("0")`) e o aceite devolveu
+     `ACEITE_DATA_QUALITY_001_FALHOU (35 itens, 0 falhas, 1 dentes reprovados)`, exit 1 — âncora corrigida
+     e a bateria inteira reexecutada.
+- **Dentes inertes (medido, não suposto):** mutar **uma** das duas camadas da recusa de `prod` não muda
+  nada (a outra camada segura) — o dente do aceite passou a mirar a função inteira devolvendo o ambiente
+  sem conferir; tirar a referência do JSON canônico não muda o hash porque a referência **também** entra
+  em `inputs` (defesa em profundidade) — o dente passou a fixar o canônico. Na suíte, as mutações que
+  quebram contrato de pesos/colunas **nem carregam** (o `__init__` recusa antes de medir) e viraram
+  **dente de carga** (recusar é o comportamento esperado).
+- **Guardas de ambiente:** o aceite usa container descartável próprio (`pg-dq-acc`) e o remove no fim
+  (0 falhas); os containers do TRE (`proxy-dev`, `odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `pg-icp-acc`)
+  ficaram **intactos** e o diretório de trabalho `/tmp/dq-aceite-trabalho` foi removido. Nenhuma
+  credencial, nenhuma escrita fora do banco descartável, nada tocado em produção.
