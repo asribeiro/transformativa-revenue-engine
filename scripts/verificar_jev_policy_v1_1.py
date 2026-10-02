@@ -1018,8 +1018,10 @@ def autoteste(base, modulo, yaml_v11: str, doc_v11: str) -> bool:
                      'escolhido = max(ramos, key=lambda r: indice_da_lane(politica, r.get("lane_minima")))',
                      'escolhido = ramos[0]'))
     mut_roteador("piso fora do recibo: `override` deixa de registrar o piso",
-                 lambda c: c.replace('    plano["override"] = {"piso_por_ambiente": registro}',
-                                     '    plano["override"] = None'))
+                 lambda c: c.replace(
+                     '    plano["override"] = _compor_override_do_recibo('
+                     'plano, {"piso_por_ambiente": registro})',
+                     '    plano["override"] = None'))
     mut_roteador("ramo vivo sem exigir aprovacao humana na decisao",
                  lambda c: c.replace('    if piso["exige_aprovacao_humana"]:\n'
                                      '        plano["exige_aprovacao_humana"] = True\n',

@@ -238,6 +238,12 @@ SINAL_DE_REGISTRO_MARCADO = "empresa_do_not_contact"
 GUARDRAILS_PROIBIDOS_PARA_EXECUCAO_AUTOMATICA = frozenset(
     {IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO})
 
+# Regra do campo `override` do RECIBO (defeito de cobertura D1, card `t_145eeaef`): `humano`
+# e RESERVADO ao override que a PROPRIA tarefa declarou e recomposto de
+# `plano["override_do_chamador"]`; os rastros de regra (registro do guardrail que proibe a
+# execucao automatica, piso por ambiente) sao IRMAOS de `humano`, no topo do campo — nunca
+# embrulhados junto sob ele (`_compor_override_do_recibo`).
+
 # ---------------------------------------------------------------------------
 # Fonte da camada Human Approval (correcao do defeito D03, card TRE-W0-E04-T02-D03)
 #
@@ -1121,6 +1127,34 @@ def _lane_com_piso(politica: dict, tarefa: dict, lane):
     return final, piso
 
 
+def _compor_override_do_recibo(plano: dict, rastro: dict) -> dict:
+    """Monta o campo `override` do recibo: override do CHAMADOR + rastro da REGRA.
+
+    `humano` nomeia SO o override que a PROPRIA tarefa declarou (`plano["override_do_chamador"]`).
+    O rastro de regra (piso por ambiente, registro do guardrail que proibe a execucao
+    automatica) e IRMAO de `humano`, no TOPO do campo — nunca embrulhado junto sob ele.
+    Antes desta composicao o piso embrulhava tudo o que ja estava em `override` sob `humano`,
+    e com anotacao E piso agindo o rastro de guardrail saia do topo
+    (`override.humano.registro_marcado`) — exatamente o caminho que o card, o doc §9 e a
+    suite nova leem (defeito de cobertura D1, card `t_145eeaef`).
+
+    Nenhuma chave ja gravada e descartada: o que outro guardrail tiver posto no campo
+    continua la (so `humano` e recomposto do slot do chamador, para nao embrulhar rastro de
+    guardrail). O contrato de 13 campos do recibo nao cresce: o campo e o mesmo.
+    """
+    chamador = plano.get("override_do_chamador")
+    anterior = plano.get("override")
+    composto = {}
+    if isinstance(anterior, dict) and anterior != chamador:
+        composto = {chave: valor for chave, valor in anterior.items() if chave != "humano"}
+    composto.update(rastro)
+    if isinstance(chamador, dict) and chamador:
+        return {"humano": chamador, **composto}
+    if chamador:
+        return {"anterior": chamador, **composto}
+    return composto
+
+
 def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
     """Registra o piso por ambiente no rastro da decisao e no recibo.
 
@@ -1130,6 +1164,9 @@ def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
     objeto nomeia a origem (`piso_por_ambiente`) para o recibo nunca sugerir override
     humano onde houve regra de politica. O motivo tambem vai em `decisao.motivos`, que
     e gravado junto do recibo pelo encaixe.
+
+    O piso embrulha SO o override do CHAMADOR sob `humano` (`_compor_override_do_recibo`):
+    rastro de guardrail que ja esteja no campo (registro marcado) continua no TOPO.
     """
     if not politica:
         return
@@ -1154,11 +1191,7 @@ def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
             plano["motivos"].append(
                 f"lane {plano['lane']} (piso por ambiente) exige aprovacao humana "
                 "registrada antes de executar")
-    humano = plano.get("override")
-    if isinstance(humano, dict) and humano:
-        plano["override"] = {"humano": humano, "piso_por_ambiente": registro}
-    else:
-        plano["override"] = {"piso_por_ambiente": registro}
+    plano["override"] = _compor_override_do_recibo(plano, {"piso_por_ambiente": registro})
 
 
 def acoes_nunca_decididas_por_maquina(politica: dict) -> list:
@@ -1250,6 +1283,30 @@ def _guardrails_de_codigo(tarefa: dict) -> list:
         "fail-closed: duvida na avaliacao = BLOCK, nunca prosseguir",
         bool(desconhecidos),
         f"sinal nao reconhecido: {desconhecidos}" if desconhecidos else ""))
+
+    # Guardrail de REGISTRO MARCADO (defeito [encaixe] de 02/10/2026, card `t_60fac84b`):
+    # registro anotado como nao-perturbe/opt-out NAO TEM EXECUCAO AUTOMATICA. O acionamento
+    # e a ANOTACAO do registro — nunca o casamento de vocabulario (`_e_acao_outbound`), cujo
+    # recall e finito e ja produziu falso positivo (card `t_fa344342`) e omissao de abordagem
+    # no mesmo encaixe. Este guardrail NAO substitui o de contato: os dois convivem, e a acao
+    # classificada como abordagem aciona os dois.
+    #
+    # Ele vive AQUI, junto dos guardrails de CODIGO, e nao em `_guardrails_de_politica`: o
+    # sinal e do CHAMADOR e nao depende do YAML carregado. Na camada da politica ele
+    # simplesmente NAO EXISTIA em modo degradado (politica ausente/corrompida/versao
+    # desconhecida), a decisao virava ESCALATE e a aprovacao de onda liberava o card
+    # ANOTADO — saida identica a de um card limpo (defeito de cobertura D2, card
+    # `t_145eeaef`). Guardrail de codigo roda em qualquer modo, inclusive no degradado.
+    sinais = tarefa.get("sinais") or {}
+    registro_marcado = bool(sinais.get(SINAL_DE_REGISTRO_MARCADO))
+    guardrails.append(_guardrail(
+        IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO,
+        "registro anotado como do_not_contact/opt_out nao tem execucao automatica",
+        "anotacao do registro declarada pelo encaixe (sinais.empresa_do_not_contact)",
+        registro_marcado,
+        "registro anotado como do_not_contact/opt_out: acao proibida para execucao "
+        "automatica (nunca decidida por maquina; aprovacao humana exigida)"
+        if registro_marcado else ""))
     return guardrails
 
 
@@ -1350,21 +1407,9 @@ def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
         "empresa marcada como do_not_contact/opt_out em acao outbound"
         if do_not_contact else ""))
 
-    # Guardrail de REGISTRO MARCADO (defeito [encaixe] de 02/10/2026, card `t_60fac84b`):
-    # registro anotado como nao-perturbe/opt-out NAO TEM EXECUCAO AUTOMATICA. O acionamento
-    # e a ANOTACAO do registro — nunca o casamento de vocabulario (`_e_acao_outbound`), cujo
-    # recall e finito e ja produziu falso positivo (card `t_fa344342`) e omissao de abordagem
-    # no mesmo encaixe. Este guardrail NAO substitui o de contato: os dois convivem, e a acao
-    # classificada como abordagem aciona os dois.
-    registro_marcado = bool(sinais.get(SINAL_DE_REGISTRO_MARCADO))
-    guardrails.append(_guardrail(
-        IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO,
-        "registro anotado como do_not_contact/opt_out nao tem execucao automatica",
-        "anotacao do registro declarada pelo encaixe (sinais.empresa_do_not_contact)",
-        registro_marcado,
-        "registro anotado como do_not_contact/opt_out: acao proibida para execucao "
-        "automatica (nunca decidida por maquina; aprovacao humana exigida)"
-        if registro_marcado else ""))
+    # O guardrail de REGISTRO MARCADO NAO fica aqui: ele e CODIGO (`_guardrails_de_codigo`),
+    # porque o sinal e do chamador e nao depende do YAML — nesta camada ele nao existia em
+    # modo degradado (defeito de cobertura D2, card `t_145eeaef`).
 
     # Guardrail de DDL (defeito D08): so aciona com DDL/migration REAL — comando SQL de
     # definicao ou declaracao nos campos da propria tarefa. O motivo diz qual operacao
@@ -1952,6 +1997,11 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         # ambiente agir, `_fechar` acrescenta o registro do piso NESTE campo (um dos 13
         # do contrato — sem campo novo).
         "override": tarefa.get("override") or None,
+        # O override que a PROPRIA tarefa declarou, guardado a parte do campo do recibo: e
+        # SO ele que o piso por ambiente embrulha sob `humano` — rastro de guardrail e
+        # IRMAO de `humano`, nunca embrulhado junto (defeito de cobertura D1, card
+        # `t_145eeaef`).
+        "override_do_chamador": tarefa.get("override") or None,
     }
 
     # ---- Resolucao da acao: CODIGO antes de decidir (card T07) --------------
