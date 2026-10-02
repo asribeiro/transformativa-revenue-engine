@@ -821,6 +821,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Fixed
 
+- **Os dois SQL do dedup por chave ficaram fora do verificador de estrutura (`TRE-W3-E02-T02-D01`, defeito
+  `t_a1bed5fa`)** — o bloco do consumidor de outbox em `scripts/verificar_estrutura.sh` listava os `n8n/*` do
+  `TRE-W3-E02-T01` e **não** foi estendido quando o T02 acrescentou `n8n/sql/ler-trilha.sql` (consulta da
+  trilha pelas chaves do lote) e `n8n/sql/registrar-replay.sql` (estado final do replay, guarda fail-closed
+  `EXISTS ... 'COMPLETED'`): `grep -c 'ler-trilha\|registrar-replay'` = **0** no head `a38585d` e
+  `git log -S'ler-trilha.sql'` naquele arquivo **vazio** — o verificador (rodado por outras trilhas/CI)
+  imprimia `PASS` com os dois fora da árvore versionada. Corrigido **onde o gate vive**: os dois caminhos
+  entram na lista, **um por linha** (`grep -c` → **2**; o aceite da classe conta linhas, e os dois na mesma
+  linha contariam 1), sem tocar na lista de executáveis (são `.sql`, `644`). A entrega do T02 não mudou —
+  nenhum arquivo de `n8n/` ou `scripts/n8n/` foi editado. Medido com **controle do defeito** (script anterior
+  + `ler-trilha.sql` ausente → `PASS (0 falhas)`, exit 0: o gate era cego) e com **dois dentes** no script
+  corrigido, cada mutação desfeita e remedida: **ausência** (`FALHOU ausente n8n/sql/ler-trilha.sql` +
+  `FALHOU (1)` exit 1) e **não versionado** (`git rm --cached …` → `FALHOU nao versionado …` exit 1); verde
+  de volta em `PASS (0 falhas)` exit 0. Verificadores do projeto no worktree do fix: estrutura, segredos,
+  papéis e contrato de dados, todos exit 0. Cherry-pick isolado do commit `a5c3a1f` (nascido de `a38585d`)
+  sobre árvore que contém o T02: **0 conflito** e `PASS (0 falhas)` exit 0; em árvore anterior ao T02 o gate
+  reprova por ausência — que é exatamente o comportamento pedido.
+
 - **Âncora de dente do dedup apontava só para a mensagem de sucesso (`TRE-W3-E02-T02`)** — na primeira rodada
   do `--prova-de-dente`, o dente `guarda_de_sucesso_afrouxada` saía `NAO_CONTA (âncora quebrada)`: o item do E7
   dizia uma coisa quando passava e outra quando reprovava, e o juiz do dente casa a âncora nas **duas** linhas
