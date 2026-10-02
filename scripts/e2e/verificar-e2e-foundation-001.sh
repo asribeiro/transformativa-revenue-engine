@@ -152,6 +152,13 @@ CORREL_CONTATO="e2e-foundation-001-contato"
 CORREL_ATIVIDADE="e2e-foundation-001-atividade"
 CHAVE_EV1="outbox:$EV1:COMPANY_QUALIFIED"
 EVENTOS_ESPERADOS="ACTIVITY_COMPLETED DEAL_VALUE_CHANGED LOSS_REASON_RECORDED MEETING_CREATED OPPORTUNITY_LOST OPPORTUNITY_WON STAGE_CHANGED"
+# Pares do dente: `mutacao|ancora do item que ela tem de reprovar|razao`. A ANCORA tem de aparecer
+# nos DOIS ramos do item (ok e falhou) — o item literalmente DIZ o que quebrou quando quebra. O
+# self-check do passo 0 confere isso no proprio arquivo: ancora que so' existe no ramo verde passa
+# a ser pega ANTES de gastar uma rodada de dente (ja' custou uma rodada neste card).
+DENTES="sem_validacao_de_envelope|evento sem event_version vai para DEAD_LETTER sem chamada|sem a exigencia de event_version o evento invalido passa a ser entregue e o item da chamada reprova
+mapeamento_trocado|o parceiro nasceu com o dominio do evento|com o mapeamento trocado o parceiro nasce com outro dominio e a reconciliacao acusa E4
+sem_consulta_de_trilha|repetir o evento NAO duplica|sem a consulta da trilha o evento de chave ja' entregue e' entregue de novo (chama a porta e a trilha nao e' reaproveitada)"
 
 MODO=completo
 while [ $# -gt 0 ]; do
@@ -280,12 +287,38 @@ item_aceite_codigo() { # $1=rotulo $2=marcador $3=script
         falhou "regressao da porta $rotulo (rc=$rc; ${saida:-sem linha de resultado} - ver $destino)"
     fi
 }
+# ---------------------------------------------------------------------------
+# self-check das ancoras do dente: cada ancora declarada tem de existir nos DOIS ramos
+# (ok e falhou) do item que a mutacao deve reprovar. Ancora que so' existe no ramo verde
+# produz "ancora quebrada" no dente — e' erro de redacao, nao medida.
+# ---------------------------------------------------------------------------
+conferir_ancoras_do_dente() {
+    local script mutacao ancora faltando=0 total=0
+    script="$AQUI/$(basename "$0")"
+    while IFS='|' read -r mutacao ancora _; do
+        [ -z "$mutacao" ] && continue
+        total=$((total + 1))
+        grep -q "ok \"[^\"]*$ancora" "$script" \
+            || { printf '          sem ramo OK para a ancora: %s\n' "$ancora"; faltando=$((faltando + 1)); }
+        grep -q "falhou \"[^\"]*$ancora" "$script" \
+            || { printf '          sem ramo FALHOU para a ancora: %s\n' "$ancora"; faltando=$((faltando + 1)); }
+    done <<<"$DENTES"
+    if [ "$total" -eq 0 ]; then
+        falhou "ancoras do dente: nenhuma mutacao declarada em \$DENTES"
+    elif [ "$faltando" -eq 0 ]; then
+        ok "ancoras do dente aparecem nos dois ramos dos itens ($total mutacoes conferidas no proprio arquivo)"
+    else
+        falhou "ancoras do dente: $faltando ramo(s) sem a ancora declarada (o juiz diria 'ancora quebrada')"
+    fi
+}
+
 passo_codigo() {
     cabecalho "passo 0 - gates do projeto e regressao das 4 portas (--apenas-codigo)"
     item_gate "estrutura" bash "$RAIZ_REPO/scripts/verificar_estrutura.sh"
     item_gate "secret_scan" bash "$RAIZ_REPO/scripts/secret_scan.sh"
     item_gate "papeis" bash "$RAIZ_REPO/scripts/verificar_papeis.sh"
     item_gate "contrato_de_dados" python3 "$RAIZ_REPO/scripts/verificar_contrato_dados.py"
+    conferir_ancoras_do_dente
     item_aceite_codigo "consumidor de outbox (E02-T02)" "OUTBOX_CONSUMER_OK" "$ACEITE_CONSUMIDOR"
     item_aceite_codigo "porta de ingestao (E03-T01)" "EVENTOS_ODOO_PG_OK" "$ACEITE_INGESTAO"
     item_aceite_codigo "reconciliacao (E04-T01)" "RECONCILIACAO_OK" "$ACEITE_RECONCILIACAO"
@@ -342,6 +375,7 @@ if [ "$MODO" = "dente" ]; then
     fi
     cabecalho "--prova-de-dente: o E2E tem dentes?"
     controle_do_juiz "$DENTE_DIR"
+    conferir_ancoras_do_dente
     FALHAS_JUIZ=$FALHAS
 
     cabecalho "--prova-de-dente: baseline NAO mutado (o ambiente mede o cenario?)"
@@ -358,9 +392,7 @@ if [ "$MODO" = "dente" ]; then
     fi
 
     cabecalho "--prova-de-dente: 3 mutacoes nomeadas do consumidor"
-    MUTACOES="sem_validacao_de_envelope|evento sem event_version vai para DEAD_LETTER sem chamada|sem a exigencia de event_version o evento invalido passa a ser entregue e o item da chamada reprova
-mapeamento_trocado|o parceiro nasceu com o dominio do evento|com o mapeamento trocado o parceiro nasce com outro dominio
-sem_consulta_de_trilha|repetir o evento NAO duplica|sem a consulta da trilha o evento de chave ja' entregue e' entregue de novo (chama a porta e a trilha nao e' reaproveitada)"
+    MUTACOES="$DENTES"
     VEREDITOS="$DENTE_DIR/vereditos.txt"
     : >"$VEREDITOS"
     printf '%s\n' "$MUTACOES" | while IFS='|' read -r mutacao esperado porque; do
@@ -761,7 +793,7 @@ executar_workflow "$ID_CONSUMIDOR" "$LOG_DIR/C-consumidor"
     || falhou "o parceiro do CRM tem o nome '$(campo_parceiro_identidade "$ORG" name)'"
 [ "$(campo_parceiro_identidade "$ORG" tf_domain)" = "$DOMINIO" ] \
     && ok "o parceiro nasceu com o dominio do evento" \
-    || falhou "o parceiro nasceu com o dominio '$(campo_parceiro_identidade "$ORG" tf_domain)'"
+    || falhou "o parceiro nasceu com o dominio do evento: medido '$(campo_parceiro_identidade "$ORG" tf_domain)'"
 [ "$(campo_parceiro_identidade "$ORG" tf_cnpj)" = "$CNPJ" ] \
     && ok "o parceiro nasceu com o CNPJ do evento" \
     || falhou "o parceiro nasceu com o CNPJ '$(campo_parceiro_identidade "$ORG" tf_cnpj)'"
