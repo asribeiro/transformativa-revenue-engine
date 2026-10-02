@@ -1355,3 +1355,55 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     escolha de coluna vazia + `COALESCE(NULLIF(coluna,''), valor)` exigido pela guarda). O dente do E2E
     passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
     próximo resolve.
+
+## [W5 — Hermes Sales AI · Score Data Quality] — 02/10/2026
+
+**Card:** TRE-W5-E04-T01 (baseline V1.1.0, commit-base `63d711c`) · **Donos do dado:** coluna
+`sales_intelligence.organizations.data_quality_score` e a tabela `scores` (`score_type =
+'DATA_QUALITY'`, `score_version = 'v1.0'`).
+
+**O que entra**
+
+- `hermes/scores/data_quality/data_quality.py` — o **primeiro score** do TRE: módulo somente-leitura
+  contra o banco que mede a qualidade do cadastro de **uma organização por vez** (completude,
+  validade, confiabilidade e atualidade) e grava a medição datada em `scores` + o espelho em
+  `organizations.data_quality_score`. Identidade só por **identificador forte** do Contrato de Dados
+  V1.0 (`cnpj` → `domain` → `linkedin_url`); qualquer ambiguidade é **fila humana**, não palpite.
+- `hermes/scores/data_quality/score-data-quality-v1.json` — o contrato do score (pesos, cortes de
+  atualidade, vocabulário de fontes, colunas escritas). **É a fonte da verdade**: o módulo confere
+  contrato × código no `__init__` e **recusa carregar** se divergirem (provado por dente de carga).
+- `scripts/scores/verificar_score_data_quality.py` — suite de bancada: **24 itens** e **14 dentes**
+  (mutação em cópia do código, cada uma exigindo o item que ela tem de reprovar).
+- `scripts/scores/teste_data_quality_aceite.sh` — aceite E2E em PostgreSQL descartável
+  (`pg-dq-acc`), com prova de dente própria.
+- `docs/architecture/score-data-quality-v1.md` + `docs/runbooks/score-data-quality.md` — o par
+  arquitetura/runbook do score; o gate de estrutura passa a exigir os sete artefatos versionados.
+
+**Decisões que o card fixa**
+
+- **escrever é exceção, e é declarada**: a `GuardaDeEscrita` recusa qualquer SQL que não caia numa
+  lista de tabelas permitidas e **recusa `UPDATE` sem `WHERE` por projeto**; a única coluna de
+  `organizations` que o score toca é o próprio espelho — `updated_at` **não** é tocado (medido por
+  foto antes/depois, não por promessa);
+- **idempotência mora no SQL**, não na prosa: o `INSERT` só grava `WHERE NOT EXISTS` da mesma
+  assinatura (`inputs_sha256`), então replay é `JA_EXISTE` e **zero duplicata**;
+- **a medição é datada e reproduzível**: o mesmo estado no mesmo `--referencia` dá o mesmo valor;
+  estado novo (campo que entra na conta) é **medição nova**, mesmo com valor igual;
+- **prod é recusado em duas camadas** (`AMBIENTES_PERMITIDOS` + recusa explícita de `prod`), com
+  exit 4 e **sem escrever nada** — `--planejar` mede e não escreve.
+
+**Medição**
+
+- bancada: `python3 scripts/scores/verificar_score_data_quality.py --autoteste` → `DQ_SUITE_OK`
+  (24 itens, 0 falhas; 14/14 dentes reprovando o item esperado);
+- aceite E2E: rodado em container descartável na VPS, com o veredito em
+  `docs/operations/registro-de-execucoes.md`.
+
+**Dentes que ficaram inertes (medido, não suposto)**
+
+- mutar **uma** das duas camadas da recusa de `prod` não muda nada (a outra camada segura) — o dente
+  passou a mirar a função inteira devolvendo o ambiente sem conferir;
+- tirar o `--referencia` do JSON canônico não muda o hash, porque a referência **também** entra em
+  `inputs` (defesa em profundidade) — o dente passou a fixar o canônico por inteiro;
+- as mutações que quebram o contrato de pesos/colunas **nem carregam**: o `__init__` recusa antes de
+  qualquer medição, e isso virou dente de **carga** (recusar é o comportamento esperado).

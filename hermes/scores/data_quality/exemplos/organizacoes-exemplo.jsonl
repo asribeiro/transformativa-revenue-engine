@@ -1,0 +1,8 @@
+# Exemplo de fonte do Score Data Quality v1 (TRE-W5-E04-T01) — uma organizacao por linha.
+# A organizacao e resolvida pelos identificadores FORTES do Data Contract V1.0 (cnpj -> domain ->
+# linkedin_url); `organizacao_id` (UUID) tambem e aceito para encadear agentes na mesma rodada.
+# Este arquivo NAO e massa de aceite: e exemplo de FORMATO. O aceite cria a propria massa.
+{"organizacao": {"cnpj": "11.222.333/0001-81"}}
+{"organizacao": {"domain": "acme.com.br"}}
+{"organizacao": {"linkedin_url": "https://www.linkedin.com/company/acme"}}
+{"organizacao_id": "aaaaaaaa-0000-4000-8000-000000000001"}

@@ -365,5 +365,26 @@ for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Score Data Quality v1 (TRE-W5-E04-T01): primeiro SCORE da W5 e o dono da coluna
+# `organizations.data_quality_score` (que o Scout e o Research deixam NULL de proposito). Se o
+# contrato do score, o codigo, a suite, o aceite, a arquitetura ou o runbook sumirem do git, o card
+# entrega fica sem artefato verificavel — o gate reprova por nome. Um arquivo por linha de
+# proposito: o aceite da classe mede `grep -c`.
+for f in hermes/scores/data_quality/data_quality.py \
+         hermes/scores/data_quality/score-data-quality-v1.json \
+         hermes/scores/data_quality/exemplos/organizacoes-exemplo.jsonl \
+         scripts/scores/verificar_score_data_quality.py \
+         scripts/scores/teste_data_quality_aceite.sh \
+         docs/architecture/score-data-quality-v1.md \
+         docs/runbooks/score-data-quality.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/scores/teste_data_quality_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

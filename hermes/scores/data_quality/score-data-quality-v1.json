@@ -1,0 +1,189 @@
+{
+  "score": "data_quality",
+  "papel": "scoring",
+  "versao": "1.0.0",
+  "card": "TRE-W5-E04-T01",
+  "onda": "W5",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "03_ARQUITETURA_DE_NEGOCIO.md §3 (Data Quality Score: 'confiabilidade e completude dos dados') e §3 (Priority = 0.10 * Data Quality)",
+    "04_PROJETO_FISICO_DE_DADOS.md §3 (organizations.data_quality_score), §6 (research_runs: source_count, status, completed_at), §8 (scores: score_type, score_value, score_version, inputs, explanation)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §7 (idempotencia) e §5 (COMPANY_QUALIFIED nasce depois do score)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §8 (W5: Data Quality) e gate ('score/tier/NBA gerados sem intervencao')",
+    "12_CONTRATOS_E_GOVERNANCA.md §1 (scores = PostgreSQL) e §8 (score com versao, sem versao e recusado)",
+    "docs/data/DATA_CONTRACT_V1.md §8 (cinco scores, score_type + score_version obrigatorios) e docs/data/data_contract_v1.json (scores.types, requires_version_column, priority_weights, dedup.strong)"
+  ],
+  "identidade_do_score": {
+    "score_type": "DATA_QUALITY",
+    "score_version": "v1.0",
+    "persistido_em": "sales_intelligence.scores",
+    "espelho_operacional": "sales_intelligence.organizations.data_quality_score (valor ATUAL; a tabela `scores` e o historico append-only)"
+  },
+  "o_que_mede": "confiabilidade e completude dos dados da organizacao (doc 03 §3): quanto do dado de identificacao/qualificacao esta preenchido, se o que esta preenchido e valido, se ha LASTRO de fonte no banco e quao recente e o dado.",
+  "modelo_v1": {
+    "observacao": "o baseline define O QUE o Data Quality Score mede e nao fixa formula nem parametros: a operacionalizacao v1 e este bloco, versionado junto do score (`score_version`). Mudar peso, campo ou janela aqui exige VERSAO NOVA (v1.1) — nunca edicao silenciosa.",
+    "componentes": {
+      "completude": 0.45,
+      "validade": 0.2,
+      "confiabilidade": 0.25,
+      "atualidade": 0.1
+    },
+    "completude_campos": {
+      "cnpj": 0.15,
+      "domain": 0.15,
+      "linkedin_url": 0.1,
+      "industria": 0.1,
+      "porte": 0.1,
+      "revenue_estimate": 0.1,
+      "city": 0.1,
+      "state": 0.05,
+      "website_url": 0.05,
+      "unit_count": 0.05,
+      "business_model": 0.05
+    },
+    "completude_regras": {
+      "campo_ausente": "NULL, string vazia ou so espacos contam como AUSENTE (peso perdido)",
+      "campo_composto": "industria = industry_name OU industry_code (basta um); porte = employee_count OU employee_band (basta um)",
+      "zero_e_dado": "valor numerico 0 (unit_count=0) e DADO PRESENTE — o score nao confunde zero com ausencia"
+    },
+    "validade": {
+      "regra": "julga SOMENTE o que existe: campo ausente ja foi punido na completude e NAO e punido de novo aqui (sem dupla punicao). O componente e a media dos checks APLICAVEIS; sem nenhum check aplicavel o componente e 0 (nada a reconhecer nao e confiabilidade).",
+      "checks": [
+        "cnpj: valido pelo modulo de identidade do Scout (14 digitos + digitos verificadores)",
+        "domain: valido pelo modulo de identidade do Scout (nao aceita esquema, espaco nem TLD invalido)",
+        "website_url: esquema http/https + host com dominio (TLD alfa >= 2)",
+        "linkedin_url: valido pelo modulo de identidade do Scout",
+        "porte_x_contagem: employee_band coerente com employee_count pela tabela de faixas do doc 03 §5 (com count presente, UNKNOWN e incoerencia)",
+        "domain_x_website: o host do website_url contem o domain (quando os dois existem)"
+      ]
+    },
+    "confiabilidade": {
+      "parcelas": {
+        "fonte_declarada": 0.4,
+        "pesquisa_existente": 0.35,
+        "cobertura_de_fontes": 0.25
+      },
+      "fontes_para_cobertura_maxima": 3,
+      "regras": {
+        "fonte_declarada": "organizations.source preenchido E no vocabulario de fontes do contrato (fonte fora do vocabulario nao ganha credito)",
+        "pesquisa_existente": "existe >= 1 research_runs com status COMPLETED para a empresa (LASTRO medido no banco, nao em prosa)",
+        "cobertura_de_fontes": "min(1, soma(source_count dos research_runs COMPLETED) / fontes_para_cobertura_maxima); 3 fontes ou mais saturam — pesquisa sem fonte declarada (source_count 0) nao cobre nada"
+      }
+    },
+    "atualidade": {
+      "referencia_de_dados": "GREATEST(organizations.created_at, max(research_runs.completed_at dos COMPLETED))",
+      "proibido_como_referencia": "organizations.updated_at — atualizar a coluna do score AUMENTARIA a nota (o score rejuvenescendo a si mesmo). O write do v1 NAO toca updated_at.",
+      "fresco_dias": 90,
+      "expirado_dias": 365,
+      "regra": "idade <= 90 dias = 1,00; decai linearmente ate 0,00 em 365 dias; acima de 365 = 0,00; sem referencia = 0,00"
+    },
+    "valor": "100 * soma(peso_componente * componente), arredondado HALF_UP em 2 casas; faixa [0,00; 100,00]. A faixa de tiering (A+/A/B/C/Nurture) NAO e deste card — e TRE-W5-E06-T01."
+  },
+  "reproducibilidade": {
+    "funcao": "valor = f(estado do banco, data de referencia da rodada)",
+    "referencia_de_calculo": "date (AAAA-MM-DD) da rodada; sobrescrevivel por --referencia para medicao reproduzivel",
+    "inputs_sha256": "sha256 do JSON canonico de {score_version, referencia_de_calculo, inputs} — gravado em scores.explanation.inputs_sha256",
+    "consequencia": "mesmo estado + mesma referencia => MESMO valor e MESMO hash (replay nao duplica); referencia de outro dia e uma MEDICAO nova (linha nova, historico append-only)"
+  },
+  "entrada": {
+    "selecao": {
+      "--todas": "todas as organizacoes ativas (deleted_at IS NULL) do ambiente",
+      "--organizacao": "UUID v4 explicito (repetivel) — usado para encadear agentes na mesma rodada",
+      "--fonte": "arquivo jsonl com uma organizacao por linha, resolvida pelos identificadores FORTES do contrato (cnpj -> domain -> linkedin_url)"
+    },
+    "resolucao": {
+      "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+      "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+      "0_casadas": "RECUSADA (ORGANIZACAO_NAO_ENCONTRADA): o score nao cria empresa (quem cria e o Scout, TRE-W4-E01-T01)",
+      "1_casada": "segue",
+      "2+_distintas": "RECUSADA com motivo IDENTIDADE_AMBIGUA — o score NAO abre fila humana: ambiguidade de identidade e do dedup/Scout, e um score nao e decisao sobre quem e a empresa",
+      "forte_invalido": "descartado com motivo (nao entra na consulta)"
+    }
+  },
+  "vereditos": {
+    "ESCRITO": "linha nova em scores + espelho organizations.data_quality_score atualizado",
+    "JA_EXISTE": "o ultimo DATA_QUALITY/v1.0 da empresa tem o MESMO inputs_sha256: NADA foi escrito (retry idempotente)",
+    "RECUSADA": "organizacao inexistente, identidade ambigua ou selecao vazia: nada escrito em scores",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "ESCRITO": "COMPLETED",
+    "JA_EXISTE": "COMPLETED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.scores",
+      "sales_intelligence.organizations",
+      "sales_intelligence.agent_runs"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.scores": ["INSERT", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.organizations": ["UPDATE (SO a coluna data_quality_score, com WHERE e dentro da mesma transacao do INSERT)"],
+      "sales_intelligence.agent_runs": ["INSERT"]
+    },
+    "colunas_scores": [
+      "id", "organization_id", "score_type", "score_value", "score_version",
+      "inputs", "explanation", "calculated_at"
+    ],
+    "colunas_organizations_escritas": ["data_quality_score"],
+    "proibido": [
+      "DDL (CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE)",
+      "UPDATE ou DELETE em scores (o historico e append-only; desfazer e DELETE explicito com --confirmo)",
+      "UPDATE de qualquer outra coluna de organizations (inclusive updated_at, legal_name, domain) — o score NAO conserta nem enriquece o dado que mede",
+      "UPDATE sem WHERE em organizations",
+      "INSERT em scores sem organization_id/score_type/score_value/score_version, ou com score_type != DATA_QUALITY",
+      "escrita em qualquer outra tabela (research_runs, signals, contacts, pain_hypotheses, sync_events, human_approvals, outbox_events)",
+      "DELETE fora do --desfazer --confirmo",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "doc 06 §5: COMPANY_QUALIFIED nasce na QUALIFICACAO (Priority/Tier — W5-E05/E06), nao no Data Quality isolado. Uma nota de qualidade de dado nao qualifica empresa nem muda estagio de funil."
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed) em todo modo que escreve",
+    "llm_exige_recibo_jev": true,
+    "llm_na_v1": "o score e DETERMINISTICO: nenhuma chamada de LLM e feita. O gate do JEV existe, cobre a chamada de LLM e e fail-closed (recibo ausente/BLOCK/ESCALATE recusam) para o dia em que houver LLM no caminho.",
+    "sem_rede": "nenhuma requisicao HTTP/DNS/socket: o score le o PostgreSQL do ambiente e escreve nele",
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ]
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por organizacao processada (agent_name=data_quality, agent_role=scoring, correlation_id do lote, output com veredito, valor e score_id)",
+    "scores": "uma linha por MEDICAO (organizacao x versao x inputs novos); o historico nunca e reescrito",
+    "desfazer": "roda frio (dry-run) por padrao; o DELETE chega na linha certa pelo score_id gravado em agent_runs.output e a restauracao do espelho so acontece quando o valor atual e o da rodada desfeita"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "as linhas de scores criadas pela rodada (veredito ESCRITO) e a devolucao de organizations.data_quality_score ao VALOR ANTERIOR registrado na propria linha (NULL quando nao havia score)",
+    "guarda": "o espelho so e restaurado quando o valor atual e exatamente o valor escrito pela rodada — nota mais nova (de outra rodada) nao e sobrescrita",
+    "padrao": "dry-run (sem --confirmo nada e apagado)",
+    "nao_toca": "agent_runs (auditoria), research_runs, signals, contacts, pain_hypotheses e qualquer outra tabela"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em organizacao ou falha de porta)",
+    "2": "uso incorreto (ambiente/porta/selecao ausente)",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "o baseline NAO define formula nem parametros do Data Quality Score: o modelo v1 (pesos, campos, janelas) e deste card e viaja versionado no score (score_version=v1.0); ajuste de calibracao e versao nova, com historico preservado",
+    "a completude mede PRESENCA declarada no banco, nao veracidade: dado preenchido e falso pontua como preenchido. Conferir contra a fonte e do research/enriquecimento (W4), nao do score",
+    "nao ha deteccao de CONFLITO entre fontes (dois valores para a mesma coluna): o schema V1 guarda um valor por coluna e nao tem trilha de versao por campo",
+    "sem LLM e sem rede na v1 (deterministico); o gate do JEV esta no caminho de LLM e e fail-closed",
+    "o score NAO atualiza organizations.updated_at nem qualquer outra coluna (a coluna do espelho e a unica escrita em organizations)",
+    "sem outbox: COMPANY_QUALIFIED e da qualificacao (W5-E05/E06)",
+    "retention_until/collected_at nao existem no contrato V1 (lacuna ja declarada no compliance do contrato)"
+  ]
+}
