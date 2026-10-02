@@ -228,8 +228,12 @@ ANTES="$(foto)"
 APROVACOES_ANTES="$(contar sales_intelligence.human_approvals)"
 
 gerar() { # <label> <args...>
-  python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" \
-    --correlation-id "$(cat "$TRABALHO/cid_$1" 2>/dev/null || echo)" "$@" >"$TRABALHO/saida_$1.txt" 2>"$TRABALHO/erro_$1.txt"
+  local rotulo="$1"; shift
+  local cid
+  cid="$(cat "$TRABALHO/cid_$rotulo" 2>/dev/null || true)"
+  [ -n "$cid" ] || cid="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+  python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --correlation-id "$cid" "$@" \
+    >"$TRABALHO/saida_$rotulo.txt" 2>"$TRABALHO/erro_$rotulo.txt"
   echo $?
 }
 
@@ -248,16 +252,16 @@ item "A1 action_type e a acao recomendada" "SEND_EMAIL" "$(psql_t -c "SELECT act
 item "A1 entidade e o contato" "CONTACT|$CT_A" "$(psql_t -c "SELECT entity_type || '|' || entity_id FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A1 decidido por humano ainda vazio" "|" "$(psql_t -c "SELECT COALESCE(decided_by,'') || '|' || COALESCE(decision_notes,'') FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A1 canal no proposed_action" "EMAIL" "$(psql_t -c "SELECT proposed_action->>'canal' FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A1 assunto presente no proposed_action" "t" "$(psql_t -c "SELECT (length(proposed_action->>'assunto') > 3)::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A1 corpo cita a evidencia" "t" "$(psql_t -c "SELECT (proposed_action->>'corpo' ~ '\[E[0-9]+\]')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A1 corpo leva a assinatura declarada" "t" "$(psql_t -c "SELECT (proposed_action->>'corpo' LIKE '%anderson.ribeiro@transformativa.com.br%')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+item "A1 assunto presente no proposed_action" "true" "$(psql_t -c "SELECT (length(proposed_action->>'assunto') > 3)::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+item "A1 corpo cita a evidencia" "true" "$(psql_t -c "SELECT (proposed_action->>'corpo' ~ '\[E[0-9]+\]')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+item "A1 corpo leva a assinatura declarada" "true" "$(psql_t -c "SELECT (proposed_action->>'corpo' LIKE '%anderson.ribeiro@transformativa.com.br%')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A1 referencia a recomendacao lida" "$REC_A" "$(psql_t -c "SELECT proposed_action->>'recommendation_id' FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A1 hash de entrada registrado (64 hex)" "64" "$(psql_t -c "SELECT length(proposed_action->>'entrada_hash') FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A1 pedido nao carrega credencial" "f" "$(psql_t -c "SELECT (proposed_action::text ILIKE '%api_key%' OR proposed_action::text ILIKE '%bearer%')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
-item "A2 auditoria da rodada" "COMPLETED|outreach|gerador-abordagem-v1" \
-  "$(psql_t -c "SELECT status || '|' || agent_name || '|' || agent_version FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
+item "A1 pedido nao carrega credencial" "false" "$(psql_t -c "SELECT (proposed_action::text ILIKE '%api_key%' OR proposed_action::text ILIKE '%bearer%')::text FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+item "A2 auditoria da rodada" "COMPLETED|outreach|1.0.0|outbound-abordagem" \
+  "$(psql_t -c "SELECT status || '|' || agent_name || '|' || agent_version || '|' || workflow FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
 item "A2 provider/modelo offline registrados" "offline|renderizador-deterministico-v1" \
-  "$(psql_t -c "SELECT input->>'model_provider' || '|' || input->>'model_name' FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
+  "$(psql_t -c "SELECT (input->>'model_provider') || '|' || (input->>'model_name') FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
 item "A2 versao do prompt registrada" "abordagem-v1" \
   "$(psql_t -c "SELECT input->>'prompt_version' FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
 item "A2 hash de entrada na auditoria" "$(psql_t -c "SELECT proposed_action->>'entrada_hash' FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')" \
@@ -287,19 +291,33 @@ item "A4 replay tambem e auditado" "COMPLETED" "$(psql_t -c "SELECT status FROM 
 # ---------------------------------------------------------------------------------------
 # A5: evidencia nova -> pedido novo e a anterior EXPIRED (historico preservado)
 # ---------------------------------------------------------------------------------------
+# (a) mexer SO num campo que NAO entra no texto citavel (relevance_score) nao forca rascunho novo:
+# a entrada e a evidencia CITAVEL (declarado na politica) -- replay, nada duplicado
 psql_stdin >/dev/null <<SQL
-UPDATE sales_intelligence.signals SET relevance_score = 95
- WHERE organization_id = '$ORG_A';
+UPDATE sales_intelligence.signals SET relevance_score = 95 WHERE organization_id = '$ORG_A';
 SQL
 CID3="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 RC=$(gerar A5 --organizacao "$ORG_A" --correlation-id "$CID3")
-item "A5 exit 0 com evidencia nova" 0 "$RC"
-item "A5 abordagem nova gerada" "GERADA" "$(grep -o 'veredito=GERADA' "$TRABALHO/saida_A5.txt" | head -1 | cut -d= -f2)"
+item "A5 exit 0" 0 "$RC"
+item "A5 campo nao citavel nao gera rascunho novo (replay)" "JA_GERADA" "$(grep -o 'veredito=JA_GERADA' "$TRABALHO/saida_A5.txt" | head -1 | cut -d= -f2)"
+item "A5 o pedido continua PENDING (nada expirado sem motivo)" "PENDING" "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
+
+# (b) evidencia citavel NOVA -> pedido NOVO, e o PENDING anterior passa a EXPIRED (historico preservado)
+psql_stdin >/dev/null <<SQL
+INSERT INTO sales_intelligence.signals (id, organization_id, signal_type, title, description, detected_at, relevance_score)
+VALUES (gen_random_uuid(), '$ORG_A', 'AI_INITIATIVE', 'Projeto de IA anunciado',
+        'Empresa anunciou piloto de automacao de pedidos', NOW(), 99);
+SQL
+CID3B="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+RC=$(gerar A5B --organizacao "$ORG_A" --correlation-id "$CID3B")
+item "A5 exit 0 com evidencia citavel nova" 0 "$RC"
+item "A5 abordagem nova gerada" "GERADA" "$(grep -o 'veredito=GERADA' "$TRABALHO/saida_A5B.txt" | head -1 | cut -d= -f2)"
 item "A5 pedido antigo preservado e EXPIRED" "EXPIRED" "$(psql_t -c "SELECT status FROM sales_intelligence.human_approvals WHERE id = '$PEDIDO_A';" | tr -d ' ')"
 item "A5 agora ha 2 pedidos do contato (historico, nao reescrita)" "2" "$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE entity_id = '$CT_A';" | tr -d ' ')"
 item "A5 um unico PENDING na vez" "1" "$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE status = 'PENDING' AND entity_id = '$CT_A';" | tr -d ' ')"
 PEDIDO_A2="$(psql_t -c "SELECT id FROM sales_intelligence.human_approvals WHERE status = 'PENDING' AND entity_id = '$CT_A';" | tr -d ' ')"
-item "A5 o PENDING e outro pedido (hash novo)" "t" "$(psql_t -c "SELECT ('$PEDIDO_A2' <> '$PEDIDO_A')::text;" | tr -d ' ')"
+item "A5 o PENDING e outro pedido (hash novo)" "true" "$(psql_t -c "SELECT ('$PEDIDO_A2' <> '$PEDIDO_A')::text;" | tr -d ' ')"
+FOTO_A9="$(foto)"  # foto DEPOIS das insercoes de evidencia: as rodadas seguintes so podem escrever nas duas tabelas
 
 # ---------------------------------------------------------------------------------------
 # A6: compliance e fail-closed por empresa (recusa/abstencao SEM gravar)
@@ -331,7 +349,7 @@ item "A6 empresa inexistente recusa" "ORGANIZACAO_NAO_ENCONTRADA" \
 # ---------------------------------------------------------------------------------------
 gerar G --organizacao "$ORG_G" >/dev/null
 item "A7 acao PREPARE_LINKEDIN usa o canal declarado" "PREPARE_LINKEDIN|LINKEDIN" \
-  "$(psql_t -c "SELECT action_type || '|' || proposed_action->>'canal' FROM sales_intelligence.human_approvals WHERE entity_id = '$CT_G';" | tr -d ' ')"
+  "$(psql_t -c "SELECT action_type || '|' || (proposed_action->>'canal') FROM sales_intelligence.human_approvals WHERE entity_id = '$CT_G';" | tr -d ' ')"
 item "A7 contato sem e-mail pode ser abordado no LinkedIn" "1" "$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE action_type = 'PREPARE_LINKEDIN' AND status = 'PENDING';" | tr -d ' ')"
 echo "ALTER TABLE sales_intelligence.scores ADD COLUMN x int;" > "$TRABALHO/ddl.sql"
 python3 - "$MODULO" "$TRABALHO/ddl.sql" > "$TRABALHO/ddl_out.txt" 2>&1 <<'PY'
@@ -391,12 +409,12 @@ RC=$(TRE_OUTREACH_API_KEY=chave-de-teste TRE_OUTREACH_BASE_URL="http://127.0.0.1
 item "A8 exit 0 com provedor HTTP (stub local)" 0 "$RC"
 item "A8 abordagem vinda do provedor virou pedido PENDING" "1" "$(psql_t -c "SELECT count(*) FROM sales_intelligence.human_approvals WHERE entity_id = '$CT_H' AND status = 'PENDING';" | tr -d ' ')"
 item "A8 provider/modelo do provedor na auditoria" "chat-completions|modelo-aceite" \
-  "$(psql_t -c "SELECT input->>'model_provider' || '|' || input->>'model_name' FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID4';" | tr -d ' ')"
+  "$(psql_t -c "SELECT (input->>'model_provider') || '|' || (input->>'model_name') FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID4';" | tr -d ' ')"
 item "A8 tokens do provedor entraram na auditoria" "321|654" \
   "$(psql_t -c "SELECT tokens_input || '|' || tokens_output FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID4';" | tr -d ' ')"
-item "A8 request levou modelo, credencial e evidencia no prompt" "modelo-de-teste|true|true|true" \
+item "A8 request levou modelo, credencial e evidencia no prompt" "modelo-de-teste|True|True|True" \
   "$(python3 -c 'import json,sys;d=json.loads(open(sys.argv[1]).readline());print("|".join([d["model"],str(d["auth"]),str(d["evidencia_no_prompt"]),str(d["path"].endswith("/chat/completions"))]))' "$TRABALHO/stub_pedidos.jsonl")"
-item "A8 credencial nao vaza para o pedido gravado" "f" \
+item "A8 credencial nao vaza para o pedido gravado" "false" \
   "$(psql_t -c "SELECT (proposed_action::text ILIKE '%chave-de-teste%')::text FROM sales_intelligence.human_approvals WHERE entity_id = '$CT_H';" | tr -d ' ')"
 kill "$STUB_PID" >/dev/null 2>&1; STUB_PID=""
 
@@ -432,7 +450,7 @@ python3 "$MODULO" --ambiente dev --prefixo "$PREFIXO" --desfazer "$CID1" --confi
 item "A9 --confirmo apaga so o pedido da rodada" "$((CONTAGEM_H - 1))" "$(contar sales_intelligence.human_approvals)"
 item "A9 auditoria da rodada desfeita permanece" "$(psql_t -c "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')" \
   "$(psql_t -c "SELECT count(*) FROM sales_intelligence.agent_runs WHERE correlation_id = '$CID1';" | tr -d ' ')"
-item "A9 nada fora das duas tabelas foi tocado na rodada toda" "$ANTES" "$(foto)"
+item "A9 nada fora das duas tabelas foi tocado em nenhuma rodada" "$FOTO_A9" "$(foto)"
 
 echo "---"
 if [ "$ITENS_FALHOU" -eq 0 ]; then

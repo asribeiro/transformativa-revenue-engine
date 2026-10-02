@@ -293,7 +293,8 @@ def sql_dos_fatos(organization_id: str, politica: dict) -> str:
     ev = politica["evidencia"]
     status_dores = ", ".join(lit(s) for s in todo["dores_status"])
     sub_recomendacao = (f"SELECT r.contact_id FROM sales_intelligence.recommendations r "
-                        f"WHERE r.organization_id = o.id AND r.recommendation_type = {lit(rec['recommendation_type'])} "
+                        f"WHERE r.organization_id = {lit(organization_id)} "
+                        f"AND r.recommendation_type = {lit(rec['recommendation_type'])} "
                         f"AND r.status = {lit(rec['status'])} ORDER BY r.created_at DESC LIMIT 1")
     return f"""
 SELECT json_build_object(
