@@ -1,0 +1,99 @@
+{
+  "nome": "politica-aprovacao-v1",
+  "versao": "1.0.0",
+  "card": "TRE-W6-E03-T01",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "status_explicacao": "os VALORES dos estados sao do Data Contract (vocabularies['human_approvals.status']); esta politica declara o PAPEL de cada estado (o que cada um significa para o workflow) e o mapeamento verbo -> estado. Estado novo so nasce de versao nova do contrato (governanca §10).",
+  "status": {
+    "pendente": "PENDING",
+    "aprovado": "APPROVED",
+    "rejeitado": "REJECTED",
+    "expirado": "EXPIRED"
+  },
+  "verbos": {
+    "aprovar": {
+      "status": "APPROVED",
+      "revisao": false,
+      "significado": "o humano leu o texto e autoriza o envio EXATAMENTE como esta; o workflow carimba o hash do texto aprovado"
+    },
+    "rejeitar": {
+      "status": "REJECTED",
+      "revisao": false,
+      "significado": "o humano recusa a abordagem; o pedido morre e nao volta atras (evidencia nova gera pedido novo)"
+    },
+    "editar": {
+      "status": "APPROVED",
+      "revisao": true,
+      "significado": "o humano revisa assunto/corpo/cta e aprova o TEXTO REVISADO; o original fica preservado dentro de proposed_action.decisao.texto_original e o texto revisado passa pela MESMA validacao deterministica do gerador (fato sustentado, citacao, limites, afirmacoes proibidas)"
+    }
+  },
+  "edicao_explicacao": "EDITED nao e estado do vocabulario fechado (PENDING/APPROVED/REJECTED/EXPIRED): editar e APROVAR um texto revisado. O que distingue os dois e proposed_action.decisao.revisado + texto_original + texto_hash_original, tudo dentro da MESMA linha — nenhuma coluna nova, nenhum DDL.",
+  "transicoes": {
+    "decisao": ["PENDING"],
+    "expiracao": ["PENDING"],
+    "reversao": ["APPROVED", "REJECTED"]
+  },
+  "transicoes_explicacao": "decisao humana e expiracao por TTL so agem sobre PENDING; reversao (--desfazer) so reabre o que foi decidido. EXPIRED nao aceita decisao: evidencia nova gera pedido novo (mesma postura da supersessao do W6-E02).",
+  "operadores_autorizados": ["Anderson Ribeiro"],
+  "operadores_explicacao": "quem pode decidir. Lista explicita: operador nao listado RECUSA (fail-closed, exit 3) — sem contrapartida registrada, a decisao nao tem dono (doc 12 §8: registrar o operador humano em toda decisao).",
+  "padroes_nao_humanos": ["(?i)\\bagente\\b", "(?i)\\bbot\\b", "(?i)\\bhermes\\b", "(?i)\\bsistema\\b", "(?i)\\bcron\\b", "(?i)\\bworker\\b", "(?i)\\bapi\\b", "(?i)\\bautom[aá]tic[oa]\\b"],
+  "padroes_nao_humanos_explicacao": "nome de maquina RECUSA mesmo que esteja na lista: decisao sensivel exige humano identificado (ADR-0004). O padrao e declarado aqui, nao no codigo.",
+  "ttl": {
+    "horas": 72,
+    "comando": "--expirar",
+    "significado": "pedido PENDING mais velho que o TTL vira EXPIRED sem decisao humana (transicao automatica declarada: decided_by fica VAZIO e decision_notes registra 'EXPIRADO_POR_TTL:<n>h'). Expiracao nao e decisao: nao inventa operador."
+  },
+  "notificacao": {
+    "arquivo": "hermes/agents/outreach/notificacao-aprovacao-v1.md",
+    "versao": "notificacao-aprovacao-v1",
+    "canal": "arquivo-local",
+    "entrega_externa": false,
+    "entrega_externa_explicacao": "este componente MONTA a mensagem (uma por pedido PENDING, de forma idempotente) e a entrega no canal declarado. Entregar em Telegram/WhatsApp e do gateway/operador, nao deste card: nenhuma credencial de canal externo e usada aqui. A mensagem nunca carrega segredo.",
+    "marcadores": ["CODIGO", "EMPRESA", "CONTATO", "ACAO", "CANAL", "PEDIDO_ID", "IDADE_HORAS", "ASSUNTO", "CORPO", "CTA", "CITACOES", "COMANDO_APROVAR", "COMANDO_REJEITAR", "COMANDO_EDITAR", "TTL_HORAS"],
+    "idempotencia": "o pedido ja notificado NAO e notificado de novo (a mensagem e identificada por approval_id + texto_hash); texto revisado/novo gera notificacao nova"
+  },
+  "gerador": {
+    "modulo": "hermes/agents/outreach/outreach_generator.py",
+    "politica": "hermes/agents/outreach/politica-outreach-v1.json",
+    "papel": "DONO UNICO da guarda de contato (do_not_contact/opt_out_*) e da validacao deterministica do texto. A aprovacao NAO reimplementa nem copia essas regras: carrega o irmao e usa. Irmao ausente/incoerente = RECUSA (exit 3), nunca aprovacao sem validacao."
+  },
+  "guarda_de_contato": {
+    "regra": "a guarda e lida da politica irma (politica-outreach-v1.guarda_de_contato + bloqueio_do_canal da acao): do_not_contact bloqueia sempre; opt_out_email bloqueia EMAIL. E conferida NA HORA DA DECISAO, nao so na geracao — contato que pediu opt-out depois do pedido tambem RECUSA a aprovacao.",
+    "copia_local": false
+  },
+  "recomendacao": {
+    "regra": "aprovacao/edicao exigem a recomendacao de origem ainda com status OPEN (vocabulary recommendations.status do contrato). Recomendacao que saiu de OPEN (EXECUTED/EXPIRED/SUPERSEDED/REJECTED) RECUSA: a base do pedido aponta para um proximo passo que nao esta mais em vigor.",
+    "fonte": "docs/data/data_contract_v1.json#vocabularies['recommendations.status']"
+  },
+  "orcamento_de_decisao": {
+    "regra": "cada rodada de decisao grava UMA linha de auditoria em agent_runs (workflow outbound-aprovacao) com veredito, motivo e o resultado estruturado; recusa e replay tambem sao auditados.",
+    "replay": "mesmo voto do mesmo operador em pedido ja decidido = JA_DECIDIDO (nada reescrito, exit 0); voto diferente = CONFLITO_DE_VOTO (RECUSA)"
+  },
+  "guarda_de_escrita": {
+    "tabelas": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"],
+    "regra": "UPDATE em human_approvals (status/decided_at/decided_by/decision_notes/proposed_action) e INSERT em agent_runs. DDL, escrita em qualquer outra tabela e DELETE sem --desfazer --confirmo RECUSAM (RecusaDeEscrita).",
+    "nao_escrito": {
+      "coluna_nova": "nenhuma — criar coluna exige versao nova do contrato (governanca §10 + ADR-0004)",
+      "recommendations / contacts / organizations / interactions / outbox_events / sync_events": "LEITURA apenas",
+      "envio": "nada e enviado, agendado ou criado no Odoo: o envio e o card TRE-W6-E04-T01, e so depois do portao --consultar liberar"
+    }
+  },
+  "portao_do_envio": {
+    "comando": "--consultar <approval_id>",
+    "regra": "pode_enviar=true SOMENTE com status aprovado, texto batendo com o hash aprovado e contato ainda sem bloqueio. Qualquer outro caso devolve false com motivo — o envio (W6-E04) nao decide por conta propria.",
+    "lacuna": "consumo exatamente-uma-vez (marcar o pedido como consumido) nao existe no vocabulario do contrato: quem registra o envio e o W6-E04 em interactions. Fica declarado como lacuna, nao como estado inventado."
+  },
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "ADR-005: nada nasce em producao; promocao exige card proprio com aprovacao humana registrada",
+    "planejar": "--planejar e --regras nao abrem conexao nenhuma (nenhuma porta e construida)"
+  },
+  "lacunas": [
+    "Entrega externa da notificacao (Telegram/WhatsApp/e-mail) e do gateway/operador: aqui a mensagem e montada e gravada no canal declarado (`arquivo-local`), sem credencial de canal externo.",
+    "Consumo exatamente-uma-vez do pedido aprovado: o vocabulario fechado do contrato nao tem estado 'CONSUMIDO'; o registro do envio e do W6-E04 (interactions).",
+    "Aprovacao parcial/multi-pedido (aprovar varios de uma vez) e lote por arquivo JSONL (`--decisoes`), sem regra de cadencia — cadencia e decisao de politica futura.",
+    "Calibracao da taxa de aprovacao (quantos pedidos o humano aprova/edita/rejeita) e medida de produto: W8/W9, nao deste card."
+  ]
+}
