@@ -347,6 +347,11 @@ rodar_aceite() { # <rotulo>
   echo "   signal=$AGENTE_SIGNAL"
   echo "   pain=$AGENTE_PAIN"
   echo "   contact=$AGENTE_CONTACT"
+  # Impressao digital do codigo sob teste DESTA rodada (no dente, os caminhos ja apontam para a
+  # copia mutada): sem isso a evidencia nao diz em que fonte o numero foi medido.
+  echo "-- codigo sob teste (sha256 dos cinco fontes usados): $(sha256sum "$AGENTE_SCOUT" \
+       "$AGENTE_RESEARCH" "$AGENTE_SIGNAL" "$AGENTE_PAIN" "$AGENTE_CONTACT" 2>/dev/null \
+       | cut -d' ' -f1 | sha256sum | cut -d' ' -f1)"
   preparar_banco
   escrever_candidatas "$TRABALHO/candidatas.jsonl"
   escrever_pesquisas "$TRABALHO/pesquisas.jsonl"
@@ -600,7 +605,7 @@ regressao_das_suites() {
       echo "FALHOU suite ausente $script"; falhou=$((falhou + 1)); continue
     fi
     if python3 "$script" > "$TRABALHO/suite-$agente.out" 2>&1 </dev/null \
-       && grep -q '(0 falhas)' "$TRABALHO/suite-$agente.out"; then
+       && grep -qE '[0-9]+ itens, 0 falhas' "$TRABALHO/suite-$agente.out"; then
       ultima="$(grep '^RESULTADO:' "$TRABALHO/suite-$agente.out" | tail -1)"
       echo "OK     suites-offline-$agente ($ultima)"; ok=$((ok + 1))
     else
