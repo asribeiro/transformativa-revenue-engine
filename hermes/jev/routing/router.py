@@ -528,32 +528,78 @@ def _prefixo_comum(a: str, b: str) -> int:
 
 
 def _token_casa(a: str, b: str) -> bool:
+    """Token com tolerancia de PREFIXO de 4 caracteres (prosa de ACAO e credencial).
+
+    Onde o alvo e a prosa das POLITICAS DE PAPEL, use `_token_casa_inteiro`: medido
+    no card `t_c096e9a4` (defeito TRE-W3-E04-T03-D01), dois tokens de engenharia com
+    prefixo "cont" casavam UM termo de abordagem externa do vocabulario de papel e o
+    guardrail reprovava prosa sem nenhuma palavra sensivel literal.
+    """
     if a == b:
         return True
     return min(len(a), len(b)) >= 4 and _prefixo_comum(a, b) >= 4
 
 
-def _sobreposicao(alvo, fonte):
+def _singular(t: str) -> str:
+    """Token sem o plural. Duas regras declaradas, uma por classe de plural do portugues:
+
+      * palavra terminada em `s` -> `credenciais` = `credencial` + `is` (plural de -l);
+      * demais palavras terminadas em `s` -> tira o `s` (`leads` -> `lead`,
+        `clientes` -> `cliente`).
+
+    Palavra de ate 4 caracteres fica intacta, para nao transformar uma palavra curta em
+    outra. E regra declarada e testada, nao inferencia morfologica.
+    """
+    if len(t) > 4 and t.endswith("is"):
+        return t[:-2] + "l"
+    return t[:-1] if len(t) > 4 and t.endswith("s") else t
+
+
+def _token_casa_inteiro(a: str, b: str) -> bool:
+    """Casamento de PALAVRA INTEIRA — defeito [encaixe] TRE-W3-E04-T03-D01 (02/10/2026).
+
+    Vale no vocabulario das POLITICAS DE PAPEL (`hermes/policies/*.yaml`), que ate aqui
+    herdava o prefixo de 4 caracteres. Com ele, duas palavras legitimas de engenharia
+    casavam UM termo de abordagem externa desse vocabulario pelo prefixo "cont" e o
+    guardrail de papel reprovava prosa sem nenhuma palavra sensivel literal: medido no
+    card `t_c096e9a4`, com a contagem de termos do vocabulario em ZERO e o recibo ainda
+    dizendo `papel dev-harness nao pode: <frase do vocabulario>`.
+
+    Sao iguais: (a) o token identico e (b) o token identico depois do `s` de plural
+    ("leads" ~ "lead", "clientes" ~ "cliente", "credenciais" ~ "credencial") — sem o
+    plural, "contatar leads" deixaria de ser reconhecido. O prefixo continua valendo
+    onde ele ajuda: `CONCEITOS_DE_ACAO`, `REGRAS_DE_ACAO_HUMANA` e o casamento de
+    credencial seguem em `_token_casa`; nada disso muda aqui.
+    """
+    return _singular(a) == _singular(b)
+
+
+def _sobreposicao(alvo, fonte, comparador=_token_casa):
     """(quantos tokens de `alvo` aparecem em `fonte`, fracao de `alvo` casada)."""
     fonte = tuple(fonte)
-    casados = sum(1 for t in alvo if any(_token_casa(t, f) for f in fonte))
+    casados = sum(1 for t in alvo if any(comparador(t, f) for f in fonte))
     fracao = casados / len(alvo) if alvo else 0.0
     return casados, fracao
 
 
-def _entradas_que_casam(acao: str, entradas) -> list:
+def _entradas_que_casam(acao: str, entradas, comparador=_token_casa) -> list:
     """Entradas (frases) da politica que casam com a acao, da mais parecida a menos.
 
     Casar = pelo menos um token em comum E (metade dos tokens da acao casados OU
     dois tokens casados). Entrada de politica e prosa, entao o casamento e por
-    tokens com tolerancia de prefixo, nunca por igualdade de frase.
+    tokens — nunca por igualdade de frase.
+
+    `comparador` escolhe a tolerancia, porque ela NAO vale igual nos dois vocabularios:
+    prosa de ACAO/credencial usa o prefixo de 4 caracteres (`_token_casa`, padrao);
+    o vocabulario de PAPEL usa palavra inteira (`_token_casa_inteiro`) — o prefixo ali
+    reprovava prosa legitima de card (defeito TRE-W3-E04-T03-D01).
     """
     alvo = _tokens(acao)
     if not alvo:
         return []
     pontuadas = []
     for entrada in entradas or ():
-        casados, fracao = _sobreposicao(alvo, _tokens(entrada))
+        casados, fracao = _sobreposicao(alvo, _tokens(entrada), comparador)
         if casados >= 1 and (fracao >= LIMIAR_CAPACIDADE or casados >= 2):
             pontuadas.append((fracao, casados, str(entrada)))
     pontuadas.sort(key=lambda x: (-x[0], -x[1], x[2]))
@@ -1151,12 +1197,18 @@ def _entradas_com(papeis: dict, termo: str) -> list:
 
 
 def _e_acao_outbound(acao: str, politica: dict, papeis: dict) -> bool:
+    """Acao e outbound? Estas entradas sao a PROSA dos papeis + os codigos da politica.
+
+    Casamento de PALAVRA INTEIRA (`_token_casa_inteiro`): o prefixo de 4 caracteres
+    reprovava prosa legitima de card contra este mesmo vocabulario (defeito
+    TRE-W3-E04-T03-D01 — "contagem"/"contrato" casando o verbo de abordagem).
+    """
     entradas = list((politica.get("nunca_decidido_por_maquina") or []))
     for dado in papeis.values():
         entradas += list(dado.get("pode") or []) + list(dado.get("nao_pode") or [])
     for termo in ("contato", "contatar", "proposta", "e-mail", "mensagem", "linkedin", "whatsapp"):
         entradas += _entradas_com(papeis, termo)
-    return bool(_entradas_que_casam(acao, entradas))
+    return bool(_entradas_que_casam(acao, entradas, _token_casa_inteiro))
 
 
 def _texto_declarado_para_ddl(tarefa) -> str:
@@ -1270,8 +1322,10 @@ def _papel_para_acao(tarefa: dict, politica: dict, papeis: dict):
     podem, proibem = [], []
     if acao:
         for papel, dado in papeis.items():
-            permitido = _entradas_que_casam(acao, dado.get("pode") or [])
-            proibido = _entradas_que_casam(acao, dado.get("nao_pode") or [])
+            permitido = _entradas_que_casam(acao, dado.get("pode") or [],
+                                             _token_casa_inteiro)
+            proibido = _entradas_que_casam(acao, dado.get("nao_pode") or [],
+                                            _token_casa_inteiro)
             if proibido:
                 proibem.append((papel, proibido))
             if permitido and not proibido:
@@ -1294,12 +1348,14 @@ def _papel_para_acao(tarefa: dict, politica: dict, papeis: dict):
     if not papel:
         return None, ""
 
-    proibidas = _entradas_que_casam(acao, (papeis.get(papel) or {}).get("nao_pode") or [])
+    proibidas = _entradas_que_casam(acao, (papeis.get(papel) or {}).get("nao_pode") or [],
+                                    _token_casa_inteiro)
     if proibidas:
         return papel, f"papel {papel} nao pode: {proibidas[0]}"
 
     if pedido:
-        permitidas = _entradas_que_casam(acao, (papeis.get(papel) or {}).get("pode") or [])
+        permitidas = _entradas_que_casam(acao, (papeis.get(papel) or {}).get("pode") or [],
+                                         _token_casa_inteiro)
         if not permitidas:
             return papel, f"acao {acao!r} nao esta nas permissoes declaradas do papel {papel}"
 
@@ -1513,12 +1569,21 @@ def _falha_fechada_por_acao_nao_classificada(resolucao: dict, dominios: dict):
 
 
 def acao_de_decisao_humana(acao: str, politica, papeis=None, diretorio=None) -> list:
-    """Frases (ou o codigo canonico) que levam a acao para a camada Human Approval."""
+    """Frases (ou o codigo canonico) que levam a acao para a camada Human Approval.
+
+    Aqui as entradas sao a PROSA declarada nas fontes de papel (`hermes/policies/*.yaml`,
+    inclui `human-approval.yaml`) e os codigos da politica — por isso o casamento e de
+    PALAVRA INTEIRA (`_token_casa_inteiro`), nunca por prefixo de 4 caracteres: com o
+    prefixo, prosa legitima de card datava esta camada sem nenhuma palavra da fonte
+    (defeito TRE-W3-E04-T03-D01 — "contagem"/"contrato" casando o verbo de abordagem de
+    "contatar empresa com do_not_contact / opt_out marcado").
+    """
     texto = str(acao or "")
     canonica = acao_canonica_de_decisao_humana(texto)
     if canonica:
         return [canonica]
-    return _entradas_que_casam(texto, acoes_de_decisao_humana(politica, papeis, diretorio))
+    return _entradas_que_casam(texto, acoes_de_decisao_humana(politica, papeis, diretorio),
+                               _token_casa_inteiro)
 
 
 # ---------------------------------------------------------------------------
