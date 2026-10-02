@@ -765,7 +765,8 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
   `scripts/verificar_estrutura.sh` **aditivos** (nenhum arquivo existente alterado em logica: `git diff --stat`
   da base mostra so' as adicoes).
 - **Aceite (medicao real, banco e n8n DESCARTaveis, banco `tre_obs_263498525799`):** `RESULTADO: OBSERVABILIDADE_SYNC_OK (119 itens, 0 falhas) banco=tre_obs_263498525799 imagens=postgres:16+n8nio/n8n:latest workflow=/opt/tre/evid-t_0b77a689-r6/repo/n8n/workflows/TRE-observabilidade-sync.json` —
-  **OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)** — com 8 estados semeados, cada metrica medida por **dois caminhos
+  **OBSERVABILIDADE_SYNC_NUCLEO_OK (62 itens, 0 falhas)** (58 no head medido `a58c0a7`; 62 com o caso do item 3,
+  `TRE-W3-E05-T01-D01-D01`, 02/10/2026) — com 8 estados semeados, cada metrica medida por **dois caminhos
   independentes** (`psql` direto e pelo workflow no n8n descartavel) e o **retrato das duas tabelas identico
   antes/depois** de uma rodada completa (somente-leitura provado em execucao real, nao por grep).
 - **Prova de dente:** `RESULTADO: OBSERVABILIDADE_SYNC_DENTE_OK (12/12 dentes cumpridos; juiz conferido; baseline nao mutado verde)` (INFO  resumo do dente: 12/12 dentes cumpridos; baseline=verde; juiz=conferido); baseline **nao mutado** verde
@@ -864,3 +865,69 @@ divergencia contrato x codigo (nao alcancavel pelo SQL) e robustez da propria le
   placeholder `{}` continua vazio); o mesmo controle do item 4 fecha
   `RESULTADO: OBSERVABILIDADE_LENTE_FALHOU (118 itens, 4 falha(s))` **exit 1, sem traceback**.
 - **Nao e homologacao:** quem entrega nao homologa — a verificacao independente e' do estagio 6 (perfil `tester`).
+
+## 2026-10-02 — host do Hermes (worktree local, sem banco) + passo de codigo do aceite na VPS (imagem do n8n) — TRE-W3-E05-T01-D01-D01 (card `t_dc0bd6d2`): a suite versionada passa a travar a linha com so' `tentativas`
+
+- **Objeto (defeito de COBERTURA da verificacao independente, card `t_9b31706d`):** o item 3 do conserto
+  `TRE-W3-E05-T01-D01` mudou o CODIGO do nucleo (`linhaDeDetalheVazia` passou a testar `tentativas`,
+  direcao fail-closed), mas `scripts/n8n/testar_observabilidade_sync.js` **nao foi tocado no branch**
+  (`git diff --stat 4a8cead abeae38 -- scripts/n8n/testar_observabilidade_sync.js` = vazio) e seguia com
+  **58 itens**: revertendo SO' a clausula numa copia, o comando versionado do aceite continuava
+  `OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)` **exit 0**. A prova do item 3 vivia so' na sonda
+  anexada ao card, que nao trava regressao.
+- **Base e branch:** o conserto nasce de `abeae38` (head do conserto D01) no branch paralelo
+  `fix/TRE-W3-E05-T01-D01-D01` (mesmo padrao do `fix/TRE-W2-E03-T01-D04-D01`) — o head do feature
+  (`feature/TRE-W3-E05-T01`, `4a8cead`) nao e' tocado.
+- **ANTES (head `abeae38`), saida real:** `node scripts/n8n/testar_observabilidade_sync.js` ->
+  `RESULTADO: OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)` **exit 0** — a suite nao discriminava a
+  direcao nova.
+- **CONSERCAO (commit `44e0803fbc465549eb4e8f0342adb255490bba72`, so' o arquivo da suite):** caso novo
+  (4 itens, **58 -> 62**) que exercita `avaliarDetalhes` com `[{ tentativas: 1 }]` — `total=1`,
+  `linhas_vazias=0` (e' DADO) e `divergencias=["tipo_de_detalhe_nao_declarado:(vazio)"]` —, mantem o
+  placeholder `{}` como `linhas_vazias=1, total=0` e fecha a ponta a ponta (`avaliar` com `[{tentativas: 1}]`
+  -> INDETERMINADO, onde o descarte silencioso daria OK).
+- **DEPOIS (medido no worktree do conserto):** suite `OBSERVABILIDADE_SYNC_NUCLEO_OK (62 itens, 0 falhas)`
+  **exit 0** no modo solto **e** no modo do aceite (`--workflow n8n/workflows/TRE-observabilidade-sync.json`);
+  lente `OBSERVABILIDADE_LENTE_OK (118 itens, 0 falhas)` exit 0; montador
+  `OK workflow em disco == workflow montado agora` exit 0 (o workflow nao muda: o caso e' so' da suite).
+- **PROVA NEGATIVA (o dente), numa COPIA do nucleo, nada do entregavel editado:** revertendo SO' a clausula
+  do item 3 (`ehVazio(linha.motivo) && ehVazio(linha.tentativas);` -> `ehVazio(linha.motivo);`, sha256
+  `01eb3059f05293c0640e6c304de1a32fb964557443d47bed36f9c23bf309aaed`), a suite NOVA fecha
+  `OBSERVABILIDADE_SYNC_NUCLEO_FALHOU (62 itens, 3 falha(s))` **exit 1** (os 3 itens do caso novo), enquanto
+  contra o nucleo do branch (`e1710684d36f9fbf730884b2305d09f768d7c826b79871b07f1bbefdb3a80e9a`) fecha 62/0
+  exit 0. A sonda de comportamento (`require` da funcao real) na copia revertida da'
+  `{tentativas:1}` -> `linhas_vazias=1, total=0` (descarte silencioso) contra
+  `linhas_vazias=0, total=1, divergencias=["tipo_de_detalhe_nao_declarado:(vazio)"]` no branch.
+- **VPS (passo de codigo do proprio aceite, ambiente declarado):** copia propria por `git bundle`
+  (sha256 `1c3f56fb30caf18e5c60d80798a7c1885d7c7aabd4f4337449269d1d301debf4`) clonada em
+  `/opt/tre/evid-t_dc0bd6d2/repo`, sha256 do clone identico ao local (suite `1a48c658…`, nucleo
+  `e1710684…`, worktree limpo). `bash scripts/n8n/verificar-observabilidade-sync.sh --apenas-codigo` ->
+  `OK lente estrutural: RESULTADO: OBSERVABILIDADE_LENTE_OK (118 itens, 0 falhas)` /
+  `OK suite do nucleo: RESULTADO: OBSERVABILIDADE_SYNC_NUCLEO_OK (62 itens, 0 falhas)` (**dentro da imagem
+  do n8n**, `logs-codigo/0b-suite.out`) / `OK montador: OK workflow em disco == workflow montado agora` —
+  `RESULTADO: OBSERVABILIDADE_SYNC_OK (3 itens, 0 falhas)` **exit 0**. O mesmo controle negativo rodado na
+  VPS, tambem dentro da imagem, fecha `OBSERVABILIDADE_SYNC_NUCLEO_FALHOU (62 itens, 3 falha(s))` **exit 1**.
+  Saidas brutas: `aceite-codigo.out` (sha256 `99f116212f05a06c42f14e87416c22f6120cc046e45af1b7864e264b3c198f4b`),
+  `controle-negativo-vps.out` (sha256 `09c38bacd7fdc48223f124a60d17113e7f7e2158c334d5fc126ed8c6f8bf6528`).
+- **Verificadores do projeto no worktree do conserto:** `verificar_estrutura.sh` PASS (0 falhas) exit 0;
+  `secret_scan.sh` PASS (nenhum segredo versionado) exit 0; `verificar_papeis.sh` PASS (0 falhas) exit 0;
+  `verificar_contrato_dados.py` PASS (26 itens, 0 falhas) exit 0; `backup/verificar-modos-executaveis.sh`
+  MODOS_OK (4 itens, 0 falhas, 2 provas efetivas) exit 0.
+- **Ambiente:** o passo de codigo nao cria banco nem trio; na VPS, **0** container do card restante
+  (`docker ps -a` sem `ctrl-dc0bd6d2`/`e05t01`), `pg-odoo-dev` com os **4** bancos de sempre
+  (`odoo_dev, postgres, template0, template1`) e `/opt/tre/{homolog,prod}` com **0 arquivo**.
+- **Identidade do artefato (commit `44e0803`):** `scripts/n8n/testar_observabilidade_sync.js` blob
+  `e83f2f75bc589307bbd1a2bd1faefcf376ca64e1`, modo `100644`, sha256
+  `1a48c658700d35c7b253fe115e70ab0ea5446871c306741a802bb05feab9508e`, 407 linhas (390 antes).
+- **Contagem da suite nos documentos:** as citacoes do aceite do `TRE-W3-E05-T01` em
+  `docs/operations/registro-de-execucoes.md` (entrada de 02/10/2026) e no `CHANGELOG.md` (entrada `Added`)
+  passam a citar **62 itens** com a reconciliacao explicita (58 no head medido `a58c0a7`); as entradas
+  datadas do conserto D01 continuam citando 58, que era o numero do head `abeae38` medido naquele momento —
+  os dois arquivos citam o mesmo numero novo.
+- **Limite declarado:** o caso novo trava a DIRECAO do item 3 (linha com so' `tentativas` e' dado); nao
+  substitui o dente `placeholder_vira_indeterminado` (linha TOTALMENTE vazia) nem a sonda de comportamento
+  do card. A massa real e' inalcancavel para este campo (`tipo` e' literal nas 3 ramificacoes do UNION de
+  `n8n/sql/observabilidade-sync-dead-letters.sql`), entao o que se fecha e' o caminho de reversao silenciosa
+  de uma correcao contrato x codigo — mesma classe do achado `t_5cad1689`.
+- **Nao e homologacao:** quem entrega nao homologa — a verificacao independente e' do estagio 6 (perfil
+  `tester`).
