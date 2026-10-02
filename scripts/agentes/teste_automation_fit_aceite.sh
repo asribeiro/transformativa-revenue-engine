@@ -539,7 +539,7 @@ cobertura-ignorada|    if cobertura < COBERTURA_MINIMA:|    if False:|rodada1-re
 score-constante|    saida["valor"] = arredondar(Decimal("100") * numerador / cobertura)|    saida["valor"] = arredondar(Decimal("50"))|rodada1-valor-org-a
 idempotencia-sem-o-estado|    return "score:%s:org:%s:%s" % (SCORE_TYPE, organizacao_id, entrada_hash)|    return "score:%s:org:%s" % (SCORE_TYPE, organizacao_id)|rodada3-estado-novo-cria-linha,rodada3-historico-org-a
 leitura-sem-filtro-de-empresa|"FROM %s WHERE organization_id = %s ORDER BY detected_at, id;"|"FROM %s WHERE %s IS NOT NULL ORDER BY detected_at, id;"|rodada1-valor-org-a,rodada1-le-so-os-sinais-da-empresa
-prod-liberado|        if self.ambiente == AMBIENTE_RECUSADO:|        if False:|prod-recusado-exit-4
+prod-liberado|        if self.ambiente == AMBIENTE_RECUSADO:\n            raise RecusaDeAmbiente(\n                "Automation Fit Score v1 nao escreve em prod (ADR-005): a promocao exige card "\n                "proprio com aprovacao humana registrada")\n        if self.ambiente not in AMBIENTES_PERMITIDOS:\n            raise RecusaDeAmbiente("ambiente desconhecido: %r" % self.ambiente)\n        return self.ambiente|        return self.ambiente|prod-recusado-exit-4,prod-recusado-sem-escrita
 EOF
 
   local total="${#linhas[@]}" detectadas=0 falhas=0
