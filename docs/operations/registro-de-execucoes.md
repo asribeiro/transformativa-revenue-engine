@@ -1097,4 +1097,89 @@ entregue**, nao o produto. Os tres achados e a correcao, cada uma remedida:
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste defeito e' do estagio 6 (perfil `tester`); a homologacao (estagio 7) e' do Anderson. A origem (`TRE-W3-E02-T02`, card `t_3bde06ab`) so' fecha de vez com este defeito resolvido.
 - Segredos: nenhum valor nesta entrada.
 
+## 2026-10-02 — repositorio TRE (worktree `t_2ee17829`) — TRE-W3-E04-T01: job diario de reconciliacao (PostgreSQL x Odoo pela porta unica)
+
+- **Objeto:** o card `t_2ee17829` (epico W3, E04) pedia o job diario que cruza o que o PostgreSQL
+  declara com o que o CRM (Odoo) tem, pela **porta unica** da API controlada. Entrega contract-first:
+  contrato versionado (`n8n/contracts/reconciliation-job.v1.json`), nucleo puro
+  (`n8n/codigo/nucleo-reconciliacao.js`, o mesmo arquivo que o Code node embute), dois SQL
+  (`n8n/sql/reconciliacao-origem.sql`, `reconciliacao-pendentes.sql`), workflow **derivado**
+  (`n8n/workflows/TRE-reconciliation.json`), montador, lente estrutural, suite do nucleo, mutador,
+  leitor do resultado, massas por estado, aceite e runbook (`docs/runbooks/n8n-reconciliacao.md`).
+  Comparacoes de **entidade** (`E1`, `E2`, `E4`, `I1..I4`) e de **fila x trilha** (`P1..P4`); o job **nao
+  escreve** (somente leitura, o produto e' o relatorio).
+- **Porta unica (modulo Odoo, politica 1.3.0 -> 1.4.0):** a leitura controlada (`crm_registros_ler`)
+  passou a poder ver registros **ARQUIVADOS** por declaracao — `leitura_de_arquivados` na operacao,
+  parametro `incluir_arquivados` no vocabulario da leitura, `active_test=False` no controlador quando o
+  plano pede, `active` obrigatorio entre os campos pedidos e recusa nomeada
+  (`parametro_nao_declarado`, 422) em operacao que nao declara. 4 testes novos
+  (`test_33..test_36`). Motivo **medido**, nao suposto: no estado *E* do aceite (parceiro arquivado) as
+  duas leituras do destino voltavam `0 registro(s)` e o veredito saia `E1 espelho_ausente` em vez de
+  `E2` — o job mandaria criar de novo o que ja' existe no CRM.
+- **Defeitos achados pelo proprio aceite e corrigidos na raiz (todos com a medicao no log):**
+  1. **Booleano do Odoo nao e' valor** — o ORM devolve `false` para campo de caracter vazio e o nucleo
+     lia `String(false)` = `'false'`, inventando divergencia de identidade forte (`E4` duplicado nos
+     estados C/D). Conserto: `texto()` trata booleano como vazio (+ item de suite com a medicao real).
+  2. **Leitura nao medida nao vira divergencia** — com a porta unica **parada** (estado *G*) o job
+     reportava `E1` para todo espelho esperado enquanto o veredito ja' era `INDETERMINADO`
+     (divergencia inventada a partir de ausencia de medicao). Conserto: as comparacoes de entidade sao
+     **puladas** quando qualquer leitura do destino nao foi medida, com o pulo **nomeado**
+     (`comparacoes_de_entidade_puladas`) ao lado de `leitura_do_destino_nao_medida` (+ item de suite).
+  3. **Porta unica fora do ar abortava a execucao** — sem `onError: continueRegularOutput` o no HTTP
+     derrubava a execucao do n8n e a rodada morria sem relatorio (`leitura=ilegivel`). Conserto: a
+     declaracao entra no **contrato** (`envelope_da_requisicao.no_que_nao_mede`), o montador a usa e a
+     lente confere os tres (`onError`, `neverError`, URL do involucro).
+  4. **Dois falsos positivos do PROPRIO aceite**, corrigidos para medir o que diziam medir: (a) a
+     checagem de segredo procurava as **palavras** `chave`/`token` — acusava o proprio comentario do
+     job e o **nome** da credencial; passou a medir o **valor** (o valor da chave da rodada, lido do
+     arquivo 600 do descartavel, nao pode aparecer no cofre/workflow/log, com guarda de medicao vazia);
+     (b) `local letra="$1" bloco="...$letra..."` na mesma linha — o bash expande as palavras **antes**
+     de atribuir, entao a variavel resolvia o escopo de FORA e, com `set -u`, matava o script na
+     chamada direta (estado *G*): `letra: unbound variable`. Dividido em duas linhas (e o padrao foi
+     varrido no arquivo inteiro: era a unica ocorrencia).
+- **Defeito HERDADO corrigido na raiz:** `tests/test_acl_seguranca.py::test_11` reprovava porque o
+  `tf.evento.outbox` entrou com ACL propria no card **TRE-W3-E03-T01** (commit `d0b8d5a`) e a
+  expectativa do teste ficou presa em `{tf.process.opportunity}` (`git log -1 -- tests/test_acl_seguranca.py`
+  = `060c369`, **anterior**). Nao e' violacao de ACL: e' expectativa que envelheceu. Conserto: a
+  superficie de ACL do modulo passa a ser medida contra os **modelos do proprio modulo**, derivados de
+  `ir.model.data` (nao da coluna `modules`, que nao filtra em `search` — medido), entao nao envelhece a
+  cada modelo novo e continua reprovando ACL para modelo de fora. Com isso a suite do modulo fecha
+  **`0 failed, 0 error(s) of 192 tests`** (antes: 1 failed + 1 error).
+- **Aceite (VPS `169.58.24.102`, trio descartavel proprio: postgres + odoo + n8n, banco
+  `tre_reconc_26756757954`):** **`RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas)`**, **exit 0** —
+  lente estrutural **`RECONCILIACAO_LENTE_OK (150 itens, 0 falhas)`**, suite do nucleo
+  **`RECONCILIACAO_NUCLEO_OK (61 itens, 0 falhas)`** (inclui o codigo **embutido** no workflow, medido
+  byte a byte antes do marcador), 8 mutacoes nomeadas com o item alvo reprovando e baseline verde, e
+  **7 estados em execucao real**: *A* espelho saudavel -> `OK` sem divergencia (linha-resumo com
+  `janela_completa, fila_completa`); *B* ausente -> `E1`; *C* ID cruzado -> `I1`; *D* identidade forte ->
+  `E4`; *E* **arquivado** -> `E2`; *F* fila x trilha -> `P1,P2,P3,P4`; *G* porta unica **parada** ->
+  `INDETERMINADO`, **nenhuma** divergencia e a regra nomeada. **Somente-leitura** medido por digest nas
+  tres tabelas do PostgreSQL e nos parceiros do Odoo em **cada** uma das 7 rodadas (inclusive a que nao
+  mediu o destino). `sha256` dos **12 artefatos sob teste** fixado nas guardas e **identico no fecho** —
+  e reconferido aqui contra o worktree ja' commitado (mesmos 12 digests). Instancia do **dev intocada**
+  (mesmos bancos antes/depois); o **valor** da chave nao aparece no cofre do n8n, no workflow nem no log.
+- **Verificadores do projeto (worktree do card, comando + exit code):** `bash scripts/verificar_estrutura.sh`
+  -> `PASS (0 falhas)` exit 0 (**185** linhas `OK`, incluindo o bloco novo do card: os 14 artefatos
+  existem **E** estao versionados, 6 scripts executaveis); `bash scripts/secret_scan.sh` ->
+  `PASS (nenhum segredo versionado)` exit 0; `bash scripts/verificar_papeis.sh` -> `PASS (0 falhas)`
+  exit 0; `python3 scripts/verificar_contrato_dados.py` -> `PASS (26 itens, 0 falhas)` exit 0.
+- **Integracao de branch:** `feature/TRE-W3-E04-T01` nasce de `feature/TRE-W3-E03-T01` e **mergeia**
+  `fix/TRE-W3-E02-T02-D01` (conflito em `docs/operations/registro-de-execucoes.md` resolvido
+  preservando **as duas** entradas), para o card nao entregar por cima da correcao do gate.
+- **O que NAO foi tocado:** `/opt/tre/{homolog,prod}`, `/opt/tre/repo` (a copia do aceite foi
+  `/opt/tre/e04t01-repo-r7`, descartavel), a instancia do dev (medida antes/depois), nenhum banco de
+  ambiente e nenhum container do dev. O unico efeito fora do descartavel sao os arquivos do repo.
+- **Residuo:** trio e rede `e04t01-*` destruidos no fecho (conferido: 0 container e 0 rede).
+  Nota de honestidade operacional: uma limpeza minha no meio do caminho filtrou por prefixo e derrubou
+  um container `e05t01-pg-*` que nao era deste card (estava no ar havia 15s); declarei o ocorrido no
+  card e a limpeza passou a filtrar **so'** `e04t01-*`/`frosty_feynman` do proprio descartavel.
+- **Aprendizado:** um aceite que mede de verdade encontra defeito que nenhuma lente de forma encontra —
+  os tres defeitos de comportamento deste card (booleano do Odoo, divergencia inventada sem medicao,
+  execucao abortada com a porta fora do ar) so' apareceram em **execucao real**; e um item de
+  verificacao que procura **vocabulario** (palavra "segredo") em vez de **valor** acusa o proprio
+  codigo: medicao que nao mede e' pior que medicao ausente, porque da' verde.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card vai para o estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+- Segredos: nenhum valor nesta entrada.
+
 ---

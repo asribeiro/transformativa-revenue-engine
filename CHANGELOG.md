@@ -867,6 +867,34 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   a trilha com as **mesmas 9 linhas** antes e depois, e o parceiro do CRM com `name` e score da entrega original
   preservados. Dentes: `OUTBOX_CONSUMER_DENTE_OK (6/6)` (`sem_consulta_de_trilha` e
   `guarda_de_sucesso_afrouxada` são os dois novos). Runbook: `docs/runbooks/n8n-outbox-consumer.md` §3, §4.4 e §5.
+- **Job diário de RECONCILIAÇÃO PostgreSQL × Odoo (`TRE-W3-E04-T01`, `t_2ee17829`)** — o outro lado do
+  caminho de escrita: o que foi entregue no CRM é comparado com o que o PostgreSQL declara, e as
+  diferenças saem **nomeadas** em vez de silenciosas. O job é **somente leitura** (não grava em tabela
+  nenhuma; o produto é o relatório) e **contract-first**: `n8n/contracts/reconciliation-job.v1.json`
+  declara fontes, lote (limite/ordem/janela), leituras do destino (campos, filtro, operador, ordem e os
+  parâmetros extras de cada leitura), vínculo da trilha, teto de tentativas, janela de pendência,
+  comparações (id/tipo/motivo), observações, veredito, regras de fail-closed, credenciais por id/nome e
+  o grafo; o **núcleo** (`n8n/codigo/nucleo-reconciliacao.js`, JS puro sem dependência) deriva do
+  contrato até os IDs das leituras e o workflow é **gerado** (`TRE-reconciliation.json`), com a lente
+  estrutural medindo contrato × SQL × núcleo × workflow × política. Comparações de **entidade** (`E1`
+  ausente no destino, `E2` arquivado, `E4` identidade forte divergente, `I1..I4` ID cruzado) e de
+  **fila × trilha** (`P1..P4` janela, entrega, teto, recusa), com duas janelas declaradas (lote e
+  fila) na linha-resumo: veredito de base parcial não se lê como veredito da base inteira. Fail-closed
+  em três frentes medidas: leitura não medida **não** vira divergência (as comparações de entidade são
+  puladas e o pulo é nomeado), porta única fora do ar vira `INDETERMINADO` com a regra nomeada em vez
+  de execução abortada (`onError: continueRegularOutput` declarado no contrato) e ausência de medição
+  nunca é lida como ausência de problema. Na **porta única** do Odoo, a leitura controlada passou a
+  poder ver registros **arquivados** por declaração (política **1.4.0**: `leitura_de_arquivados`;
+  parâmetro `incluir_arquivados` exige `active` nos campos pedidos e é recusado nomeadamente em
+  operação que não declara) — sem isso "espelho arquivado" seria lido como "espelho ausente" e a
+  operação criaria de novo o que existe. Aceite na VPS (trio descartável: postgres + odoo + n8n, banco
+  `tre_reconc_*`): **`RECONCILIACAO_OK (96 itens, 0 falhas)`**, exit 0 — lente **150 itens**, suite do
+  núcleo **61 itens**, 8 mutações nomeadas com vencedor conferido, **7 estados em execução real**
+  (`OK` sem divergência; `E1`; `I1`; `E4`; `E2` com o espelho arquivado; `P1,P2,P3,P4`; porta única
+  parada → `INDETERMINADO` com regra nomeada e **nenhuma** divergência), **somente-leitura** medido por
+  digest em cada rodada, `sha256` dos 12 artefatos idêntico no fecho, instância do dev intocada e o
+  **valor** da chave fora do cofre/workflow/log. A suite do módulo roda dentro do aceite
+  (`0 failed, 0 error(s) of 192 tests`). Runbook: `docs/runbooks/n8n-reconciliacao.md`.
 
 ### Fixed
 

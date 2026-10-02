@@ -161,19 +161,27 @@ está errada — o job não decide isso por ninguém.
 `bash scripts/n8n/verificar-reconciliacao.sh` mede, num **trio descartável próprio** (postgres +
 odoo + n8n criados e destruídos na hora):
 
-* lente estrutural e suite do núcleo (incluindo o código **embutido** no workflow) e o montador
-  `--conferir`: o workflow em disco é o montado agora;
+Rodada de referência: **`RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas)`**, exit 0 (VPS
+`169.58.24.102`, imagens `odoo:19.0` + `postgres:16` + `n8nio/n8n:latest`, banco descartável).
+
+* lente estrutural **150 itens** e suite do núcleo **61 itens** (esta roda também o código **embutido**
+  no workflow) e o montador `--conferir`: o workflow em disco é o montado agora;
+* a **suite do módulo Odoo** roda dentro do aceite (`--test-enable --test-tags
+  /transformativa_sales_ai`, piso de 30 testes): **`0 failed, 0 error(s) of 192 tests`** — a mudança na
+  porta única não passa por cima da regressão dos outros cards;
 * **prova de dente** (`--prova-de-dente`): baseline verde e cada mutação nomeada reprovando **o
   item que ela quebra** — a mutação declara o alvo (`nucleo` = a suite tem de reprovar;
   `lente:<item>` = aquela linha da lente tem de reprovar);
 * 7 estados em **execução real** (PostgreSQL + Odoo + n8n descartáveis): espelho saudável → `OK`
-  **sem divergência**; espelho ausente → `E1`; ID cruzado → `I1`; identidade forte → `E4`;
-  espelho arquivado → `E2`; fila × trilha → `P1,P2,P3,P4`; porta única **fora do ar** →
-  `INDETERMINADO` com a regra nomeada;
+  **sem divergência** (linha-resumo com `janela_completa, fila_completa`); espelho ausente → `E1`;
+  ID cruzado → `I1`; identidade forte → `E4`; espelho **arquivado** → `E2` (é o estado que prova a
+  leitura de arquivados); fila × trilha → `P1,P2,P3,P4`; porta única **fora do ar** →
+  `INDETERMINADO` com a regra nomeada e **nenhuma** divergência de entidade;
 * **somente-leitura** medido em cada rodada: digest das três tabelas do PostgreSQL e dos parceiros
   do Odoo, antes e depois;
-* `sha256` dos artefatos sob teste fixado nas guardas e **reconferido no fecho**; instância do dev
-  medida antes e depois; nenhum segredo em claro no cofre do descartável nem no versionado.
+* `sha256` dos **12 artefatos sob teste** fixado nas guardas e **reconferido no fecho** (idêntico);
+  instância do dev medida antes e depois (**intocada**); o **VALOR** da chave da rodada não aparece no
+  cofre do n8n, no workflow nem no log (nem `Bearer <valor>`); nenhum valor de segredo no versionado.
 
 ## 6. Limites conhecidos (o que este card não resolve)
 
