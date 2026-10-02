@@ -202,12 +202,15 @@ juizo_do_dente() { # $1=arquivo de saida do sub-run  $2=marcador da fase  $3=tre
         echo "NAO_CONTA (o sub-run nao chegou a' fase $marcador)"
         return
     fi
-    if grep -qE "^[[:space:]]*OK[[:space:]]+.*$esperado" "$saida"; then
-        echo "MUTACAO_SEM_DENTE (o item esperado continuou OK)"
-        return
-    fi
+    # A reprovacao e' checada PRIMEIRO: um OUTRO item que por acaso contenha o mesmo
+    # trecho de texto nao pode esconder o dente (aconteceu: "combinacao ausente nao vira
+    # indeterminado" mascarava "linha VAZIA ... nao vira indeterminado").
     if grep -qE "^[[:space:]]*FALHOU[[:space:]]+.*$esperado" "$saida"; then
         echo "DENTE_CUMPRIDO"
+        return
+    fi
+    if grep -qE "^[[:space:]]*OK[[:space:]]+.*$esperado" "$saida"; then
+        echo "MUTACAO_SEM_DENTE (o item esperado continuou OK)"
         return
     fi
     echo "NAO_CONTA (item esperado ausente na saida — ancora quebrada)"
@@ -227,23 +230,28 @@ controle_do_juiz() {
     printf 'FASE_CODIGO_OK\nFALHOU metrica declarada sem linha fecha INDETERMINADO/exit 3 (OK/0)\n' >"$dir/controle_5.out"
     # 6) item INDENTADO (a suite imprime com recuo dentro da fase de codigo)
     printf 'FASE_CODIGO_OK\n      FALHOU metrica declarada sem linha fecha INDETERMINADO/exit 3 (OK/0)\n' >"$dir/controle_6.out"
-    local c1 c2 c3 c4 c5 c6
+    # 7) dois itens com o MESMO trecho (um OK, outro FALHOU): o FALHOU vence — o dente nao
+    #    pode ser mascarado por um item vizinho de texto parecido
+    printf 'FASE_CODIGO_OK\nOK    combinacao ausente nao vira indeterminado nem critico\nFALHOU linha VAZIA nao vira indeterminado\n' >"$dir/controle_7.out"
+    local c1 c2 c3 c4 c5 c6 c7
     c1="$(juizo_do_dente "$dir/controle_1.out" FASE_MEDICAO_OK 'estado C')"
     c2="$(juizo_do_dente "$dir/controle_2.out" FASE_MEDICAO_OK 'estado C')"
     c3="$(juizo_do_dente "$dir/controle_3.out" FASE_MEDICAO_OK 'estado C')"
     c4="$(juizo_do_dente "$dir/controle_4.out" FASE_MEDICAO_OK 'estado C' )"
     c5="$(juizo_do_dente "$dir/controle_5.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
     c6="$(juizo_do_dente "$dir/controle_6.out" FASE_CODIGO_OK 'metrica declarada sem linha')"
+    c7="$(juizo_do_dente "$dir/controle_7.out" FASE_CODIGO_OK 'nao vira indeterminado')"
     case "$c1" in *MUTACAO_SEM_DENTE*) ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c2" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c3" in *NAO_CONTA*)        ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c4" in *NAO_CONTA*)        ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c5" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     case "$c6" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
+    case "$c7" in *DENTE_CUMPRIDO*)   ok_controles=$((ok_controles + 1)) ;; *) faltas=$((faltas + 1)) ;; esac
     if [ "$faltas" -eq 0 ]; then
-        ok "controle do juiz do dente (6 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo, item indentado)"
+        ok "controle do juiz do dente (7 saidas sinteticas: sem dente, dente, ambiente, ancora, fase de codigo, item indentado, FALHOU vence OK)"
     else
-        falhou "controle do juiz do dente ($faltas de 6 saidas sinteticas julgadas errado)"
+        falhou "controle do juiz do dente ($faltas de 7 saidas sinteticas julgadas errado)"
     fi
 }
 

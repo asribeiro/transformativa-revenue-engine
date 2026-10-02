@@ -235,7 +235,7 @@ MUTACOES = {
         "metrica do SQL fora do contrato passa a ser ignorada em silencio"),
     "placeholder_vira_indeterminado": (
         m_placeholder_vira_indeterminado, "codigo",
-        "nao vira indeterminado",
+        "linha VAZIA do alwaysOutputData nao vira indeterminado",
         "sem distinguir item vazio de detalhe quebrado, toda rodada saudavel grita INDETERMINADO"),
 }
 
