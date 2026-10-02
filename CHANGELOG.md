@@ -1083,3 +1083,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (nao cobre customizacao de instancia) e reprocesso operacional (tem aceite proprio no `TRE-W3-E02-T02`).
 - **Revisao independente e homologacao abertas** (`TRE-W3-E06-T01`): quem entrega nao homologa — o veredito
   deste card e' do estagio 6 (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.
+- **Aceite medido (02/10/2026, VPS do TRE)**: `RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas)` no
+  commit `519d8c5`, com os 4 aceites de origem em `--apenas-codigo` no MESMO run; `--prova-de-dente`
+  `E2E_FOUNDATION_001_DENTE_OK (3/3, baseline nao mutado verde, juiz e ancoras conferidos)`. Evidencia em
+  `/opt/tre/evid-t_fcbe3d7d-r2/` (aceite.out/dente.out/logs) e no `docs/operations/registro-de-execucoes.md`.

@@ -1255,3 +1255,45 @@ f7b074f594418883fb9bb4ea3903c83e9c665d58203878c869d7b574105b0b09  scripts/n8n/ma
   `/opt/tre/evid-t_0b77a689-r6/logs-dente/` (baseline + 12 mutantes + saida de cada sub-run) na VPS.
 - **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil `tester`)
   e a homologacao (**estagio 7**) e' do Anderson.
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E06-T01 (E2E Foundation #001)
+
+- **Base consolidada da onda W3 (agente):** `feature/TRE-W3-E06-T01` criada de `10fbb15`
+  (`feature/TRE-W3-E04-T01`) + merge de `4a8cead` (`feature/TRE-W3-E05-T01`) — tres conflitos, todos em
+  arquivos aditivos, resolvidos por **UNIAO** (`scripts/verificar_estrutura.sh` com as DUAS listas de
+  artefatos, `CHANGELOG.md`, `docs/operations/registro-de-execucoes.md`); merge em `8a33c71`, aceite em
+  `eaeb4a6`, head medido **`519d8c5`** (worktree `.worktrees/t_fcbe3d7d`).
+- **Aceite completo (agente):** no clone `/opt/tre/e06t01-r6/repo` (`git clone` do bundle de `519d8c5`),
+  `TRE_LOG_DIR` proprio → **`RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas, 2 passo(s) declarado(s)
+  fora do escopo)`**, exit 0. No MESMO run: gates do projeto PASS e os 4 aceites de origem em
+  `--apenas-codigo` — `OUTBOX_CONSUMER_OK (2 itens)`, `EVENTOS_ODOO_PG_OK (28 itens)`,
+  `RECONCILIACAO_OK (37 itens)`, `OBSERVABILIDADE_SYNC_OK (3 itens)`, todos 0 falhas.
+- **Prova de dente (agente):** `--prova-de-dente` no mesmo clone → **`E2E_FOUNDATION_001_DENTE_OK (3/3
+  dentes cumpridos; juiz conferido; baseline nao mutado verde)`**, exit 0; as 3 mutacoes nomeadas
+  (`sem_validacao_de_envelope`, `mapeamento_trocado`, `sem_consulta_de_trilha`) reprovaram cada uma o seu
+  item declarado.
+- **Medido no BANCO (nao na narrativa):** 1 `res.partner` com `tf_company_id` = UUID do evento
+  (`COMPANY_QUALIFIED` → consumidor n8n → `POST /tf/api/v1/empresa_upsert`); trilha `postgres->odoo`
+  `UPSERT` `COMPLETED` com o ID devolvido pelo Odoo no `response_payload`; ida-e-volta fechada
+  (`organizations.odoo_partner_id`); os 8 eventos Odoo→PG do contrato na trilha (`SENT=8`, todos
+  `COMPLETED`); reenvio do MESMO envelope sem linha nova; REPLAY do evento PG→Odoo com 0 chamada nova e a
+  MESMA linha de trilha (mesmo `id`, mesmo `completed_at`); ZERO duplicatas (1 empresa, 1 contato, 1
+  atividade, 1 linha por chave); `DEAD_LETTER` sem chamada para evento sem `event_version`; reconciliacao
+  `OK`/0 divergencia e observabilidade `OK` no mesmo trio; dev com os MESMOS bancos antes/depois;
+  `homolog`/`prod` sem arquivo novo; sha256 dos 6 artefatos sob teste identico ao das guardas.
+- **Evidencia guardada:** `/opt/tre/evid-t_fcbe3d7d-r2/` (`aceite.out` sha256 `855d849c…`, `dente.out`
+  sha256 `21d601de…`, `runner.out`, `logs-aceite/`, `logs-dente/` com a saida de cada sub-run mutado) e a
+  rodada anterior `/opt/tre/evid-t_fcbe3d7d-r1/` (138 itens, dente 2/3 — a ancora do segundo dente estava
+  so' no ramo verde; conserto na raiz em `519d8c5`).
+- **Nada nasce ligado (ADR-005):** os 4 workflows nascem inativos, o trio e' descartavel e some no fim;
+  nenhum arquivo em `/opt/tre/repo`, em `dev`, `homolog` ou `prod`; nenhum DDL fora do banco descartavel.
+- **Achados de execucao (todos com conserto na raiz na base medida):** (1) `n8n update:workflow
+  --active=true` nao ecoa nada (rc=0 e ativo de verdade) → o item passou a medir o campo `active` no
+  export; (2) o `odoo shell` (uid 100) nao lia o `token.txt` modo 600 do root → `PermissionError` deixava
+  a porta de ingestao `porta_nao_configurada` (0/8 entregues) → dono do arquivo ajustado; (3) o proprio
+  `secret_scan` do projeto reprovava o aceite pela linha literal com o nome do campo de senha → chave
+  montada por variavel; (4) a ancora de um dente existia so' no ramo verde → o ramo `falhou` passou a
+  dizer o que quebrou e o passo 0 ganhou **self-check das ancoras** (3 mutacoes conferidas no proprio
+  arquivo); (5) falha de gate do passo 0 nao aborta mais o cenario (snapshot de falhas antes do trio).
+- **Nao e homologacao:** quem entrega nao homologa — o veredito deste card e' do **estagio 6** (perfil
+  `tester`) e a homologacao (**estagio 7**) e' do Anderson.
