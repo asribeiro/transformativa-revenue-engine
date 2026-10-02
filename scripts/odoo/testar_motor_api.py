@@ -110,10 +110,29 @@ def main():
     verificar(politica["ambientes_permitidos"] == ["dev"],
               "politica real permite so' o dev (%s)" % politica["ambientes_permitidos"])
     nomes = motor.operacoes_declaradas(politica)
-    verificar(nomes == ["sistema_capacidades", "crm_registros_ler"],
-              "operacoes declaradas na politica real: %s" % ", ".join(nomes))
-    verificar(not any(op.get("tipo") == "escrita" for op in politica["operacoes"]),
-              "politica real nao declara escrita (operacoes de negocio sao dos cards E01-T02..T05)")
+    # ANCORA:OPERACOES_DE_LEITURA_DO_E01_T01 — o que este item garante e' que a politica real
+    # continua declarando as operacoes de leitura da porta unica. Antes ele comparava a lista
+    # INTEIRA por literal, o que passou a ser fato datado no dia em que a primeira operacao de
+    # negocio entrou (TRE-W3-E01-T02) — item que quebra na chegada da operacao seguinte nao mede
+    # regressao, mede calendario.
+    verificar("sistema_capacidades" in nomes and "crm_registros_ler" in nomes,
+              "politica real declara as operacoes de leitura da porta unica: %s" % ", ".join(nomes))
+    # ANCORA:ESCRITA_DECLARADA_TEM_CONTRATO — o que NAO expira: toda operacao de escrita declarada
+    # (de qualquer card) exige chave de idempotencia e identidade declarada. E' a garantia que o
+    # E02-T02 e o E04-T01 (reconciliacao) vao continuar lendo.
+    escritas = [op for op in politica["operacoes"] if op.get("tipo") == "escrita"]
+    sem_contrato = [
+        op.get("nome") for op in escritas
+        if not op.get("requer_idempotency_key")
+        or not any(
+            declaracao.get("campo_de_identidade") or declaracao.get("campos_de_identidade")
+            for declaracao in (op.get("modelos") or {}).values()
+            if isinstance(declaracao, dict)
+        )
+    ]
+    verificar(bool(escritas) and not sem_contrato,
+              "toda operacao de escrita declarada exige idempotency_key e identidade: %s"
+              % ", ".join(op.get("nome") for op in escritas))
 
     print("== validacao da politica (politica ruim nao serve nada) ==")
     casos = [
@@ -150,6 +169,39 @@ def main():
             {"nome": "op_valida", "tipo": "leitura", "fonte": "capacidades"},
             {"nome": "op_valida", "tipo": "leitura", "fonte": "capacidades"}]},
          "operacao duplicada"),
+        # --- E01-T02: forma nova de identidade (lista ordenada) e valor fixo -----------------
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name"], "acao": "upsert"}}}]},
+         "upsert sem identidade declarada (nem campo nem lista)"),
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name"], "acao": "upsert",
+                                         "campos_de_identidade": []}}}]},
+         "lista de identidade vazia"),
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name"], "acao": "upsert",
+                                         "campos_de_identidade": ["tf_cnpj"]}}}]},
+         "identificador da lista fora de 'campos'"),
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name", "tf_cnpj"], "acao": "upsert",
+                                         "campos_de_identidade": ["tf_cnpj", "tf_cnpj"]}}}]},
+         "identificador repetido na lista"),
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name", "is_company"], "acao": "upsert",
+                                         "campo_de_identidade": "name",
+                                         "valores_fixos": {"is_company": True, "tf_x": 1}}}}]},
+         "valor fixo declarado fora de 'campos'"),
+        ({"esquema": "1", "versao": "x", "ambientes_permitidos": ["dev"], "operacoes": [
+            {"nome": "op_valida", "tipo": "escrita", "requer_idempotency_key": True,
+             "modelos": {"res.partner": {"campos": ["name", "is_company"], "acao": "upsert",
+                                         "campo_de_identidade": "name",
+                                         "campos_obrigatorios": ["is_company"],
+                                         "valores_fixos": {"is_company": True}}}}]},
+         "campo obrigatorio e fixo ao mesmo tempo"),
     ]
     for politica_ruim, rotulo in casos:
         problemas = motor.validar_politica(politica_ruim)
@@ -245,7 +297,8 @@ def main():
         politica_teste, "teste_upsert_parceiro",
         {"idempotency_key": "tre-teste-0002", "parametros": {"valores": {"name": "x"}}},
         ambiente="dev"),
-        "campo_obrigatorio_ausente", "upsert sem o valor de identidade")
+        "campo_obrigatorio_ausente",
+        "upsert da politica de teste sem tf_cnpj (que ali e' campo obrigatorio)")
     plano = motor.montar_plano(
         politica_teste, "teste_upsert_parceiro",
         {"idempotency_key": "tre-teste-0003", "dry_run": True,
@@ -265,13 +318,111 @@ def main():
     verificar(plano["acao"] == "ler" and plano["dry_run"] is False,
               "sem dry_run a mesma operacao de leitura e' planejada normalmente")
 
+    print("== escrita de negocio: empresa_upsert (politica real, card E01-T02) ==")
+    op_empresa = motor.operacao(politica, "empresa_upsert")
+    if op_empresa is None:
+        falhou("politica real NAO declara a operacao empresa_upsert (sem ela nao ha' o que medir)")
+        return resumo()
+    verificar(op_empresa["tipo"] == "escrita"
+              and op_empresa["requer_idempotency_key"] is True,
+              "politica real declara empresa_upsert como escrita com idempotency_key exigida")
+    declaracao_empresa = op_empresa["modelos"]["res.partner"]
+    verificar(declaracao_empresa["acao"] == "upsert"
+              and declaracao_empresa["campos_de_identidade"][0] == "tf_company_id",
+              "identidade declarada comeca pelo UUID canonico: %s"
+              % ", ".join(declaracao_empresa["campos_de_identidade"]))
+    verificar(declaracao_empresa["valores_fixos"] == {"is_company": True},
+              "is_company e' valor FIXO declarado na politica (a operacao e' de empresa)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-sem-identidade",
+         "parametros": {"valores": {"name": "Empresa sem identidade"}}}, ambiente="dev"),
+        "identificador_ausente", "upsert de empresa sem nenhum identificador")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-sem-nome",
+         "parametros": {"valores": {"tf_cnpj": "11.222.333/0001-81"}}}, ambiente="dev"),
+        "campo_obrigatorio_ausente", "upsert de empresa sem o campo obrigatorio (name)")
+    plano = motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-identidade-1",
+         "parametros": {"valores": {"name": "Empresa X",
+                                    "tf_company_id": "8f14e45f-ceea-467f-a0e0-000000000010"}}},
+        ambiente="dev")
+    verificar(plano["valores_de_identidade"]
+              == {"tf_company_id": "8f14e45f-ceea-467f-a0e0-000000000010"},
+              "plano carrega somente o identificador presente no pedido")
+    verificar(plano["valores"]["is_company"] is True,
+              "valor fixo declarado entra no plano (is_company true) sem o chamador mandar")
+    verificar(plano["campos_de_identidade"] == declaracao_empresa["campos_de_identidade"],
+              "ordem de identidade do plano e' a ORDEM declarada na politica")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-fixo-divergente",
+         "parametros": {"valores": {"name": "Empresa X", "is_company": False,
+                                    "tf_company_id": "8f14e45f-ceea-467f-a0e0-000000000010"}}},
+        ambiente="dev"),
+        "campo_fixo_divergente", "chamador tentando decidir o valor fixo")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-escalar",
+         "parametros": {"identificador": "11.222.333/0001-81",
+                        "valores": {"name": "Empresa X"}}}, ambiente="dev"),
+        "payload_invalido", "'identificador' escalar em operacao que identifica por lista")
+    plano = motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-por-cnpj",
+         "parametros": {"valores": {"name": "Empresa Y", "tf_cnpj": "11.222.333/0001-81"}}},
+        ambiente="dev")
+    verificar(plano["valores_de_identidade"] == {"tf_cnpj": "11.222.333/0001-81"},
+              "sem o canonico, a identidade cai no forte seguinte (CNPJ)")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-campo-fora",
+         "parametros": {"valores": {"name": "Empresa X", "email": "x@y.z"}}}, ambiente="dev"),
+        "campo_nao_declarado", "campo fora da declaracao na escrita de empresa")
+    recusa(motor, lambda: motor.montar_plano(
+        politica, "empresa_upsert",
+        {"parametros": {"valores": {"name": "Empresa X",
+                                    "tf_cnpj": "11.222.333/0001-81"}}}, ambiente="dev"),
+        "idempotency_key_ausente", "escrita de negocio sem idempotency_key")
+
+    # A forma ANTIGA (identidade por UM campo, a que a politica do E01-T01 declara) continua
+    # valendo, e a abstencao por identidade ausente tem o mesmo nome: aqui `tf_company_id` NAO e'
+    # campo obrigatorio, entao quem falta e' a identidade (`identificador_ausente`).
+    politica_unica = json.loads(json.dumps(politica))
+    op_unica = motor.operacao(politica_unica, "empresa_upsert")
+    del op_unica["modelos"]["res.partner"]["campos_de_identidade"]
+    op_unica["modelos"]["res.partner"]["campo_de_identidade"] = "tf_company_id"
+    verificar(not motor.validar_politica(politica_unica),
+              "forma antiga de identidade (um campo) continua valida na politica")
+    recusa(motor, lambda: motor.montar_plano(
+        politica_unica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-unica-sem-identidade",
+         "parametros": {"valores": {"name": "Empresa X", "tf_cnpj": "11.222.333/0001-81"}}},
+        ambiente="dev"),
+        "identificador_ausente",
+        "forma de um campo: identificador com valor nao veio")
+    plano = motor.montar_plano(
+        politica_unica, "empresa_upsert",
+        {"idempotency_key": "tre-e01-t02-unica-com-identidade",
+         "parametros": {"valores": {"name": "Empresa X",
+                                    "tf_company_id": "8f14e45f-ceea-467f-a0e0-000000000011"}}},
+        ambiente="dev")
+    verificar(plano["campos_de_identidade"] == ["tf_company_id"]
+              and plano["valor_de_identidade"] == "8f14e45f-ceea-467f-a0e0-000000000011",
+              "forma de um campo: plano traz campo e valor de identidade")
+
     print("== operacao de fonte ==")
     plano = motor.montar_plano(politica, "sistema_capacidades", {}, ambiente="dev")
     verificar(plano["acao"] == "capacidades", "operacao de fonte nao resolve modelo de negocio")
     capacidades = motor.capacidades(politica, "dev")
+    # ANCORA:CAPACIDADES_SEM_LITERAL — comparar com a PROPRIA politica (nao com uma lista
+    # literal, que expira a cada operacao de negocio nova): o que se garante e' que a sonda de
+    # saude do consumidor declara exatamente as operacoes da politica em vigor.
     verificar(sorted(op["nome"] for op in capacidades["operacoes"])
-              == ["crm_registros_ler", "sistema_capacidades"],
-              "capacidades listam exatamente as operacoes declaradas")
+              == sorted(motor.operacoes_declaradas(politica)),
+              "capacidades listam exatamente as operacoes declaradas na politica em vigor")
     recusa(motor, lambda: motor.montar_plano(
         politica, "sistema_capacidades",
         {"parametros": {"modelo": "res.partner"}}, ambiente="dev"),

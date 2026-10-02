@@ -1,7 +1,7 @@
 {
   "esquema": "1",
-  "versao": "1.0.0",
-  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. Card TRE-W3-E01-T01. Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa. As operacoes de NEGOCIO (company/contact/opportunity upsert e activity create) sao declaradas pelos cards TRE-W3-E01-T02..T05; as operacoes de escrita nao entram aqui antes do motor de idempotencia (TRE-W3-E02-T02).",
+  "versao": "1.1.0",
+  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. Card TRE-W3-E01-T01 (a porta unica) e TRE-W3-E01-T02 (a primeira operacao de escrita de NEGOCIO, `empresa_upsert`). Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa. As demais operacoes de negocio (contact/opportunity upsert e activity create) sao declaradas pelos cards TRE-W3-E01-T03..T05. A idempotencia POR CHAVE (retry/replay: mesma chave = mesmo efeito, sem repetir escrita) e' do card TRE-W3-E02-T02; aqui a chave e' exigida, validada e registrada, e a garantia de 'nao duplicar' vem da IDENTIDADE declarada em `campos_de_identidade`.",
   "ambientes_permitidos": ["dev"],
   "padroes": {
     "idempotency_key": "^[A-Za-z0-9._:-]{8,128}$",
@@ -82,6 +82,37 @@
       "requer_idempotency_key": false,
       "aceita_dry_run": true,
       "somente_leitura": true
+    },
+    {
+      "nome": "empresa_upsert",
+      "tipo": "escrita",
+      "descricao": "Espelha a empresa pesquisada do sales_intelligence no espelho operacional do CRM (card TRE-W3-E01-T02): cria o parceiro-empresa na primeira vez e ATUALIZA nas seguintes, sem duplicar. Identidade pelos identificadores do contrato — `tf_company_id` (UUID canonico `organizations.id`, `canonical_ids.odoo_map`) primeiro, depois os fortes de dedup na ordem do contrato §5 (CNPJ -> dominio -> LinkedIn Company URL). Se a uniao dos registros casados pelos identificadores presentes tiver mais de um registro, a operacao RECUSA (409 `valor_ambiguo`): ambiguidade e' reportada, nunca resolvida por heuristica (contrato §5 / doc 06 §8). `is_company` e' valor fixo declarado — a operacao e' de EMPRESA e nao cria parceiro-pessoa. A dedup por `idempotency_key` (retry/replay) e' do card TRE-W3-E02-T02.",
+      "modelos": {
+        "res.partner": {
+          "campos": [
+            "name",
+            "is_company",
+            "tf_company_id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_priority_score"
+          ],
+          "campos_obrigatorios": ["name"],
+          "campos_de_identidade": [
+            "tf_company_id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url"
+          ],
+          "valores_fixos": {
+            "is_company": true
+          },
+          "acao": "upsert"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
     }
   ]
 }

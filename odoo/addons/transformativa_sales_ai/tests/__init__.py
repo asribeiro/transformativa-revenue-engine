@@ -8,3 +8,6 @@ from . import test_views_sales_ai
 
 # Card TRE-W3-E01-T01 (`t_e0489efc`): aceite da API controlada (rota HTTP `POST /tf/api/v1/*`).
 from . import test_api_controlada
+
+# Card TRE-W3-E01-T02 (`t_cdc21b43`): aceite da operacao de escrita de negocio `empresa_upsert`.
+from . import test_empresa_upsert

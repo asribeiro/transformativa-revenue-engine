@@ -734,15 +734,46 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (guarda externa por sha256 de 29 arquivos). Runbook e detalhe item a item:
   `docs/runbooks/odoo-api-controlada.md`.
 
+- **Upsert de empresa pela API controlada (`TRE-W3-E01-T02`, `t_cdc21b43`)** — a **primeira operação de
+  escrita de negócio** da porta única: `empresa_upsert` entra declarada em `api/politica_api.json`
+  (versão da política **1.0.0 → 1.1.0**) para escrever em `res.partner` os campos `name`,
+  `tf_company_id`, `tf_cnpj`, `tf_domain`, `tf_linkedin_url` e `tf_priority_score` — e **mais nada**
+  (campo fora da declaração é 422). A **identidade é declarada, não literal**
+  (`campos_de_identidade`): `tf_company_id` (UUID canônico `organizations.id`) primeiro e depois os
+  fortes de dedup do contrato §5 (`tf_cnpj` → `tf_domain` → `tf_linkedin_url`); payload sem nenhum
+  identificador com valor é recusa nomeada (`422 identificador_ausente`) — a API **não inventa**
+  identidade. Semântica de empresa por **valor fixo declarado** (`valores_fixos: {is_company: true}`):
+  o parceiro nasce empresa e continua empresa na atualização; chamador tentando decidir esse valor leva
+  `422 campo_fixo_divergente`. **Ambiguidade é reportada, nunca resolvida por heurística** (contrato
+  §5): se a união dos registros casados pelos identificadores presentes tiver mais de um registro, a
+  resposta é `409 valor_ambiguo` e **nada** é escrito nem alterado. O upsert cria **uma vez** e atualiza
+  depois (`acao_efetiva: criar|atualizar` + ids na resposta), com contagem conferida no banco.
+  **Defeito fechado no card:** a escrita que falhava deixava o registro **gravado** (exceção do ORM
+  capturada depois do `INSERT`, envelope `422` com o dado no banco) — a execução passou a rodar dentro
+  de um **savepoint**, então recusa não deixa rastro; o teste que mede o antes/depois ficou no card.
+  Aceite na VPS (dupla descartável própria, banco `tre_e01_t02_empresa`): **`EMPRESA_UPSERT_OK (104
+  itens, 0 falhas)`**, exit 0 — inclui a suíte pura do motor `MOTOR_API_OK (75 itens)`, instalação em
+  banco limpo, `0 failed, 0 error(s) of 101 tests` (19 testes novos + 82 dos cards anteriores, sem
+  regressão), HTTP real por `curl` de fora do processo (criar/atualizar sem duplicar pela identidade
+  canônica e pelos fortes, `409` ambíguo sem escrever, dry-run que não escreve, `503` fora do ambiente,
+  `422` de valor fixo/chave/campo fora da declaração) e auditoria lida do log do servidor (**15 linhas
+  para 15 chamadas autenticadas**, sem token e sem payload). Dentes: **`EMPRESA_UPSERT_DENTE_OK (3
+  provas + 2 controles do próprio harness, 0 falhas)`**. Os dois itens **datados** do aceite do E01-T01
+  (versão literal da política e lista fechada de operações) foram reescritos para **ler o próprio
+  artefato** — a próxima operação de negócio não os quebra de novo. Runbook:
+  `docs/runbooks/odoo-empresa-upsert.md`.
+
 ### Notas de estado
 
 - **Lacunas declaradas da API (por desenho, não por esquecimento)**: o motor de deduplicação por
-  `idempotency_key` é do `TRE-W3-E02-T02` — aqui a chave é exigida, validada e registrada, e
-  **nenhuma operação de escrita entra na política real** antes dele (o caminho de escrita é medido
-  com política de teste, `tests/politicas/politica_de_teste.json`); cache de política, rate limit e
-  observabilidade durável são do `TRE-W3-E05-T01`. As operações de negócio (company/contact/
-  opportunity upsert e activity create) são dos cards `TRE-W3-E01-T02..T05`, que só precisam
-  **declarar** a operação na política (o mecanismo já está entregue e medido).
+  `idempotency_key` é do `TRE-W3-E02-T02` — aqui a chave é exigida, validada e registrada, e a
+  garantia de "não duplicar" **das operações de escrita de negócio** vem da **identidade declarada**
+  (`campos_de_identidade`), medida por contagem no banco; cache de política, rate limit e
+  observabilidade durável são do `TRE-W3-E05-T01`. A primeira operação de escrita de negócio
+  (`empresa_upsert`, `TRE-W3-E01-T02`) já está declarada na política real (versão 1.1.0); as demais
+  (contact/opportunity upsert e activity create) são dos cards `TRE-W3-E01-T03..T05`, que só precisam
+  **declarar** a operação com o mesmo vocabulário de escrita (`campos_de_identidade`, `valores_fixos`)
+  — o mecanismo já está entregue e medido.
 - **Módulo segue não publicado em `/opt/tre/repo`** (pendência herdada do E03-T01): a API vive no
   módulo, medido em dupla descartável própria; `homolog` e `prod` seguem sem arquivo e sem container.
 - **Revisão independente e homologação abertas**: quem entrega não homologa — o veredito deste card

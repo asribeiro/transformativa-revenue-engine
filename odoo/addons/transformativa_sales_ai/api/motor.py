@@ -27,10 +27,22 @@ FONTE DA REGRA (nada aqui e' inventado):
 O QUE ESTE ARQUIVO NAO FAZ (lacuna declarada):
   * nao implementa o motor de deduplicacao por `idempotency_key` (card `TRE-W3-E02-T02`, filho);
     aqui a chave e' exigida, validada e devolvida no plano, para ser registrada;
-  * nao declara operacao de NEGOCIO nenhuma: company/contact/opportunity upsert e activity
-    create sao dos cards `TRE-W3-E01-T02..T05`, que acrescentam a operacao na politica;
+  * nao declara as operacoes de negocio: `empresa_upsert` entra pela politica no card
+    `TRE-W3-E01-T02` (a primeira escrita de negocio), e contact/opportunity upsert e activity
+    create sao dos cards `TRE-W3-E01-T03..T05`;
   * nao persiste auditoria: emite a decisao; a linha de auditoria e' do controlador e a
     persistencia/observabilidade e' do `TRE-W3-E05-T01`.
+
+O QUE O CARD E01-T02 ACRESCENTOU AQUI (e por que a decisao continua sendo DECLARADA, nao literal):
+  * a identidade da escrita passa a poder ser uma LISTA ORDENADA (`campos_de_identidade`): a ordem
+    da lista e' a prioridade com que o controlador casa o registro (`tf_company_id` canonico
+    primeiro, depois os fortes do contrato §5: CNPJ -> dominio -> LinkedIn). `campo_de_identidade`
+    continua valendo (forma de um campo so', declarada pela politica do E01-T01);
+  * `valores_fixos`: campo cujo valor o chamador NAO decide (ex.: `is_company` do upsert de
+    empresa). Divergencia do payload vira recusa nomeada (`campo_fixo_divergente`), nunca "ignora
+    o que o chamador disse";
+  * sem NENHUM identificador com valor, a escrita abstém-se com `identificador_ausente` — a API
+    nao inventa identidade nem escolhe registro por conta propria.
 """
 
 import datetime
@@ -54,6 +66,14 @@ CODIGOS_DE_ERRO = {
     "idempotency_key_ausente": 422,
     "idempotency_key_invalida": 422,
     "dry_run_nao_suportado": 422,
+    # Identidade da escrita (card TRE-W3-E01-T02): o valor de identidade ausente nao e' "campo
+    # obrigatorio que faltou" — e' a RECUSA de operar sem saber sobre qual registro a operacao
+    # fala. Codigo proprio para o consumidor poder distinguir as duas coisas (n8n: identidade
+    # ausente = evento malformado; campo obrigatorio ausente = payload incompleto).
+    "identificador_ausente": 422,
+    # Campo declarado como FIXO na politica (ex.: `is_company` do `empresa_upsert`) e o chamador
+    # mandou outro valor: recusa nomeada, nunca "ignora o que o chamador disse".
+    "campo_fixo_divergente": 422,
     "valor_ambiguo": 409,
     "ambiente_nao_declarado": 503,
     "ambiente_nao_permitido": 503,
@@ -196,11 +216,40 @@ def validar_politica(politica):
                         "operacao %s: escrita em %s com acao invalida: %r" % (nome, modelo, acao)
                     )
                 identidade = declaracao.get("campo_de_identidade")
-                if acao in ("atualizar", "upsert"):
-                    if not identidade or identidade not in campos:
+                identidades = declaracao.get("campos_de_identidade")
+                if identidades is not None:
+                    if not isinstance(identidades, list) or not identidades:
                         problemas.append(
-                            "operacao %s: %s exige 'campo_de_identidade' dentro de 'campos'"
-                            % (nome, modelo)
+                            "operacao %s: %s declara 'campos_de_identidade' que nao e' lista nao "
+                            "vazia (a ORDEM da lista e' a prioridade da identidade)" % (nome, modelo)
+                        )
+                        identidades = None
+                    else:
+                        vistas_identidade = []
+                        for campo in identidades:
+                            if campo not in campos:
+                                problemas.append(
+                                    "operacao %s: %s declara 'campos_de_identidade' com %s fora "
+                                    "de 'campos'" % (nome, modelo, campo)
+                                )
+                            elif campo in vistas_identidade:
+                                problemas.append(
+                                    "operacao %s: %s repete o identificador %s em "
+                                    "'campos_de_identidade'" % (nome, modelo, campo)
+                                )
+                            else:
+                                vistas_identidade.append(campo)
+                if acao in ("atualizar", "upsert"):
+                    if not identidade and not identidades:
+                        problemas.append(
+                            "operacao %s: %s exige 'campo_de_identidade' (um campo) ou "
+                            "'campos_de_identidade' (lista ordenada por prioridade) dentro de "
+                            "'campos'" % (nome, modelo)
+                        )
+                    if identidade and identidade not in campos:
+                        problemas.append(
+                            "operacao %s: %s declara 'campo_de_identidade' %s fora de 'campos'"
+                            % (nome, modelo, identidade)
                         )
                 for campo in declaracao.get("campos_obrigatorios", []):
                     if campo not in campos:
@@ -208,6 +257,25 @@ def validar_politica(politica):
                             "operacao %s: %s declara obrigatorio %s fora de 'campos'"
                             % (nome, modelo, campo)
                         )
+                fixos = declaracao.get("valores_fixos")
+                if fixos is not None:
+                    if not isinstance(fixos, dict) or not fixos:
+                        problemas.append(
+                            "operacao %s: %s declara 'valores_fixos' que nao e' objeto nao vazio"
+                            % (nome, modelo)
+                        )
+                    else:
+                        for campo in fixos:
+                            if campo not in campos:
+                                problemas.append(
+                                    "operacao %s: %s declara valor fixo em %s fora de 'campos'"
+                                    % (nome, modelo, campo)
+                                )
+                            if campo in declaracao.get("campos_obrigatorios", []):
+                                problemas.append(
+                                    "operacao %s: %s declara %s ao mesmo tempo obrigatorio e fixo "
+                                    "(o chamador nao teria o que enviar)" % (nome, modelo, campo)
+                                )
         if tipo == "escrita" and not op.get("requer_idempotency_key"):
             problemas.append(
                 "operacao %s: escrita sem 'requer_idempotency_key' (doc 06 §7 / doc 13 §9)" % nome
@@ -543,24 +611,57 @@ def _plano_de_escrita(op, declaracao, parametros):
                 "campo_obrigatorio_ausente",
                 "campo obrigatorio ausente na operacao %s: %s" % (op["nome"], campo),
             )
+    fixos = declaracao.get("valores_fixos") or {}
+    for campo, fixo in fixos.items():
+        if campo in valores and valores[campo] != fixo:
+            raise ErroApi(
+                "campo_fixo_divergente",
+                "campo %s e' fixo nesta operacao (%r, declarado na politica): o chamador nao "
+                "decide esse valor (recebido %r)" % (campo, fixo, valores[campo]),
+            )
     acao = declaracao["acao"]
     identidade = declaracao.get("campo_de_identidade")
-    identificador = parametros.get("identificador")
-    if acao in ("atualizar", "upsert"):
-        if identidade in valores:
-            valor_identidade = valores[identidade]
-        else:
-            valor_identidade = identificador
-        _exigir(
-            valor_identidade not in (None, ""),
-            "campo_obrigatorio_ausente",
-            "acao %s exige o valor de identidade (%s)" % (acao, identidade),
-        )
+    # A declaracao pode identificar por UM campo (`campo_de_identidade`, forma do E01-T01) ou por
+    # uma LISTA ORDENADA (`campos_de_identidade`, forma do E01-T02): a ordem da lista e' a
+    # prioridade da identidade — e' ela que o controlador percorre para casar o registro.
+    if declaracao.get("campos_de_identidade"):
+        ordem = list(declaracao["campos_de_identidade"])
+        if identidade and identidade not in ordem:
+            ordem.insert(0, identidade)
     else:
-        valor_identidade = None
+        ordem = [identidade] if identidade else []
+    identificador = parametros.get("identificador")
+    if identificador is not None and len(ordem) != 1:
+        raise ErroApi(
+            "payload_invalido",
+            "'identificador' so' vale para operacao que identifica por um campo; esta identifica "
+            "por lista ordenada (%s) — informe os identificadores dentro de 'valores'"
+            % ", ".join(ordem),
+        )
+    valores_de_identidade = {}
+    if acao in ("atualizar", "upsert"):
+        for campo in ordem:
+            valor = valores.get(campo)
+            if valor in (None, "") and campo == identidade and identificador not in (None, ""):
+                valor = identificador
+            if valor not in (None, ""):
+                valores_de_identidade[campo] = valor
+        _exigir(
+            bool(valores_de_identidade),
+            "identificador_ausente",
+            "acao %s exige ao menos um identificador com valor, na ordem de prioridade da "
+            "politica: %s" % (acao, ", ".join(ordem) or "nenhum declarado"),
+        )
+    valor_identidade = valores_de_identidade.get(identidade) if identidade else None
+    valores_finais = dict(valores)
+    # Valor fixo declarado sempre vale (a divergencia do chamador ja' foi recusada acima).
+    valores_finais.update(fixos)
     return {
         "acao": acao,
-        "valores": dict(valores),
+        "valores": valores_finais,
+        "valores_fixos": fixos,
         "campo_de_identidade": identidade,
         "valor_de_identidade": valor_identidade,
+        "campos_de_identidade": ordem,
+        "valores_de_identidade": valores_de_identidade,
     }

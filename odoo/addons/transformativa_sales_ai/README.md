@@ -16,7 +16,8 @@ O que já existe e quem entrega o quê:
 | Campos de dedup em `res.partner` (CNPJ, domínio, LinkedIn) | `TRE-W2-E04-T01` | entregue |
 | Campos de rastreio em `crm.lead` | `TRE-W2-E04-T02` | entregue |
 | Views do Sales AI | `TRE-W2-E06-T01` | **neste card** |
-| API controlada | `TRE-W3-E01-T01` | **neste card** |
+| API controlada | `TRE-W3-E01-T01` | entregue |
+| Upsert de empresa pela API (`empresa_upsert`) | `TRE-W3-E01-T02` | **neste card** |
 
 ## `tf.process.opportunity` — a oportunidade canônica do lado Odoo
 
@@ -93,6 +94,15 @@ isso vive fora do Odoo (registro de aprovações + gate JEV).
   que não escreve (e o `dry_run` na leitura, que descreve a consulta sem executá-la), a recusa
   `dry_run_nao_suportado` onde a política não aceita, upsert que cria uma vez e atualiza depois, a
   ACL do dono da chave valendo na leitura e a auditoria das duas linhas (`ok` e `recusado`).
+- `tests/test_empresa_upsert.py` (card W3-E01-T02, 19 testes, tag `post_install`): a operação de
+  escrita de negócio `empresa_upsert` — operação declarada nas capacidades (lendo a versão da
+  política do **próprio artefato**, não de literal), criar/atualizar sem duplicar pela identidade
+  canônica e pelos fortes (CNPJ, domínio, LinkedIn), `422 identificador_ausente` sem identificador,
+  `409 valor_ambiguo` quando dois identificadores casam registros **diferentes** (e o mesmo registro
+  **não** é ambiguidade), `422 campo_fixo_divergente` quando o chamador tenta decidir `is_company`,
+  `idempotency_key` ausente/fora do formato, `dry_run` que descreve sem criar **nem** atualizar,
+  UUID fora do formato (a recusa **não** deixa registro) e a auditoria da escrita (ids na trilha,
+  sem payload e sem token).
 
 O aceite de quatro passos (instalação em banco limpo → teste do Odoo → desinstalação →
 reinstalação) roda por `scripts/odoo/verificar-modulo-odoo.sh`, com provas negativas em
@@ -114,6 +124,7 @@ propósito. O conteúdo entra por card, cada um no seu arquivo — o que já exi
 | `TRE-W2-E05-T01` | `models/tf_process_opportunity.py` | modelo canônico `tf.process.opportunity` — runbook `docs/runbooks/odoo-oportunidade-canonica.md` |
 | `TRE-W2-E06-T01` | `views/*.xml` | as views do Sales AI — runbook `docs/runbooks/odoo-views-sales-ai.md` |
 | `TRE-W3-E01-T01` | `api/` e `controllers/api_controlada.py` | a API controlada (`POST /tf/api/v1/<operacao>`) — runbook `docs/runbooks/odoo-api-controlada.md` |
+| `TRE-W3-E01-T02` | `api/politica_api.json` (operação `empresa_upsert`) + `tests/test_empresa_upsert.py` | a primeira **escrita de negócio** da porta única: upsert de empresa em `res.partner` por identidade declarada — runbook `docs/runbooks/odoo-empresa-upsert.md` |
 
 **Ponto de contato entre cards paralelos (hotspot declarado):** `__init__.py` (uma vez),
 `models/__init__.py`, `tests/__init__.py` e este README. Cada card acrescenta **uma linha** nesses
@@ -186,13 +197,13 @@ POST /tf/api/v1/<operacao>     Authorization: Bearer <chave de API do Odoo>
 | `api/motor.py` | Valida a chamada contra a política e monta o plano — **sem importar `odoo`**, para a decisão ser exercitável sem subir Odoo (`scripts/odoo/testar_motor_api.py`) |
 | `controllers/api_controlada.py` | UMA rota, UM verbo: não há rota genérica de "execute qualquer modelo/método/campo" (doc 02 §3). Executa o plano **pelo ORM** (as ACLs do dono da chave valem — não é `sudo`) e grava uma linha `TF_API_AUDIT` por chamada |
 
-Operações declaradas nesta versão da política (**só leitura** — as escritas de negócio entram por
-`TRE-W3-E01-T02..T05`, depois do motor de idempotência do `TRE-W3-E02-T02`):
+Operações declaradas nesta versão da política (1.1.0):
 
 | Operação | O que faz |
 |---|---|
 | `sistema_capacidades` | Sonda de saúde do consumidor: devolve a versão da política e as operações declaradas, sem tocar modelo de negócio |
 | `crm_registros_ler` | Leitura controlada de `res.partner` (campos `tf_*` do E04-T01) e `crm.lead` (rastreio do E04-T02): só campos declarados, só filtros declarados, com teto |
+| `empresa_upsert` | **Escrita de negócio** (`TRE-W3-E01-T02`): upsert do parceiro-**empresa** em `res.partner` (`name`, `tf_company_id`, `tf_cnpj`, `tf_domain`, `tf_linkedin_url`, `tf_priority_score`), identidade declarada em `campos_de_identidade` (canônico → CNPJ → domínio → LinkedIn), `is_company` como **valor fixo** declarado e recusa `409 valor_ambiguo` quando os identificadores do pedido casam mais de um registro — runbook `docs/runbooks/odoo-empresa-upsert.md` |
 
 Guarda de ambiente (ADR-005): sem `ir.config_parameter` `tf.api.ambiente` **declarado** e presente
 em `ambientes_permitidos`, a API recusa tudo (503); `homologacao`/`producao` exigem aprovação humana
@@ -208,3 +219,11 @@ versão permite `dev` e só.
   (chave gerada na hora, arquivo 600, nunca em `ps`), auditoria lida do log do servidor, greps de
   contrato e limpeza com dev/homolog/prod medidos. Provas negativas em `--prova-de-dente` (3
   mutações, cada uma **tem** de reprovar, com guarda externa do artefato por sha256).
+- **Aceite da operação de escrita (`TRE-W3-E01-T02`):** `bash scripts/odoo/verificar-empresa-upsert.sh`
+  (na VPS, script próprio — o aceite do E01-T01 **não** foi ampliado) — 104 itens: suíte pura do
+  motor, instalação em banco limpo, `101 testes` do Odoo sem falha, HTTP real por `curl` (criar,
+  atualizar, identidade pelos fortes, `409` ambíguo com o banco conferido antes/depois, dry-run que
+  não escreve, `503` fora do ambiente medido com servidor novo, `422` do valor fixo), auditoria lida
+  do log (`15 linhas para 15 chamadas autenticadas`) e greps de contrato. `--prova-de-dente` com 3
+  mutações **mais 2 controles do próprio harness** (sub-run que reprova por ambiente não conta como
+  dente; mutação inócua é reportada como `mutacao sem dente`).

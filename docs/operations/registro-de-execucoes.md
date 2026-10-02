@@ -491,3 +491,58 @@ sustenta 16 containers. Nada foi executado.
   (perfil `tester`) e a ratificação da versão 19.0/homologação (estágio 7) é do Anderson. A
   publicação do módulo na cópia operacional `/opt/tre/repo` (`deploy/publicar.sh`) segue como
   pendência herdada do E03-T01.
+
+
+---
+
+## 2026-10-02 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W3-E01-T02 (card `t_cdc21b43`): a primeira **escrita de negocio** da API controlada (`empresa_upsert`)
+
+**O que foi executado (por mim, por SSH com a chave de operacoes — o container do agente nao tem
+docker daemon, entao toda execucao vira esta linha):**
+
+- **Envio do artefato:** `tar` do worktree `.worktrees/t_cdc21b43` (branch `feature/TRE-W3-E01-T02`,
+  empilhada em `feature/TRE-W3-E01-T01` = `afab91c`) para `/opt/tre/evid-t_cdc21b43/repo-r1`, com
+  conferencia por `sha256` dos arquivos da entrega contra o worktree (9/9 nas rodadas 1-2, 11/11 na
+  rodada final). O que o aceite mede e' uma copia byte a byte, nunca o worktree.
+- **Suite pura do motor (na VPS, sem Odoo):** `python3 scripts/odoo/testar_motor_api.py` →
+  `MOTOR_API_OK (75 itens, 0 falhas)`.
+- **Aceite proprio (`scripts/odoo/verificar-empresa-upsert.sh`), rodada 1:**
+  `RESULTADO: EMPRESA_UPSERT_FALHOU (102 itens, 5 falha(s))`. O reprovado era o **preparo**, nao a
+  API: as duas linhas do caso ambiguo (AC4) nasceram de SQL cru sem `active`, e o ORM nao as enxerga
+  (o default de `active` e' do ORM, nao da coluna) — a API nao viu ambiguidade, criou um terceiro
+  registro, e o aceite pegou pelo banco. Correcao: `active` explicito no preparo e `NOME_FINAL`
+  passando a vir da chamada por CNPJ.
+- **Rodada 2:** `EMPRESA_UPSERT_OK (104 itens, 0 falhas)`, com `0 failed, 0 error(s) of 101 tests` do
+  Odoo (19 testes novos + 82 dos cards anteriores) e auditoria lida do log do servidor (`14 linhas
+  para 14 chamadas autenticadas`).
+- **Dentes, rodada 1:** o harness reprovou a si mesmo — a conferencia da mutacao 1 era `grep` pela
+  palavra `empresa_upsert`, que sobrevive na `descricao` da politica. Correcao: conferencia por
+  **operacao**.
+- **Dentes, rodada 2:** reprovou de novo, por outro motivo tambem real: o `avaliar_dente` exigia o
+  texto exato do ramo `ok`, e o `falhou` do mesmo item traz o diagnostico (texto diferente) — o dente
+  dependia da redacao do item, nao do comportamento. Correcao: **marcadores multiplos** por dente +
+  autoteste do harness (cada marcador tem de existir como texto de item no proprio verificador).
+- **Dentes, rodada 3:** as 3 provas e os 2 controles sairam `OK` e o veredito saiu
+  `EMPRESA_UPSERT_DENTE_FALHOU (2 prova(s) sem dente)` — **falso vermelho**: os controles usam o
+  contador `DENTE_FALHAS` como sinal de que pegaram o caso, e o incremento ficava contado como prova
+  reprovada. Correcao: incremento desfeito no ramo de sucesso (mantido quando o controle falha, senao
+  o harness vira fail-open).
+- **Aceite, rodada 3 (artefato final):** `EMPRESA_UPSERT_OK (104 itens, 0 falhas)`; auditoria
+  `15 linhas para 15 chamadas autenticadas` (o numero subiu de 14 porque a correcao do AC4 acrescentou
+  a chamada por CNPJ).
+- **Dentes, rodada 4 (artefato final):**
+  `EMPRESA_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)` — 19 itens `OK`,
+  0 `FALHOU`, com a guarda externa confirmando o mesmo `sha256` do modulo antes e depois das mutacoes.
+- **Limpeza medida:** 0 container, 0 rede e 0 diretorio `/tmp` residual do aceite (`e01t02-*`); os 4
+  containers do dev (`odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`, `proxy-dev`) de pe o tempo todo;
+  `/opt/tre/homolog` e `/opt/tre/prod` com 0 arquivo antes e depois.
+- **Verificadores do projeto (no worktree do commit):** `bash scripts/verificar_estrutura.sh` →
+  `PASS (0 falhas)`; `bash scripts/secret_scan.sh` → `PASS (nenhum segredo versionado)`;
+  `bash scripts/verificar_papeis.sh` → `PASS (0 falhas)`. O `verificar_estrutura.sh` foi estendido
+  para exigir versionados os artefatos deste card (a suite de aceite, o verificador proprio e o
+  runbook).
+- **Segredos:** nenhum valor nesta entrada e nenhum valor no repositorio. A chave da API nasceu na VPS,
+  em arquivo `600` dentro do diretorio descartavel do preparo, lida pelo `curl` por arquivo de
+  configuracao (nunca em `ps`, argumento ou log), e morreu com o diretorio.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e' do estagio 6
+  (perfil `tester`) e a homologacao (estagio 7) e' do Anderson.

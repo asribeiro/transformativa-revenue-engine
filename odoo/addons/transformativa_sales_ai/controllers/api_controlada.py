@@ -94,7 +94,15 @@ class ApiControlada(http.Controller):
                 ambiente=ambiente,
                 aprovacao=_parametro(PARAMETRO_APROVACAO),
             )
-            dados = self._executar(plano, politica)
+            # Escrita que falha NAO deixa rastro no banco. O ORM levanta no meio do `create`/`write`
+            # e, capturando a excecao DEPOIS, a linha problematica ja' esta' na transacao: o
+            # envelope diria "recusado" com o registro gravado. O savepoint e' o rollback
+            # cirurgico — descarta so' a operacao que falhou e mantem a transacao viva para
+            # responder o envelope. Defeito medido no aceite de TRE-W3-E01-T02
+            # (`test_15_uuid_canonico_fora_do_formato_recusa_422`: 4 registros depois da recusa,
+            # 3 antes), fechado neste card junto do teste que o cobre.
+            with request.env.cr.savepoint():
+                dados = self._executar(plano, politica)
             resposta = self._resposta_ok(plano, politica_versao, correlacao, dados)
             self._auditar(plano, correlacao, ambiente, politica_versao, "ok", None,
                           resposta["http"], dados, inicio)
@@ -138,31 +146,11 @@ class ApiControlada(http.Controller):
 
     def _executar_escrita(self, modelo, plano):
         acao = plano["acao"]
-        identidade = plano["campo_de_identidade"]
-        valor = plano["valor_de_identidade"]
         valores = plano["valores"]
         if acao == "upsert":
-            existentes = modelo.search([(identidade, "=", valor)], limit=2)
-            if len(existentes) > 1:
-                raise motor.ErroApi(
-                    "valor_ambiguo",
-                    "mais de um registro com %s = %r — a API nao escolhe por conta propria"
-                    % (identidade, valor),
-                )
-            if existentes:
-                if plano["dry_run"]:
-                    return {
-                        "dry_run": True,
-                        "acao_efetiva": "atualizar",
-                        "id": existentes.id,
-                        "atualizaria": sorted(valores),
-                    }
-                existentes.write(valores)
-                return {"acao_efetiva": "atualizar", "ids": existentes.ids}
-            if plano["dry_run"]:
-                return {"dry_run": True, "acao_efetiva": "criar", "criaria": sorted(valores)}
-            criado = modelo.create(valores)
-            return {"acao_efetiva": "criar", "ids": criado.ids}
+            return self._executar_upsert(modelo, plano, valores)
+        identidade = plano["campo_de_identidade"]
+        valor = plano["valor_de_identidade"]
         if acao == "atualizar":
             existentes = modelo.search([(identidade, "=", valor)], limit=2)
             if len(existentes) != 1:
@@ -180,6 +168,62 @@ class ApiControlada(http.Controller):
                 }
             existentes.write(valores)
             return {"acao_efetiva": "atualizar", "ids": existentes.ids}
+        if plano["dry_run"]:
+            return {"dry_run": True, "acao_efetiva": "criar", "criaria": sorted(valores)}
+        criado = modelo.create(valores)
+        return {"acao_efetiva": "criar", "ids": criado.ids}
+
+    # ------------------------------------------------------------------ upsert por identidade
+    @staticmethod
+    def _casar_por_identidade(modelo, plano):
+        """Casa o registro pelos identificadores DECLARADOS na politica, na ordem da lista.
+
+        A ordem e' a prioridade (`campos_de_identidade`), mas quem casa e' o CONJUNTO: o valor
+        de cada identificador presente no pedido e' usado para buscar, e a uniao dos achados e' o
+        que o portao de ambiguidade avalia. Devolve (registros, casados) — `casados` existe para a
+        mensagem de recusa dizer POR QUE casou mais de um (auditoria do consumidor), sem payload.
+
+        `limit=2` em cada busca e' de proposito: mais de um achado ja' e' ambiguidade, e o numero
+        exato nao interessa — o que interessa e' nunca escolher sozinho.
+        """
+        conjunto = modelo.browse()
+        casados = []
+        for campo in plano.get("campos_de_identidade") or ():
+            valor = (plano.get("valores_de_identidade") or {}).get(campo)
+            if valor in (None, ""):
+                continue
+            achados = modelo.search([(campo, "=", valor)], limit=2)
+            if achados:
+                conjunto |= achados
+                casados.append("%s=%s" % (campo, valor))
+        return conjunto, casados
+
+    def _executar_upsert(self, modelo, plano, valores):
+        """Upsert: cria uma vez, atualiza depois — e, se a identidade for ambigua, nao escreve.
+
+        A ordem das identidades e' declarada na politica (nao literal aqui). Quando dois
+        identificadores do MESMO pedido apontam para registros diferentes, o resultado e'
+        `valor_ambiguo` (409) e nada e' tocado: o contrato (§5) manda reportar ambiguidade, nunca
+        resolve-la por heuristica.
+        """
+        registros, casados = self._casar_por_identidade(modelo, plano)
+        if len(registros) > 1:
+            raise motor.ErroApi(
+                "valor_ambiguo",
+                "os identificadores do pedido casaram mais de um registro (%s) — a API nao "
+                "escolhe por conta propria (contrato §5: ambiguidade e' reportada)"
+                % "; ".join(casados),
+            )
+        if registros:
+            if plano["dry_run"]:
+                return {
+                    "dry_run": True,
+                    "acao_efetiva": "atualizar",
+                    "id": registros.id,
+                    "atualizaria": sorted(valores),
+                }
+            registros.write(valores)
+            return {"acao_efetiva": "atualizar", "ids": registros.ids}
         if plano["dry_run"]:
             return {"dry_run": True, "acao_efetiva": "criar", "criaria": sorted(valores)}
         criado = modelo.create(valores)

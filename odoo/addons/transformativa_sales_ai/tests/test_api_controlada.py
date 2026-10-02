@@ -28,6 +28,7 @@ O QUE ESTA SUITE NAO PROVA (declarado, para nao vender mais do que mede):
 """
 
 from datetime import date, datetime, timedelta
+import json
 
 from odoo.modules.module import get_module_path
 from odoo.tests import HttpCase, new_test_user, tagged
@@ -123,11 +124,21 @@ class TestApiControlada(HttpCase):
         self.assertTrue(corpo["ok"])
         self.assertEqual(corpo["operacao"], "sistema_capacidades")
         self.assertEqual(corpo["ambiente"], "dev")
-        self.assertEqual(corpo["politica_versao"], "1.0.0")
+        # ANCORA:POLITICA_EM_VIGOR — versao e lista de operacoes saem do PROPRIO arquivo da
+        # politica: o item garantia que expira a cada versao nova (era literal "1.0.0" e lista
+        # fechada) passou a garantir o que interessa — a API serve exatamente o que a politica em
+        # vigor declara, seja qual for a versao. Fato datado deixa de derrubar a suite quando a
+        # proxima operacao de negocio entrar (TRE-W3-E01-T03..T05).
+        with open(self.politica_real, "r", encoding="utf-8") as fh:
+            politica = json.load(fh)
+        self.assertEqual(corpo["politica_versao"], politica["versao"])
         self.assertTrue(corpo["correlation_id"])
         nomes = [op["nome"] for op in corpo["dados"]["capacidades"]["operacoes"]]
-        self.assertEqual(sorted(nomes), ["crm_registros_ler", "sistema_capacidades"])
-        self.assertEqual(corpo["dados"]["capacidades"]["ambientes_permitidos"], ["dev"])
+        self.assertEqual(sorted(nomes), sorted(op["nome"] for op in politica["operacoes"]))
+        self.assertEqual(
+            corpo["dados"]["capacidades"]["ambientes_permitidos"],
+            politica["ambientes_permitidos"],
+        )
 
     def test_07_correlation_id_do_chamador_e_ecoado(self):
         resposta = self._post(
