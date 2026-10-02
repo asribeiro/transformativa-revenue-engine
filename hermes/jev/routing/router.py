@@ -320,6 +320,19 @@ TERMOS_DE_DOMINIO_SENSIVEL = {
 # guardrail de do_not_contact, como antes).
 TERMOS_DE_ENVIO = ("envio", "envios", "enviar", "mandar", "remeter", "apresentar")
 
+# ---------------------------------------------------------------------------
+# Vocabulario do guardrail de OUTBOUND (`do_not_contact`) — defeito [encaixe]
+# do card `t_fa344342` (02/10/2026), medido com o sinal `empresa_do_not_contact`
+# ligado no titulo de um card de DESENVOLVIMENTO.
+#
+# `TERMOS_DE_ABORDAGEM` e o filtro que separa, na prosa de um papel, a entrada que
+# fala de ABORDAGEM a terceiro da entrada que fala de PERMISSAO de trabalho. So a
+# primeira pode decidir o que e outbound: a lista de entradas de um guardrail e
+# parte do guardrail.
+# ---------------------------------------------------------------------------
+TERMOS_DE_ABORDAGEM = ("contato", "contatar", "proposta", "e-mail", "mensagem",
+                       "linkedin", "whatsapp")
+
 # Regra: (codigo canonico da politica, grupos de conceitos). A regra aciona quando
 # TODOS os grupos tem pelo menos um conceito presente na acao. O codigo devolvido e
 # exatamente o nome declarado em `nunca_decidido_por_maquina` (a suite prova o
@@ -1196,19 +1209,47 @@ def _entradas_com(papeis: dict, termo: str) -> list:
     return achadas
 
 
+def _entradas_de_abordagem(politica: dict, papeis: dict) -> list:
+    """Entradas que NOMEIAM abordagem a terceiro — o unico vocabulario de outbound.
+
+    Fontes, e SO elas:
+      1. os CODIGOS da politica (`nunca_decidido_por_maquina`:
+         `primeiro_contato_outbound`, `envio_de_proposta_comercial`, ...);
+      2. as entradas dos papeis que citam um `TERMOS_DE_ABORDAGEM` — as secoes de
+         abordagem do proprio papel (`_entradas_com`, em `pode` E em `nao_pode`).
+
+    A prosa GENERICA de `pode`/`nao_pode` de todos os papeis NAO entra: ela descreve
+    PERMISSAO de trabalho do papel, nao abordagem a terceiro. Ate aqui a lista era
+    `pode` + `nao_pode` de TODOS os papeis, e uma entrada de desenvolvimento
+    ("escrever codigo e migrations no repositorio do TRE") casava QUALQUER titulo de
+    card que citasse "tre" e "codigo" — dois tokens de dominio, `casados >= 2` — e o
+    guardrail `do_not_contact` bloqueava, com o sinal `empresa_do_not_contact`
+    ligado, um card que nao aborda ninguem (defeito medido no card `t_fa344342`).
+
+    Entrada de guardrail e parte do guardrail: entra aqui o que nomeia a acao que o
+    guardrail protege, nunca o resto do vocabulario de dominio do papel. A fonte
+    `human-approval.yaml` fica FORA pelo mesmo criterio: das suas acoes, a que cita
+    um termo de canal ("expor segredo em log, receipt ou mensagem") nao fala de
+    abordagem a terceiro — incluir a fonte inteira reintroduziria o mesmo falso
+    positivo por outra entrada (medido na suite
+    `scripts/verificar_outbound_sem_prosa_de_papel.py`).
+    """
+    entradas = list(politica.get("nunca_decidido_por_maquina") or [])
+    for termo in TERMOS_DE_ABORDAGEM:
+        entradas += _entradas_com(papeis, termo)
+    return list(dict.fromkeys(entradas))
+
+
 def _e_acao_outbound(acao: str, politica: dict, papeis: dict) -> bool:
-    """Acao e outbound? Estas entradas sao a PROSA dos papeis + os codigos da politica.
+    """Acao e outbound? A lista de entradas e `_entradas_de_abordagem` — so o que
+    NOMEIA abordagem a terceiro (codigos da politica + secoes de abordagem do papel).
 
     Casamento de PALAVRA INTEIRA (`_token_casa_inteiro`): o prefixo de 4 caracteres
     reprovava prosa legitima de card contra este mesmo vocabulario (defeito
     TRE-W3-E04-T03-D01 — "contagem"/"contrato" casando o verbo de abordagem).
     """
-    entradas = list((politica.get("nunca_decidido_por_maquina") or []))
-    for dado in papeis.values():
-        entradas += list(dado.get("pode") or []) + list(dado.get("nao_pode") or [])
-    for termo in ("contato", "contatar", "proposta", "e-mail", "mensagem", "linkedin", "whatsapp"):
-        entradas += _entradas_com(papeis, termo)
-    return bool(_entradas_que_casam(acao, entradas, _token_casa_inteiro))
+    return bool(_entradas_que_casam(acao, _entradas_de_abordagem(politica, papeis),
+                                    _token_casa_inteiro))
 
 
 def _texto_declarado_para_ddl(tarefa) -> str:
