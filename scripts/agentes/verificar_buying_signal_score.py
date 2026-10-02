@@ -142,6 +142,14 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
          all(c["confianca"] == modulo.CONFIANCA_PADRAO
              for c in calculo["sinais_utilizados"] if c["confianca_padrao_usada"]))
     item("calculo: confianca padrao contada", 1, calculo["confianca_padrao_usada"])
+    # Defeito pego no aceite E2E: o JSONB do banco devolve '' (nao None) para confianca NULL.
+    vazio = [{"id": "v", "signal_type": "GROWTH", "confidence": "",
+              "event_date": agora.isoformat(timespec="seconds"), "detected_at": None}]
+    item("calculo: confianca '' (NULL do banco) usa o padrao", 1,
+         modulo.calcular_score(vazio, agora_iso)["confianca_padrao_usada"])
+    item("calculo: data '' (NULL do banco) nao vira sinal", 1,
+         len(modulo.calcular_score([{"id": "w", "signal_type": "GROWTH", "confidence": "1",
+                                     "event_date": "", "detected_at": ""}], agora_iso)["descartados"]))
     item("calculo: soma dos pontos igual a soma declarada", True,
          abs(sum(c["pontos"] for c in calculo["sinais_utilizados"])
              - sum(r["pontos"] for r in modulo.calcular_score(linhas, agora_iso)["sinais_utilizados"])) < 1e-9)
@@ -253,6 +261,11 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     item("idempotencia: hash determinista", h1, h2)
     item("idempotencia: hash muda com sinal novo", True,
          h1 != modulo.hash_das_entradas("org-1", modulo.calcular_score(mais, agora_iso)))
+    # Defeito pego no aceite E2E: o hash nao pode carregar os pontos (que envelhecem a cada segundo),
+    # senao a chave muda a cada rodada e nao ha idempotencia nenhuma.
+    depois = (agora + timedelta(hours=3)).isoformat(timespec="seconds")
+    item("idempotencia: hash nao depende do relogio", h1,
+         modulo.hash_das_entradas("org-1", modulo.calcular_score(linhas, depois)))
     item("idempotencia: chave carrega tipo, empresa e hash",
          "score:BUYING_SIGNAL:org-1:" + h1, modulo.chave_idempotencia("org-1", h1))
     item("idempotencia: chave e a ENTRADA, nao a rodada", True,
@@ -309,7 +322,7 @@ def suite(raiz: Path, caminho_codigo: Path) -> int:
     fonte = caminho_codigo.read_text(encoding="utf-8")
     item("codigo: sem requests/urllib/socket", False,
          bool(re.search(r"\b(import\s+requests|import\s+urllib|import\s+socket|http\.client)", fonte)))
-    item("codigo: nenhum subprocess.run proprio (a porta importada fala com o banco)", 0,
+    item("codigo: um unico subprocess.run (a porta psql propria)", 1,
          len(re.findall(r"subprocess\.run", fonte)))
     item("codigo: nenhuma chamada de LLM", False, bool(re.search(r"(openai|anthropic|completions)", fonte, re.I)))
     item("codigo: nenhuma leitura de variavel de ambiente secreta", False,

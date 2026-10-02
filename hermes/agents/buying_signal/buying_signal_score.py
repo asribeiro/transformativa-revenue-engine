@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import re
 import shlex
@@ -204,12 +203,9 @@ EXIT_RECUSOU_AMBIENTE = 4
 CONTRATO_DADOS_PADRAO = "docs/data/data_contract_v1.json"
 CONTRATO_AGENTE_PADRAO = "hermes/agents/buying_signal/agente-buying-signal-v1.json"
 MIGRATION_PADRAO = "db/migrations/0001_sales_intelligence_v1.sql"
-# A porta de banco (ADR-0008) é a MESMA do detector: uma única implementação de "falar com o
-# PostgreSQL da VPS". Cópia de porta é divergência esperando acontecer.
-MODULO_PORTA = "hermes/agents/signal/signal.py"
 
 _DATA_ISO = re.compile(
-    r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?)?$")
+    r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)?)?$")
 
 
 def descobrir_raiz_padrao() -> Path:
@@ -241,7 +237,7 @@ class ContratoDivergente(Exception):
 
 
 # ---------------------------------------------------------------------------------------
-# Contratos e porta de banco importada do detector
+# Contratos
 # ---------------------------------------------------------------------------------------
 def carregar_json(caminho) -> dict:
     return json.loads(Path(caminho).read_text(encoding="utf-8"))
@@ -257,21 +253,47 @@ def tipos_do_contrato_de_dados(raiz) -> tuple:
     return tuple(contrato["vocabularies"]["signal_type"])
 
 
-def carregar_porta(raiz):
-    """Carrega a PORTA de banco do detector (PortaSQL/PortaAusente/PortaPsql/PortaIndisponivel).
+# ---------------------------------------------------------------------------------------
+# Porta de banco (ADR-0008: o SQL roda na VPS; a porta é o prefixo psql)
+# ---------------------------------------------------------------------------------------
+class PortaSQL:
+    """Interface da porta: quem fala com o PostgreSQL da VPS."""
 
-    Import tardio de propósito: o módulo é localizado pela raiz do repo, então a cópia do
-    componente sob teste em diretório raso continua importável.
+    def executar(self, sql: str, permitir_remocao: bool = False) -> tuple:
+        raise NotImplementedError
+
+
+class PortaAusente(PortaSQL):
+    """Sem porta configurada: qualquer tentativa de falar com o banco RECUSA."""
+
+    def executar(self, sql: str, permitir_remocao: bool = False) -> tuple:
+        raise PortaIndisponivel(
+            "nenhuma porta de banco configurada (use --prefixo ou TRE_PSQL_PREFIXO)")
+
+
+class PortaPsql(PortaSQL):
+    """Executa SQL pelo prefixo psql informado (ex.: 'docker exec -i pg-sales-dev psql -U ..').
+
+    O transporte é o MESMO comando do detector (mesma forma de saída lida linha a linha), mas a
+    guarda aplicada é a DESTE componente (`validar_sql` acima): quem escreve score não escreve
+    sinal, e vice-versa. Guarda de um agente não vale como guarda de outro.
     """
-    caminho = Path(raiz) / MODULO_PORTA
-    if not caminho.is_file():
-        raise ValueError("módulo da porta de banco ausente: %s" % caminho)
-    spec = importlib.util.spec_from_file_location("signal_porta", str(caminho))
-    if spec is None or spec.loader is None:
-        raise ValueError("não consegui carregar a porta: %s" % caminho)
-    modulo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(modulo)
-    return modulo
+
+    def __init__(self, prefixo: str, timeout: int = 120):
+        if not prefixo:
+            raise PortaIndisponivel("prefixo psql vazio (use --prefixo ou TRE_PSQL_PREFIXO)")
+        self.prefixo = shlex.split(prefixo)
+        self.timeout = timeout
+
+    def executar(self, sql: str, permitir_remocao: bool = False) -> tuple:
+        validar_sql(sql, permitir_remocao=permitir_remocao)
+        comando = self.prefixo + ["-v", "ON_ERROR_STOP=1", "-q", "-tA", "-F", "|"]
+        try:
+            p = subprocess.run(comando, input=sql, capture_output=True, text=True,
+                               timeout=self.timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise PortaIndisponivel("porta psql falhou: %s" % exc)
+        return p.returncode, p.stdout, p.stderr
 
 
 def _sha256(texto: str) -> str:
@@ -330,7 +352,8 @@ def pontos_do_sinal(linha: dict, agora_dt: datetime) -> dict:
     categoria = CATEGORIAS_POR_TIPO[tipo]
     peso = PESOS_POR_TIPO[tipo]
     confianca_bruta = linha.get("confidence")
-    padrao_usado = confianca_bruta is None
+    # O JSONB do banco devolve '' para coluna NULL (COALESCE da leitura): vazio é AUSENTE, não zero.
+    padrao_usado = confianca_bruta is None or str(confianca_bruta).strip() == ""
     if padrao_usado:
         confianca = CONFIANCA_PADRAO
     else:
@@ -416,7 +439,12 @@ def calcular_score(linhas: list, agora_iso: str) -> dict:
 
 
 def hash_das_entradas(organizacao_id: str, calculo: dict) -> str:
-    """A chave é a ENTRADA: empresa + conjunto de sinais que ENTRARAM (não a rodada)."""
+    """A chave é a ENTRADA: empresa + conjunto de sinais que ENTRARAM (não a rodada, não o relógio).
+
+    O material usa a IDENTIDADE declarada dos sinais (id, tipo) e os parâmetros da fórmula — nunca
+    os pontos derivados: pontos carregam a idade do sinal e mudariam a cada segundo, e um score que
+    nunca repete a chave não tem idempotência nenhuma (defeito pego no aceite E2E).
+    """
     material = json.dumps({
         "organizacao": organizacao_id,
         "score_type": SCORE_TYPE,
@@ -426,8 +454,9 @@ def hash_das_entradas(organizacao_id: str, calculo: dict) -> str:
         "confianca_padrao": CONFIANCA_PADRAO,
         "pesos": PESOS_POR_TIPO,
         "meia_vida": MEIA_VIDA_DIAS,
-        "sinais": [{"id": c["id"], "pontos": c["pontos"], "tipo": c["tipo"]}
-                   for c in calculo["sinais_utilizados"]],
+        "sinais": sorted(({"id": str(c["id"]), "tipo": c["tipo"]}
+                          for c in calculo["sinais_utilizados"]),
+                         key=lambda s: s["id"]),
         "ignorados": sorted(str(i) for i in calculo["sinais_ignorados"]),
         "descartados": sorted(({"id": str(d["id"]), "motivo": d["motivo"]}
                                for d in calculo["descartados"]),
@@ -666,12 +695,7 @@ class BuyingSignalScore:
         self.porta = porta if porta is not None else self._porta_padrao()
 
     def _porta_padrao(self):
-        try:
-            modulo = carregar_porta(self.raiz)
-        except ValueError:
-            return None
-        self.porta_modulo = modulo
-        return modulo.PortaAusente()
+        return PortaAusente()
 
     def contrato(self) -> dict:
         return carregar_contrato_do_agente(self.raiz)
@@ -727,12 +751,7 @@ class BuyingSignalScore:
     def _consultar(self, sql: str, permitir_remocao: bool = False) -> list:
         if self.porta is None:
             raise PortaIndisponivel("nenhuma porta de banco configurada")
-        try:
-            codigo, saida, erro = self.porta.executar(sql, permitir_remocao=permitir_remocao)
-        except Exception as exc:  # a porta é importada: a exceção dela é OUTRA classe
-            if type(exc).__name__ == "PortaIndisponivel":
-                raise PortaIndisponivel(str(exc))
-            raise
+        codigo, saida, erro = self.porta.executar(sql, permitir_remocao=permitir_remocao)
         if codigo != 0:
             raise PortaIndisponivel("psql saiu com %d: %s" % (codigo, erro.strip()[:400]))
         return [linha for linha in saida.splitlines() if linha.strip()]
@@ -805,6 +824,7 @@ class BuyingSignalScore:
                 "confianca_padrao": CONFIANCA_PADRAO,
                 "sinais_utilizados": calculo["sinais_utilizados"],
                 "sinais_ignorados": calculo["sinais_ignorados"],
+                "confianca_padrao_usada": calculo["confianca_padrao_usada"],
                 "descartados": calculo["descartados"],
                 "total_de_sinais_lidos": calculo["total_de_sinais_lidos"],
                 "entrada_hash": entrada_hash,
@@ -913,10 +933,9 @@ def main(argv=None) -> int:
         return EXIT_USO
     porta = None
     if not args.planejar:
-        modulo = carregar_porta(args.raiz)
         try:
-            porta = modulo.PortaPsql(args.prefixo)
-        except modulo.PortaIndisponivel as exc:
+            porta = PortaPsql(args.prefixo)
+        except PortaIndisponivel as exc:
             print("FALHOU %s" % exc)
             return EXIT_USO
     agente = BuyingSignalScore(porta=porta, raiz=args.raiz, ambiente=args.ambiente,
@@ -941,11 +960,6 @@ def main(argv=None) -> int:
     except GuardaDeEscritaViolada as exc:
         print("GUARDA_VIOLADA %s" % exc)
         return EXIT_FALHOU
-    except Exception as exc:  # a porta importada levanta a exceção DELA: trata pelo nome
-        if type(exc).__name__ in ("PortaIndisponivel", "ContratoDivergente"):
-            print("FALHOU %s" % exc)
-            return EXIT_FALHOU
-        raise
     if args.relatorio:
         Path(args.relatorio).write_text(json.dumps(relatorio, ensure_ascii=False, indent=1),
                                         encoding="utf-8")

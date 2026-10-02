@@ -365,5 +365,24 @@ for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Buying Signal Score v1 (TRE-W5-E03-T01): o primeiro componente da W5 — transforma os `signals`
+# do detector no score `BUYING_SIGNAL` com score_version, inputs e explanation, sem tocar em
+# `signals`/`organizations` e sem UPDATE em `scores` (score historico). O portao cobra por NOME o
+# contrato, o codigo, a suite offline, o aceite E2E, o doc de arquitetura e o runbook: se um deles
+# sumir do git, o card entrega fica sem artefato verificavel.
+for f in hermes/agents/buying_signal/buying_signal_score.py \
+         hermes/agents/buying_signal/agente-buying-signal-v1.json \
+         scripts/agentes/verificar_buying_signal_score.py \
+         scripts/agentes/teste_buying_signal_aceite.sh \
+         docs/architecture/buying-signal-score-v1.md docs/runbooks/buying-signal-score.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_buying_signal_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

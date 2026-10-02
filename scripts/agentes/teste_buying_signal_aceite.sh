@@ -120,7 +120,7 @@ VALUES ('44444444-4444-4444-8444-444444444444','$ORG','ERP_CHANGE','TECNOLOGIA',
         'Programa de IA anunciado','WEB', NULL, NOW() - INTERVAL '30 days', NULL);
 SQL
 
-conta() { psql_t -c "SELECT $1;" | head -1; }
+conta() { psql_t -c "$1" | head -1; }
 rodar() { # <cid> <args...>
   local cid="$1"; shift
   ( cd "$RAIZ" && python3 "$MODULO" --ambiente dev --correlation-id "$cid" \
@@ -193,11 +193,11 @@ item "A6 nada escrito para a fantasma" 0 "$(conta "SELECT COUNT(*) FROM sales_in
 # A7 — desfazer: dry-run nao apaga; --confirmo apaga SO o que a rodada criou
 # ---------------------------------------------------------------------------------------
 ANTES=$(conta "SELECT COUNT(*) FROM sales_intelligence.scores;")
-DRY=$(rodar "$CID1" --desfazer "$CID1")
-item "A7 dry-run nao apaga" 1 "$(echo "$DRY" | grep -c '"dry_run": true')"
-item "A7 dry-run preserva" "$ANTES" "$(conta "SELECT COUNT(*) FROM sales_intelligence.scores;")"
-CONF=$(rodar "$CID1" --desfazer "$CID1" --confirmo)
-item "A7 --confirmo apagou 1" 1 "$(echo "$CONF" | grep -c '"apagados": 1')"
+rodar "$CID1" --desfazer "$CID1" >"$TRABALHO/desfazer-dry.json" 2>&1
+DEPOIS_DRY=$(conta "SELECT COUNT(*) FROM sales_intelligence.scores;")
+item "A7 dry-run nao apaga" "$ANTES" "$DEPOIS_DRY"
+rodar "$CID1" --desfazer "$CID1" --confirmo >"$TRABALHO/desfazer.json" 2>&1
+item "A7 --confirmo apagou so a rodada 1" "$((ANTES - 1))" "$(conta "SELECT COUNT(*) FROM sales_intelligence.scores;")"
 item "A7 so a rodada 1 saiu (2 restantes)" 2 "$(conta "SELECT COUNT(*) FROM sales_intelligence.scores;")"
 item "A7 signals preservados" 4 "$(conta "SELECT COUNT(*) FROM sales_intelligence.signals WHERE organization_id='$ORG';")"
 item "A7 organizations preservadas" 2 "$(conta "SELECT COUNT(*) FROM sales_intelligence.organizations;")"
