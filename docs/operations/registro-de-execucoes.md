@@ -1772,3 +1772,73 @@ apresentou defeito no que foi medido — o buraco era do verificador:
   independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. Limites declarados no doc de
   arquitetura (§6): a cadeia medida são os cinco agentes W4 em `dev`; W5 (score/tier/NBA), Odoo e Titan não
   estão no caminho.
+
+## 2026-10-02 — repositório TRE (worktree `t_e4a90eba`, branch `feature/TRE-W5-E01-T01`) + VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W5-E01-T01 (card `t_e4a90eba`): agente ICP Score v1 (fit estrutural)
+
+- **Acesso:** `ssh -i /opt/data/.ssh/tre_deploy tre-deploy@169.58.24.102` (BatchMode) → `hostname`
+  `vmi3619453`. A árvore desta rodada é própria: `/opt/tre/w5e01` (criada por `mkdir -p` + `tar xzf -`;
+  nenhum `rm -rf` na máquina). Nada foi escrito fora dela e do container descartável.
+- **Suíte offline (container do Hermes, sem banco):**
+  `python3 scripts/agentes/verificar_agente_icp_score.py` → `RESULTADO: VERIFICACAO_ICP_SCORE_OK (67 itens,
+  0 falhas)`; `… --autoteste` → `AUTOTESTE OK (21/21 mutacoes detectadas, cada uma pelo item esperado)`,
+  com o código restaurado byte a byte depois de cada mutação (`sha256` do fim igual ao do começo).
+- **Aceite no banco (VPS, container descartável `pg-icp-acc`, imagem `postgres:16`, DDL aplicado do zero):**
+  `bash scripts/agentes/teste_icp_score_aceite.sh` → `RESULTADO: ACEITE_ICP_SCORE_001_OK (50 itens, 0
+  falhas)`. Valores medidos, não narrados: `rodada1-valor-sweet-spot (100.00)`, `…-logistica (86.00)`,
+  `…-b2c-varejo (0.00)`, `…-sem-dado (0.00)`, `…-b2b2c (94.00)`, `…-porte-derivado (100.00)`; recusas
+  `rodada1-recusadas (2)` (`inexistente-sem-score (0)`); replay `rodada2-replay (JA_EXISTE=6 CALCULADO=0)`;
+  fonte mentindo todos os campos de score da empresa que está no banco → `rodada2b-fonte-nao-contamina
+  (JA_EXISTE=1)` e `rodada2b-score-nao-se-move (100.00)`; dado alterado no banco → `rodada3-historico-
+  preservado (2)` com `rodada3-valor-antigo-preservado (1)`; `rodada1-sem-llm (8)`; `rodada1-nenhuma-outra-
+  tabela-escrita (0)`; `prod-recusado-exit-4 (4)` e `prod-nao-registrou-execucao (0)`; `planejar-exit-
+  0-sem-conectar (0)`; `desfazer-apagou-so-a-rodada (1)` com `desfazer-preservou-auditoria (8)` e
+  `desfazer-preservou-o-score-de-outra-rodada (86.00)`.
+- **Prova de dente (mesmo script, `--prova-de-dente`):** `DENTE OK (9/9 mutacoes detectadas, cada uma pelo
+  item esperado)` — `ausencia-de-porte-vira-fit`, `sem-faixa-derivada-do-count`, `peso-do-modelo-zerado`,
+  `sem-idempotencia-no-sql`, `fingerprint-constante`, `prod-liberado`, `fonte-contamina-o-score`,
+  `desfazer-apaga-a-auditoria`, `organizacao-inexistente-cria-score`.
+- **Evidência guardada:** `/opt/tre/w5e01/evid-w5e01-icp-final.out` (sha256
+  `e03f79d9af0f9bdae79a2d66172213bdebe2750c98eb2899d8d3eff49bf785e2`, 89 linhas, cópia **idêntica** em
+  `attachments/t_e4a90eba/aceite-icp-score.out`). Código medido no aceite: `icp_score.py` sha256
+  `0e6178441ff42232561e62246cfb441659a800c7ec38b0fb4909b6e715a5f1a1` e `teste_icp_score_aceite.sh` sha256
+  `c922f724fbafa6b64836b12e2c9f971b6aff4ae9de3c32769461ef5cbf6f590e` (os mesmos hashes do repositório).
+  As rodadas anteriores (`aceite-r1.out` com 2 falhas de item, `dente.out` e `dente2.out` com dente 8/9)
+  ficaram na mesma árvore, `-r1/-r2` de propósito no nome.
+- **Ambiente:** só o container descartável nasceu e foi **removido** (`docker ps -a | grep -c icp-acc` = 0);
+  `proxy-dev` (Up 32h, healthy), `odoo-dev` (Up 32h), `pg-odoo-dev` (Up 33h, healthy) e `pg-sales-dev`
+  (Up 2d) intactos — conferido por item do aceite (`ambiente-containers-intactos (4)`). Nada em produção.
+  Observação: `pg-automation-fit-acc` (container descartável de **outro** card, W5-E02) estava de pé durante
+  a rodada — não foi tocado.
+- **Defeitos da PROVA corrigidos nesta rodada (medidos — o agente não apresentou defeito no que foi medido):**
+  1. **mutação inerte por defesa em camadas**: liberar `prod` na lista de ambientes permitidos **não** muda
+     nada — a checagem explícita de `prod` recusa antes (o dente acusou "NAO foi detectada"). A mutação
+     passou a mirar a **ligação** da guarda no `main` (`if args.ambiente or not args.planejar:` → `if
+     False:`), isto é, guarda que existe e não é chamada — foi detectada por `prod-recusado-exit-4` e
+     `prod-nao-registrou-execucao`.
+  2. **expectativa errada da mutação**: com a guarda desligada os `scores` da rodada de prod continuam 7 (o
+     replay não grava linha nova), então `prod-nao-escreveu` **não** podia reprovar; o item que de fato mede
+     a passagem indevida é `prod-nao-registrou-execucao` (a auditoria registra 8 linhas de `agent_runs`).
+  3. **item que lia o repositório, não o código sob teste**: a checagem da raiz por marcador lia o arquivo
+     do repo (`CODIGO_PADRAO`), então a mutação — que vive numa cópia — passava verde; agora o texto
+     analisado é o do **módulo carregado** (`modulo.__file__`).
+  4. **item medindo a coisa errada**: o item de `inputs`/`explanation` excluía a organização sem dado
+     (`origem_do_porte='ausente'` → esperava 6 linhas e obtinha 5) e o item dos três motivos comparava a
+     lista **ordenada alfabeticamente** em vez da ordem dos componentes (`SEGMENTO_NAO_INFORMADO,
+     PORTE_NAO_INFORMADO,MODELO_DE_NEGOCIO_NAO_INFORMADO`); os dois passaram a medir o que declaram.
+  5. **duas mutações com alvo mal escolhido** (`sem-faixa-derivada`, `ausencia-de-porte-vira-fit`): não
+     podiam reprovar itens que usam `employee_band` do banco — as expectativas foram movidas para os itens
+     que de fato dependem da regra mutada.
+- **Falha de preparação da rodada** (não é defeito do código): a primeira execução do aceite na VPS partiu
+  sem `docs/data/data_contract_v1.json` na árvore e o agente recusou-se a rodar (`contrato de dados ausente`)
+  — o agente **exige** o contrato, como os outros da cadeia; a árvore foi completada e o aceite repetido.
+- **Portão de estrutura:** `scripts/verificar_estrutura.sh` → **PASS (0 falhas)** com os artefatos do card
+  versionados e o aceite executável — as sete linhas novas do portão são
+  `versionado hermes/agents/icp_score/{icp_score.py,agente-icp-score-v1.json,exemplos/organizacoes-exemplo.jsonl}`,
+  `versionado scripts/agentes/{verificar_agente_icp_score.py,teste_icp_score_aceite.sh}`,
+  `versionado docs/{architecture/agente-icp-score-v1.md,runbooks/agente-icp-score.md}` e
+  `executavel scripts/agentes/teste_icp_score_aceite.sh`.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. A fórmula `icp-v1.0.0` é
+  **proposta**: o baseline (doc 03 §3) nomeia o score e não define fórmula, e o Data Contract só dá o
+  contexto de negócio (`scores.icp_context`). Se homologada, o peso passa a ser parte do contrato de dados
+  (v1.1), decisão do dono.

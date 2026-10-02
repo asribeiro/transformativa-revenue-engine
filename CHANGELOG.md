@@ -1355,3 +1355,75 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
     escolha de coluna vazia + `COALESCE(NULLIF(coluna,''), valor)` exigido pela guarda). O dente do E2E
     passou a mirar o que **só a cadeia** mede: o vínculo entre o que um agente escreve e o que o
     próximo resolve.
+
+## [W5 — Scoring · ICP Score V1] — 02/10/2026
+
+### Added
+
+- **Agente ICP Score v1 — fit estrutural da organização com o cliente desejado** (`TRE-W5-E01-T01`) — o
+  primeiro score da onda W5: lê a organização **no banco** (`sales_intelligence.organizations`), calcula o
+  score `ICP` (0–100) e grava em `scores` com `score_type='ICP'`, `score_version` do modelo, `inputs` (o que
+  foi lido) e `explanation` (como o número saiu). A fórmula V1 nasce aqui como **proposta a homologar** — o
+  baseline (doc 03 §3) nomeia o score e não define fórmula; o Data Contract dá só o contexto de negócio
+  (`scores.icp_context`: faixa 70–1.000, sweet spot 150–700, cinco ICPs):
+  - `hermes/agents/icp_score/icp_score.py`, `hermes/agents/icp_score/agente-icp-score-v1.json` (contrato
+    legível por máquina: pesos, faixas, vocabulário de segmento e motivos) e
+    `hermes/agents/icp_score/exemplos/organizacoes-exemplo.jsonl`;
+  - **modelo V1** (`icp-v1.0.0`): `0,45 * segmento + 0,35 * porte + 0,20 * modelo_b2b`, pesos somando 1,00
+    **lidos do contrato** (nenhum peso em forma executável no código — item próprio da suíte reprova se um
+    aparecer); porte usa `employee_band` ou deriva de `employee_count` pela mesma regra do Scout; segmento
+    casa o `industry_code + industry_name` contra os cinco ICPs do contrato por **vocabulário declarado**,
+    com fronteira de palavra (`'descarga'` não é `'carga'`) e **ambiguidade registrada** em
+    `segmentos_casados` quando mais de um ICP casa;
+  - **ausência de dado não vira fit**: componente sem dado reconhecido pontua 0 **e registra o motivo**
+    (`SEGMENTO_NAO_INFORMADO`, `PORTE_ABAIXO_DO_ICP`, `MODELO_B2C_FORA_DO_ICP`, …) — quem mede dado faltante
+    é o Data Quality Score (W5-E04);
+  - **idempotência com histórico**: chave `icp:score:<org>:<modelo>:<fingerprint[:16]>`, onde o fingerprint é
+    o sha256 dos campos que mudam o score (indústria, `employee_count`, `employee_band`, faixa efetiva,
+    `business_model`) — mesmos dados ⇒ replay sem linha nova; dado alterado ⇒ score novo e o anterior
+    preservado (score é histórico, não mutável); `agent_runs` sem `model`/tokens/custo (v1 não chama LLM) e
+    `sync_events` fechando só quando o score da rodada existe (mesma armadilha de snapshot medida na W4);
+  - `--planejar` (calcula da fonte, sem abrir conexão) e `--desfazer <correlation_id>` (dry-run por padrão;
+    `--confirmo` apaga só os scores da rodada, preserva `agent_runs` e registra o `ROLLBACK`); guardas
+    fail-closed: sem porta psql **recusa**, `--ambiente prod` recusado (exit 4) e escrita só em
+    `scores`/`agent_runs`/`sync_events` com `UPDATE` em `scores` proibido (score não se reescreve).
+- **Verificação do ICP Score** (`TRE-W5-E01-T01`) — `scripts/agentes/verificar_agente_icp_score.py` (suíte
+  offline, **67 itens, autoteste de 21 mutações**) e `scripts/agentes/teste_icp_score_aceite.sh` (aceite em
+  container PostgreSQL descartável `pg-icp-acc` na VPS, **50 itens** + prova de dente com 9 mutações, cada
+  uma exigindo o **item esperado**); `docs/architecture/agente-icp-score-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK)
+  e `docs/runbooks/agente-icp-score.md`.
+- **Valores medidos no aceite** (não narrados): distribuidora B2B no sweet spot **100,00**; logística 900
+  colaboradores **86,00**; consultoria/tema tech B2B2C **94,00**; varejo B2C de 30 colaboradores **0,00**;
+  organização sem dado **0,00 com os três motivos**; porte derivado do `employee_count` sem `employee_band`
+  **100,00**; organização apagada e uuid inexistente **RECUSADA sem escrever**; fonte **mentindo** todos os
+  campos de score da empresa que está no banco ⇒ replay e score intacto (a fonte escolhe o sujeito, não o
+  dado); mudança de `employee_band` no banco ⇒ score novo com o anterior preservado (2 linhas).
+
+### Fixed
+
+- **Defeitos da PRÓPRIA prova, encontrados e corrigidos nesta rodada** (o agente não apresentou defeito no
+  que foi medido):
+  1. **mutação inerte por defesa em camadas**: liberar `prod` na lista de ambientes permitidos **não** muda
+     nada — a checagem explícita de `prod` recusa antes. O dente passou a mirar a **ligação** da guarda no
+     `main` (guarda que existe e não é chamada), que é o defeito que o aceite tem de pegar;
+  2. **item que lia o repositório, não o código sob teste**: a checagem de raiz por marcador lia o arquivo do
+     repo, então a mutação (que vive numa cópia) passava verde; agora o texto analisado é o do **módulo
+     carregado**;
+  3. **mutações com alvo mal escolhido**: `sem-faixa-derivada` e `ausencia-de-porte-vira-fit` não podiam
+     reprovar itens que usam `employee_band` do banco; as expectativas foram corrigidas para os itens que de
+     fato dependem da regra mutada.
+- **Itens do aceite que mediam a coisa errada**: o item de `inputs`/`explanation` excluía a organização sem
+  dado (`origem_do_porte='ausente'`) e o item dos três motivos comparava a lista **ordenada
+  alfabeticamente** em vez da ordem dos componentes — os dois passaram a medir o que declaram.
+
+### Notas de estado
+
+- **Portão de estrutura:** `scripts/verificar_estrutura.sh` → **PASS (0 falhas)** com os artefatos do card
+  versionados e o aceite executável, o mesmo portão que já cobria Scout, Research, Signal, Pain e
+  Contact Research.
+- **Não é homologação:** quem entrega não homologa — o veredito deste card é do **estágio 6** (revisão
+  independente, perfil `tester`) e a homologação (**estágio 7**) é do Anderson. A fórmula V1 é **proposta**;
+  se homologada, o peso passa a ser parte do contrato de dados (nova versão 1.1), decisão do dono.
+- **Fora do card**: tier, Priority Score, Next Best Action, `valid_until`, evento `COMPANY_QUALIFIED`,
+  espelhamento no Odoo (W3) e o aceite E2E da cadeia W5 (W5-E08). O aceite E2E da W4 continua medindo
+  `scores` **vazio** — ele roda no banco descartável dele e nenhum agente da W4 escreve score.

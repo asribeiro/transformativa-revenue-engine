@@ -365,5 +365,24 @@ for f in scripts/e2e/verificar-e2e-sales-intelligence.sh; do
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Agente ICP Score v1 (TRE-W5-E01-T01): primeiro score da onda W5. O que precisa ficar versionado
+# junto do codigo e' o MODELO (contrato do agente, onde vivem pesos/faixas/vocabulario), o contrato
+# do card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento), o runbook, a suite offline e o aceite no
+# banco. Sem qualquer um destes, o veredito do score nao e' conferivel por terceiro.
+for f in hermes/agents/icp_score/icp_score.py \
+         hermes/agents/icp_score/agente-icp-score-v1.json \
+         hermes/agents/icp_score/exemplos/organizacoes-exemplo.jsonl \
+         scripts/agentes/verificar_agente_icp_score.py \
+         scripts/agentes/teste_icp_score_aceite.sh \
+         docs/architecture/agente-icp-score-v1.md docs/runbooks/agente-icp-score.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/agentes/teste_icp_score_aceite.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

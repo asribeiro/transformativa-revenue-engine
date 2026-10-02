@@ -1,0 +1,177 @@
+{
+  "agente": "icp_score",
+  "papel": "scoring",
+  "versao": "1.0.0",
+  "card": "TRE-W5-E01-T01",
+  "onda": "W5",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "03_ARQUITETURA_DE_NEGOCIO.md §3 — nomeia o ICP Score como 'fit estrutural com o cliente desejado' e NAO define formula (a formula V1 nasce neste card, como proposta a homologar)",
+    "04_PROJETO_FISICO_DE_DADOS.md §8 — score persistido em `scores` com `score_type`, `score_version`, `inputs` e `explanation`; score sem versao e recusado",
+    "docs/data/data_contract_v1.json#scores — `types` (ICP entre eles), `requires_version_column` e `icp_context` (faixa 70-1000, sweet spot 150-700, ICPs, decisores)",
+    "docs/data/DATA_CONTRACT_V1.md §8 e §10 — score e historico, nao mutavel; mudar formula/peso exige versao nova",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §7 — idempotencia: `idempotency_key`, `sync_events`, retry nao cria duplicata",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W5) — scoring antes de tier/NBA",
+    "13_HERMES_IMPLEMENTATION_BRIEF.md — padrao de implementacao de card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento do card)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "uma_organizacao_por_linha": true,
+    "campo_obrigatorio": ["organization_id"],
+    "descricao": "linha JSON com a organizacao a pontuar; 'evidence' (opcional) guarda o que a fonte mostrou",
+    "campos_do_modo_planejar": [
+      "legal_name",
+      "trade_name",
+      "industry_code",
+      "industry_name",
+      "employee_count",
+      "employee_band",
+      "business_model",
+      "country_code"
+    ],
+    "aviso_do_modo_planejar": "os campos acima valem SOMENTE em `--planejar` (que nao abre conexao). No modo real o agente le a organizacao NO BANCO e os campos vindos da fonte sao IGNORADOS — a fonte escolhe o sujeito, nao o dado (medido por item proprio)."
+  },
+  "modelo": {
+    "nome": "icp-v1.0.0",
+    "status": "PROPOSTA_A_HOMOLOGAR",
+    "status_explicacao": "o baseline nomeia o score e nao define a formula; este modelo V1 e proposta do card — quem homologa e o Anderson. Se homologado, o peso passa a ser parte do contrato de dados (nova versao 1.1), decisao do dono, nao do worker.",
+    "escala": {
+      "minimo": 0.0,
+      "maximo": 100.0,
+      "decimais": 2
+    },
+    "formula": "0.45*segmento + 0.35*porte + 0.20*modelo_b2b",
+    "pesos": {
+      "segmento": 0.45,
+      "porte": 0.35,
+      "modelo_b2b": 0.2
+    },
+    "regra_de_ausencia": "componente sem dado reconhecido pontua 0 e registra o motivo na explicacao: ausencia NAO vira fit. Quem mede dado faltante e o Data Quality Score (W5-E04), nao o ICP.",
+    "componentes": {
+      "segmento": {
+        "campos": ["industry_code", "industry_name"],
+        "sub_score_casou": 100.0,
+        "sub_score_nao_casou": 0.0,
+        "motivos": {
+          "sem_dado": "SEGMENTO_NAO_INFORMADO",
+          "nao_reconhecido": "SEGMENTO_NAO_RECONHECIDO"
+        },
+        "ordem_de_casamento": "primeiro segmento da ordem declarada que casar; mais de um casamento e registrado em `segmentos_casados` (ambiguidade reportada, nunca escondida)",
+        "regra_de_casamento": "casamento por VOCABULARIO DECLARADO: termo normalizado (sem acento, caixa baixa) casando no INICIO de uma palavra do texto de industry_code+industry_name. Termo curto e generico casa por acidente — por isso a lista e curada e o resultado do casamento vai inteiro para a explicacao (`segmentos_casados`), onde a ambiguidade fica visivel para quem revisa. Vocabulario e versionado com o modelo: muda-lo e' versao nova.",
+        "segmentos": [
+          {
+            "nome": "Distribuidores B2B",
+            "termos": ["distribuid", "atacad", "revenda", "representac", "importac", "importador", "comercio atacad"]
+          },
+          {
+            "nome": "Indústrias médias",
+            "termos": ["industri", "metalurg", "manufatur", "fabrica", "usina", "montadora", "siderurg", "quimic", "plastico", "embalagem", "papel e celulose"]
+          },
+          {
+            "nome": "Serviços B2B",
+            "termos": ["servic", "consultori", "contabil", "juridic", "engenhari", "manutenc", "facility", "auditori", "assessori", "treinament", "diagnostic", "saude ocupaci"]
+          },
+          {
+            "nome": "Logística",
+            "termos": ["logistic", "transport", "frete", "armazen", "carga", "supply", "frota", "rodoviari", "portuari"]
+          },
+          {
+            "nome": "SaaS/Tech B2B",
+            "termos": ["saas", "software", "tecnolog", "plataforma", "analytics", "cloud", "sistemas", "startup", "fintech", "dados e analise"]
+          }
+        ],
+        "origem_da_lista": "docs/data/data_contract_v1.json#scores.icp_context.icps (os cinco ICPs do baseline); os termos sao vocabulario de casamento declarado aqui, versionado com o modelo"
+      },
+      "porte": {
+        "campos": ["employee_band", "employee_count"],
+        "origem_do_valor": "employee_band quando presente; senao derivado de employee_count pela MESMA regra do Scout (faixas do vocabulario `employee_band` do Data Contract); senao ausente",
+        "sub_scores": {
+          "150_299": 100.0,
+          "300_499": 100.0,
+          "500_699": 100.0,
+          "70_149": 60.0,
+          "700_1000": 60.0,
+          "LT_70": 0.0,
+          "GT_1000": 0.0
+        },
+        "sub_score_ausente": 0.0,
+        "motivos": {
+          "sem_dado": "PORTE_NAO_INFORMADO",
+          "abaixo_do_icp": "PORTE_ABAIXO_DO_ICP",
+          "acima_do_icp": "PORTE_ACIMA_DO_ICP",
+          "fora_do_sweet_spot": "PORTE_FORA_DO_SWEET_SPOT"
+        },
+        "referencia": "docs/data/data_contract_v1.json#scores.icp_context.employee_range = 70-1000, sweet_spot = 150-700"
+      },
+      "modelo_b2b": {
+        "campo": "business_model",
+        "sub_scores": {
+          "B2B": 100.0,
+          "B2B2C": 70.0,
+          "B2C": 0.0
+        },
+        "sub_score_ausente": 0.0,
+        "motivos": {
+          "sem_dado": "MODELO_DE_NEGOCIO_NAO_INFORMADO",
+          "fora_do_icp": "MODELO_B2C_FORA_DO_ICP",
+          "parcial": "MODELO_PARCIALMENTE_B2B"
+        },
+        "vocabulario": "B2B, B2B2C, B2C (comparacao normalizada, sem acento e sem caixa)",
+        "declarado": "`business_model` nao tem vocabulario fechado no Data Contract; o vocabulario acima e a lista de casamento deste modelo V1 e valor desconhecido cai em `sem_dado`+motivo"
+      }
+    }
+  },
+  "persistencia": {
+    "tabela": "sales_intelligence.scores",
+    "score_type": "ICP",
+    "score_version": "as colunas `score_type` e `score_version` recebem o tipo declarado acima e o NOME DO MODELO (`modelo.nome`) — a versao tem UMA fonte, o modelo; nao existe literal de versao no codigo",
+    "valid_until": null,
+    "declarado": "`valid_until` fica NULL: a politica de validade do score e do tiering/priority (W5-E05/E06). O ICP V1 nao expira sozinho."
+  },
+  "idempotencia": {
+    "chave": "icp:score:<organization_id>:<modelo.nome>:<fingerprint[:16]>",
+    "fingerprint": "sha256 canonico (JSON com chaves ordenadas) dos CAMPOS QUE MUDAM O SCORE: industry_code, industry_name, employee_count, employee_band, faixa_efetiva, business_model",
+    "regra": "mesmos dados => mesma chave => replay (nada novo, veredito JA_EXISTE); dado alterado => chave nova => score novo e o anterior preservado (score e historico, nao mutavel)",
+    "nao_entram_no_fingerprint": ["status", "updated_at", "legal_name", "trade_name", "country_code"],
+    "tabela_de_apoio": "sales_intelligence.sync_events.idempotency_key (UNIQUE)"
+  },
+  "vereditos": {
+    "CALCULADO": "score novo gravado",
+    "JA_EXISTE": "mesma chave (mesmos dados): replay, nada escrito",
+    "RECUSADA": "organizacao inexistente, apagada (deleted_at) ou id ilegivel: nada escrito em scores",
+    "ERRO": "porta de banco falhou ou guarda de escrita recusou: nada escrito"
+  },
+  "status_agent_runs": {
+    "CALCULADO": "COMPLETED",
+    "JA_EXISTE": "COMPLETED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "tabelas": {
+    "escreve": [
+      "sales_intelligence.scores",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events"
+    ],
+    "le": ["sales_intelligence.organizations"],
+    "proibido": "DDL, escrita fora das tres tabelas e UPDATE em `scores` (score e imutavel; corrigir e inserir versao nova)"
+  },
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "ADR-005: nada nasce em producao; promocao exige card proprio com aprovacao humana registrada"
+  },
+  "guardrails": {
+    "llm": "v1 e deterministica: NENHUMA chamada de LLM; `model`, `tokens_input`, `tokens_output` e `estimated_cost` ficam NULL em toda a auditoria",
+    "jev": "o gate de recibo do JEV existe e e fail-closed (sem recibo valido nao se chama LLM) — mantido para paridade com os agentes da W4; nao ha caminho que o exercite na v1",
+    "outbox": "NENHUM evento de outbox nesta v1: `COMPANY_QUALIFIED` (doc 06 §5) e decisao de tiering/priority (W5-E05/E06) e o caminho ate Odoo e W3 — o ICP Score escreve so' o proprio score",
+    "fonte_nao_contamina": "no modo real o dado vem do banco; campos equivalentes na fonte sao ignorados"
+  },
+  "lacunas": [
+    "Formula V1 e PROPOSTA: nao homologada. Homologacao e do Anderson (estagio 7 do fluxo).",
+    "`business_model` nao tem vocabulario fechado no Data Contract — o casamento e deste modelo.",
+    "Sem LLM, sem HTTP e sem crawler: o agente le o banco e calcula.",
+    "`valid_until`, tier, Priority Score, Next Best Action e o evento `COMPANY_QUALIFIED` estao FORA deste card (W5-E05, E06, E07 e W3).",
+    "O aceite E2E da cadeia W5 e o card W5-E08 — este card mede so' o ICP Score."
+  ]
+}
