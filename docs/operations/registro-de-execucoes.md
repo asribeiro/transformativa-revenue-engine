@@ -2719,3 +2719,68 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   `recommendations` exige versão nova do contrato + approval).
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de `TRE_CANAL_TOKEN`,
   `TRE_PREVISAO_CANAL_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.
+## 03/10/2026 — TRE-W8-E04-T01 (Message performance / `desempenho-mensagens-v1`)
+
+- **Comando (offline):** `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (desempenho de mensagens v1: 48 itens, 0 falhas)`, exit 0, com **7/7 dentes** (cada mutacao aplicada
+  numa copia temporaria reprova o item que nomeia: sem normalizacao de canal, janela exclusiva no limite,
+  credito a todos os envios, auto-resposta contada como resposta, amostra desligada, sem guarda de prod e
+  referencia malformada aceita).
+- **Comando (E2E, VPS do ambiente):** `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh` em
+  `/tmp/tre-w8e04c-*` na VPS `vmi3619453` (usuario `tre-deploy`) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK
+  (19 itens, 0 falhas)`, exit 0. O aceite subiu PostgreSQL descartavel `pg-desemp-acc` (`postgres:16`),
+  aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 15 envios + 5 respostas **na forma declarada
+  pelos contratos irmaos** (canal/direcao/tipo lidos de `politica-envio-v1.json`; categorias de
+  `ingestao-respostas-v1.json`) e mediu a analise contra o banco real. Container removido no `trap`.
+- **O que ficou provado no E2E:** totais (15 enviadas / 4 respondidas / 3 positivas / 1 opt-out / 1
+  auto-resposta descartada), `taxa_de_interesse` da variante H1 = 0,4, tempo medio da H1 = 2,25h, taxa de
+  opt-out da H8 = 0,2, melhor variante = H1 (so entre as de amostra suficiente); **contagem das 12 tabelas
+  identica antes/depois** (`12|21|3|1`) — prova de que a analise e somente leitura; saida **reproduzivel**
+  (duas rodadas iguais, sem carimbo); saida sem `organization_id`/`contact_id`/`approval_id`; `--ambiente
+  prod` → exit 4.
+- **Segredos:** nenhum valor nesta entrada. Uso exclusivo de loopback/container descartavel; a senha do
+  Postgres descartavel e literal de teste do proprio aceite.
+- **Lacunas declaradas (medidas, nao escondidas):** `interactions` nao tem `delivered`/`opened`/`bounced`
+  (a taxa e de RESPOSTA, nao de entrega); o `channel` do envio (`EMAIL`) diverge do `channel` da ingestao
+  (`email`) — normalizado na leitura e registrado como defeito de FORMA do dado gravado; `campaign_id` e
+  vinculo logico sem FK/entidade; a cadeia real SMTP/IMAP ja foi medida no W6-E07 e no aceite do W6-E05 —
+  aqui o que roda de ponta a ponta e a ANALISE.
+
+### 2026-10-03 — TRE-W9-E04-T01 (Best timing / `melhor-horario-v1`) — entrega medida
+
+- **Campos do card definidos no início da execução** (o doc 11 não os detalha): ACCEPTANCE/TEST/ROLLBACK/RISK
+  registrados em `docs/kanban/criterios-de-aceitacao.md` (§ acima) e no contrato
+  `hermes/analytics/melhor-horario-v1.json`; a pré-condição (*histórico de interações*) foi conferida como
+  existente (`sales_intelligence.interactions`, W6-E04/E05).
+- **Decisão de arquitetura (medida, não presumida):** a atribuição resposta→envio é **uma só**. O componente
+  importa `desempenho_mensagens.py` (W8-E04-T01) e usa `ler_interacoes`, `separar`, `creditar`, `medir_grupo`,
+  `PortaBanco` e `afirmar_somente_leitura`; o que é novo é apenas o **eixo de tempo** (dia × faixa no fuso
+  declarado). Item de suíte e de aceite medem a coerência: na mesma base, os totais do melhor-horário são
+  **idênticos** aos do irmão de desempenho (dente `segunda-regra-de-credito` reprova o item quando alguém
+  reimplementa o crédito).
+- **Offline (medido):** `python3 scripts/agentes/verificar_melhor_horario.py --autoteste` →
+  `VERIFICADOR_MELHOR_HORARIO_PASS (29 itens, 0 falhas) + autoteste OK (6/6 mutações detectadas)`, exit 0.
+  Mutações com o item que cada uma reprova: `offset-ignorado`→V4 (virada de dia), `amostra-desligada`→V17
+  (abstenção sem amostra), `grade-aceita-buraco`→V23 (fail-closed da grade), `fuso-sem-validacao`→V24
+  (`FUSO_INVALIDO`), `ranking-por-chave`→V7 (melhor janela pela taxa), `segunda-regra-de-credito`→V13
+  (coerência com o irmão).
+- **Comando (E2E, VPS do ambiente):** `TRE_TIMING_TRABALHO=/tmp/timing-aceite-trabalho bash
+  scripts/agentes/teste_melhor_horario_aceite.sh` em `/tmp/tre-w9e04-*` na VPS `vmi3619453` →
+  `ACEITE_MELHOR_HORARIO_001_OK (19 itens, 0 falhas)`, exit 0. O aceite subiu PostgreSQL descartável
+  `pg-timing-acc` (`postgres:16`), aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 12 envios +
+  4 respostas **na forma declarada pelos contratos irmãos** (canal/direção/tipo lidos de
+  `politica-envio-v1.json`; categorias de `ingestao-respostas-v1.json`) e mediu a análise contra o banco real.
+  Container removido no `trap`.
+- **O que ficou provado no E2E:** grade completa de **49 células** com soma das células e das duas marginais
+  igual ao total (**12**); célula `segunda/manha` = 5 enviadas, 2 positivas, taxa **0,4**; `terca/tarde` =
+  5/1/0,2; **virada de dia medida** (sexta 02:00Z caiu em `quinta/noite`, 2 envios) e célula com 2 envios com
+  `amostra_suficiente: false`; `melhor_janela` = `segunda/manha`; linha OUTBOUND sem `envio:` fora da grade;
+  totais **iguais aos do irmão de desempenho** na mesma base; contagem das tabelas idêntica antes/depois
+  (`12|17|3`) — prova de somente leitura; saída **reproduzível** (duas rodadas iguais, sem carimbo); saída sem
+  `organization_id`/`contact_id`/`approval_id`; `--ambiente prod` → exit 4.
+- **Segredos:** nenhum valor nesta entrada. Uso exclusivo de loopback/container descartável; a senha do
+  Postgres descartável é literal de teste do próprio aceite.
+- **Lacunas declaradas (medidas, não escondidas):** fuso é offset fixo declarado (horário de verão exige versão
+  nova); a análise é histórica, não previsão por lead; a grade cobre 24 h porque o contrato de dados não
+  declara expediente; `contacts` sem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido pelo irmão
+  de envio, então não há corte por canal nesta versão.

@@ -731,3 +731,79 @@ por organização; quem envia é o caminho de outbound (W6), com a própria pol�
   L2 associação ≠ causa; L3 `LINKEDIN` sem coluna de opt-out própria; L4 prior de coorte, não personalização;
   L5 coorte acumulada; L6 canal ≠ mensagem (`response_category` diz que houve resposta classificada, não a
   qualidade); L7 previsão não é ato.
+## TRE-W8-E04-T01 — Message performance (W8 · Analytics)
+
+- **ACCEPTANCE:** `desempenho-mensagens-v1` lê `sales_intelligence.interactions` por **um SELECT** e devolve,
+  por **variante de texto** (`texto_hash` da referência `envio:<approval_id>:<texto_hash>`) e por **canal
+  normalizado**: enviadas, organizações, respondidas, positivas, negativas, opt-outs, indefinidas, respostas
+  comerciais/descartadas, `taxa_de_resposta`, `taxa_de_interesse`, `taxa_de_opt_out`, tempo médio/mediano de
+  resposta (horas) e a **melhor variante** — só entre as com amostra ≥ `--limite-amostra`. Guardas: `prod`
+  RECUSA exit 4; **somente leitura** (nenhum verbo de escrita no SQL, conferido no componente e no duble);
+  saída **agregada** (sem `organization_id`/`contact_id`/`approval_id`); vocabulário do irmão divergente =
+  `CONTRATO_INCOERENTE` exit 3 (fail-closed).
+- **TEST:** offline `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (48 itens, 0 falhas)` + **7/7 dentes**; E2E `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh`
+  (VPS, PostgreSQL descartável `pg-desemp-acc` + migration 0001) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK`
+  (19 itens, 0 falhas), com contagem das 12 tabelas idêntica antes/depois (prova de somente-leitura) e
+  saída reproduzível (duas rodadas iguais).
+- **ROLLBACK:** remover os artefatos do card (`hermes/analytics/`, `verificar_desempenho_mensagens.py`,
+  `duble_psql_desempenho.py`, `teste_desempenho_mensagens_aceite.sh`). Não há migration nova nem escrita em
+  nenhuma tabela; o container de aceite é descartável e sai no `trap`.
+- **RISK:** (a) canal divergente entre os irmãos (`EMAIL` × `email`) — normalizado na leitura e registrado
+  como defeito de FORMA do dado gravado; (b) sem `delivered`/`opened`/`bounced` no contrato: a taxa é de
+  **resposta**, não de entrega; (c) `campaign_id` é vínculo lógico sem FK/entidade — não se agrupa por
+  campanha; (d) só `EMAIL` é produzido hoje pelo irmão de envio.
+- **Components afetados:** `hermes/analytics/desempenho-mensagens-v1.json` (novo),
+  `hermes/analytics/desempenho_mensagens.py` (novo), `scripts/agentes/duble_psql_desempenho.py` (novo),
+  `scripts/agentes/verificar_desempenho_mensagens.py` (novo),
+  `scripts/agentes/teste_desempenho_mensagens_aceite.sh` (novo), `docs/runbooks/desempenho-de-mensagens.md`
+  (novo), `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** `TRE-W6-E07-T01` (caminho outbound medido ponta a ponta) — fechado. **Destrava:** E02
+  (conversão por segmento), E03 (eficácia dos scores) e E05 (custo de agentes) reusam o mesmo recorte de
+  `interactions`; a análise por variante alimenta o aprendizado de texto do W9.
+- **Lacuna medida (declarada, não escondida):** a análise mede **efeito** (resposta creditada ao envio mais
+  próximo anterior em duas faixas de especificidade), não entrega.
+
+
+
+## TRE-W9-E04-T01 — Best timing (melhor horário de contato)
+
+- **ACCEPTANCE:** `hermes/analytics/melhor_horario.py` + contrato `hermes/analytics/melhor-horario-v1.json`
+  entregam, por **janela (dia da semana × faixa horária) no fuso declarado (`America/Sao_Paulo`, offset fixo
+  `-03:00`)**, as métricas de resposta do recorte: enviadas, organizações, respondidas, positivas, negativas,
+  opt-outs, indefinidas, respostas comerciais/descartadas, `taxa_de_resposta`, `taxa_de_interesse`,
+  `taxa_de_opt_out`, tempo médio/mediano de resposta (horas), `amostra_suficiente` e a **melhor janela** —
+  só entre as com **amostra ≥ `--limite-amostra`**; **grade completa de 49 células** (7 dias × 7 faixas,
+  inclusive vazias com taxa `null`), soma das células **e** das duas marginais igual ao total lido, e
+  `melhor_janela_motivo` explícito (`AMOSTRA_INSUFICIENTE`/`SEM_ENVIOS`). A atribuição resposta→envio é a
+  **do card irmão W8-E04-T01** (o componente importa `desempenho_mensagens.py`; não há segunda regra).
+  Guardas: `prod` RECUSA exit 4 (ADR-005); **somente leitura** (nenhum verbo de escrita no SQL, guarda
+  herdada do irmão); saída **agregada** por célula (sem `organization_id`/`contact_id`/`approval_id`);
+  grade com buraco/sobreposição, fuso ilegível ou vocabulário do dono divergente = **fail-closed** exit 3.
+- **TEST:** offline `python3 scripts/agentes/verificar_melhor_horario.py --autoteste` →
+  `VERIFICADOR_MELHOR_HORARIO_PASS (29 itens, 0 falhas) + autoteste OK (6/6 mutações detectadas)`;
+  E2E `bash scripts/agentes/teste_melhor_horario_aceite.sh` (VPS, PostgreSQL descartável `pg-timing-acc` +
+  migration 0001) → `ACEITE_MELHOR_HORARIO_001_OK` (19 itens, 0 falhas), com virada de dia medida
+  (sexta 02:00Z = quinta 23:00 local), fechamento da grade e **coerência medida com o irmão de desempenho**
+  na mesma base (totais idênticos), contagem das tabelas idêntica antes/depois e saída reproduzível.
+- **ROLLBACK:** remover os artefatos do card (`hermes/analytics/melhor-horario-v1.json`,
+  `hermes/analytics/melhor_horario.py`, `scripts/agentes/verificar_melhor_horario.py`,
+  `scripts/agentes/teste_melhor_horario_aceite.sh`, `docs/runbooks/melhor-horario.md`). Não há migration nova,
+  nenhuma escrita em tabela e nenhum serviço de pé; o container de aceite é descartável e sai no `trap`.
+- **RISK:** (a) fuso é **offset declarado fixo** — horário de verão/segundo fuso exige versão nova do contrato;
+  (b) a grade cobre **24 h** porque o Data Contract V1 não declara expediente comercial (não se inventa
+  horário comercial); (c) a leitura é **histórica, não preditiva** — com poucos envios por célula o resultado
+  correto é `AMOSTRA_INSUFICIENTE`; (d) `contacts` não tem fuso do contato: usa-se o do remetente; (e) só
+  `EMAIL` é produzido hoje pelo irmão de envio, então a grade não separa canal nesta versão.
+- **Components afetados:** `hermes/analytics/melhor-horario-v1.json` (novo),
+  `hermes/analytics/melhor_horario.py` (novo), `scripts/agentes/verificar_melhor_horario.py` (novo),
+  `scripts/agentes/teste_melhor_horario_aceite.sh` (novo), `docs/runbooks/melhor-horario.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`. Reuso (não alterado): `hermes/analytics/desempenho_mensagens.py`,
+  `hermes/analytics/desempenho-mensagens-v1.json`, `scripts/agentes/duble_psql_desempenho.py`.
+- **Depends on:** pré-condição do doc 11 — *histórico de interações* (existente: `sales_intelligence.interactions`
+  com `envio:` gravado pelo W6-E04 e `response_category` pelo W6-E05; medido no W6-E07 e no W8-E04-T01).
+  **Destrava:** `TRE-W9-E05-T01` (Automated nurture) na decisão de *quando* nutrir.
+- **Lacuna medida (declarada, não escondida):** o card mede o **horário observado** de desfecho, não uma
+  previsão por lead; "best timing" aqui é melhor janela **com amostra**, e base pequena abstém.
