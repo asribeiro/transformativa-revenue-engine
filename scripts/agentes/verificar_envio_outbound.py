@@ -330,7 +330,7 @@ MUTACOES = [
      "raise", "I1 pedido fora do estado aprovado RECUSA no portao"),
     ("ignora-o-portao", 'if not consulta.get("pode_enviar"):', "if False:",
      "I4 portao devolve pode_enviar=False (EXPIRED) RECUSA"),
-    ("sem-claim-antes-do-smtp", "    reclamar_chave(politica, prefixo, chave, pedido_id, tentativas, correlation_id, triggered_by)",
+    ("sem-claim-antes-do-smtp", "    reclamar_chave(politica, prefixo, chave, pedido_id, tentativas, correlation_id, triggered_by,\n                   str(primitivo))",
      "    pass  # mutacao: sem claim", "G4 claim foi feito ANTES do SMTP (a chave ficou FALHOU)"),
     ("ignora-falha-do-primitivo", "    if proc.returncode != 0:", "    if False:",
      "G3 falha do primitivo RECUSA (ENVIO_FALHOU)"),

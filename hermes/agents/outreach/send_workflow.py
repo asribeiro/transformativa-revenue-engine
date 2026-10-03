@@ -93,6 +93,7 @@ MOTIVO_OPERADOR_AUSENTE = "OPERADOR_AUSENTE"
 MOTIVO_MOTIVO_AUSENTE = "MOTIVO_AUSENTE"
 MOTIVO_CONFIRMACAO_AUSENTE = "CONFIRMACAO_AUSENTE"
 MOTIVO_ORGANIZACAO_AUSENTE = "ORGANIZACAO_AUSENTE"
+MOTIVO_CONTATO_AUSENTE = "CONTATO_AUSENTE"
 
 AMBIENTE_RECUSADO = "prod"
 AMBIENTES_PERMITIDOS = ("dev", "homolog")
@@ -308,6 +309,22 @@ def ler_aprovados(carregado: dict, prefixo: str, pedido_id: str | None = None,
     return linhas_de_json(saida)
 
 
+def ler_contato_do_pedido(prefixo: str, pedido_id: str) -> str | None:
+    """Le o CONTATO do proprio pedido aprovado (FK de `interactions`).
+
+    O portao do card irmao devolve o e-mail e o NOME do contato, mas nao o id — e `contact_id` de
+    `interactions` e FK de `contacts`. O id sai do MESMO pedido que o portao liberou (`entity_id`),
+    como leitura: nenhuma escrita e feita aqui.
+    """
+    sql = (f"SELECT json_build_object('contato_id', a.entity_id) FROM {TABELA_APROVACOES} a "
+           f"WHERE a.id = {lit(pedido_id)};")
+    rc, saida, erro = executar_sql(sql, prefixo)
+    if rc != 0:
+        raise RecusaDeEnvio(MOTIVO_PORTA_DE_BANCO_AUSENTE, erro.strip()[:400])
+    linhas = linhas_de_json(saida)
+    return linhas[0].get("contato_id") if linhas else None
+
+
 def ler_claim(prefixo: str, chave: str) -> dict | None:
     sql = (f"SELECT json_build_object('status', s.status, 'tentativas', "
            f"COALESCE((s.request_payload->>'tentativas')::int, 0), "
@@ -422,12 +439,13 @@ def registrar_fato(carregado: dict, prefixo: str, organizacao: str, contato: str
 
 
 def reclamar_chave(politica: dict, prefixo: str, chave: str, pedido_id: str, tentativas: int,
-                   correlation_id: str, triggered_by: str) -> str:
+                   correlation_id: str, triggered_by: str, primitivo: str = "") -> str:
     """Claim exatamente-uma-vez: ENVIANDO antes do SMTP. Devolve 'NOVA', 'RETENTATIVA' ou RECUSA."""
     idem = politica["idempotencia"]
     payload = {"workflow": WORKFLOW, "workflow_versao": WORKFLOW_VERSAO, "componente": VERSAO,
                "approval_id": pedido_id, "tentativas": tentativas, "correlation_id": correlation_id,
-               "triggered_by": triggered_by, "estado": idem["status_em_voo"]}
+               "triggered_by": triggered_by, "estado": idem["status_em_voo"],
+               "primitivo": primitivo, "primitivo_versao": politica["primitivo"].get("versao")}
     sql = "\n".join([
         "BEGIN;",
         (f"INSERT INTO {TABELA_SYNC} (id, entity_type, entity_id, source_system, target_system, "
@@ -475,7 +493,10 @@ def enviar(carregado: dict, prefixo: str, ambiente: str, pedido_id: str, correla
     organizacao = consulta.get("organization_id")
     if not organizacao:
         raise RecusaDeEnvio(MOTIVO_ORGANIZACAO_AUSENTE, "o pedido nao traz organizacao (FK de interactions)")
-    contato = (consulta.get("destinatario") or {}).get("contato")
+    contato_id = ler_contato_do_pedido(prefixo, pedido_id)
+    if not contato_id:
+        raise RecusaDeEnvio(MOTIVO_CONTATO_AUSENTE,
+                            "o pedido nao traz o contato (FK de interactions)")
     assunto, corpo = montar_mensagem(consulta.get("texto"))
     texto_hash = consulta.get("texto_hash") or ""
     chave = chave_do_envio(pedido_id, texto_hash)
@@ -491,7 +512,8 @@ def enviar(carregado: dict, prefixo: str, ambiente: str, pedido_id: str, correla
 
     atual = ler_claim(prefixo, chave)
     tentativas = int((atual or {}).get("tentativas") or 0) + 1
-    reclamar_chave(politica, prefixo, chave, pedido_id, tentativas, correlation_id, triggered_by)
+    reclamar_chave(politica, prefixo, chave, pedido_id, tentativas, correlation_id, triggered_by,
+                   str(primitivo))
 
     comando = comando_do_primitivo(primitivo, ambiente, destino, assunto, corpo, chave, env_file, trilha)
     proc = subprocess.run(comando, capture_output=True, text=True)
@@ -500,7 +522,7 @@ def enviar(carregado: dict, prefixo: str, ambiente: str, pedido_id: str, correla
         marcar_falha(politica, prefixo, chave, f"exit {proc.returncode}: {saida.strip()[-400:]}")
         raise RecusaDeEnvio(MOTIVO_ENVIO_FALHOU, f"o primitivo recusou (exit {proc.returncode})")
 
-    fato = registrar_fato(carregado, prefixo, organizacao, contato, assunto, corpo,
+    fato = registrar_fato(carregado, prefixo, organizacao, contato_id, assunto, corpo,
                           politica["interacoes"]["content_reference"].replace("<approval_id>", pedido_id)
                           .replace("<texto_hash>", texto_hash),
                           pedido_id, chave, ambiente, correlation_id, triggered_by, tentativas,

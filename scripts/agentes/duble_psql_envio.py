@@ -51,7 +51,8 @@ def processar(sql, e):
                     continue
                 sinc = e["sync"].get(pedido["chave"])
                 saida.append({"id": pid, "action_type": pedido["action_type"], "entity_type": "contact",
-                              "entity_id": pedido["contato_id"], "decidido_por": pedido.get("decidido_por"),
+                              "entity_id": pedido["contato_id"],
+                              "contato_id": pedido["contato_id"], "decidido_por": pedido.get("decidido_por"),
                               "decidido_em": pedido.get("decidido_em"), "texto_hash": pedido["texto_hash"],
                               "status": pedido.get("status"), "proposed_action": pedido.get("proposed_action"),
                               "contato": pedido.get("contato"), "contato_email": pedido.get("contato_email"),
