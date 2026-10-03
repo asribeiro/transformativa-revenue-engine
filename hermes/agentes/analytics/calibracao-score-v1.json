@@ -1,0 +1,132 @@
+{
+  "versao": "calibracao-score-v1",
+  "card": "TRE-W9-E01-T01",
+  "onda": "W9 (Inteligencia Avancada)",
+  "titulo": "Calibracao do score — pesos e faixas PROPOSTOS a partir do desfecho observado (nunca aplicados aqui)",
+  "pre_condicao_do_card": {
+    "declarada": "volume real suficiente",
+    "como_virou_mecanismo": "o gate de volume e' medido, nomeado e recusado em codigo: coorte com desfecho resolvido < `minimo_de_coorte` OU classe ausente/abaixo de `minimo_por_classe` em qualquer lado do ajuste => ABSTEVE (exit 6), sem proposta. Base pequena NAO vira peso novo (o silencio virou numero)."
+  },
+  "componente": {
+    "nome": "calibracao_score",
+    "arquivo": "hermes/agentes/analytics/calibracao_score.py",
+    "papel": "MEDIR o desfecho observado na base canonica de sales_intelligence, AJUSTAR por busca deterministica na grade do simplex os pesos da formula V1 e PROPOR (nunca aplicar) pesos e faixas novas — em leitura pura, com saida JSON + HTML auto-contido",
+    "nao_faz": [
+      "NAO aplica nada: a proposta nasce marcada `aplicado: false`, `aprovacao_humana: pendente` e `exige_versao_nova: true`. Mudar formula/peso e' decisao estrutural (§10 do Data Contract + ADR-0004) e quem aplica e' operador com aprovacao registrada",
+      "NAO escreve: leitura pura, SO' SELECT, dentro de transacao READ ONLY (nenhum INSERT/UPDATE/DELETE/DDL, nenhuma tabela, nenhuma coluna, nenhuma migration, nenhum score_type novo)",
+      "NAO grava no Data Contract nem no CHANGELOG: a proposta viaja no relatorio; materializar exige versao nova do contrato + verificador + aprovacao humana",
+      "NAO le PII: nao seleciona e-mail, telefone, WhatsApp, CNPJ nem nome — a unidade e' a organizacao (UUID canonico do contrato §3) e a saida carrega contagem",
+      "NAO reimplementa o desfecho nem a medicao: o alcance por organizacao vem de `alcance_por_organizacao` e a leitura/validacao vem de `efetividade_score.py` (card W8-E03-T01), importados e conferidos por sha256; copiar qualquer um dos dois criaria duas verdades para o mesmo numero",
+      "NAO inventa numero sem base: organizacao sem PRIORITY valido, sem os QUATRO componentes na mesma versao ou sem desfecho resolvido (Won/Lost) fica FORA do ajuste e entra em lacuna nomeada — nunca em zero, nunca em media",
+      "NAO atribui causalidade: propõe peso que separa o desfecho REGISTRADO, com coorte, margem e validacao declaradas; nao ha' experimento nem controle na v1",
+      "NAO publica em homolog/producao nem monta servico: o relatorio e' artefato gerado no ambiente de dev (ADR-005)"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "docs/data/data_contract_v1.json#scores — faixas (`tiers`), pesos da formula V1 (`priority_weights`) e tipos de score: DONO das faixas e dos pesos, e alvo UNICO da proposta",
+      "docs/data/DATA_CONTRACT_V1.md §8 (Score model + tiering) e §10 (governanca da mudanca: mudar formula/peso de score exige versao nova + aprovacao humana registrada)",
+      "ADR-0004 (mudanca estrutural exige aprovacao humana registrada) e ADR-005 (nada nasce em producao)",
+      "docs/architecture/efetividade-score-v1.md (card W8-E03-T01) — a MEDICAO que este card usa como instrumento, incluindo a lacuna L3 (coorte pequena e' o gatilho declarado do W9)",
+      "hermes/scores/priority/score-priority-v1.json (priority-v1) — validade de 30 dias do score",
+      "hermes/agentes/analytics/funil-v1.json (funil-v1, card W8-E01-T01) — DEPENDENCIA transitiva: o desfecho por organizacao"
+    ],
+    "fora_do_escopo": [
+      "aplicar a proposta (migration, edicao do Data Contract, gravacao de peso novo no banco): ato de operador com aprovacao humana registrada",
+      "previsao de canal, timing ou nurture (W9-E02..E05) e a memoria comercial em Qdrant (W9-E06)",
+      "atribuicao causal e desenho experimental: a v1 mede separacao no desfecho registrado com base declarada",
+      "escolher o modelo de negocio por tras de um peso (custo de falso positivo, capacidade comercial): numero nao decide isso",
+      "servir o relatorio por HTTP, autenticar usuario ou hospedar pagina: passo de operador/homolog"
+    ]
+  },
+  "dependencia": {
+    "instrumento": {
+      "componente": "hermes/agentes/analytics/efetividade_score.py",
+      "contrato": "hermes/agentes/analytics/efetividade-score-v1.json",
+      "versao_exigida": "efetividade-score-v1",
+      "funcoes_reusadas": ["validar_contrato", "validar_ambiente", "extrair_prioridade", "extrair_componentes", "extrair_base", "resolver_evidencia", "alcance_por_organizacao", "faixa_do_valor", "ler_tudo", "carregar_dependencia_funil", "sha256_de_arquivo"],
+      "regra": "sem a medicao do W8-E03 (ou com versao diferente, ou sem as fontes PRIORITY_ULTIMO/COMPONENTES_ULTIMOS) RECUSA (DEPENDENCIA_*): medir o score e' o instrumento da calibracao, nao um detalhe reimplementavel",
+      "prova": "o sha256 do contrato do instrumento viaja no relatorio e o aceite roda a suite offline do instrumento como regressao"
+    },
+    "funil": {
+      "componente": "hermes/agentes/analytics/funil.py",
+      "contrato": "hermes/agentes/analytics/funil-v1.json",
+      "versao_exigida": "funil-v1",
+      "funcao_do_desfecho": "alcance_por_organizacao (transitiva, via instrumento)",
+      "regra": "o desfecho (Won/Lost por organizacao) nao e' recalculado aqui: sai do contrato do funil vigente"
+    }
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3)",
+    "coorte": "organizacoes vivas (deleted_at IS NULL) com PRIORITY valido (versao preenchida, `valid_until` nao vencido na referencia, valor na escala) E com os QUATRO componentes do Data Contract validos na MESMA score_version do PRIORITY",
+    "coorte_do_ajuste": "subconjunto da coorte com DESFECHO RESOLVIDO: rotulo `Won` (1) ou `Lost` (0) na evidencia propria do funil. Organizacao em aberto NAO entra no ajuste e nao vira zero",
+    "regra": "quem nao tem lastro completo nao e' estimado: entra em lacuna nomeada"
+  },
+  "parametros": {
+    "minimo_de_coorte": 30,
+    "minimo_por_classe": 5,
+    "passo_da_grade": "0.05",
+    "margem_de_ganho_na_validacao": "0.02",
+    "fracao_de_ajuste": { "numerador": 2, "denominador": 3,
+      "regra": "o lado do ajuste e' `sha256(organization_id) % denominador < numerador` — separacao DETERMINISTICA e reproduzivel, nao sorteio: a mesma base produz o mesmo corte ajuste/validacao" },
+    "cortes_de_faixa": 4,
+    "metrica": "AUC (area sob a curva ROC) do score ponderado contra o desfecho binario Won=1 / Lost=0, por posto (empate vale 0,5)",
+    "desempate": "entre vetores de IGUAL AUC no lado do ajuste vence o de MENOR distancia L1 ao peso em vigor; persistindo empate, a ordem lexicografica do vetor (determinismo)",
+    "regra_da_margem": "a proposta so' nasce se `AUC_validacao(candidato) - AUC_validacao(incumbente) >= margem`; ganho so' no ajuste NAO propoe (seria overfitting declarado)",
+    "regra_das_faixas": "os `cortes_de_faixa` pontos de corte saem do metodo de Youden (J = sensibilidade - especificidade) aplicado RECURSIVAMENTE no grupo com mais organizacoes, sobre o score do vetor proposto; as faixas saem da ordem ascendente dos `tiers` do Data Contract, contiguas e cobrindo 0..100",
+    "referencia_temporal": "`--agora` (ISO) ou o relogio da rodada; entra no relatorio como `referencia_temporal` e NAO entra no hash (o que entra no hash e' o estado medido: quantos scores estavam vencidos naquele instante)",
+    "base_suficiente": "`false` significa: NAO proponha. O relatorio sai com o gate nomeado item a item e a rodada termina em exit 6 (ABSTEVE), nunca em proposta"
+  },
+  "metricas": {
+    "gate_de_volume": ["organizacoes", "coorte_valida", "com_desfecho", "won", "lost", "sem_desfecho", "minimo_de_coorte", "minimo_por_classe", "base_suficiente", "motivos"],
+    "separacao": ["lado (ajuste/validacao)", "organizacoes", "won", "lost", "auc"],
+    "incumbente": ["pesos (lidos do Data Contract)", "auc no ajuste", "auc na validacao", "auc na coorte", "taxa de vitoria por faixa vigente", "monotonico (achado)"],
+    "proposta_de_pesos": ["pesos propostos", "auc no ajuste", "auc na validacao", "ganho na validacao", "margem exigida", "distancia L1 ao peso em vigor", "candidatos do topo"],
+    "proposta_de_faixas": ["faixa", "min", "max", "organizacoes", "ganharam", "perderam", "taxa_de_vitoria_pct", "origem do corte (Youden J)"],
+    "monotonicidade": "na ordem ASCENDENTE das faixas (Nurture -> A+), a taxa de vitoria NAO deve CAIR; queda e' `achado` com os dois numeros (medir um recorte que nao separa e' resultado legitimo, nao erro)"
+  },
+  "sorteio_de_ambiente": "n/a",
+  "fontes_do_funil": [
+    "BASE_ORGANIZACOES", "PESQUISA_CONCLUIDA", "SINAIS", "SCORE_PRIORITY", "CONTATO_COM_CANAL",
+    "INTERACAO_OUTBOUND", "INTERACAO_INBOUND_CLASSIFICADA", "RECOMENDACAO_REUNIAO", "TRILHA_ESTAGIO"
+  ],
+  "fontes_reusadas_do_instrumento": ["PRIORITY_ULTIMO", "COMPONENTES_ULTIMOS"],
+  "lacunas": {
+    "prioridade_ausente": "organizacao viva sem nenhuma linha PRIORITY (herdada do instrumento)",
+    "prioridade_sem_versao": "PRIORITY sem score_version: score nao reprodutivel e' recusado pelo contrato §8",
+    "prioridade_vencida": "valid_until no passado (politica de 30 dias do W5-E05)",
+    "prioridade_fora_da_escala": "score_value fora da escala do Data Contract",
+    "componente_ausente": "por score_type: a organizacao nao tem aquele componente",
+    "componente_sem_versao": "por score_type: componente sem score_version",
+    "componente_vencido": "por score_type: componente com valid_until no passado",
+    "componente_fora_da_escala": "por score_type: componente fora de 0..100",
+    "versoes_divergentes": "componentes que nao estao todos na mesma score_version do PRIORITY",
+    "sem_desfecho": "organizacao com lastro completo mas desfecho EM ABERTO (nem Won nem Lost): fora do ajuste, contada e nomeada",
+    "sem_classe": "organizacao com lastro e desfecho resolvido cujo lado (ajuste/validacao) nao tem as duas classes: fora do ajuste",
+    "faixas_nao_propostas": "nao foi possivel obter os cortes (grupo sem valor distinto para separar): faixa NAO e' proposta, e' declarada",
+    "evidencia_orfa": "linha de PRIORITY de organizacao que nao esta' na base viva"
+  },
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<sales|funil|analytics|aceite>... psql ...`, via --porta-banco/TRE_CALIBRACAO_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV); homolog exige --confirmo; prod e' RECUSA por desenho (exit 4, antes de ler contrato)",
+    "leitura_pura": "toda consulta roda com default_transaction_read_only = on em dois `-c` (SET e depois SELECT: medido no W8-E01-T01 que um unico `-c` NAO vale) E a auditoria da fonte do funil reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "proposta_nao_aplicada": "o relatorio carrega `proposta.aplicado: false`, `proposta.exige_versao_nova: true` e `proposta.aprovacao_humana: pendente`; a suite offline reprova o componente que escrever (grep de verbo de escrita) e o aceite prova o snapshot das 12 tabelas identico antes/depois",
+    "contrato": "faixa com lacuna/sobreposicao, peso que nao soma 1.00, componente fora de `scores.types`, dependencia do instrumento/funil com versao diferente ou fontes divergentes RECUSAM antes de ler o banco",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se valor de TRE_CALIBRACAO_TOKEN, TRE_EFETIVIDADE_TOKEN ou TRE_FUNIL_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "a saida carrega contagem e o UUID canonico da organizacao; nenhuma coluna de e-mail, telefone, WhatsApp, CNPJ ou nome e' lida"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, referencia_temporal, contrato (versao + sha256), dependencia (instrumento + contrato do instrumento + sha256 + contrato do funil + sha256 + funcao do desfecho), base (organizacoes + digest), parametros, gate_de_volume, separacao, incumbente, proposta, faixas_propostas, lacunas, lacunas_declaradas, fontes e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com o gate de volume, pesos em vigor x propostos, AUC ajuste/validacao, faixas propostas x vigentes e lacunas medidas",
+    "determinismo": "a mesma base com o mesmo contrato, a mesma janela e a mesma referencia temporal produz o MESMO relatorio (grade, desempate e corte ajuste/validacao sao deterministicos); `gerado_em` e `referencia_temporal` sao a unica diferenca e NAO entram no hash_do_relatorio",
+    "codigos_de_saida": "0 = relatorio gerado (com ou sem proposta) · 2 = uso errado · 3 = recusa (contrato/dependencia/fonte/guarda/banco) · 4 = producao recusada · 5 = segredo vazado · 6 = VOLUME INSUFICIENTE (absteve; a pre-condicao do card ganhou codigo proprio)"
+  },
+  "lacunas_declaradas": [
+    "L1: coorte ACUMULADA (o desfecho e' o alcance do funil, que soma a base toda — L1 do instrumento e do funil). A calibracao mede a safra acumulada, nao uma safra; `--desde/--ate` filtram pela coluna de tempo de cada fonte, mas comparacao entre safras nao esta' na v1",
+    "L2: associacao nao e' causa. O peso proposto separa o desfecho REGISTRADO na coorte observada; sem experimento, o ganho de AUC nao estima efeito causal de mexer no score",
+    "L3: sobreajuste e' risco real mesmo com margem e validacao: com ~30 organizacoes, 1771 vetores na grade e 4 classes de desfecho, a AUC de validacao tem variancia alta. A margem declarada reduz, nao elimina — quem aprovar deve olhar o tamanho da coorte",
+    "L4: a faixa e' DERIVADA e nao persistida (nao existe coluna de tier; criar exige versao nova do contrato, §10/ADR-0004). A proposta de faixa e' aritmetica sobre a coorte, nao um tier gravado",
+    "L5: componente medido pelo ULTIMO valor por score_type (vies de sucessao do score: um ICP recalculado depois do desfecho ja' e' leitura do presente sobre o passado) — L5 do instrumento, declarada e nao corrigida",
+    "L6: `Lost` nao tem ponto de perda no V1: o desfecho binario trata todo Lost como 0, inclusive quem nunca avancou. O alvo do ajuste e' 'ganhou x perdeu', nao 'converteu proposta'",
+    "L7: a proposta de faixas depende do score do vetor proposto e o Youden J e' guloso (recursivo no maior grupo): outra particao com J parecido pode existir e nao e' explorada — a v1 declara UM caminho determinista, nao o otimo global"
+  ]
+}
