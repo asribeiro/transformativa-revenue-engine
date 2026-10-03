@@ -2582,8 +2582,13 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   operacional é o Odoo; propagação é `W6-E06`), sem escrita no Odoo (o vocabulário de eventos PG -> Odoo
   do Data Contract V1 §6 não tem evento de mensagem de canal), sem mídia (não baixa nem transcreve) e
   janela de 24 h como parâmetro declarado, não medida contra o provedor real. Detalhes no runbook §6.
-- **Logs brutos:** `aceite-whatsapp-lead-68ok.out` (rodada 2, verde) e
-  `aceite-whatsapp-lead-rodada1-18falhas.out` (rodada 1, com os defeitos medidos), anexados ao card com
-  `sha256` das evidências.
+- **Logs brutos:** `aceite-whatsapp-lead-68ok-r3.out` (rodada 3, do commit `5ba27b1`, verde),
+  `verificador-whatsapp-lead-70ok-10dentes.out` (suite 70 itens/10 dentes) e
+  `portao-estrutura-w7e05t01-pass.out` (PASS, 0 falhas), mais
+  `aceite-whatsapp-lead-rodada1-18falhas.out` (rodada 1, com os defeitos medidos) — todos anexados ao
+  card com `sha256-artefatos.out`. Observação honesta: o portão de estrutura foi medido no checkout do
+  repo (o gate confere arquivo *versionado* via `git ls-files`); rodado sobre uma árvore sem `.git`
+  (`git archive` na VPS) ele reprova por construção, e foi assim que a rodada dele na VPS apareceu
+  vermelha com 277 falhas antes desta nota.
 - Segredos: nenhum valor nesta entrada. Nenhuma credencial real foi usada; as pontas são 100% locais e o
   container de aceite é descartável.
