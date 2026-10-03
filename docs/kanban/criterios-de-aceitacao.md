@@ -588,3 +588,32 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
   — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
   caminho outbound provado ponta a ponta.
+
+## TRE-W7-E02-T01 — Meta lead ingestion
+
+- Webhook sem `X-Hub-Signature-256` válida (HMAC-SHA256 do corpo cru com o app secret) é RECUSADO antes de
+  qualquer chamada à Graph API; o replay da mesma entrega inválida é `JA_INGERIDO` e não derruba a rodada.
+- Lead sem e-mail **e** sem telefone não vira linha em `interactions` (`DADOS_INSUFICIENTES`).
+- Contato desconhecido em `contacts` não inventa organização nem contato (`SEM_VINCULO`, 0 interação).
+- Idempotência por `meta-lead:<page_id>:<leadgen_id>`: replay é `JA_INGERIDO`, sem linha nova e sem nova
+  chamada à Graph API.
+- Escrita restrita a `interactions` e `sync_events`, só INSERT; campo fora do mapa entra apenas pelo nome
+  em `campos_desconhecidos`; `content_summary` não expõe e-mail/telefone em claro.
+- Guardas ADR-005 medidas por exit code: `prod` recusa (4), porta de banco remota recusa (`BANCO_NAO_E_DEV`, 3),
+  Graph fora de loopback recusa (`GRAPH_NAO_E_DEV`, 3), `--ingerir` sem `--confirmo` é DRY_RUN e não grava.
+- Segredos (token/app secret) ausentes de toda saída; se aparecerem na gravação, `SENHA_VAZADA` (exit 5).
+
+**Acceptance:** os oito critérios acima, medidos item a item pelo aceite E2E e pela suíte offline.
+**Test plan:** `python3 scripts/agentes/verificar_ingestao_leads_meta.py --autoteste` (51 itens + 7
+mutações) e `bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh [--prova-de-dente]` (53 itens) na VPS
+do ambiente, com Postgres descartável (`pg-meta-acc`) e stub local da Graph API em loopback.
+**Rollback:** reverter o commit da branch `feature/TRE-W7-E02-T01`; em runtime, `--desfazer <chave>` marca a
+trilha `DESFEITO` por INSERT (trilha imutável, contrato §9).
+**Risco:** Médio — ponta externa e segredo de aplicação; fail-closed na assinatura, idempotência por chave
+única e escrita em 2 tabelas.
+**Componentes afetados:** `hermes/agentes/inbound/ingestao_leads_meta.py` e o contrato
+`meta-lead-ingestion-v1.json` (novos); `scripts/agentes/verificar_ingestao_leads_meta.py`,
+`scripts/agentes/stub-meta-graph-dev.py`, `scripts/agentes/teste_ingestao_leads_meta_aceite.sh` (novos);
+`deploy/environments/dev-meta.env`; `docs/integrations/meta-leads-v1.md`; `docs/runbooks/ingestao-leads-meta.md`;
+`scripts/verificar_estrutura.sh`; tabelas existentes **sem mudança de schema** (`interactions`, `sync_events`;
+somente INSERT).

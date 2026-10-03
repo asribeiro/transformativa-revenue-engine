@@ -621,5 +621,47 @@ if [ -f "$ACEITE_E2E" ]; then
   fi
 fi
 
+# --- card TRE-W7-E02-T01 (ingestao de leads Meta) ----------------------------------------------------
+for arquivo in hermes/agentes/inbound/ingestao_leads_meta.py \
+               hermes/agentes/inbound/meta-lead-ingestion-v1.json \
+               scripts/agentes/verificar_ingestao_leads_meta.py \
+               scripts/agentes/stub-meta-graph-dev.py \
+               scripts/agentes/teste_ingestao_leads_meta_aceite.sh \
+               deploy/environments/dev-meta.env \
+               docs/integrations/meta-leads-v1.md \
+               docs/runbooks/ingestao-leads-meta.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E02-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E02-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+ACEITE_META=scripts/agentes/teste_ingestao_leads_meta_aceite.sh
+if [ -f "$ACEITE_META" ]; then
+  if ! bash -n "$ACEITE_META" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E02-T01: $ACEITE_META nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # As pontas externas so' em loopback e as guardas de ambiente medidas no aceite.
+  for marca in 127.0.0.1 GRAPH_NAO_E_DEV BANCO_NAO_E_DEV "--ambiente prod" assinatura; do
+    if ! grep -q -e "$marca" "$ACEITE_META"; then
+      echo "FALHOU card TRE-W7-E02-T01: aceite sem a marca obrigatoria '$marca'"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+# O ambiente de dev nao carrega segredo: token/app secret vem do host (ADR-005).
+if grep -qE '^TRE_META_(ACCESS_TOKEN|APP_SECRET)=.+$' deploy/environments/dev-meta.env; then
+  echo "FALHOU dev-meta.env carrega valor em TRE_META_ACCESS_TOKEN/TRE_META_APP_SECRET"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    dev-meta.env sem token/app secret versionado"
+fi
+
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
