@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Agenda da entrega dos eventos Odoo->PostgreSQL — card TRE-W3-E03-T01 (`t_85cb2838`).
+
+  A agenda nasce INATIVA (`active = False`), de proposito:
+
+    * ADR-005 — nada nasce em producao; e ligar agenda e' decisao de OPERACAO, com o trio medido e
+      a porta configurada (`transformativa_sales_ai.ingest_url` / `.ingest_token`), nao efeito
+      colateral de instalar o modulo;
+    * em dev quem entrega a fila e' o aceite (`_tf_enviar_pendentes()` chamado de forma explicita) e
+      o operador, pelo metodo `action_tf_enviar_agora`;
+    * cron ligado sem porta configurada so' produziria resumo `porta_nao_configurada` a cada minuto
+      e encheria o log — o remetente e' fail-closed, mas barulho tambem nao e' servico.
+
+  Ligar em homologacao/producao (com aprovacao humana registrada) esta' documentado no runbook
+  `docs/runbooks/odoo-eventos-para-pg.md` §6.
+-->
+<odoo>
+    <record id="server_action_tf_entregar_eventos" model="ir.actions.server">
+        <field name="name">Sales AI: entregar eventos Odoo -&gt; PostgreSQL (porta unica)</field>
+        <field name="model_id" ref="model_tf_evento_outbox"/>
+        <field name="state">code</field>
+        <field name="code">model._tf_enviar_pendentes()</field>
+    </record>
+
+    <record id="cron_tf_entregar_eventos" model="ir.cron">
+        <field name="ir_actions_server_id" ref="server_action_tf_entregar_eventos"/>
+        <field name="active" eval="False"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">minutes</field>
+        <field name="user_id" ref="base.user_root"/>
+    </record>
+</odoo>

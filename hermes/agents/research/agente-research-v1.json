@@ -1,0 +1,200 @@
+{
+  "agente": "research",
+  "papel": "research",
+  "versao": "1.0.0",
+  "card": "TRE-W4-E02-T01",
+  "onda": "W4",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "02_ARQUITETURA_DA_SOLUCAO.md §2 (Hermes Sales AI: research) e §4 (guardrails L0/L1/L2)",
+    "03_ARQUITETURA_DE_NEGOCIO.md §2 (funil: Pesquisado, segundo estado) e §5 (faixas de funcionarios)",
+    "04_PROJETO_FISICO_DE_DADOS.md §6 (research_runs) e §3 (organizations)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §2 (fluxo empresa descoberta: Hermes -> research/signals) e §7 (idempotencia)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W4: Research Agent) e §8/gate (empresa -> research/signals/hypotese/contatos)",
+    "12_CONTRATOS_E_GOVERNANCA.md §7 (compliance) e §8 (regras: inferencia marcada, conservar evidencia, audit trail)",
+    "docs/data/data_contract_v1.json (dedup.strong, vocabularies.employee_band, source_of_truth, governance)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "um_pedido_de_pesquisa_por_linha": true,
+    "campos": {
+      "organizacao": "objeto com o(s) identificador(es) FORTES da empresa ja descoberta (cnpj, domain, linkedin_url na prioridade do contrato)",
+      "tipo": "research_type — um do vocabulario tipos_de_pesquisa",
+      "fontes": "lista (>=1) de {tipo, url?, trecho?} com o que a fonte mostrou: e a evidencia conservada (compliance)",
+      "achados": "objeto {coluna_de_organizations: valor} com o que a pesquisa encontrou; achado invalido e DESCARTADO com motivo",
+      "confianca": "numero entre 0 e 1 declarado pela fonte (opcional; ausente = NULL, nao inventado)"
+    },
+    "exemplo": "{\"organizacao\":{\"cnpj\":\"45.723.174/0001-10\"},\"tipo\":\"SIZE_AND_STRUCTURE\",\"fontes\":[{\"tipo\":\"DADOS_PUBLICOS\",\"url\":\"https://...\",\"trecho\":\"420 colaboradores\"}],\"achados\":{\"employee_count\":420,\"unit_count\":3},\"confianca\":0.8}",
+    "nao_cria_organizacao": "a pesquisa SO enriquece empresa que ja existe (o produtor da empresa e o Scout, TRE-W4-E01-T01); identidade que nao casa e RECUSADA"
+  },
+  "tipos_de_pesquisa": {
+    "COMPANY_PROFILE": ["industry_code", "industry_name", "business_model", "website_url", "city", "state", "country_code"],
+    "SIZE_AND_STRUCTURE": ["employee_count", "employee_band", "unit_count", "revenue_estimate"],
+    "INDUSTRY": ["industry_code", "industry_name", "business_model"],
+    "DIGITAL_PRESENCE": ["website_url"]
+  },
+  "fontes": [
+    "LINKEDIN",
+    "WEB",
+    "GOOGLE",
+    "META",
+    "WHATSAPP",
+    "TITAN",
+    "EVENTOS",
+    "DADOS_PUBLICOS"
+  ],
+  "identidade": {
+    "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+    "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+    "resolucao": "a organizacao e resolvida pelos fortes VALIDOS do pedido; 0 casadas = RECUSADA, 1 = segue, 2+ distintas = REVISAO_IDENTIDADE",
+    "forte_invalido_e_descartado": true,
+    "sem_forte_declarado": "RECUSADA (a pesquisa nao descobre empresa)",
+    "cria_organizacao": false,
+    "escreve_identificador_forte": false,
+    "motivo_de_nao_escrever_identidade": "identidade e do produtor (Scout) e do modulo de dedup (TRE-W1-E04-T01): achado de cnpj/domain/linkedin_url e registrado em structured_output como evidencia, nunca escrito em organizations"
+  },
+  "enriquecimento": {
+    "colunas_permitidas": [
+      "industry_code",
+      "industry_name",
+      "business_model",
+      "website_url",
+      "city",
+      "state",
+      "country_code",
+      "employee_count",
+      "employee_band",
+      "unit_count",
+      "revenue_estimate"
+    ],
+    "tipos_por_coluna": {
+      "industry_code": "texto",
+      "industry_name": "texto",
+      "business_model": "texto",
+      "website_url": "texto",
+      "city": "texto",
+      "state": "texto",
+      "country_code": "texto",
+      "employee_count": "inteiro",
+      "employee_band": "texto",
+      "unit_count": "inteiro",
+      "revenue_estimate": "numero"
+    },
+    "colunas_proibidas": [
+      "id",
+      "odoo_partner_id",
+      "cnpj",
+      "domain",
+      "linkedin_url",
+      "source",
+      "status",
+      "data_quality_score",
+      "created_at",
+      "deleted_at"
+    ],
+    "housekeeping_permitido": ["updated_at = now()"],
+    "regra": "a coluna JA preenchida nunca e sobrescrita: texto grava COALESCE(NULLIF(col, ''), valor), numero grava COALESCE(col, valor). O que a pesquisa nao sabe fica como esta (NULL continua NULL).",
+    "coluna_derivada": "employee_band e SEMPRE derivada de employee_count pelo vocabulario do contrato (faixas_de_empregados); achado de employee_band na entrada e descartado (DERIVADO_NAO_ACEITO)"
+  },
+  "faixas_de_empregados": {
+    "origem": "03_ARQUITETURA_DE_NEGOCIO.md §5 + data_contract_v1.json#vocabularies.employee_band",
+    "limites": [
+      {"abaixo_de": 70, "faixa": "LT_70"},
+      {"abaixo_de": 150, "faixa": "70_149"},
+      {"abaixo_de": 300, "faixa": "150_299"},
+      {"abaixo_de": 500, "faixa": "300_499"},
+      {"abaixo_de": 700, "faixa": "500_699"},
+      {"abaixo_de": 1000, "faixa": "700_1000"}
+    ],
+    "acima_ou_igual": "GT_1000",
+    "sem_valor": "UNKNOWN"
+  },
+  "vereditos": {
+    "PESQUISADA": "research_run gravada (status COMPLETED) e colunas vazias da organizacao enriquecidas dentro do tipo declarado",
+    "JA_PESQUISADO": "a chave de idempotencia da MESMA entrada ja existia: nada foi duplicado (nao cria research_run nem reaplica enriquecimento)",
+    "REVISAO_IDENTIDADE": "a identidade casou com organizacoes distintas: human_approvals PENDING (RESEARCH_IDENTITY_REVIEW); nada escrito em research_runs",
+    "RECUSADA": "pedido invalido ou organizacao inexistente: nada escrito em research_runs/organizations",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "PESQUISADA": "COMPLETED",
+    "JA_PESQUISADO": "COMPLETED",
+    "REVISAO_IDENTIDADE": "REVIEW_REQUIRED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "status_de_research_runs": ["COMPLETED", "FAILED"],
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.research_runs",
+      "sales_intelligence.organizations",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events",
+      "sales_intelligence.human_approvals"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.research_runs": ["INSERT", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.organizations": ["UPDATE (so enriquecimento com COALESCE e restauracao do --desfazer --confirmo)"],
+      "sales_intelligence.agent_runs": ["INSERT"],
+      "sales_intelligence.sync_events": ["INSERT", "UPDATE", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.human_approvals": ["INSERT"]
+    },
+    "proibido": [
+      "DELETE em organizations",
+      "UPDATE de organizations fora das 11 colunas de enriquecimento declaradas",
+      "UPDATE de organizations com atribuicao direta (sem COALESCE) fora do --desfazer --confirmo",
+      "DDL (CREATE/ALTER/DROP/TRUNCATE)",
+      "escrita em qualquer outra tabela",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "o contrato lista os eventos PG->Odoo (doc 06 §5) e nenhum deles e de pesquisa; mudanca de estagio do funil tem o Odoo como dono (doc 12 §1)"
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed)",
+    "llm_exige_recibo_jev": true,
+    "recibo_jev_aceito": {"outcome": "PASS", "lane_obrigatoria": true, "decision_id_obrigatorio": true},
+    "recibo_jev_recusado": {"outcome": "ESCALATE", "outcome_bloqueado": "BLOCK", "ausente": "recusa"},
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ],
+    "sem_http_smtp_socket": "o agente nao faz requisicao de rede nenhuma; a fonte entrega os achados (sem crawler na v1)"
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por pedido processado (agent_name=research, agent_role=research, correlation_id do lote, output com veredito e research_run_id)",
+    "research_runs": "uma linha por pesquisa de fato executada (idempotency_key em sync_events = 'research:org:<uuid>:<tipo>:<input_hash>')",
+    "sync_events": "uma linha por pesquisa ingerida: guarda as evidencias e os valores ANTES/DEPOIS de cada coluna (e o que o --desfazer restaura)",
+    "human_approvals": "action_type=RESEARCH_IDENTITY_REVIEW, status=PENDING (so na ambiguidade)",
+    "uuid": "v4 gerado no produtor (o agente) antes de qualquer escrita"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "research_runs da rodada (veredito PESQUISADA) + os sync_events dessas pesquisas; restaura as colunas enriquecidas para os valores anteriores gravados no proprio sync_event",
+    "padrao": "dry-run (sem --confirmo nada e apagado nem restaurado)",
+    "nao_toca": "organizacao pre-existente (fim do funil), agent_runs (auditoria) e human_approvals"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em pedido ou falha de porta)",
+    "2": "uso incorreto",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "sem LLM e sem crawler na v1: a fonte entrega as fontes e os achados; busca ativa na web/LinkedIn nao esta implementada (o gate do JEV existe e e fail-closed)",
+    "sem score: data_quality_score continua NULL (Data Quality Score e a W5) e nenhum score e calculado aqui",
+    "sem sinais, sem hipotese de dor e sem contato: signals/hipotese/contacts sao W4-E03/E04/E05",
+    "sem outbox: nenhum evento PG->Odoo nasce na pesquisa; a passagem de Descoberto para Pesquisado no funil e do Odoo (dono do estagio)",
+    "identificador forte achado pela pesquisa nao e escrito na organizacao (evita colisao de identidade fora do modulo de dedup): fica registrado em structured_output como evidencia",
+    "retention_until/collected_at nao existem no contrato V1 (lacuna ja declarada no compliance do contrato)",
+    "a chave de idempotencia cobre a MESMA entrada; duas pesquisas legitimamente distintas do mesmo tipo para a mesma empresa (input_hash diferente) geram duas research_runs — o baseline nao define janela de validade de pesquisa"
+  ]
+}

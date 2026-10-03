@@ -263,6 +263,87 @@ com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D
 **Rollback:** Reverter as ACLs pelo módulo.
 **Risco:** Alto — isolamento entre clientes.
 
+## TRE-W5-E08-T01 — Test scoring/NBA (aceite E2E da cadeia W5)
+
+- A cadeia **ICP → AUTOMATION_FIT → BUYING_SIGNAL → DATA_QUALITY → PRIORITY → TIER → NBA** roda em
+  sequência no **mesmo** banco, e o artefato de cada etapa é o **insumo** da seguinte: o `PRIORITY` é
+  a fórmula do contrato sobre os **quatro scores gravados**; o registro `TIER` cita o `score_id` do
+  `PRIORITY` lido; a recomendação cita o `tier` gravado pelo tiering.
+- **Fail-closed na cadeia**: empresa sem lastro (sem sinal e sem hipótese) não ganha score, tier nem
+  recomendação — cada etapa do caminho curto **RECUSA** com motivo nominal (`SEM_LASTRO`,
+  `SEM_LASTRO_COMPLETO`, `SEM_PRIORITY`, `SEM_TIER`) e **nada** é gravado.
+- **Escopo**: as tabelas de negócio saem idênticas (foto md5 antes/depois), a `outbox` fica 0 e
+  nenhuma rodada chama LLM (`model`/tokens/custo NULL).
+- **Replay** da cadeia com as mesmas entradas **não duplica** linha nenhuma.
+- `prod` é recusado (**exit 4**) sem escrita nos sete componentes; `--planejar`/`--regras` exit 0 sem
+  conexão; `--desfazer` é dry-run até o `--confirmo`.
+- Evidência OK/FALHOU item a item com exit code e prova de dente (cada mutação reprova o item
+  esperado); nada em produção (ADR-005).
+
+**Test plan:** `bash scripts/e2e/verificar-e2e-scoring-nba.sh` na VPS do ambiente (container
+descartável `pg-w5-acc`, migration 0001, 3 empresas sintéticas: duas com lastro completo e uma sem) +
+`--prova-de-dente` (4 mutações) + as sete suítes offline no mesmo commit; evidência = saída completa
+com exit code. Runbook: `docs/runbooks/e2e-scoring-nba.md`.
+**Rollback:** Reverter o commit do aceite (sem DDL, sem schema novo; nada em produção). O container
+descartável é removido pelo próprio aceite e o rollback operacional dos dados é o `--desfazer` de cada
+componente.
+**Risco:** Baixo-médio — é medição. O risco real é o instrumento (verde falso sobre cadeia quebrada),
+endereçado pelos itens de composição e pelos dentes.
+
+## TRE-W6-E02-T01 — Criar GPT outreach generator (`gerador-abordagem-v1`)
+
+**Acceptance:** a evidência lida (recomendação `NEXT_BEST_ACTION` OPEN + organização + contato + pesquisa +
+dores + sinais + PRIORITY + registro TIER) vira uma abordagem validada e um **pedido de aprovação humana**
+`PENDING` em `human_approvals` (`action_type` = ação recomendada, `proposed_action` com canal/tipo/assunto/
+corpo/cta/citações/hash/recomendação), auditado em `agent_runs` com provider/modelo/`prompt_version`/
+`entrada_hash` **estruturados**; nada é enviado; nada fora dessas duas tabelas é tocado; replay não duplica;
+evidência citável nova gera pedido novo com o anterior `EXPIRED`; contato bloqueado, ausência de contato,
+ausência de evidência, empresa inexistente e abordagem inválida **recusam sem gravar**; `prod` recusado (exit 4).
+**Test plan:** `python3 scripts/agentes/verificar_gerador_abordagem.py` (100 OK / 0) + `--autoteste` (12/12) +
+`bash scripts/agentes/teste_gerador_abordagem_aceite.sh` na VPS do ambiente (PostgreSQL descartável
+`pg-outreach-acc`, migration 0001, 8 empresas sintéticas, stub HTTP local do provedor) + `--prova-de-dente`
+(4 mutações, cada uma reprovando o item esperado). Evidência = saída completa com exit code e o veredito
+`ACEITE_OUTREACH_001_OK (69 OK / 0 FALHOU)`. Runbook: `docs/runbooks/gerador-abordagem.md`.
+**Rollback:** `--desfazer <correlation_id> [--confirmo]` apaga só os pedidos de aprovação da rodada,
+preservando a auditoria; reverter o merge do branch (sem DDL, sem migration, sem estado externo criado —
+nenhum e-mail enviado, nenhuma atividade no Odoo, nenhum evento de outbox).
+**Risco:** médio — é o primeiro componente que chama modelo. Endereçado por: validação determinística de fato
+sustentado com citação obrigatória, lista declarada de afirmações proibidas, guarda de compliance antes da
+geração, id determinístico (sem duplicação em retry), provedor sem credencial recusando **sem abrir conexão**,
+e o default `offline` (sem rede, sem custo) — cada um com item e dente próprios. O que **não** está coberto
+nesta v1: qualidade da abordagem medida por resposta real (W9) e a decisão humana (W6-E03).
+
+### TRE-W6-E03-T01 — Implementar Human Approval workflow
+
+**Acceptance:** `--fila` notifica cada pedido `PENDING` uma unica vez (codigo curto `APR-`, empresa, contato,
+acao, canal, texto e os tres comandos; sem `{{marcador}}` pendurado) e a segunda rodada e `JA_NOTIFICADO` com
+0 novos; `--decidir aprovar` grava `APPROVED` + operador humano canonico + `decided_at` + nota + hash do texto
+aprovado, e o `entrada_hash` do gerador fica intacto; replay do mesmo voto = `JA_DECIDIDO` (nada reescrito) e
+voto diferente = `CONFLITO_DE_VOTO`; `--decidir editar` so aprova texto que passa a validacao do gerador irmao
+(fato inventado RECUSA `EDICAO_INVALIDA` **sem gravar**), preservando o original; `--decidir rejeitar` fecha o
+pedido e ele nao reabre; compliance em vigor na hora da decisao (`do_not_contact`/`opt_out_*`) e recomendacao
+fora de `OPEN` RECUSAM; operador ausente/nao autorizado/maquina RECUSAM (exit 3) sem escrever; `--expirar`
+marca `EXPIRED` o que passou do TTL com `decided_by` **vazio** e nao mexe no resto; pedido `EXPIRED` nao aceita
+decisao; `--consultar` libera **so** `APPROVED` com hash conferido e contato limpo; `--desfazer` dry-run x
+`--confirmo` (motivo obrigatorio) reabre o pedido preservando a auditoria; `prod` exit 4; escrita so em
+`human_approvals`/`agent_runs` (DDL e DELETE sem `--confirmo` recusam) e nada fora delas e tocado em rodada
+nenhuma.
+**Test plan:** `python3 scripts/agentes/verificar_fluxo_aprovacao.py` (79 OK / 0) + `--autoteste` (20/20) +
+`bash scripts/agentes/teste_fluxo_aprovacao_aceite.sh --prova-de-dente` na VPS do ambiente (PostgreSQL
+descartavel `pg-aprovacao-acc`, migration 0001, 6 empresas sinteticas; os pedidos sao criados pelo **gerador do
+card irmao**, cadeia real) -> `ACEITE_APROVACAO_001_OK (104 OK / 0 FALHOU)` + 4/4 dentes. Evidencia = saida
+completa com exit code e veredito. Doc: `docs/architecture/aprovacao-humana-v1.md`; runbook:
+`docs/runbooks/aprovacao-humana.md`.
+**Rollback:** `--desfazer <correlation_id> [--confirmo --por --motivo]` devolve os pedidos da rodada a
+`PENDING`, limpa `decided_at`/`decided_by`, restaura o texto original da edicao e preserva a auditoria; reverter
+o merge do branch (sem DDL, sem migration; nenhum envio, nenhuma atividade no Odoo, nenhum evento de outbox).
+**Risk:** medio — e o portao que autoriza abordagem a pessoa real. Enderecado por: decisao so de `PENDING`,
+operador humano obrigatorio e canonico, hash do texto aprovado carimbado e reconferido no portao, compliance
+reavaliada na hora da decisao, contexto do pedido reconferido contra o banco (recomendacao `OPEN`, contato e
+empresa atuais), escrita restrita a duas tabelas com guarda anti-DDL, `prod` recusado e idempotencia testada
+nos dois sentidos (replay nao reescreve, rodada repetida nao renotifica). O que **nao** esta coberto nesta v1:
+transporte real da notificacao (Telegram/e-mail e do W6-E04) e a qualidade da abordagem medida por resposta
+real (W9).
 ## TRE-W6-E01-T01 — Configurar Titan SMTP
 
 - **Componente:** `hermes/integracoes/titan/smtp_titan.py` (versão `titan-smtp-v1`) + contrato
@@ -419,3 +500,47 @@ fail-closed de segredo (`SENHA_VAZADA`, exit 5).
 **Depends on:** W6-E05-T01 (respostas classificadas em `interactions`) + W3-E01-T05 (API controlada) ·
 **Destrava:** o E2E Outbound #002 contra o Odoo de dev (`TRE-W6-E07`).
 
+### TRE-W6-E04-T01 — Implementar o envio (send workflow)
+
+**Acceptance:** o envelope consome **so** o que o portao do card irmao libera: `--enviar <approval_id>` sem
+`--confirmo` e `PLANO` (nenhuma escrita, nenhum e-mail); com `--confirmo` o pedido `APPROVED` e entregue uma
+unica vez pelo primitivo de SMTP e o que fica no banco e `interactions` (canal/direcao/tipo do contrato, com
+`content_reference = envio:<approval_id>:<texto_hash>`) + `sync_events` (claim `ENVIANDO` antes do SMTP ->
+`ENVIADO` ligado a `interaction_id`; ou `FALHOU` com a trilha do primitivo, sem fato gravado). O corpo entregue
+e o **texto aprovado + CTA** e o destinatario e o **do pedido** (nao ha argumento de destino na linha de
+comando). Replay da mesma chave = `JA_ENVIADO` (nao reenvia); chave em voo = `ENVIO_EM_VOO`; chave `FALHOU`
+permite retentativa com `tentativas` incrementado. Pedido fora de `APPROVED`, com hash divergente, contato
+bloqueado ou inexistente recusa no portao (`PORTAO_NAO_LIBEROU`) sem enviar; `dev` so entrega para host loopback
+e dominio de dev (`DESTINO_NAO_DEV`) e `homolog` exige a aprovacao registrada (`HOMOLOG_SEM_APROVACAO`); `prod`
+exit 4 sem escrever. Escrita so em `interactions` e `sync_events` — DDL, `DELETE` e `UPDATE` fora das rodadas
+recusam antes de executar (`validar_sql`), e nenhuma outra tabela e tocada em rodada nenhuma. `--desfazer` em
+dry-run conta e nao escreve; `--confirmo` exige `--por` e `--motivo`, marca `DESFEITO` e **preserva o fato**
+(e um e-mail entregue nao volta: a barreira e o `--confirmo` antes do envio).
+
+**Test plan:** `python3 scripts/agentes/verificar_envio_outbound.py` (suite offline com duble de porta de banco
+e primitivo falso: 60 itens) + `--autoteste` (7 mutacoes no modulo, cada uma reprovando o item que nomeia) +
+`bash scripts/agentes/teste_envio_outbound_aceite.sh --prova-de-dente` na VPS do ambiente (PostgreSQL
+descartavel `pg-envio-acc` com a migration 0001 + **sink SMTP local** em `127.0.0.1` com certificado proprio;
+o pedido nasce do gerador irmao W6-E02 e e aprovado pelo workflow irmao W6-E03 — cadeia real) ->
+`ACEITE_ENVIO_OUTBOUND_001_OK (44 itens, 0 falhas)` + 3/3 dentes. Evidencia = saida completa com exit code.
+Doc: `docs/architecture/envio-outbound-v1.md`; runbook: `docs/runbooks/envio-outbound.md`.
+
+**Rollback:** `--desfazer <correlation_id> --confirmo --por --motivo` marca `DESFEITO` preservando o fato (para
+impedir envio futuro, rejeitar/expirar o pedido no card irmao); reverter o merge do branch — sem DDL, sem
+migration, sem credencial Titan e nenhum ato em producao. Mensagem ja entregue **nao** e recuperavel: o
+`--confirmo` antes do envio e a barreira.
+
+**Risk:** medio-alto — e o ato de outbound (falar com pessoa real em nome da Transformativa). Enderecado por:
+portao do card irmao obrigatorio (status + hash + compliance reavaliada), `--confirmo` explicito, guarda de
+ambiente/destino por ambiente, claim exatamente-uma-vez antes do SMTP com `ENVIO_EM_VOO` para nao repetir
+entrega, falha do primitivo sem fato gravado, escrita restrita a duas tabelas com guarda anti-DDL, `prod`
+recusado e a prova E2E inteira em banco descartavel com sink local (nenhuma credencial Titan, nenhum destino
+real). O que **nao** esta nesta v1: producao (decisao do dono), ingestao de resposta (W6-E05/IMAP) e o aceite
+com o `smtp.titan.email` real (homolog, com credencial do Sales AI e aprovacao do dono).
+
+**Components afetados:** `hermes/agents/outreach/` (novo `send_workflow.py`, `politica-envio-v1.json`,
+`envio-outbound-v1.json`), `scripts/agentes/` (novo verificador, duble de porta, aceite),
+`docs/architecture/envio-outbound-v1.md`, `docs/runbooks/envio-outbound.md`, `scripts/verificar_estrutura.sh`.
+**Depends on:** W6-E01-T01 (primitivo SMTP Titan, fechado e medido) e W6-E03-T01 (aprovacao humana, fechado e
+medido) — os dois pais integrados na base deste card. **Destrava:** o E2E Outbound #002 e o W6-E05-T01 (ingestao
+de resposta), que passa a ter envio registrado para casar.

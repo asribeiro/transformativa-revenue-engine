@@ -1,0 +1,210 @@
+{
+  "active": false,
+  "connections": {
+    "Decisao: aceita?": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Postgres: ingerir evento (trilha)",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "Postgres: registrar recusa (trilha)",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Nucleo: decidir ingestao": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Decisao: aceita?",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Postgres: ingerir evento (trilha)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Resposta da porta",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Postgres: registrar recusa (trilha)": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Resposta da porta",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "Webhook: evento do Odoo": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "Nucleo: decidir ingestao",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "id": "TREodooEventos1",
+  "name": "TRE odoo-events-ingest",
+  "nodes": [
+    {
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "tre-dev-ingest-token",
+          "name": "TRE dev — token do ingestor de eventos (X-Tre-Ingest-Token)"
+        }
+      },
+      "id": "tre-odoo-eventos-webhook",
+      "name": "Webhook: evento do Odoo",
+      "parameters": {
+        "authentication": "headerAuth",
+        "httpMethod": "POST",
+        "options": {},
+        "path": "tre/odoo-eventos",
+        "responseMode": "responseNode"
+      },
+      "position": [
+        -260,
+        300
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "tre-odoo-eventos"
+    },
+    {
+      "id": "tre-odoo-eventos-nucleo",
+      "name": "Nucleo: decidir ingestao",
+      "parameters": {
+        "jsCode": "/* ============================================================================\n * Nucleo da PORTA de ingestao de eventos Odoo -> PostgreSQL — card\n * TRE-W3-E03-T01 (board transformativa-revenue-engine, card t_85cb2838).\n *\n * O QUE ESTE ARQUIVO E', E POR QUE ELE E' PURO:\n * Aqui vive a DECISAO da porta: qual envelope e' aceito, qual e' RECUSADO (com\n * motivo NOMEADO) e como o evento vira parametros da trilha\n * (`sales_intelligence.sync_events`). Este arquivo NAO fala com banco, NAO fala\n * com HTTP e NAO importa nada (o sandbox de Code node do n8n nao tem\n * `require`). Quem executa e' o workflow; quem decide e' este nucleo — a mesma\n * separacao do motor puro da API controlada do Odoo\n * (odoo/addons/transformativa_sales_ai/api/motor.py).\n *\n * FONTE DA REGRA (nada aqui e' inventado):\n *   * n8n/contracts/odoo-events-ingest.v1.json — o contrato versionado da porta\n *     (envelope, eventos aceitos, ordem da validacao, trilha, credenciais). O\n *     contrato e' PARAMETRO: as funcoes recebem `contrato` e nao tem lista de\n *     eventos, campos exigidos ou ordem de validacao literais;\n *   * docs/data/DATA_CONTRACT_V1.md §6 (envelope com `event_version`\n *     obrigatorio; regras 1..5 das integracoes) e §4 (`sync_events` como trilha\n *     de sincronizacao e idempotencia);\n *   * doc 06 §6-8 e doc 02 §3 (Outbox Pattern, idempotency key, dead-letter\n *     visivel, reconciliacao fora do caminho principal).\n *\n * O QUE ESTE ARQUIVO NAO FAZ (lacuna declarada, de proposito):\n *   * nao retenta nada: aceita ou recusa UMA vez e responde — o retry com teto\n *     e' do produtor (os dois lados estao neste card, mas a decisao de retry\n *     vive no modulo do Odoo);\n *   * nao materializa o evento em tabela de NEGOCIO (o contrato V1 nao tem\n *     tabela de historico de funil): a trilha guarda o payload integral;\n *   * nao gera nem valida segredo: o token e' credencial do cofre do n8n,\n *     checada pelo proprio webhook ANTES deste nucleo.\n *\n * VERSAO: acompanha o contrato (n8n/contracts/odoo-events-ingest.v1.json).\n * ==========================================================================*/\n\nvar NUCLEO_VERSAO = '1.0.0';\n\n/* ------------------------------------------------------------------ utilidades */\n\nfunction ehVazio(valor) {\n    return valor === null || valor === undefined ||\n        (typeof valor === 'string' && valor.trim() === '');\n}\n\nfunction texto(valor) {\n    if (valor === null || valor === undefined) return '';\n    return String(valor).trim();\n}\n\nfunction ehObjeto(valor) {\n    return valor !== null && typeof valor === 'object' && !Array.isArray(valor);\n}\n\n/** Formato do ID canonico do contrato §3 (`id UUID`) — flexivel na versao, de proposito. */\nfunction ehUuid(valor) {\n    return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/\n        .test(texto(valor));\n}\n\n/** Hash FNV-1a (NAO criptografico): serve so' para NOMEAR uma recusa de forma reproduzivel. */\nfunction fnv1a(txt) {\n    var h = 0x811c9dc5;\n    for (var i = 0; i < txt.length; i++) {\n        h ^= txt.charCodeAt(i) & 0xff;\n        h = (h * 0x01000193) >>> 0;\n    }\n    return ('00000000' + h.toString(16)).slice(-8);\n}\n\n/** Definicao declarada do evento no contrato (ou null: evento fora da lista fechada). */\nfunction definicaoDoEvento(contrato, eventType) {\n    var eventos = (contrato && contrato.eventos) || [];\n    for (var i = 0; i < eventos.length; i++) {\n        if (eventos[i].event_type === texto(eventType)) return eventos[i];\n    }\n    return null;\n}\n\n/** Chave da linha de RECUSA quando o envelope nao trouxe chave (falha continua VISIVEL). */\nfunction chaveDeRecusa(corpoBruto) {\n    var material = typeof corpoBruto === 'string' ? corpoBruto : JSON.stringify(corpoBruto || null);\n    return 'odoo:recusado:' + fnv1a(material || '');\n}\n\n/** Identidade canonica que acompanha o fato (payload.oportunidade_id > payload.organizacao_id). */\nfunction identidadeCanonica(payload) {\n    var candidatos = [\n        { campo: 'oportunidade_id', tipo: 'oportunidade' },\n        { campo: 'organizacao_id', tipo: 'organizacao' }\n    ];\n    for (var i = 0; i < candidatos.length; i++) {\n        var valor = payload ? payload[candidatos[i].campo] : null;\n        if (!ehVazio(valor)) {\n            return {\n                id: texto(valor),\n                tipo: candidatos[i].tipo,\n                valida: ehUuid(valor),\n                campo: candidatos[i].campo\n            };\n        }\n    }\n    return { id: null, tipo: 'vazia', valida: true, campo: null };\n}\n\n/* ------------------------------------------------------------------ validacao */\n\n/**\n * Valida o envelope NA ORDEM DECLARADA no contrato. Devolve {ok, motivo} — o\n * motivo e' nomeado, nunca um \"erro generico\".\n */\nfunction validarEnvelope(envelope, contrato) {\n    var ordem = (contrato && contrato.envelope && contrato.envelope.ordem_da_validacao) || [];\n    var exigidos = (contrato && contrato.envelope && contrato.envelope.campos_obrigatorios) || [];\n    var suportadas = (contrato && contrato.envelope && contrato.envelope.versoes_suportadas) || [];\n    var formatoChave = /^[A-Za-z0-9._:-]{8,255}$/;\n\n    if (!ehObjeto(envelope)) {\n        return { ok: false, motivo: 'corpo_invalido' };\n    }\n    for (var i = 0; i < ordem.length; i++) {\n        var regra = ordem[i];\n        if (regra === 'corpo_objeto') {\n            if (!ehObjeto(envelope)) return { ok: false, motivo: 'corpo_invalido' };\n        } else if (regra === 'event_type_presente') {\n            if (ehVazio(envelope.event_type)) return { ok: false, motivo: 'evento_ausente' };\n        } else if (regra === 'event_type_declarado') {\n            if (!definicaoDoEvento(contrato, envelope.event_type)) {\n                return { ok: false, motivo: 'evento_fora_do_contrato' };\n            }\n        } else if (regra === 'event_version_presente') {\n            if (ehVazio(envelope.event_version)) return { ok: false, motivo: 'envelope_sem_versao' };\n        } else if (regra === 'event_version_suportada') {\n            if (suportadas.indexOf(texto(envelope.event_version)) < 0) {\n                return { ok: false, motivo: 'versao_nao_suportada' };\n            }\n        } else if (regra === 'timestamp_presente') {\n            if (ehVazio(envelope.timestamp)) return { ok: false, motivo: 'timestamp_ausente' };\n        } else if (regra === 'payload_objeto') {\n            if (!ehObjeto(envelope.payload)) return { ok: false, motivo: 'payload_ausente' };\n        } else if (regra === 'idempotency_key_presente') {\n            if (ehVazio(envelope.idempotency_key)) {\n                return { ok: false, motivo: 'idempotency_key_ausente' };\n            }\n        } else if (regra === 'idempotency_key_formato') {\n            if (!formatoChave.test(texto(envelope.idempotency_key))) {\n                return { ok: false, motivo: 'idempotency_key_invalida' };\n            }\n        } else if (regra === 'campos_exigidos') {\n            var definicao = definicaoDoEvento(contrato, envelope.event_type);\n            var exigidosDoEvento = (definicao && definicao.exigidos) || [];\n            for (var j = 0; j < exigidosDoEvento.length; j++) {\n                var campo = exigidosDoEvento[j];\n                if (ehVazio(envelope.payload[campo])) {\n                    return { ok: false, motivo: 'campo_exigido_ausente:' + campo };\n                }\n            }\n        } else if (regra === 'identidade_canonica') {\n            var identidade = identidadeCanonica(envelope.payload);\n            if (!identidade.valida) {\n                return { ok: false, motivo: 'identidade_invalida:' + identidade.campo };\n            }\n        }\n    }\n    // Os campos obrigatorios do envelope sao conferidos pelo nome (a ordem declarada acima e' a\n    // narrativa; esta linha e' a garantia dura de que nenhum deles passou batido).\n    for (var k = 0; k < exigidos.length; k++) {\n        if (ehVazio(envelope[exigidos[k]])) {\n            return { ok: false, motivo: 'campo_obrigatorio_ausente:' + exigidos[k] };\n        }\n    }\n    return { ok: true, motivo: null };\n}\n\n/* ------------------------------------------------------------------ decisao */\n\n/**\n * Decide a ingestao de UM envelope e devolve o item que o workflow consome:\n * o estado (aceito/motivo/codigo HTTP), os dados da trilha e a LISTA de\n * parametros do SQL (`queryReplacement`), na ordem declarada nos arquivos\n * `n8n/sql/*.sql`:\n *   $1 idempotency_key · $2 operation (event_type) · $3 entity_type ·\n *   $4 entity_id (uuid|NULL) · $5 source_version · $6 request_payload (jsonb) ·\n *   $7 status da trilha · $8 error_message\n */\nfunction decidir(envelope, corpoBruto, contrato) {\n    var validacao = validarEnvelope(envelope, contrato);\n    var definicao = definicaoDoEvento(contrato, envelope && envelope.event_type);\n    var identidade = identidadeCanonica(envelope && envelope.payload);\n    var chave = validacao.ok || !ehVazio(envelope && envelope.idempotency_key)\n        ? texto(envelope && envelope.idempotency_key)\n        : chaveDeRecusa(corpoBruto);\n    var corpo = typeof envelope === 'string' ? envelope : JSON.stringify(envelope);\n    var parametros = [\n        chave,\n        texto(envelope && envelope.event_type),\n        definicao ? definicao.modelo_origem : null,\n        identidade.id,\n        texto(envelope && envelope.event_version),\n        corpo,\n        validacao.ok ? 'COMPLETED' : 'REFUSED',\n        validacao.ok ? null : validacao.motivo\n    ];\n    return {\n        aceito: validacao.ok,\n        motivo: validacao.motivo,\n        codigo_http: validacao.ok ? 200 : 422,\n        idempotency_key: chave,\n        event_type: validacao.ok ? texto(envelope.event_type) : null,\n        entity_type: definicao ? definicao.modelo_origem : null,\n        entity_id: identidade.id,\n        source_version: texto(envelope && envelope.event_version),\n        parametros: parametros\n    };\n}\n\n/* O n8n injeta este arquivo dentro do Code node; o aceite roda o MESMO arquivo no\n * node puro. `module` so' existe no segundo caso. */\nif (typeof module !== 'undefined' && module.exports) {\n    module.exports = {\n        NUCLEO_VERSAO: NUCLEO_VERSAO,\n        ehVazio: ehVazio,\n        texto: texto,\n        ehObjeto: ehObjeto,\n        ehUuid: ehUuid,\n        fnv1a: fnv1a,\n        definicaoDoEvento: definicaoDoEvento,\n        chaveDeRecusa: chaveDeRecusa,\n        identidadeCanonica: identidadeCanonica,\n        validarEnvelope: validarEnvelope,\n        decidir: decidir\n    };\n}\n\n/* --- adaptador do Code node (fora do nucleo versionado) --- */\nvar CONTRATO_INGEST = {\n    \"autoridade\": {\n        \"fonte\": [\n            \"docs/data/DATA_CONTRACT_V1.md §6 (envelope unico do evento, lista Odoo -> PostgreSQL e regras de integracao 1..5)\",\n            \"docs/data/DATA_CONTRACT_V1.md §4 (sync_events: colunas e papel de trilha de sincronizacao e idempotencia)\",\n            \"doc 06 §6-8 (eventos Odoo -> PostgreSQL, idempotencia, retry limitado, dead-letter, reconciliacao)\",\n            \"doc 02 §3 (Outbox Pattern, idempotency key, polling so' para reconciliacao)\",\n            \"ADR-005 (nada nasce em producao)\"\n        ],\n        \"fora_do_escopo\": [\n            \"a EMISSAO do fato no Odoo e o REMETENTE com retry/dead-letter sao do proprio modulo (odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py) — este card entrega os dois lados, mas a decisao de retry do produtor e' medida no lado Odoo\",\n            \"materializar o evento em tabela de NEGOCIO do PostgreSQL (ex.: `interactions`) NAO esta' no contrato V1 (nao ha' tabela de historico de funil): aqui o evento entra na TRILHA com o payload integral, e a materializacao e' derivavel de quem precisar\",\n            \"dedup da entrega do OUTRO sentido (PG -> Odoo) e' do card TRE-W3-E02-T02\",\n            \"reconciliacao diaria (entidades esperadas, IDs cruzados, pendentes) e' do card TRE-W3-E04-T01\",\n            \"rate limit, cache, auditoria duravel e observabilidade da sincronizacao sao do card TRE-W3-E05-T01\",\n            \"publicar/ativar o webhook na instancia n8n de dev/homolog/producao e' passo de OPERADOR; o workflow nasce inativo\"\n        ]\n    },\n    \"classificacao_http\": {\n        \"falha_transitoria\": \"5xx / falha de transporte — o produtor retenta (teto 3) e o teto vira DEAD_LETTER no lado Odoo\",\n        \"nao_autorizado\": \"403 (token ausente/errado, pelo proprio webhook)\",\n        \"recusa_definitiva\": \"422 (envelope/payload fora da declaracao) — retry nao conserta dado malformado\",\n        \"sucesso\": \"2xx (aceito, com ou sem duplicata)\"\n    },\n    \"credenciais\": {\n        \"postgres\": {\n            \"id\": \"tre-dev-postgres\",\n            \"nome\": \"TRE dev — sales_intelligence\",\n            \"tipo\": \"postgres\"\n        },\n        \"regra\": \"o versionado carrega ID e NOME (contrato de importacao), nunca o valor; quem cria a credencial e' o passo de operador/harness, lendo o segredo de arquivo 600\",\n        \"token_da_porta\": {\n            \"id\": \"tre-dev-ingest-token\",\n            \"nome\": \"TRE dev — token do ingestor de eventos (X-Tre-Ingest-Token)\",\n            \"tipo\": \"httpHeaderAuth\"\n        }\n    },\n    \"descricao\": \"Declaracao da PORTA por onde os eventos do Odoo entram no PostgreSQL: um webhook do n8n (POST /webhook/tre/odoo-eventos) que valida o envelope do contrato, recusa com motivo NOMEADO o que nao esta' declarado e grava a trilha em sales_intelligence.sync_events — de forma idempotente pela chave (UNIQUE do contrato), de modo que reenvio nao cria linha duplicada. Nada aqui e' literal dentro do workflow: o nucleo JavaScript (n8n/codigo/nucleo-ingest-eventos.js), o SQL (n8n/sql/ingerir-evento.sql, n8n/sql/registrar-recusa.sql) e o workflow (n8n/workflows/TRE-odoo-events-ingest.json) sao montados/verificados a partir deste contrato. Fora da declaracao a resposta e' RECUSA (fail-closed): evento que o contrato nao cobre nunca e' ignorado em silencio.\",\n    \"envelope\": {\n        \"campos_das_regras_de_integracao\": [\n            \"idempotency_key\",\n            \"correlation_id\"\n        ],\n        \"campos_obrigatorios\": [\n            \"event_type\",\n            \"event_version\",\n            \"timestamp\",\n            \"payload\"\n        ],\n        \"motivos_de_recusa\": {\n            \"campos_exigidos\": \"campo_exigido_ausente:<campo>\",\n            \"corpo_objeto\": \"corpo_invalido\",\n            \"event_type_declarado\": \"evento_fora_do_contrato\",\n            \"event_type_presente\": \"evento_ausente\",\n            \"event_version_presente\": \"envelope_sem_versao\",\n            \"event_version_suportada\": \"versao_nao_suportada\",\n            \"idempotency_key_formato\": \"idempotency_key_invalida\",\n            \"idempotency_key_presente\": \"idempotency_key_ausente\",\n            \"identidade_canonica\": \"identidade_invalida:<campo>\",\n            \"payload_objeto\": \"payload_ausente\",\n            \"timestamp_presente\": \"timestamp_ausente\"\n        },\n        \"ordem_da_validacao\": [\n            \"corpo_objeto\",\n            \"event_type_presente\",\n            \"event_type_declarado\",\n            \"event_version_presente\",\n            \"event_version_suportada\",\n            \"timestamp_presente\",\n            \"payload_objeto\",\n            \"idempotency_key_presente\",\n            \"idempotency_key_formato\",\n            \"campos_exigidos\",\n            \"identidade_canonica\"\n        ],\n        \"regra\": \"contrato §6 regra 5: evento sem `event_version` (ou com versao desconhecida) e' RECUSADO — nao se interpreta versao por suposicao\",\n        \"versoes_suportadas\": [\n            \"1.0\"\n        ]\n    },\n    \"esquema\": \"1\",\n    \"eventos\": [\n        {\n            \"event_type\": \"STAGE_CHANGED\",\n            \"exigidos\": [\n                \"lead_id\",\n                \"estagio_anterior\",\n                \"estagio_novo\"\n            ],\n            \"modelo_origem\": \"crm.lead\"\n        },\n        {\n            \"event_type\": \"OPPORTUNITY_WON\",\n            \"exigidos\": [\n                \"lead_id\",\n                \"valor\"\n            ],\n            \"modelo_origem\": \"crm.lead\"\n        },\n        {\n            \"event_type\": \"OPPORTUNITY_LOST\",\n            \"exigidos\": [\n                \"lead_id\"\n            ],\n            \"modelo_origem\": \"crm.lead\"\n        },\n        {\n            \"event_type\": \"DEAL_VALUE_CHANGED\",\n            \"exigidos\": [\n                \"lead_id\",\n                \"valor_anterior\",\n                \"valor_novo\"\n            ],\n            \"modelo_origem\": \"crm.lead\"\n        },\n        {\n            \"event_type\": \"LOSS_REASON_RECORDED\",\n            \"exigidos\": [\n                \"lead_id\",\n                \"motivo\"\n            ],\n            \"modelo_origem\": \"crm.lead\"\n        },\n        {\n            \"event_type\": \"ACTIVITY_COMPLETED\",\n            \"exigidos\": [\n                \"atividade_id\",\n                \"documento\"\n            ],\n            \"modelo_origem\": \"mail.activity\"\n        },\n        {\n            \"event_type\": \"MEETING_CREATED\",\n            \"exigidos\": [\n                \"reuniao_id\",\n                \"nome\"\n            ],\n            \"modelo_origem\": \"calendar.event\"\n        }\n    ],\n    \"id\": \"odoo-events-ingest\",\n    \"porta\": {\n        \"autenticacao\": \"header X-Tre-Ingest-Token (credencial do tipo httpHeaderAuth do cofre do n8n; o valor nunca esta' no versionado). Token errado e' recusado pela propria porta (HTTP 403) antes de qualquer escrita\",\n        \"caminho_do_remetente\": \"/webhook/tre/odoo-eventos\",\n        \"corpo\": \"o ENVELOPE do evento, JSON puro (ver `envelope`)\",\n        \"descricao\": \"a UNICA entrada de eventos Odoo -> PostgreSQL: o webhook do n8n. O modulo do Odoo nao tem driver de banco, nao tem SQL e nao conhece o schema `sales_intelligence` (conferido por lente estrutural nos dois lados)\",\n        \"metodo\": \"POST\",\n        \"resposta\": {\n            \"aceito\": \"HTTP 200 {\\\"aceito\\\": true, \\\"duplicado\\\": <bool>, \\\"sync_event_id\\\": \\\"<uuid>\\\", \\\"event_type\\\": \\\"<evento>\\\"}\",\n            \"nao_autorizado\": \"HTTP 403 do proprio webhook (token ausente/errado) — nada e' escrito\",\n            \"recusado\": \"HTTP 422 {\\\"aceito\\\": false, \\\"motivo\\\": \\\"<motivo nomeado>\\\", \\\"sync_event_id\\\": \\\"<uuid>\\\", \\\"event_type\\\": \\\"<evento|null>\\\"}\"\n        },\n        \"rota\": \"/webhook/tre/odoo-eventos\"\n    },\n    \"retry\": {\n        \"onde_vive\": \"no PRODUTOR (modulo do Odoo). A porta nao retenta nada: ela aceita (200) ou recusa (422) uma vez e responde. Quem decide tentar de novo e' o remetente, com teto e dead-letter proprios\",\n        \"regra\": \"a idempotencia pela chave e' o que permite o retry sem duplicata (contrato §6 regra 2)\",\n        \"teto_de_tentativas\": 3\n    },\n    \"segredos\": {\n        \"regra\": \"o token da porta e a credencial do banco vivem no cofre do n8n, importados fora do versionado (docs/operations/gestao-de-secrets.md); o workflow aponta credencial por id/nome, nunca por valor. O lado Odoo le base/token de `ir.config_parameter` (configuracao de ambiente, nunca do artefato versionado)\"\n    },\n    \"titulo\": \"Porta unica de ingestao dos eventos Odoo -> PostgreSQL — card TRE-W3-E03-T01\",\n    \"trilha\": {\n        \"chave_de_idempotencia\": {\n            \"derivacao\": \"vem do ENVELOPE (`idempotency_key`), derivada do FATO pelo produtor (`odoo:<event_type>:<modelo>:<res_id>:<sha1 do conteudo>`)\",\n            \"formato\": \"^[A-Za-z0-9._:-]{8,255}$\",\n            \"recusa_sem_chave\": \"envelope sem chave e' recusado ANTES da trilha; a linha de recusa (que existe para a falha ser VISIVEL, contrato §6 regra 3) usa a chave `odoo:recusado:<fnv1a do corpo>` — hash NAO criptografico, so' para nomear a recusa de forma reprodutivel\"\n        },\n        \"entity_id\": \"o ID canonico do contrato §3 quando ele viaja no payload: `payload.oportunidade_id`, senao `payload.organizacao_id`, senao NULL (evento sem identidade canonica continua sendo trilha — a lacuna fica visivel, nao se inventa UUID)\",\n        \"entity_type\": \"o `modelo_origem` declarado do evento (`crm.lead`, `mail.activity`, `calendar.event`)\",\n        \"operation\": \"o proprio `event_type` do envelope\",\n        \"request_payload\": \"o envelope integral (o payload do fato e' derivavel da trilha)\",\n        \"source_system\": \"odoo\",\n        \"source_version\": \"o `event_version` do envelope\",\n        \"status\": {\n            \"aceito\": \"COMPLETED\",\n            \"recusado\": \"REFUSED\"\n        },\n        \"tabela\": \"sales_intelligence.sync_events\",\n        \"target_system\": \"postgres\",\n        \"unicidade\": \"sync_events.idempotency_key e' UNIQUE no contrato: a ingestao e' `ON CONFLICT DO NOTHING` pela chave, de modo que reenvio/retry NAO cria linha duplicada — a porta responde `duplicado: true`\"\n    },\n    \"versao\": \"1.0.0\"\n};\nvar __item = $input.first().json;\nvar __corpo = (__item && __item.body !== undefined) ? __item.body : __item;\nvar __decisao = decidir(__corpo, typeof __corpo === 'string' ? __corpo : JSON.stringify(__corpo), CONTRATO_INGEST);\nreturn [{ json: __decisao }];\n",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      },
+      "position": [
+        -40,
+        300
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "id": "tre-odoo-eventos-decisao",
+      "name": "Decisao: aceita?",
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "tre-ingest-aceita",
+              "leftValue": "={{ $json.aceito }}",
+              "operator": {
+                "operation": "true",
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          }
+        },
+        "options": {}
+      },
+      "position": [
+        180,
+        300
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "tre-dev-postgres",
+          "name": "TRE dev — sales_intelligence"
+        }
+      },
+      "id": "tre-odoo-eventos-ingerir",
+      "name": "Postgres: ingerir evento (trilha)",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.parametros }}"
+        },
+        "query": "-- Trilha da ingestao dos eventos Odoo -> PostgreSQL — card TRE-W3-E03-T01.\n-- Contrato: n8n/contracts/odoo-events-ingest.v1.json (`trilha`).\n--\n-- O QUE ESTE ARQUIVO FAZ: escreve a linha de TRILHA do evento aceito em\n-- `sales_intelligence.sync_events`, de forma IDEMPOTENTE pela chave: `ON CONFLICT (idempotency_key)\n-- DO NOTHING`. Reenvio do mesmo fato (retry do produtor, replay, entrega duplicada da porta) NAO\n-- cria linha duplicada — a porta responde `duplicado: true` (data contract §6 regra 2).\n--\n-- Parametros (a ordem e' o contrato deste arquivo; o workflow passa uma LISTA, nunca texto):\n--   $1 idempotency_key   (texto, chave derivada do FATO pelo produtor)\n--   $2 operation         (o proprio event_type do envelope)\n--   $3 entity_type       (o modelo de origem declarado: crm.lead | mail.activity | calendar.event)\n--   $4 entity_id         (uuid canonico do contrato §3, ou NULL: nunca se inventa UUID)\n--   $5 source_version    (o event_version do envelope)\n--   $6 request_payload   (jsonb: o envelope integral)\n--   $7 status            (COMPLETED)\n--   $8 error_message     (NULL no aceite)\n--\n-- O que NAO existe aqui de proposito: nenhuma escrita em tabela de negocio (o contrato V1 nao tem\n-- tabela de historico de funil — a trilha guarda o payload integral e a materializacao e' derivavel),\n-- e nenhuma correcao de dado (reconciliacao e' o card TRE-W3-E04-T01, e corrigir em silencio e'\n-- proibido pelo doc 06 §8).\nWITH inserido AS (\n    INSERT INTO sales_intelligence.sync_events\n        (id, entity_type, entity_id, source_system, target_system, operation, source_version,\n         idempotency_key, status, request_payload, completed_at, error_message)\n    VALUES (gen_random_uuid(), $3, $4::uuid, 'odoo', 'postgres', $2, $5,\n            $1, $7, $6::jsonb, NOW(), $8)\n    ON CONFLICT (idempotency_key) DO NOTHING\n    RETURNING id\n),\nexistente AS (\n    -- Le a linha PRE-EXISTENTE (o snapshot do comando nao enxerga o INSERT do CTE acima):\n    -- e' o que distingue \"gravei agora\" de \"ja' estava na trilha\".\n    SELECT id FROM sales_intelligence.sync_events WHERE idempotency_key = $1\n)\nSELECT COALESCE((SELECT id FROM inserido), (SELECT id FROM existente))::text AS sync_event_id,\n       (SELECT count(*) FROM inserido) > 0                                   AS inserido,\n       200                                                                   AS codigo_http,\n       json_build_object(\n           'aceito', true,\n           'motivo', NULL::text,\n           'duplicado', NOT ((SELECT count(*) FROM inserido) > 0),\n           'sync_event_id',\n               COALESCE((SELECT id FROM inserido), (SELECT id FROM existente))::text,\n           'event_type', NULLIF($2, '')\n       )                                                                      AS corpo;\n"
+      },
+      "position": [
+        420,
+        180
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7
+    },
+    {
+      "credentials": {
+        "postgres": {
+          "id": "tre-dev-postgres",
+          "name": "TRE dev — sales_intelligence"
+        }
+      },
+      "id": "tre-odoo-eventos-recusa",
+      "name": "Postgres: registrar recusa (trilha)",
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $json.parametros }}"
+        },
+        "query": "-- Trilha da RECUSA de um evento Odoo -> PostgreSQL — card TRE-W3-E03-T01.\n-- Contrato: n8n/contracts/odoo-events-ingest.v1.json (`trilha` e `envelope.ordem_da_validacao`).\n--\n-- O QUE ESTE ARQUIVO FAZ: grava a linha de trilha da recusa com status `REFUSED` e o motivo\n-- NOMEADO em `error_message`. A recusa existe para ser VISIVEL (data contract §6 regra 3: \"falha\n-- nao e' engolida: vai para dead-letter com motivo\"): o produtor que receber 422 marca o evento\n-- dele como DEAD_LETTER com o mesmo motivo, e a trilha do PostgreSQL guarda o lado de ca'.\n--\n-- Parametros (a MESMA ordem do arquivo de aceite — o workflow passa uma LISTA, nunca texto):\n--   $1 idempotency_key   (a chave do envelope; sem envelope valido, a chave nomeada da recusa)\n--   $2 operation         (event_type quando declarado; texto vazio quando nem isso veio)\n--   $3 entity_type       (modelo de origem quando o evento e' declarado; NULL fora do contrato)\n--   $4 entity_id         (uuid canonico quando valido; NULL caso contrario)\n--   $5 source_version    (event_version quando veio; texto vazio caso contrario)\n--   $6 request_payload   (jsonb: o corpo recebido, integral — a recusa tambem tem prova)\n--   $7 status            (REFUSED)\n--   $8 error_message     (o motivo nomeado da recusa)\n--\n-- Idempotencia: reenvio do MESMO corpo recusado nao cria segunda linha de recusa (ON CONFLICT DO\n-- NOTHING pela chave) — a porta responde `duplicado: true` e o mesmo motivo.\nWITH recusa AS (\n    INSERT INTO sales_intelligence.sync_events\n        (id, entity_type, entity_id, source_system, target_system, operation, source_version,\n         idempotency_key, status, request_payload, completed_at, error_message)\n    VALUES (gen_random_uuid(), $3, $4::uuid, 'odoo', 'postgres', $2, $5,\n            $1, $7, $6::jsonb, NOW(), $8)\n    ON CONFLICT (idempotency_key) DO NOTHING\n    RETURNING id\n),\nexistente AS (\n    SELECT id FROM sales_intelligence.sync_events WHERE idempotency_key = $1\n)\nSELECT COALESCE((SELECT id FROM recusa), (SELECT id FROM existente))::text AS sync_event_id,\n       (SELECT count(*) FROM recusa) > 0                                    AS inserido,\n       422                                                                  AS codigo_http,\n       json_build_object(\n           'aceito', false,\n           'motivo', $8,\n           'duplicado', NOT ((SELECT count(*) FROM recusa) > 0),\n           'sync_event_id',\n               COALESCE((SELECT id FROM recusa), (SELECT id FROM existente))::text,\n           'event_type', NULLIF($2, '')\n       )                                                                    AS corpo;\n"
+      },
+      "position": [
+        420,
+        420
+      ],
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7
+    },
+    {
+      "id": "tre-odoo-eventos-resposta",
+      "name": "Resposta da porta",
+      "parameters": {
+        "options": {
+          "responseCode": "={{ $json.codigo_http }}"
+        },
+        "respondWith": "json",
+        "responseBody": "={{ $json.corpo }}"
+      },
+      "position": [
+        680,
+        300
+      ],
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1
+    }
+  ],
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

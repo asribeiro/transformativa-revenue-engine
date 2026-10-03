@@ -1,0 +1,523 @@
+{
+  "esquema": "1",
+  "versao": "1.0.0",
+  "id": "observabilidade-sync",
+  "titulo": "Observabilidade da sincronizacao (outbox + trilha) — card TRE-W3-E05-T01",
+  "descricao": "Declaracao da superficie de observabilidade da sincronizacao do TRE: o que se mede, com que limiar e com que regra de veredito. Nada aqui e' literal no codigo: as metricas (n8n/sql/observabilidade-sync.sql), a lista de detalhes (n8n/sql/observabilidade-sync-dead-letters.sql), o nucleo que avalia e relata (n8n/codigo/observabilidade-sync.js) e o workflow (n8n/workflows/TRE-observabilidade-sync.json) sao derivados deste contrato. Ausencia de medicao NAO e' saude: metrica declarada que nao veio, valor nao numerico, metrica que o SQL devolve sem estar declarada, limiar ausente ou direcao desconhecida fecham em INDETERMINADO (fail-closed) — nunca em OK.",
+  "autoridade": {
+    "fonte": [
+      "docs/data/DATA_CONTRACT_V1.md §6 (regras de integracao 1..5: idempotency_key + correlacao + retry limitado + sync_events + dead-letter com motivo) e §4 (outbox_events, sync_events: colunas e papeis)",
+      "doc 06 §7 (idempotencia: retry limitado, dead-letter/error state, 'retry nao pode criar duplicatas') e §8 (relatorio de reconciliacao — aqui, o relatorio de SINCRONIZACAO; a reconciliacao de entidades e' do card TRE-W3-E04-T01)",
+      "doc 02 §3 (Outbox Pattern) e doc 07 §6 (W3: sync, reconciliacao, observabilidade)",
+      "n8n/contracts/outbox-consumer.v1.json (PG -> Odoo: status, teto de tentativas, trilha, chave derivada) — a autoridade dos VALORES que aqui se observam",
+      "n8n/contracts/odoo-events-ingest.v1.json (Odoo -> PG: direcao inversa da MESMA trilha)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "reconciliacao de entidades (esperadas x existentes, IDs cruzados, correcao) e' do card TRE-W3-E04-T01: aqui se OBSERVA a sincronizacao e se RELATA — nenhum dado e' corrigido e nenhuma escrita acontece",
+      "rate limit e cache da porta unica sao do card TRE-W3-E05-T01 apenas se o dono os trouxer como requisito; esta entrega cobre a OBSERVABILIDADE (medicao, relatorio e veredito) e nao limita nem guarda nada",
+      "o ALERTA (para onde a falha vai: Telegram, e-mail, ticket) nao e' decidido aqui: o workflow produz o relatorio e o veredito; o destino do alerta e' decisao do dono (canal + regra de plantao). O que existe hoje e' o veredito com exit code, medido",
+      "replay/dedup por chave NAO e' contado como numero proprio — LACUNA DECLARADA da V1 (ver `lacunas_declaradas`): a trilha nao guarda marca de replay, e inventar a contagem a partir de um sinal indireto seria relatar o que nao se mediu. O que se mede, e pega o replay quebrado, e' `outbox_processado_sem_trilha` (sucesso sem prova)",
+      "publicar/ativar o workflow na instancia n8n de dev/homolog/producao e' passo de OPERADOR (o workflow nasce inativo)"
+    ]
+  },
+  "fontes": {
+    "outbox": {
+      "tabela": "sales_intelligence.outbox_events",
+      "papel": "fila de eventos PG -> Odoo (ADR-0003)",
+      "colunas_lidas": [
+        "id",
+        "event_type",
+        "payload",
+        "created_at",
+        "processed_at",
+        "attempts",
+        "status",
+        "last_error"
+      ]
+    },
+    "trilha": {
+      "tabela": "sales_intelligence.sync_events",
+      "papel": "trilha de sincronizacao e idempotencia (doc 06 §7; data contract §4)",
+      "colunas_lidas": [
+        "id",
+        "entity_type",
+        "entity_id",
+        "source_system",
+        "target_system",
+        "operation",
+        "idempotency_key",
+        "status",
+        "created_at",
+        "completed_at",
+        "error_message"
+      ]
+    },
+    "somente_leitura": {
+      "regra": "as duas consultas desta superficie sao SOMENTE LEITURA: nenhum INSERT/UPDATE/DELETE/DDL/lock. A observabilidade que escreve no que observa nao serve para julgar o que ela propria mexeu — o aceite mede contagens e digest das duas tabelas antes e depois de uma rodada completa",
+      "proibido": [
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "MERGE",
+        "TRUNCATE",
+        "CREATE",
+        "ALTER",
+        "DROP",
+        "GRANT",
+        "REVOKE",
+        "COPY",
+        "FOR UPDATE",
+        "FOR SHARE",
+        "LOCK"
+      ]
+    }
+  },
+  "vocabulario_da_trilha": {
+    "direcoes_declaradas": [
+      {
+        "id": "postgres->odoo",
+        "source_system": "postgres",
+        "target_system": "odoo",
+        "dono": "n8n/contracts/outbox-consumer.v1.json (card TRE-W3-E02-T01/T02)"
+      },
+      {
+        "id": "odoo->postgres",
+        "source_system": "odoo",
+        "target_system": "postgres",
+        "dono": "n8n/contracts/odoo-events-ingest.v1.json (card TRE-W3-E03-T01)"
+      }
+    ],
+    "status": [
+      "COMPLETED",
+      "FAILED",
+      "REFUSED"
+    ],
+    "regra": "trilha com direcao fora desta lista e' DIVERGENCIA (algo escreveu na trilha fora das portas declaradas) e fecha em CRITICO — nao se soma ao balde 'outras'",
+    "origem_dos_status": {
+      "COMPLETED": "n8n/contracts/outbox-consumer.v1.json (sucesso) + n8n/contracts/odoo-events-ingest.v1.json (aceito)",
+      "FAILED": "n8n/contracts/outbox-consumer.v1.json (falha transitoria, com retry limitado pela fila)",
+      "REFUSED": "n8n/contracts/outbox-consumer.v1.json (recusa) + n8n/contracts/odoo-events-ingest.v1.json (recusado)"
+    },
+    "como_conferir": "cada direcao e cada status declara o contrato DONO; a lente estrutural (scripts/n8n/conferir_observabilidade.py) confere os donos presentes neste base e exige que a ausencia dos demais esteja declarada em `lacunas_declaradas` — vocabulario inventado nao passa, e ausencia silenciada tambem nao"
+  },
+  "observado": {
+    "teto_de_tentativas": 3,
+    "regra_do_teto": "espelho DECLARADO de n8n/contracts/outbox-consumer.v1.json -> retry.teto_de_tentativas (a lente estrutural reprova se os dois divergirem). Com o teto, um evento ainda NA FILA com attempts >= teto esta' preso: nao ha' tentativa restante",
+    "chave_da_trilha": {
+      "derivacao": "outbox:<outbox_events.id>:<event_type>",
+      "regra": "mesma derivacao declarada no contrato do consumidor; e' o que liga um evento da fila a sua linha de trilha na conferencia cruzada"
+    },
+    "status_da_fila": {
+      "entrada": [
+        "PENDING",
+        "RETRY"
+      ],
+      "sucesso": "PROCESSED",
+      "recusa": "DEAD_LETTER"
+    }
+  },
+  "veredito": {
+    "ordem": [
+      "OK",
+      "ATENCAO",
+      "CRITICO",
+      "INDETERMINADO"
+    ],
+    "regra": "o veredito da rodada e' o PIOR entre as metricas declaradas, na ordem acima (INDETERMINADO e' pior que CRITICO: um numero que nao se pode medir nao autoriza confiar nos outros). Metrica informativa (limites nulos) NAO decide veredito, mas e' medida e relatada. O limiar e' `valor >= limite` e o menor limiar declarado e' 1: metrica cujo estado saudavel e ZERO declara 1/1 (qualquer ocorrencia e critica) em vez de 0 — limiar 0 transformaria o proprio estado saudavel em alerta",
+    "saida": {
+      "OK": 0,
+      "ATENCAO": 1,
+      "CRITICO": 2,
+      "INDETERMINADO": 3
+    },
+    "linha": "VEREDITO: <veredito> — <n> metricas declaradas, <n> medidas, <n> indeterminadas; pior metrica: <id>"
+  },
+  "regras_de_fail_closed": {
+    "metrica_declarada_sem_linha": "INDETERMINADO (ausencia de medicao nao e' zero)",
+    "valor_nao_numerico": "INDETERMINADO",
+    "metrica_nao_declarada": "INDETERMINADO (o SQL devolveu algo que o contrato nao declara: os dois lados tem de bater)",
+    "limiar_ausente": "INDETERMINADO (metrica que decide veredito sem limiar declarado e' contrato invalido; nao existe limiar implicito)",
+    "direcao_desconhecida": "INDETERMINADO (so' `maior_pior` e' declarada na v1; direcao inferida e' proibida)",
+    "dimensao_desconhecida": "INDETERMINADO (valor de dimensao fora do vocabulario declarado)",
+    "conferencia_cruzada_divergente": "INDETERMINADO (metrica e lista de detalhes tem de contar a MESMA historia)",
+    "ausencia": {
+      "padrao": "erro",
+      "valores": [
+        "erro",
+        "zero"
+      ],
+      "regra": "`ausencia` e' DECLARADA POR METRICA: `zero` = o valor NULO do agregado vale 0 porque o vazio e' informacao (fila sem eventos, trilha sem atividade, combinacao sem ocorrencia); `erro` (PADRAO) = valor nulo fecha INDETERMINADO. Nenhuma metrica de contagem declara `zero`: `count(*)` nunca devolve nulo, e um nulo ali significa que a consulta quebrou — ler isso como 0 seria exatamente o fail-open que a observabilidade existe para nao ter",
+      "ausencia_de_atividade_x_ausencia_de_medicao": "duas ausencias DIFERENTES: (1) ausencia de MEDICAO — a metrica declarada nao voltou do SQL — fecha INDETERMINADO, sempre; (2) ausencia de ATIVIDADE — a metrica voltou, com zero — e' informacao e fecha OK. Para a metrica dimensional a consulta emite a GRADE DECLARADA (direcoes x status, CROSS JOIN do vocabulario com LEFT JOIN da trilha), entao 'nao houve sincronizacao naquela porta naquela rodada' chega como linha de valor 0, e nao como linha faltando"
+    }
+  },
+  "metricas": [
+    {
+      "id": "fila_pendentes",
+      "titulo": "Eventos na fila aguardando entrega (PENDING)",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 50,
+        "critico": 200
+      },
+      "ausencia": "erro",
+      "por_que": "fila que cresce e' o primeiro sintoma de consumidor parado; limiar declarado (o dono calibra por versao do contrato)"
+    },
+    {
+      "id": "fila_retry",
+      "titulo": "Eventos em nova tentativa (RETRY)",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 5,
+        "critico": 20
+      },
+      "ausencia": "erro",
+      "por_que": "retry e' normal; retry acumulado e' falha transitoria que nao passa"
+    },
+    {
+      "id": "fila_idade_maxima_s",
+      "titulo": "Idade do evento mais antigo ainda na fila",
+      "fonte": "outbox",
+      "unidade": "segundos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 900,
+        "critico": 3600
+      },
+      "ausencia": "zero",
+      "por_que": "fila vazia e' fila em dia: mede-se a ESPERA, nao o tamanho — um evento parado ha' mais de 15 min e' atraso, mesmo em fila pequena"
+    },
+    {
+      "id": "fila_no_teto",
+      "titulo": "Eventos na fila sem tentativa restante (attempts >= teto)",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 1
+      },
+      "ausencia": "erro",
+      "por_que": "com o teto declarado, evento na fila sem tentativa restante esta' preso: ou o teto nao esta' sendo aplicado, ou o evento nunca vai sair QUALQUER ocorrencia e critica (limiar 1/1): nao existe faixa de alerta — o estado saudavel destas metricas e ZERO"
+    },
+    {
+      "id": "dead_letter_total",
+      "titulo": "Eventos em dead-letter",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 10
+      },
+      "ausencia": "erro",
+      "por_que": "dead-letter e' falha definitiva visivel: some da fila, nao some do relatorio"
+    },
+    {
+      "id": "dead_letter_sem_motivo",
+      "titulo": "Dead-letters SEM motivo nomeado",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 1
+      },
+      "ausencia": "erro",
+      "por_que": "doc 06 §7.3: 'falha nao e' engolida: vai para dead-letter COM motivo'. Dead-letter sem motivo (nem last_error, nem error_message na trilha) e' o defeito que a observabilidade existe para pegar QUALQUER ocorrencia e critica (limiar 1/1): nao existe faixa de alerta — o estado saudavel destas metricas e ZERO"
+    },
+    {
+      "id": "outbox_processado_total",
+      "titulo": "Eventos entregues (PROCESSED)",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": null,
+      "informativa": true,
+      "ausencia": "erro",
+      "por_que": "metrica informativa: mostra volume entregue e da' escala as outras. Nao decide veredito"
+    },
+    {
+      "id": "outbox_processado_sem_trilha",
+      "titulo": "Eventos PROCESSED sem trilha de sucesso",
+      "fonte": "outbox",
+      "unidade": "eventos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 1
+      },
+      "ausencia": "erro",
+      "por_que": "sucesso sem PROVA: o evento foi finalizado como entregue e a trilha (chave derivada) nao tem COMPLETED. Pega replay/finalizacao por caminho que nao registrou a entrega QUALQUER ocorrencia e critica (limiar 1/1): nao existe faixa de alerta — o estado saudavel destas metricas e ZERO"
+    },
+    {
+      "id": "trilha_por_status",
+      "titulo": "Linhas de trilha por direcao e status",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": null,
+      "informativa": true,
+      "ausencia": "zero",
+      "dimensional": {
+        "campos": [
+          "source_system",
+          "target_system",
+          "status"
+        ],
+        "valores": {
+          "source_system": [
+            "postgres",
+            "odoo"
+          ],
+          "target_system": [
+            "postgres",
+            "odoo"
+          ],
+          "status": [
+            "COMPLETED",
+            "FAILED",
+            "REFUSED"
+          ]
+        },
+        "combinacao_ausente": 0,
+        "regra": "quando a rodada nao trouxer a combinacao, ela vale 0 (a ausencia de linha naquela direcao/status e' informacao: nada aconteceu ali). TODO valor de dimensao e' conferido contra `valores` E o PAR (source_system,target_system) contra `direcoes`: valor fora do vocabulario, ou par que nao e' uma das duas portas declaradas, fecha o veredito em INDETERMINADO",
+        "direcoes": [
+          "postgres->odoo",
+          "odoo->postgres"
+        ]
+      },
+      "por_que": "e' a metrica que serve as DUAS direcoes sem mudar de forma (o card seguinte do E03 nao pede alteracao na observabilidade)"
+    },
+    {
+      "id": "trilha_falhas",
+      "titulo": "Linhas de trilha com falha transitoria (FAILED)",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 10
+      },
+      "ausencia": "erro",
+      "por_que": "FAILED e' falha registrada com prova: entra no relatorio com o motivo"
+    },
+    {
+      "id": "trilha_recusas",
+      "titulo": "Linhas de trilha com recusa definitiva (REFUSED)",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 25
+      },
+      "ausencia": "erro",
+      "por_que": "recusa definitiva e' do EVENTO (dado/envelope), nao da infraestrutura: aparece no relatorio com o motivo nomeado; volume alto vira critico"
+    },
+    {
+      "id": "trilha_direcao_nao_declarada",
+      "titulo": "Linhas de trilha com direcao fora do vocabulario declarado",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 1
+      },
+      "ausencia": "erro",
+      "por_que": "as portas declaradas sao DUAS (outbox-consumer e odoo-events-ingest). Linha de outra direcao = escrita na trilha por fora do caminho declarado — a observabilidade tem de acusar, nao somar QUALQUER ocorrencia e critica (limiar 1/1): nao existe faixa de alerta — o estado saudavel destas metricas e ZERO"
+    },
+    {
+      "id": "trilha_sem_conclusao",
+      "titulo": "Linhas de trilha COMPLETED sem instante de conclusao",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 1,
+        "critico": 1
+      },
+      "ausencia": "erro",
+      "por_que": "sucesso sem instante de conclusao e' trilha que nao sustenta a propria afirmacao (nao se sabe QUANDO concluiu) QUALQUER ocorrencia e critica (limiar 1/1): nao existe faixa de alerta — o estado saudavel destas metricas e ZERO"
+    },
+    {
+      "id": "trilha_ultima_atividade_s",
+      "titulo": "Segundos desde a ultima atividade registrada na trilha",
+      "fonte": "trilha",
+      "unidade": "segundos",
+      "direcao": "maior_pior",
+      "limites": {
+        "alerta": 3600,
+        "critico": 21600
+      },
+      "ausencia": "zero",
+      "por_que": "silencio tambem e' estado: sincronizacao parada nao aparece como erro em tabela nenhuma. Limiar do dono (declarado, versionado)"
+    },
+    {
+      "id": "trilha_total",
+      "titulo": "Linhas de trilha na base",
+      "fonte": "trilha",
+      "unidade": "linhas",
+      "direcao": "maior_pior",
+      "limites": null,
+      "informativa": true,
+      "ausencia": "erro",
+      "por_que": "metrica informativa de escala"
+    }
+  ],
+  "detalhes": {
+    "arquivo": "n8n/sql/observabilidade-sync-dead-letters.sql",
+    "tipos": {
+      "outbox_dead_letter": "evento da fila em DEAD_LETTER, com o motivo (last_error do evento e/ou error_message da trilha da chave derivada)",
+      "trilha_falha": "linha de trilha FAILED (falha transitoria registrada) com o motivo",
+      "trilha_recusa": "linha de trilha REFUSED (recusa definitiva) com o motivo nomeado"
+    },
+    "limite_de_linhas": 200,
+    "regra": "o detalhe existe para a falha ser VISIVEL com motivo (doc 06 §7.3) — contagem sem motivo nao e' observabilidade",
+    "nao_mostrar": [
+      "request_payload / payload / response_payload (podem carregar dado pessoal ou segredo)",
+      "credencial, token, Bearer, header de autorizacao",
+      "corpo de erro com mais de 200 caracteres (o motivo e' nomeado e curto; texto longo e' truncado com marca)"
+    ],
+    "linha_vazia": {
+      "regra": "`alwaysOutputData` faz o no' emitir UM item VAZIO quando a consulta nao devolve detalhe — rodada SAUDAVEL tem zero detalhe e a cadeia nao pode parar. Isso e' AUSENCIA DE DETALHE, nao detalhe com tipo desconhecido: o nucleo ignora a linha TOTALMENTE vazia. Linha com QUALQUER campo preenchido e' dado, e tipo nao declarado nela continua fechando INDETERMINADO",
+      "por_que": "sem essa distincao toda rodada saudavel fecharia INDETERMINADO (`tipo_de_detalhe_nao_declarado:(vazio)`) e o relatorio gritaria justamente quando esta' tudo bem"
+    }
+  },
+  "conferencias_cruzadas": [
+    {
+      "id": "dead_letter_sem_motivo_x_lista",
+      "metrica": "dead_letter_sem_motivo",
+      "tipo_de_detalhe": "outbox_dead_letter",
+      "regra": "a metrica tem de ser IGUAL ao numero de itens da lista com motivo vazio: metrica e lista contam a mesma historia. Divergencia = INDETERMINADO (uma das duas consultas esta' errada e nao se escolhe a mais bonita)"
+    }
+  ],
+  "relatorio": {
+    "secoes": [
+      "cabecalho: id, versao do contrato, versao do nucleo, instante da rodada",
+      "metricas: uma linha por metrica medida (veredito da metrica, valor, unidade, limites) e uma linha por combinacao da metrica dimensional",
+      "detalhes: uma secao por tipo de detalhe (dead-letters, falhas da trilha, recusas da trilha) com id do evento/linha e MOTIVO",
+      "veredito: a linha declarada em `veredito.linha`"
+    ],
+    "ordem_de_secao": [
+      "cabecalho",
+      "metricas",
+      "detalhes",
+      "veredito"
+    ],
+    "tamanho_maximo_do_motivo": 200,
+    "regra": "o relatorio e' TEXTO de uma linha por item (legivel em terminal e em execucao do n8n); nao carrega payload, segredo nem o corpo do evento"
+  },
+  "workflow": {
+    "arquivo": "n8n/workflows/TRE-observabilidade-sync.json",
+    "id_estavel": "TREOBSERVSYNC1",
+    "nome": "TRE — observabilidade de sync",
+    "ativo": false,
+    "nos": [
+      {
+        "nome": "Agenda",
+        "tipo": "n8n-nodes-base.scheduleTrigger",
+        "papel": "gatilho declarado (cadencia do contrato; quem ativa ajusta)"
+      },
+      {
+        "nome": "Executar agora",
+        "tipo": "n8n-nodes-base.manualTrigger",
+        "papel": "mesma cadeia sob demanda (aceite e operador)"
+      },
+      {
+        "nome": "Metricas",
+        "tipo": "n8n-nodes-base.postgres",
+        "papel": "n8n/sql/observabilidade-sync.sql (executeOnce: a medicao roda uma vez por rodada)",
+        "credencial": "tre-dev-postgres"
+      },
+      {
+        "nome": "Detalhes",
+        "tipo": "n8n-nodes-base.postgres",
+        "papel": "n8n/sql/observabilidade-sync-dead-letters.sql (executeOnce + alwaysOutputData: zero detalhe e uma rodada saudavel, nao uma cadeia parada)",
+        "credencial": "tre-dev-postgres"
+      },
+      {
+        "nome": "Avaliar",
+        "tipo": "n8n-nodes-base.code",
+        "papel": "n8n/codigo/observabilidade-sync.js embutido byte a byte + o contrato embutido + adaptador do Code node"
+      },
+      {
+        "nome": "Relatorio",
+        "tipo": "n8n-nodes-base.noOp",
+        "papel": "saida: o relatorio e o veredito ficam no resultado da execucao (a saida do n8n e' o que o operador le; o destino do ALERTA e' decisao do dono)"
+      }
+    ],
+    "regra": "o workflow e' artefato DERIVADO: montado de contrato + nucleo + SQL pelo montador versionado; a lente estrutural reprova workflow que divirja dos arquivos (codigo e SQL embutidos byte a byte) ou que ganhe no' com host literal/segredo",
+    "montador": "scripts/n8n/montar_workflow_observabilidade.py",
+    "gatilho": {
+      "tipo": "n8n-nodes-base.scheduleTrigger",
+      "no": "Agenda",
+      "intervalo": 1,
+      "unidade": "hours",
+      "sob_demanda": {
+        "no": "Executar agora",
+        "tipo": "n8n-nodes-base.manualTrigger",
+        "regra": "mesma cadeia disparada a mao: e' o caminho do aceite e do operador (`n8n execute --id=<id>`)"
+      },
+      "regra": "cadencia PADRAO do no, declarada para o artefato ser montavel: quem ATIVA ajusta o intervalo ao plantao real (decisao do dono — o card nao escolhe a janela de observacao)"
+    },
+    "grafo": [
+      "Agenda",
+      "Executar agora",
+      "Metricas",
+      "Detalhes",
+      "Avaliar",
+      "Relatorio"
+    ],
+    "saida": {
+      "do_no_avaliar": "{veredito, versao_contrato, nucleo_versao, metricas[], detalhes{}, indeterminados[], relatorio (texto), saida (codigo do veredito)}",
+      "regra": "o resultado da execucao E' o relatorio: quem opera le a execucao; o destino do ALERTA e' decisao do dono (declarado em autoridade.fora_do_escopo)"
+    },
+    "consulta_uma_vez": {
+      "campo_do_no": "executeOnce",
+      "regra": "os DOIS nos Postgres rodam UMA vez por rodada: a consulta e' a MEDICAO, nao um passo por linha de entrada. O n8n, sem isto, executa o no' uma vez por item que chega — as 20 linhas de metrica viram 20 execucoes da consulta de detalhes e a lista sai multiplicada (medido no aceite: 20 copias do mesmo dead-letter, e o estado sem detalhe virou 20 linhas vazias)"
+    }
+  },
+  "credenciais": {
+    "postgres": {
+      "tipo": "postgres",
+      "id": "tre-dev-postgres",
+      "nome": "TRE dev — sales_intelligence"
+    },
+    "regra": "o versionado carrega ID e NOME da credencial (que sao o contrato de importacao), nunca o valor; quem cria a credencial e' o passo de operador/harness, com a senha lida de arquivo 600"
+  },
+  "ambiente": {
+    "permitido": [
+      "dev"
+    ],
+    "guardas": {
+      "nome_de_banco": "^tre_[a-z0-9_]+$ (banco descartavel do proprio card)",
+      "recusados": [
+        "odoo_dev",
+        "sales_intelligence",
+        "postgres",
+        "template0",
+        "template1"
+      ],
+      "regra": "ADR-005 e politica de secrets V1: a observabilidade roda em ambiente DECLARADO; sobre o banco do dev quem roda e' o operador, nunca o aceite"
+    }
+  },
+  "segredos": {
+    "regra": "a credencial do banco vive no cofre do n8n, importada fora do versionado (docs/operations/gestao-de-secrets.md); o workflow aponta a credencial por id/nome, nunca por valor; o relatorio nunca imprime payload nem credencial"
+  },
+  "lacunas_declaradas": [
+    "REPLAY/DEDUP nao tem contagem propria: `sync_events` e `outbox_events` da V1 nao guardam a marca de que a entrega foi reaproveitada (o replay preserva a linha da trilha de proposito, contrato do consumidor -> dedup). Contar replay exigiria coluna nova (nova versao do data contract, decisao do dono). O que se mede, e pega o replay quebrado, e' `outbox_processado_sem_trilha`",
+    "o ALERTA nao tem rota declarada (nenhum artefato do repositorio tem canal de notificacao): a entrega vai ate' o veredito com exit code e o relatorio; a rota e' decisao do dono",
+    "`sync_events` nao tem coluna de tentativas nem de correlacao: a leitura da trilha e' por status e por chave derivada (o que a V1 tem). Acompanhar a TENTATIVA e' do lado do evento (outbox_events.attempts)",
+    "o contrato da PORTA DE INGESTAO (n8n/contracts/odoo-events-ingest.v1.json, card TRE-W3-E03-T01) NAO esta' neste base (a base do card e' a do consumidor de outbox, `a38585d`): a direcao `odoo->postgres` e os status `COMPLETED`/`REFUSED` dessa porta sao declarados a partir do fluxo documentado (doc 06 §7-8) e conferidos contra E03-T01 fora deste checkout; quando o card E03 entrar no base, a lente confere o espelho sozinha"
+  ],
+  "governanca": {
+    "regra": "limiar, metrica, vocabulario, regra de veredito e conferencia cruzada sao DECLARADOS aqui: mudar qualquer um deles e' nova versao deste contrato (v1.1, v2.0) com motivo registrado, nunca edicao silenciosa — a calibragem dos limiares e' do dono",
+    "quem_aprova": "mudanca de limiar/vocabulario e' decisao do Anderson (registro em docs/operations/registro-de-aprovacoes.md na proxima rodada de calibragem)"
+  }
+}

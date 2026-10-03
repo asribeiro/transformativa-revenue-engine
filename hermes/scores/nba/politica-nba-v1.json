@@ -1,0 +1,194 @@
+{
+  "nome": "politica-nba-v1",
+  "card": "TRE-W5-E07-T01",
+  "onda": "W5",
+  "versao": "1.0.0",
+  "baseline": "V1.1.0",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "status_explicacao": "O VOCABULARIO das acoes (RESEARCH_MORE, FIND_DECISION_MAKER, SEND_EMAIL, PREPARE_LINKEDIN, WAIT, FOLLOW_UP, CREATE_MEETING, NURTURE, DISQUALIFY) nao e proposta: e do Data Contract V1.0 (03_ARQUITETURA_DE_NEGOCIO.md §8 / vocabularies.next_best_action). O que este arquivo propoe e a TABELA DE DECISAO -- qual acao cada estado de evidencia produz e em que ordem. Homologacao e do Anderson (estagio 7).",
+  "vocabulario_das_acoes": "docs/data/data_contract_v1.json#vocabularies.next_best_action",
+  "vocabulario_dos_papeis": "docs/data/data_contract_v1.json#vocabularies.decision_role",
+  "regra_de_avaliacao": "PRIMEIRA regra que casa vence (a ordem desta lista e a decisao). Nenhuma regra casando: o componente ABSTEM (SEM_REGRA) e nao grava recomendacao nenhuma -- ausencia de resposta e abstencao, nunca acao inventada.",
+  "fatos": {
+    "origem": "PostgreSQL (schema sales_intelligence), leitura somente; uma linha por empresa via json_build_object",
+    "tier": "tier do ULTIMO registro TIER em sync_events (operation='TIER', source_version='tiering-v1') -- a saida do card irmao TRE-W5-E06-T01. Sem TIER registrado nao existe NBA (a rodada RECUSA com SEM_TIER)",
+    "pesquisada": "research_runs da empresa com status='COMPLETED'",
+    "dor_validada": "pain_hypotheses com status em VALIDATED/PARTIALLY_VALIDATED",
+    "dor_rejeitada": "ULTIMA pain_hypothesis da empresa (por created_at) com status='REJECTED'",
+    "sinais_ativos": "signals da empresa sem expires_at vencido",
+    "contatos": "contacts da empresa",
+    "contatos_bloqueados": "contacts com do_not_contact=true OU opt_out_email=true",
+    "contatos_contactaveis": "contacts com e-mail e SEM do_not_contact/opt_out_email",
+    "decisor_contactavel": "existe contato (nao bloqueado) cujo decision_role esta em papeis_de_decisao; se ele tem e-mail e o fato contato_tem_email_escolhido",
+    "contato_tem_email_escolhido": "o contato escolhido (melhor papel contactavel) tem e-mail",
+    "canal_preferido": "preferred_channel do contato escolhido",
+    "abordada": "existe interactions com direction='OUTBOUND' e channel='EMAIL' para a empresa",
+    "dias_desde_a_abordagem": "dias desde a ULTIMA interacao OUTBOUND/EMAIL (lido do banco, nao do relogio da rodada)",
+    "respondeu": "existe interactions com direction='INBOUND' depois da ultima OUTBOUND/EMAIL",
+    "sentimento_da_resposta": "sentiment da ULTIMA interacao INBOUND"
+  },
+  "fatos_obrigatorios": ["tier"],
+  "papeis_de_decisao": ["Economic Buyer", "Decision Maker", "Champion", "Influencer"],
+  "ordem_dos_papeis": ["Economic Buyer", "Decision Maker", "Champion", "Influencer"],
+  "canal_de_linkedin": "LINKEDIN",
+  "dias_de_espera_antes_do_follow_up": 3,
+  "regras": [
+    {
+      "id": "R01",
+      "acao": "NURTURE",
+      "motivo": "COMPLIANCE_SEM_CANAL",
+      "descricao": "Nao abordar: os contatos conhecidos estao bloqueados (do_not_contact/opt_out) e nao ha decisor alcancavel. Nutrir sem contato ativo.",
+      "quando": [
+        {"fato": "contatos_bloqueados", "op": "maior_que", "valor": 0},
+        {"fato": "contatos_contactaveis", "op": "igual", "valor": 0},
+        {"fato": "decisor_contactavel", "op": "igual", "valor": false}
+      ],
+      "prioridade": 1,
+      "due_dias": 90,
+      "validade_dias": 180
+    },
+    {
+      "id": "R02",
+      "acao": "DISQUALIFY",
+      "motivo": "DOR_REJEITADA_SEM_SINAL",
+      "descricao": "A hipotese de dor mais recente foi REJEITADA e nao ha sinal ativo: nao e alvo agora.",
+      "quando": [
+        {"fato": "dor_rejeitada", "op": "igual", "valor": true},
+        {"fato": "sinais_ativos", "op": "igual", "valor": 0}
+      ],
+      "prioridade": 5,
+      "due_dias": 365,
+      "validade_dias": 365
+    },
+    {
+      "id": "R03",
+      "acao": "NURTURE",
+      "motivo": "TIER_NURTURE",
+      "descricao": "Tier Nurture: manter em nutricao, sem custo de abordagem ativa.",
+      "quando": [
+        {"fato": "tier", "op": "igual", "valor": "Nurture"}
+      ],
+      "prioridade": 4,
+      "due_dias": 30,
+      "validade_dias": 90
+    },
+    {
+      "id": "R04",
+      "acao": "RESEARCH_MORE",
+      "motivo": "SEM_PESQUISA",
+      "descricao": "Nao ha pesquisa concluida: sem evidencia nao se aborda; o proximo passo e pesquisar.",
+      "quando": [
+        {"fato": "pesquisada", "op": "igual", "valor": false}
+      ],
+      "prioridade": 3,
+      "due_dias": 7,
+      "validade_dias": 30
+    },
+    {
+      "id": "R05",
+      "acao": "CREATE_MEETING",
+      "motivo": "RESPOSTA_POSITIVA",
+      "descricao": "Respondeu com sentimento positivo: propor reuniao.",
+      "quando": [
+        {"fato": "respondeu", "op": "igual", "valor": true},
+        {"fato": "sentimento_da_resposta", "op": "igual", "valor": "POSITIVO"}
+      ],
+      "prioridade": 1,
+      "due_dias": 3,
+      "validade_dias": 15
+    },
+    {
+      "id": "R06",
+      "acao": "NURTURE",
+      "motivo": "RESPOSTA_NEGATIVA",
+      "descricao": "Respondeu negativamente: recuar para nutricao, sem insistencia.",
+      "quando": [
+        {"fato": "respondeu", "op": "igual", "valor": true},
+        {"fato": "sentimento_da_resposta", "op": "igual", "valor": "NEGATIVO"}
+      ],
+      "prioridade": 4,
+      "due_dias": 30,
+      "validade_dias": 90
+    },
+    {
+      "id": "R07",
+      "acao": "FOLLOW_UP",
+      "motivo": "RESPOSTA_SEM_SINAL_CLARO",
+      "descricao": "Respondeu sem sinal claro de interesse: retomar a conversa.",
+      "quando": [
+        {"fato": "respondeu", "op": "igual", "valor": true}
+      ],
+      "prioridade": 2,
+      "due_dias": 5,
+      "validade_dias": 30
+    },
+    {
+      "id": "R08",
+      "acao": "WAIT",
+      "motivo": "ABORDAGEM_RECENTE",
+      "descricao": "Abordagem feita ha menos de 3 dias e sem resposta: esperar, nao insistir.",
+      "quando": [
+        {"fato": "abordada", "op": "igual", "valor": true},
+        {"fato": "dias_desde_a_abordagem", "op": "menor_que", "valor": 3}
+      ],
+      "prioridade": 3,
+      "due_dias": 3,
+      "validade_dias": 15
+    },
+    {
+      "id": "R09",
+      "acao": "FOLLOW_UP",
+      "motivo": "SEM_RESPOSTA",
+      "descricao": "Abordagem feita ha 3 dias ou mais e sem resposta: retomar.",
+      "quando": [
+        {"fato": "abordada", "op": "igual", "valor": true}
+      ],
+      "prioridade": 2,
+      "due_dias": 5,
+      "validade_dias": 30
+    },
+    {
+      "id": "R10",
+      "acao": "FIND_DECISION_MAKER",
+      "motivo": "SEM_DECISOR_CONTACTAVEL",
+      "descricao": "Nao ha decisor contactavel: o proximo passo e encontrar quem decide.",
+      "quando": [
+        {"fato": "decisor_contactavel", "op": "igual", "valor": false}
+      ],
+      "prioridade": 2,
+      "due_dias": 7,
+      "validade_dias": 30
+    },
+    {
+      "id": "R11",
+      "acao": "PREPARE_LINKEDIN",
+      "motivo": "DECISOR_SEM_EMAIL",
+      "descricao": "Decisor encontrado, mas sem e-mail (ou canal preferido LinkedIn): preparar abordagem por LinkedIn.",
+      "quando": [
+        {"fato": "decisor_contactavel", "op": "igual", "valor": true},
+        {"fato": "contato_tem_email_escolhido", "op": "igual", "valor": false}
+      ],
+      "prioridade": 2,
+      "due_dias": 5,
+      "validade_dias": 30
+    },
+    {
+      "id": "R12",
+      "acao": "SEND_EMAIL",
+      "motivo": "DECISOR_COM_EMAIL",
+      "descricao": "Decisor contactavel com e-mail: enviar a primeira abordagem.",
+      "quando": [
+        {"fato": "decisor_contactavel", "op": "igual", "valor": true}
+      ],
+      "prioridade": 2,
+      "due_dias": 5,
+      "validade_dias": 30
+    }
+  ],
+  "nao_alcancadas": [],
+  "lacunas": [
+    "A ordem das regras e uma proposta deste card: a fila de contatos bloqueados (R01) e a dor rejeitada (R02) vem antes do tier porque sao barreiras de compliance/qualificacao, nao de prioridade",
+    "A ligacao entre a resposta e o CONTATO que respondeu depende da classificacao de resposta do W6: aqui o sentimento e lido de interactions.sentiment e o contato escolhido e o melhor decisor contactavel",
+    "O vencimento da recomendacao (status EXPIRED) e do card que varre recomendacoes vencidas, nao deste: aqui a validade e gravada em expires_at"
+  ]
+}

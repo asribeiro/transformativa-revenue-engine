@@ -1,0 +1,82 @@
+{
+  "agente": "outreach",
+  "nome": "envio-outbound-v1",
+  "papel": "agente_outreach",
+  "versao": "1.0.0",
+  "card": "TRE-W6-E04-T01",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#vocabularies['human_approvals.status'] — o envio so consome pedido cujo status e o estado que a politica de aprovacao chama de aprovado; o codigo NAO carrega a lista de estados",
+    "docs/data/data_contract_v1.json#tables — `interactions` e o DONO do fato 'abordagem enviada' (canal, direcao, tipo, assunto, resumo, referencia); `sync_events` e o DONO da trilha de idempotencia (`idempotency_key`)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §3 (Fluxo outbound Titan) — o passo 'Titan SMTP: envio' do fluxo: o pedido aprovado vira mensagem entregue e o fato volta ao PostgreSQL",
+    "04_PROJETO_FISICO_DE_DADOS.md §7 (interactions) e §6 (sync_events) — DDL das duas tabelas escritas; nenhuma coluna nova, nenhum DDL",
+    "12_CONTRATOS_E_GOVERNANCA.md §4/§8 + ADR-0004 — acao sensivel so executa com approval humana registrada (o portao do card irmao)",
+    "hermes/agents/outreach/aprovacao-humana-v1.json — DONO do portao de consumo: `--consultar` libera (ou nao) o envio; este componente NAO reimplementa a regra de status, hash nem a guarda de contato",
+    "hermes/integracoes/titan/smtp_titan.py (titan-smtp-v1, TRE-W6-E01-T01) — DONO do primitivo de envio de UMA mensagem (matriz porta x TLS, guarda de ambiente, mascaramento de segredo, idempotencia por chave, desfazer). Este componente ORQUESTRA: monta a mensagem do texto aprovado e chama o primitivo",
+    "hermes/agents/outreach/politica-envio-v1.json — vereditos, valores de canal/direcao/tipo gravados em `interactions`, trilha, guarda de escrita e regra de ambiente",
+    "card irmao TRE-W6-E02-T01 (gerador) e TRE-W6-E03-T01 (aprovacao): este card NAO gera texto, NAO decide e NAO revalida o que o humano aprovou"
+  ],
+  "entrada": {
+    "formato": "--enviar <approval_id> (repetivel) com --ambiente e --prefixo (porta de banco); o texto, o contato e o hash do texto aprovado sao lidos do banco pelo portao do card irmao, nunca da linha de comando",
+    "descricao": "so entram pedidos com status aprovado, hash do texto conferido e contato limpo (o portao do card irmao decide); o envio nunca recebe texto por argumento."
+  },
+  "modelo": {
+    "nome": "envio-outbound-v1",
+    "status": "PROPOSTA_A_HOMOLOGAR",
+    "status_explicacao": "o baseline define QUE o pedido aprovado vira abordagem enviada e que o fato volta ao PostgreSQL (doc 06 §3, doc 12 §4); ele NAO define o fluxo operacional do envio (valores de canal/direcao/tipo, claim de idempotencia, desfazer). Isso e proposta declarada em politica-envio-v1.json, testada. Homologacao e do Anderson.",
+    "entrada_de_negocio": "pedido de aprovacao em estado aprovado (TRE-W6-E03-T01) com o texto carimbado",
+    "llm": "NAO — nenhum modelo e chamado: a mensagem e o texto aprovado, literalmente",
+    "confianca": "NULL: nao ha classificador; o que existe e o portao do card irmao (status + hash + contato) e regra deterministica de claim de envio",
+    "persistencia": ["sales_intelligence.interactions", "sales_intelligence.sync_events"]
+  },
+  "persistencia": {
+    "tabelas_escritas": ["sales_intelligence.interactions", "sales_intelligence.sync_events"],
+    "registro": {
+      "tabela": "sales_intelligence.interactions",
+      "fato": "a abordagem enviada: channel/direction/interaction_type declarados na politica, occurred_at = instante do envio, subject = assunto enviado, content_summary = resumo do corpo, content_reference = envio:<approval_id>:<texto_hash> (o vinculo com o que foi autorizado)"
+    },
+    "idempotencia": {
+      "tabela": "sales_intelligence.sync_events",
+      "chave": "envio:<approval_id>:<texto_hash> — a MESMA chave passa ao primitivo SMTP (que tambem e idempotente por chave)",
+      "claim": "a linha nasce ENVIANDO ANTES de falar com o SMTP (claim exatamente-uma-vez), vira ENVIADO no sucesso e FALHOU na falha; chave com envio em voo (ENVIANDO) RECUSA (nada se repete por cima de envio possivelmente entregue); chave FALHOU pode ser retentada",
+      "replay": "chave ENVIADO = JA_ENVIADO (nada reenviado, nada gravado de novo)"
+    },
+    "nao_escrito": {
+      "coluna_nova": "nenhuma — criar coluna exige versao nova do contrato (governanca §10)",
+      "human_approvals / recommendations / contacts / organizations / outbox_events / agent_runs / scores / signals / pain_hypotheses / research_runs": "LEITURA apenas: a guarda de escrita RECUSA INSERT/UPDATE/DELETE fora das duas tabelas e RECUSA qualquer DDL",
+      "motivo": "o estado do pedido nao muda aqui: o vocabulario de `human_approvals.status` e fechado e o consumo e registrado em `sync_events`/`interactions` (lacuna declarada pelo card irmao)"
+    },
+    "lacuna": "consumo exatamente-uma-vez vive em `sync_events` (status ENVIANDO/ENVIADO/FALHOU), nao em coluna nova de `human_approvals`: o contrato nao tem estado CONSUMIDO e inventar estado e mudanca de contrato"
+  },
+  "vereditos": {
+    "PLANO": "dry-run: o pedido foi lido, o portao liberou e a mensagem esta montada, mas nada foi enviado (falta --confirmo)",
+    "ENVIADO": "mensagem entregue pelo primitivo e fato gravado em `interactions` + `sync_events` (ENVIADO)",
+    "JA_ENVIADO": "a chave envio:<pedido>:<hash> ja constava ENVIADO: nada reenviado e nada gravado de novo",
+    "RECUSADA": "portao nao liberou (status/hash/contato), destino ausente ou fora do dominio de dev, chave com envio em voo, ambiente sem aprovacao registrada, pedido inexistente: NADA enviado e NADA gravado",
+    "ERRO": "falha do primitivo ou do banco: nada de `interactions`, claim marcado FALHOU (retentavel)"
+  },
+  "guardrails": {
+    "portao": "quem libera o envio e o portao do card irmao (--consultar): status aprovado + hash do texto conferido + contato limpo; o veredito negativo RECUSA sem enviar",
+    "destino": "o destinatario vem do pedido (contato), nunca da linha de comando; em dev o dominio tem de ser o dominio de dev declarado (sink loopback) — destino real RECUSA",
+    "ambiente": "dev = sink loopback (o primitivo tambem recusa host real); homolog exige aprovacao humana registrada (TRE_ENVIO_APROVACAO_HUMANA) e dominio permitido; prod RECUSA exit 4 (ADR-005)",
+    "segredo": "nenhuma credencial entra na linha de comando ou em arquivo deste componente: o primitivo le TRE_TITAN_* do ambiente/arquivo apontado por --env-file e mascara o valor",
+    "texto": "o componente NAO revalida o texto aprovado (o dono da validacao e o gerador, chamado na edicao): ele envia exatamente o texto que o hash aprovado carimba",
+    "fail_closed": "contrato/politica incoerente = RECUSA exit 3; primitivo ausente = RECUSA exit 3; porta de banco ausente = RECUSA; DDL e escrita fora das duas tabelas RECUSAM"
+  },
+  "declarado_neste_card": {
+    "canal_direcao_tipo": "o Data Contract nao fixa vocabulario para interactions.channel/direction/interaction_type; os valores gravados (EMAIL / OUTBOUND / OUTBOUND_EMAIL) sao DECLARADOS na politica deste card e conferidos contra ela",
+    "claim_exatamente_uma_vez": "a linha de sync_events nasce ENVIANDO antes do SMTP (claim), vira ENVIADO/FALHOU depois; o padrao nao vem do baseline, e proposta declarada e testada"
+  },
+  "fora_do_card": [
+    "Prova contra smtp.titan.email (credencial do Sales AI + aprovacao registrada) — homolog, caminho do TRE-W6-E07-T01",
+    "Leitura/classificacao da resposta — TRE-W6-E05-T01",
+    "Auditoria de rodada em agent_runs (colunas de workflow/politica): a trilha deste card vive em sync_events — lacuna declarada para o contrato V1.1",
+    "Envio em lote com fila/agendamento — nao ha card; hoje o envio e UM pedido por invocacao (repetivel por --enviar)"
+  ],
+  "lacunas": [
+    "agent_runs sem colunas de workflow/politica: a auditoria estruturada do envio vai em `sync_events.request_payload`/`response_payload` (lacuna da mesma familia ja registrada pelo card irmao)",
+    "O consumo do pedido nao muda `human_approvals.status` (vocabulario fechado): quem confere 'ja enviado' confere sync_events",
+    "Retentativa automatica nao existe: FALHOU exige nova invocacao (decisao declarada, nao promessa)"
+  ]
+}

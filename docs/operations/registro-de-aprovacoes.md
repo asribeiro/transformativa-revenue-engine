@@ -103,3 +103,21 @@ corrigidas abaixo).
   documental do E05 — sao manutencao, nao fundacao.
 - **O que esta homologacao NAO faz:** nao promove ambiente. A saida de dev segue como
   decisao propria (decisao 7 do desenho de aprovacao humana).
+
+
+## Autorização 3 — sequência das ondas sem nova autorização (2026-10-01)
+
+Palavra do dono, verbatim: *"não precisamos dessa regra de onda nova depende de autorização minha,
+pode seguir sempre que uma onda acabar e outra tiver que ser iniciada, apenas siga a sequência das
+ondas"* — canal Telegram, 2026-10-01.
+
+**O que passa a ser automático:** ao fechar uma onda, a onda seguinte se inicia sozinha — declaração
+dos cards da nova onda no catálogo (`hermes/jev/acoes-declaradas.yaml`), promoção seguindo as
+dependências e despacho pelo ciclo de 5 minutos, com limite de 3 execuções simultâneas.
+Onda corrente = menor onda com card não concluído.
+
+**O que NÃO está coberto:** credencial de deploy, ato em ambiente vivo/produção e dado de cliente
+seguem escalando item a item para o dono, como no desenho do beco (fail-closed intacto).
+
+**Implementação:** `/opt/data/scripts/despacha_cards_tre.py` (declara + promove + despacha) chamado
+pelo vigia de 5 min (`/opt/data/scripts/vigia_cards_t09.py`).

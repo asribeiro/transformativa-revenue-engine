@@ -1,0 +1,122 @@
+{
+  "agente": "outreach",
+  "nome": "aprovacao-humana-v1",
+  "papel": "agente_outreach",
+  "versao": "1.0.0",
+  "card": "TRE-W6-E03-T01",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#vocabularies['human_approvals.status'] — DONO dos estados do pedido de aprovacao (PENDING, APPROVED, REJECTED, EXPIRED); o codigo NAO carrega a lista em forma executavel, o vocabulario e lido do contrato e a politica declara o PAPEL de cada estado",
+    "docs/data/data_contract_v1.json#vocabularies['recommendations.status'] — usado pela guarda de recomendacao aberta: aprovacao exige a recomendacao de origem ainda OPEN",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §3 (Fluxo outbound Titan) — o passo 'PG: human_approval' do fluxo: o pedido PENDING gravado pelo gerador (TRE-W6-E02-T01) recebe decisao humana e vira insumo do envio (TRE-W6-E04-T01)",
+    "04_PROJETO_FISICO_DE_DADOS.md §14 — DDL de human_approvals (status, decided_at, decided_by, decision_notes, proposed_action JSONB): nenhuma coluna nova, nenhum DDL",
+    "12_CONTRATOS_E_GOVERNANCA.md §4 (estado de approval) + §8 (registrar o operador humano em toda decisao) + ADR-0004 — acao sensivel exige approval; quem decide e o humano, com operador registrado",
+    "DATA_CONTRACT_V1.md §9 — compliance: nao contatar opt-out; a guarda e conferida na hora da decisao, nao so na geracao",
+    "hermes/agents/outreach/politica-outreach-v1.json — DONO UNICO da guarda de contato (do_not_contact/opt_out_*) e da validacao deterministica do texto: a edicao do humano passa por ela",
+    "hermes/agents/outreach/politica-aprovacao-v1.json — verbo -> estado, operadores autorizados, TTL, canal e marcadores da notificacao, guarda de escrita",
+    "card irmao TRE-W6-E02-T01 (gerador de abordagem): este card NAO gera texto nem decide o proximo passo; ele DECIDE o que o irmao propos"
+  ],
+  "entrada": {
+    "formato": "pedidos em sales_intelligence.human_approvals com status PENDING (gravados pelo TRE-W6-E02-T01) OU --decidir <approval_id> / --decisoes <arquivo.jsonl> / --consultar <approval_id>",
+    "descricao": "no modo DECISAO a entrada e um ato humano: o operador nomeado, o verbo e, quando for edicao, o texto revisado. O dado do pedido NAO vem da linha de comando: ele e lido do banco."
+  },
+  "modelo": {
+    "nome": "aprovacao-humana-v1",
+    "status": "PROPOSTA_A_HOMOLOGAR",
+    "status_explicacao": "o baseline define QUE a acao sensivel exige approval e QUE o operador humano tem de ser registrado (doc 12 §4/§8, ADR-0004); ele NAO define o fluxo operacional (verbos, TTL, canal da notificacao, regra de edicao). Isso e proposta declarada em politica-aprovacao-v1.json, testada. Homologacao e do Anderson.",
+    "entrada_de_negocio": "pedido de aprovacao PENDING do card TRE-W6-E02-T01",
+    "llm": "NAO — nenhum modelo e chamado por este componente. A decisao e humana e a validacao da edicao e deterministica (o validador do gerador irmao)",
+    "confianca": "NULL: nao ha classificador aqui; o que existe e regra deterministica de transicao de estado + validacao do texto revisado",
+    "persistencia": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"]
+  },
+  "persistencia": {
+    "tabelas_escritas": ["sales_intelligence.human_approvals", "sales_intelligence.agent_runs"],
+    "registro": {
+      "tabela": "sales_intelligence.human_approvals",
+      "status": "estado do vocabulario do contrato (a decisao leva PENDING -> APPROVED|REJECTED; a expiracao leva PENDING -> EXPIRED)",
+      "decided_at": "NOW() na decisao humana e na expiracao por TTL",
+      "decided_by": "operador humano nomeado e autorizado (a expiracao NAO inventa operador: fica NULL)",
+      "decision_notes": "--nota da decisao humana; na expiracao registra 'EXPIRADO_POR_TTL:<n>h'; na reversao registra 'REVERTIDO_POR:<operador>:<motivo>'",
+      "proposed_action": "PRESERVADO e acrescido de `decisao`: {por, em, nota, revisado, texto_hash, texto_hash_original, texto_original (quando revisado), validacao}. O texto original do gerador nao e apagado em nenhum caminho."
+    },
+    "auditoria": {
+      "tabela": "sales_intelligence.agent_runs",
+      "conteudo": "uma linha por rodada: veredito (NOTIFICADO/JA_NOTIFICADO/APROVADO/EDITADO/REJEITADO/EXPIRADO/JA_DECIDIDO/RECUSADA/ERRO), evento (NOTIFICACAO/DECISAO/EXPIRACAO) e `input` ESTRUTURADO (aprovacao_version, politica@versao, contrato, vocabulario_de_status, ambiente, ttl_horas, canal_da_notificacao, pedido_id, verbo, action_type, texto_hash_original) + `output.resultado` (pedido_id, status, decidido_por, revisado, texto_hash) / `output.notificados` (approval_id + texto_hash) / `output.pedidos` (expiracao)",
+      "lacuna_de_coluna": "`agent_runs` nao tem colunas de politica/versao: vao dentro de `input` (JSONB) e a lacuna fica registrada para o contrato V1.1 (governanca §10 — nao se cria coluna em card de componente)"
+    },
+    "nao_escrito": {
+      "coluna_nova": "nenhuma — criar coluna exige versao nova do contrato (governanca §10 + ADR-0004)",
+      "recommendations / contacts / organizations / scores / signals / pain_hypotheses / research_runs / interactions / sync_events / outbox_events": "LEITURA apenas: a guarda de escrita RECUSA INSERT/UPDATE/DELETE fora das duas tabelas e RECUSA qualquer DDL",
+      "envio": "nada e enviado, agendado ou criado no Odoo: o envio e o TRE-W6-E04-T01, e so depois do portao --consultar liberar"
+    }
+  },
+  "idempotencia": {
+    "decisao": "mesmo voto do mesmo operador em pedido ja decidido = JA_DECIDIDO (nada reescrito, exit 0). Voto DIFERENTE = CONFLITO_DE_VOTO (RECUSA, exit 1): estado terminal nao se reescreve por engano",
+    "notificacao": "o pedido e identificado por approval_id + texto_hash: ja notificado = JA_NOTIFICADO (nada reenviado); texto novo/revisado gera notificacao nova",
+    "escrita_condicionada": "o UPDATE carrega `WHERE id = <id> AND status = <PENDING>` e a contagem de linhas afetadas e lida na MESMA transacao: se o pedido mudou de estado entre a leitura e a escrita, nada e aplicado (CONFLITO_DE_ESTADO)"
+  },
+  "vereditos": {
+    "NOTIFICADO": "havia pedido PENDING novo para o humano: mensagem montada e auditada",
+    "JA_NOTIFICADO": "nada novo: os PENDING ja tinham sido notificados (mesmo texto_hash) ou a fila esta vazia",
+    "APROVADO": "texto autorizado como esta: status APPROVED, operador registrado, hash do texto carimbado",
+    "EDITADO": "texto revisado pelo humano, validado pelo gerador irmao e aprovado: status APPROVED, original preservado em proposed_action.decisao",
+    "REJEITADO": "abordagem recusada pelo humano: status REJECTED, pedido nao volta atras",
+    "EXPIRADO": "PENDING mais velho que o TTL passou a EXPIRED sem decisao humana (decided_by vazio)",
+    "JA_DECIDIDO": "replay do mesmo voto do mesmo operador: nada reescrito",
+    "RECUSADA": "pedido inexistente, conflito de voto, pedido expirado/ja rejeitado, contato bloqueado, recomendacao fora de OPEN, edicao invalida/ausente, operador nao autorizado/nao humano, verbo invalido ou conflito de estado: NADA escrito em human_approvals (a recusa e auditada)",
+    "ERRO": "falha de rede/banco/porta: nada escrito fora da auditoria (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "NOTIFICADO": "COMPLETED",
+    "JA_NOTIFICADO": "COMPLETED",
+    "APROVADO": "COMPLETED",
+    "EDITADO": "COMPLETED",
+    "REJEITADO": "COMPLETED",
+    "EXPIRADO": "COMPLETED",
+    "JA_DECIDIDO": "COMPLETED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "guardrails": {
+    "operador": "sem --por nao ha decisao; operador fora de operadores_autorizados RECUSA (exit 3); nome que casa padrao de maquina RECUSA (exit 3) — decisao sensivel exige humano identificado",
+    "estado": "decidir fora de PENDING RECUSA (EXPIRED/REJECTED nao reabrem; voto diferente e CONFLITO_DE_VOTO)",
+    "compliance": "a guarda de contato do gerador irmao e conferida NA HORA DA DECISAO: do_not_contact e opt_out_email/opt_out_whatsapp (por canal) bloqueiam a aprovacao; contato bloqueado tambem derruba o portao --consultar",
+    "base_do_pedido": "aprovacao/edicao exigem a recomendacao de origem ainda OPEN; rejeicao nao exige (o humano pode recusar por qualquer motivo — recusar e sempre seguro)",
+    "edicao": "a edicao NAO e porta dos fundos: passa pela validacao deterministica do gerador (fato sustentado, citacao minima, limites, afirmacoes proibidas); reprovada = EDICAO_INVALIDA e nada escrito",
+    "fail_closed": "irmao ausente, politica/contrato incoerente = RECUSA exit 3; portao --consultar nega por padrao (so libera com status aprovado + hash conferido + contato limpo); prod RECUSA exit 4; DDL e escrita fora das duas tabelas RECUSAM",
+    "sem_segredo": "a mensagem de notificacao e a auditoria nao carregam credencial alguma; este componente nao usa canal externo nem chave",
+    "sem_execucao": "o componente nao envia: ele DECIDE o pedido e libera (ou nao) o envio pelo portao --consultar"
+  },
+  "decisoes_declaradas": [
+    "EDITED nao e estado: editar e APPROVED com texto revisado, distinguido por proposed_action.decisao.revisado + texto_original + texto_hash_original (vocabulario fechado do contrato preservado)",
+    "a decisao carimba o hash do texto aprovado — o envio (W6-E04) prova o que foi autorizado e o portao recusa texto que nao bata",
+    "expiracao por TTL e transicao automatica declarada, com decided_by VAZIO: expirar nao e decidir e nao inventa operador",
+    "--desfazer reverte decisoes de uma rodada (PENDING de volta + texto original restaurado) e exige --por e --motivo com --confirmo; a auditoria da rodada NAO e apagada",
+    "a notificacao e MONTADA aqui e entregue no canal declarado (arquivo-local); entrega em canal externo e do gateway/operador — lacuna declarada, sem credencial de canal neste card"
+  ],
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "ADR-005: nada nasce em producao; promocao exige card proprio com aprovacao humana registrada",
+    "planejar": "--planejar e --regras nao abrem conexao nenhuma (nenhuma porta e construida)"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--por <operador> --motivo <motivo>] --confirmo",
+    "escopo": "os pedidos decididos pela rodada (ids ligados ao resultado das auditorias DECISAO da correlacao)",
+    "dry_run": "padrao: informa quantos seriam revertidos e nao reverte",
+    "auditoria": "as linhas de agent_runs NAO sao apagadas: a rodada continua auditavel depois de desfeita"
+  },
+  "fora_do_card": [
+    "Envio por SMTP Titan e registro da interacao SENT — TRE-W6-E04-T01",
+    "Entrega da notificacao em canal externo (Telegram/WhatsApp) — gateway/operador",
+    "Leitura/classificacao da resposta — TRE-W6-E05-T01",
+    "Calibracao da taxa de aprovacao e de qualidade por resposta — W8/W9"
+  ],
+  "lacunas": [
+    "Consumo exatamente-uma-vez do pedido aprovado: o vocabulario fechado do contrato nao tem estado 'CONSUMIDO' e criar estado e mudanca de contrato (governanca §10). O portao --consultar libera por estado+hash; o registro do envio e do W6-E04 (interactions)",
+    "`agent_runs` sem colunas de politica/versao de workflow: vao estruturados em `input` (JSONB), lacuna registrada para o contrato V1.1",
+    "TTL de 72h e proposta deste card: o baseline nao define prazo de validade do pedido de aprovacao",
+    "Nao ha medida de resposta/qualidade da abordagem aprovada nesta v1: a prova e a transicao de estado + validacao deterministica do texto revisado"
+  ]
+}

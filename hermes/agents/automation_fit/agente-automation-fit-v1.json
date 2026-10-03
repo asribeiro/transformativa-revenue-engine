@@ -1,0 +1,210 @@
+{
+  "agente": "automation_fit",
+  "papel": "automation_scoring",
+  "versao": "1.0.0",
+  "card": "TRE-W5-E02-T01",
+  "onda": "W5",
+  "baseline": "V1.1.0",
+  "score_type": "AUTOMATION_FIT",
+  "score_version": "automation-fit-v1",
+  "fonte_da_verdade": [
+    "03_ARQUITETURA_DE_NEGOCIO.md §3 (Automation Fit: probabilidade de existir oportunidade relevante de automacao/IA) e §7 (tipos de sinais)",
+    "04_PROJETO_FISICO_DE_DADOS.md §8 (scores: score_type, score_value, score_version, inputs, explanation, calculated_at, valid_until) e §3/§5/§6 (organizations, signals, pain_hypotheses)",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §8 (W5: Automation Fit) e gate ('score/tier/NBA gerados sem intervencao')",
+    "08_PLANO_DE_TESTES_E_VALIDACAO.md §3 (E2E #001: Automation Fit 91)",
+    "12_CONTRATOS_E_GOVERNANCA.md §1 (scores: dono PostgreSQL) e §8 (score historico, nao mutavel; inferencia marcada; audit trail)",
+    "docs/data/data_contract_v1.json (scores.types inclui AUTOMATION_FIT; vocabularies.signal_type; vocabularies.employee_band; dedup.strong; events.rules)"
+  ],
+  "entrada": {
+    "formato": "jsonl",
+    "um_pedido_por_linha": true,
+    "campos": {
+      "organizacao": "objeto com o(s) identificador(es) FORTES da empresa que JA existe no PostgreSQL (cnpj, domain, linkedin_url na prioridade do contrato)"
+    },
+    "exemplo": "{\"organizacao\":{\"cnpj\":\"11.222.333/0001-81\"}}",
+    "nao_cria_organizacao": "o score SO se calcula para empresa que JA existe: identidade que nao casa e' RECUSADA (o produtor da empresa e' o Scout, TRE-W4-E01-T01)",
+    "le_o_estado": "as variaveis do score NAO vem da fonte: vem do BANCO (organizations.employee_band/employee_count/unit_count, signals.signal_type, pain_hypotheses.business_impact_score). A fonte so' diz QUEM medir"
+  },
+  "identidade": {
+    "fortes_por_prioridade": ["cnpj", "domain", "linkedin_url"],
+    "origem_da_regra": "docs/data/data_contract_v1.json#dedup.strong",
+    "resolucao": "a empresa e' resolvida pelos fortes VALIDOS do pedido; 0 casadas = RECUSADA, 1 = segue, 2+ distintas = REVISAO_IDENTIDADE",
+    "forte_invalido_e_descartado": true,
+    "sem_forte_declarado": "RECUSADA (SEM_IDENTIFICADOR_FORTE) — o score nao descobre empresa",
+    "cria_organizacao": false,
+    "escreve_em_organizations": false
+  },
+  "formula": {
+    "nome": "automation-fit-v1",
+    "expressao": "valor = 100 * SUM(peso_i * componente_i) / SUM(peso_i), i em componentes PRESENTES",
+    "pesos": {
+      "porte": 0.25,
+      "pressao_operacional": 0.30,
+      "prontidao_tecnologica": 0.20,
+      "dispersao_de_processos": 0.10,
+      "dor_quantificada": 0.15
+    },
+    "soma_dos_pesos": 1.00,
+    "cobertura_minima": 0.40,
+    "arredondamento": "2 casas, ROUND_HALF_UP em Decimal (o DDL pede NUMERIC(5,2))",
+    "componente_ausente": "NAO vota: sai do numerador E do denominador. A cobertura (soma dos pesos presentes) vai em explanation.cobertura e inputs.cobertura — e' o que separa este score do Data Quality Score (W5-E04)",
+    "sem_lastro": "cobertura < 0.40 -> RECUSADA motivo SEM_LASTRO, nada escrito em scores (fail-closed): score calculado majoritariamente sobre ausencia seria ruido",
+    "deterministico": true,
+    "llm": "nenhum — a v1 e' aritmetica declarada; nao ha chamada de modelo nem requisicao de rede",
+    "tipos_de_sinal": [
+      "GROWTH", "HIRING", "NEW_EXECUTIVE", "NEW_LOCATION", "ERP_CHANGE", "CRM_CHANGE",
+      "DIGITAL_TRANSFORMATION", "AI_INITIATIVE", "M_AND_A", "NEW_PRODUCT", "TECH_ADOPTION",
+      "FUNDING", "PROCESS_COMPLEXITY", "CUSTOMER_COMPLAINT", "SERVICE_VOLUME", "REGULATORY_CHANGE",
+      "EFFICIENCY_PROGRAM", "COST_REDUCTION"
+    ],
+    "tabelas_de_pontos": {
+      "pressao_operacional": {
+        "PROCESS_COMPLEXITY": 0.40,
+        "EFFICIENCY_PROGRAM": 0.35,
+        "SERVICE_VOLUME": 0.30,
+        "COST_REDUCTION": 0.30,
+        "CUSTOMER_COMPLAINT": 0.20,
+        "REGULATORY_CHANGE": 0.15
+      },
+      "prontidao_tecnologica": {
+        "DIGITAL_TRANSFORMATION": 0.40,
+        "AI_INITIATIVE": 0.40,
+        "ERP_CHANGE": 0.30,
+        "TECH_ADOPTION": 0.25,
+        "CRM_CHANGE": 0.25
+      },
+      "porte": {
+        "LT_70": 0.25,
+        "70_149": 0.60,
+        "150_299": 1.00,
+        "300_499": 1.00,
+        "500_699": 1.00,
+        "700_1000": 0.80,
+        "GT_1000": 0.50,
+        "UNKNOWN": null
+      },
+      "dispersao_de_processos": {
+        "1": 0.30,
+        "2_3": 0.60,
+        "4_10": 0.85,
+        "gt_10": 1.00
+      },
+      "dor_quantificada": "max(pain_hypotheses.business_impact_score) / 100, capado em [0,100]"
+    },
+    "motivo_dos_pesos": "porte mede volume/capacidade de processo; pressao operacional e' o pedido de automacao mais frequente (processo replicado, fila, custo); prontidao tecnologica mostra que a automacao se apoia no que ja existe; dispersao de processos replica o processo em N unidades; dor quantificada usa o impacto MEDIDO da hipotese (W4-E04) — nunca casamento por prosa",
+    "faixa_do_score": "0.00 a 100.00, gravado em scores.score_value NUMERIC(5,2)"
+  },
+  "escrita_score": {
+    "colunas_escritas": [
+      "id",
+      "organization_id",
+      "score_type",
+      "score_value",
+      "score_version",
+      "inputs",
+      "explanation",
+      "calculated_at"
+    ],
+    "colunas_obrigatorias": ["id", "organization_id", "score_type", "score_value", "score_version"],
+    "valid_until": "NULL — o baseline nao define janela de validade do AUTOMATION_FIT (lacuna declarada). Preencher isso exige decisao de negocio, nao chute do worker",
+    "historico": "scores e' HISTORICO (doc 12 §8): UPDATE em scores e' recusa dura na guarda de escrita; estado novo gera LINHA NOVA e o replay do mesmo estado devolve JA_CALCULADO",
+    "inputs": "snapshot canonico medido (employee_band, employee_count, unit_count, sinais {id,tipo}, hipoteses {id,impacto}) + input_hash + cobertura + presentes/ausentes + pesos + correlation_id",
+    "explanation": "formula, pesos, cobertura, componentes {presente, valor, peso, detalhe}, deterministico, llm.executado=false e a regra que sustenta o numero"
+  },
+  "vereditos": {
+    "CALCULADO": "linha gravada em scores (score_type=AUTOMATION_FIT, score_version=automation-fit-v1) e idempotency_key registrada em sync_events",
+    "JA_CALCULADO": "a chave de idempotencia do MESMO estado ja existia: nada foi duplicado (nao cria linha)",
+    "REVISAO_IDENTIDADE": "a identidade casou com organizacoes distintas: human_approvals PENDING (AUTOMATION_FIT_IDENTITY_REVIEW); nada escrito em scores",
+    "RECUSADA": "pedido invalido, empresa inexistente ou SEM_LASTRO (cobertura < 0.40): nada escrito em scores",
+    "ERRO": "falha de banco/porta: nada escrito fora de agent_runs (status FAILED)"
+  },
+  "status_de_agent_runs": {
+    "CALCULADO": "COMPLETED",
+    "JA_CALCULADO": "COMPLETED",
+    "REVISAO_IDENTIDADE": "REVIEW_REQUIRED",
+    "RECUSADA": "REJECTED",
+    "ERRO": "FAILED"
+  },
+  "escrita": {
+    "tabelas_permitidas": [
+      "sales_intelligence.scores",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events",
+      "sales_intelligence.human_approvals"
+    ],
+    "operacoes_permitidas": {
+      "sales_intelligence.scores": ["INSERT", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.agent_runs": ["INSERT"],
+      "sales_intelligence.sync_events": ["INSERT", "UPDATE", "DELETE (so no --desfazer --confirmo)"],
+      "sales_intelligence.human_approvals": ["INSERT"]
+    },
+    "proibido": [
+      "UPDATE em scores (o score e' historico, nao mutavel)",
+      "qualquer escrita em organizations (inclusive a coluna data_quality_score, que e' o card W5-E04)",
+      "qualquer escrita em signals, pain_hypotheses, research_runs, contacts, interactions, recommendations e outbox_events",
+      "INSERT de score sem id/organization_id/score_type/score_value/score_version (NOT NULL do DDL)",
+      "INSERT de score com coluna fora das declaradas",
+      "DELETE fora do --desfazer --confirmo",
+      "DDL (CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/COMMENT ON)",
+      "escrita em qualquer outra tabela",
+      "escrita no Odoo, Titan, n8n ou no host"
+    ]
+  },
+  "leitura": {
+    "tabelas": [
+      "sales_intelligence.organizations (employee_band, employee_count, unit_count, status, legal_name, trade_name, id)",
+      "sales_intelligence.signals (id, signal_type — so' da EMPRESA medida)",
+      "sales_intelligence.pain_hypotheses (id, business_impact_score, confidence — so' da EMPRESA medida)"
+    ],
+    "nao_le": [
+      "scores (o score nao se realimenta: cada score le o estado, nunca outro score)",
+      "research_runs (o lastro de pesquisa e' do Data Quality Score)",
+      "contacts, interactions, recommendations, outbox_events"
+    ],
+    "escopo": "toda leitura e' filtrada por organization_id: sinal ou hipotese de OUTRA empresa nao entra na conta (medido por item do aceite)"
+  },
+  "outbox": {
+    "emite_evento": false,
+    "motivo": "o contrato lista os eventos PG->Odoo (doc 06 §5) e o evento de score e' PRIORITY_SCORE_CHANGED (W5-E05/E06, depois do Tiering). Emitir evento de score isolado aqui seria contrato inventado"
+  },
+  "guardrails": {
+    "ambientes_permitidos": ["dev", "homolog"],
+    "ambiente_prod": "recusado por desenho nesta versao (exit 4) — promocao exige card proprio com aprovacao humana registrada (ADR-005)",
+    "ambiente_nao_declarado": "recusado (fail-closed)",
+    "sem_http_smtp_socket": "o componente nao faz requisicao de rede nenhuma e nao chama LLM",
+    "acoes_L1_nao_executadas": [
+      "primeiro e-mail",
+      "LinkedIn",
+      "WhatsApp",
+      "proposta",
+      "mudanca comercial relevante"
+    ]
+  },
+  "auditoria": {
+    "agent_runs": "uma linha por empresa pedida (agent_name=automation_fit, agent_role=automation_scoring, correlation_id do lote, output com veredito, score_value e score_id)",
+    "scores": "uma linha por estado calculado (idempotency_key em sync_events = 'score:AUTOMATION_FIT:org:<uuid>:<input_hash>')",
+    "sync_events": "uma linha por score calculado: guarda o snapshot, a cobertura e o correlation_id",
+    "human_approvals": "action_type=AUTOMATION_FIT_IDENTITY_REVIEW, status=PENDING (so' na identidade ambigua)"
+  },
+  "desfazer": {
+    "comando": "--desfazer <correlation_id> [--confirmo]",
+    "escopo": "as linhas de scores da rodada (veredito CALCULADO, ligadas pelo sync_events da chave) + os sync_events desses scores; nada e' restaurado em organizations/signals/pain_hypotheses porque o componente nao escreve la",
+    "padrao": "dry-run (sem --confirmo nada e' apagado)",
+    "nao_toca": "organizations, signals, pain_hypotheses, agent_runs (auditoria) e human_approvals"
+  },
+  "exit_codes": {
+    "0": "OK",
+    "1": "FALHOU (houve ERRO em pedido ou falha de porta)",
+    "2": "uso incorreto",
+    "4": "recusou o ambiente (prod)",
+    "5": "fonte ilegivel/inexistente"
+  },
+  "lacunas_declaradas": [
+    "a FORMULA e' uma proposta V1 do worker: o baseline define o QUE o score mede (doc 03 §3) e NAO define pesos de componentes. Pesos, faixas e limiar de cobertura sao decisao de negocio e a homologacao e' do Anderson (estagio 7) — o aceite prova reprodutibilidade, idempotencia e poder de discriminacao, nao a validade commercial do peso",
+    "o doc 08 §3 cita 'Automation Fit 91' no E2E #001 sem dizer de onde sai: o numero e' ilustrativo do documento, nao uma meta de calibracao cumprida aqui",
+    "sem janela de validade: scores.valid_until fica NULL (o baseline nao define validade/decay do AUTOMATION_FIT)",
+    "sem leitura de research_runs, contacts ou interactions: completude de dado e' o Data Quality Score (W5-E04) e a API do Odoo nao tem papel no score V1",
+    "sem inteligencia de modelo: a v1 e' aritmetica declarada; um modelo de propensao entra como versao NOVA (automation-fit-v2), nunca editando esta",
+    "o score NAO decide nada: a priorizacao e' o Priority Score (W5-E05), o corte e' o Tiering (W5-E06) e a acao e' o Next Best Action (W5-E07)"
+  ]
+}

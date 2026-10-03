@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ACLs e regras de segurança do módulo `transformativa_sales_ai`.
+
+  Card: TRE-W2-E07-T01 (`t_e0b1bcbf`). Runbook: docs/runbooks/odoo-acl-seguranca.md.
+
+  Critérios de aceitação homologados (Anderson, 29/09/2026):
+    AC1 regras de acesso por carteira/tenant aplicadas;
+    AC2 teste negativo: usuário de um tenant NÃO vê dado de outro — vazio ou erro, nunca
+        material alheio;
+    AC3 aprovação humana jamais concedida por máquina.
+
+  As DUAS dimensões (decisões D1/D2 do runbook §1 — nenhuma delas inventa campo novo):
+
+    * TENANT  = `res.company` (multicompanhia do Odoo) — o isolamento entre clientes da V1 é
+      FÍSICO (um banco por cliente, decisão do dono de 30/09/2026 registrada em
+      docs/data/DATA_CONTRACT_V1.md). A regra `company_id in company_ids` é a barreira de
+      2ª linha do módulo dentro de uma base e o caminho já pronto para o V2 multi-cliente;
+    * CARTEIRA = o vendedor do parceiro (`res.partner.user_id`, campo NATIVO do Odoo, "carteira
+      de clientes" do vendedor). Nenhum campo novo é criado: o Data Contract V1.0 não tem
+      dimensão de cliente e coluna nova é gatilho de nova versão do contrato.
+
+  `noupdate` NÃO é usado de propósito: o domínio das regras é invariante de segurança do
+  módulo e tem de voltar ao valor do código a cada `-u` (deriva silenciosa de regra é o que
+  o verificador deste card mede).
+-->
+<odoo>
+
+    <record id="ir_module_category_tf_sales_ai" model="ir.module.category">
+        <field name="name">Transformativa Sales AI</field>
+        <field name="description">Acesso ao Sales AI da Transformativa no Odoo (carteira × tenant).</field>
+        <field name="sequence">80</field>
+    </record>
+
+    <!--
+      Odoo 19 agrupa os grupos em `res.groups.privilege` (o antigo `category_id` de
+      `res.groups` deixou de existir). O "privilégio" é o que aparece agrupado na App
+      Access rights; a categoria do módulo fica no privilégio.
+    -->
+    <record id="privilege_tf_sales_ai" model="res.groups.privilege">
+        <field name="name">Transformativa Sales AI</field>
+        <field name="category_id" ref="ir_module_category_tf_sales_ai"/>
+        <field name="sequence">80</field>
+    </record>
+
+    <!--
+      Grupos do módulo. Nenhum deles implica `base.group_user`: quem concede acesso interno é
+      o administrador do Odoo, não este módulo (assim o módulo não promove ninguém sozinho).
+      A hierarquia é só interna: o gestor é um vendedor com a carteira inteira do tenant.
+    -->
+    <record id="group_tf_sales_ai_user" model="res.groups">
+        <field name="name">Sales AI: Vendedor (carteira)</field>
+        <field name="privilege_id" ref="privilege_tf_sales_ai"/>
+        <field name="comment">Vê e opera as oportunidades da PRÓPRIA carteira (parceiros cujo
+            vendedor é ele) dentro da(s) companhia(s) a que tem acesso.</field>
+    </record>
+
+    <record id="group_tf_sales_ai_manager" model="res.groups">
+        <field name="name">Sales AI: Gestor (tenant)</field>
+        <field name="privilege_id" ref="privilege_tf_sales_ai"/>
+        <field name="implied_ids" eval="[(4, ref('group_tf_sales_ai_user'))]"/>
+        <field name="comment">Vê e opera a carteira INTEIRA do tenant (todas as carteiras da
+            companhia a que tem acesso). Não atravessa a fronteira de companhia.</field>
+    </record>
+
+    <!--
+      REGRA 1 — TENANT (global: vale para todo usuário que alcança o modelo, inclusive o
+      gestor). `company_ids` é o contexto de avaliação de domínio do Odoo: as companhias
+      ativas do usuário (`res.users.company_ids`). Oportunidade de outro tenant não é
+      devolvida por busca nem lida por id: vazio ou AccessError, nunca material alheio.
+    -->
+    <record id="rule_tf_oportunidade_tenant" model="ir.rule">
+        <field name="name">Transformativa Sales AI: oportunidade isolada por tenant (multicompanhia)</field>
+        <field name="model_id" ref="model_tf_process_opportunity"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!--
+      REGRA 2 — CARTEIRA (por grupo). O vendedor só alcança a oportunidade cujo parceiro está
+      na carteira dele (`res.partner.user_id` = ele). Como a permissão `create` está marcada,
+      ele também não CRIA oportunidade para parceiro de carteira alheia.
+    -->
+    <record id="rule_tf_oportunidade_carteira" model="ir.rule">
+        <field name="name">Transformativa Sales AI: oportunidade da carteira do vendedor</field>
+        <field name="model_id" ref="model_tf_process_opportunity"/>
+        <field name="domain_force">[('partner_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_tf_sales_ai_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+    <!--
+      REGRA 3 — GESTOR: a carteira inteira do tenant. É a regra que amplia o vendedor para o
+      gestor (as regras de grupo somam por OU); ela NÃO amplia além da regra 1 (tenant), que é
+      global e vale para todos.
+    -->
+    <record id="rule_tf_oportunidade_gestor" model="ir.rule">
+        <field name="name">Transformativa Sales AI: gestor alcança a carteira inteira do tenant</field>
+        <field name="model_id" ref="model_tf_process_opportunity"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('group_tf_sales_ai_manager'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+
+</odoo>
