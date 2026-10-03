@@ -1,0 +1,140 @@
+{
+  "versao": "captura-evento-v1",
+  "componente": {
+    "nome": "captura_evento",
+    "card": "TRE-W7-E06-T01",
+    "wave": "W7 (Inbound / Multicanal)",
+    "arquivo": "hermes/agentes/inbound/captura_evento.py",
+    "papel": "capturar o lead COLETADO EM EVENTO (QR/cracha/ficha/lista) ja' normalizado em JSON: exigir o vinculo do evento e o consentimento, resolver a identidade da empresa (identificador forte antes do fraco, nunca merge silencioso), gravar organizations/contacts/interactions na base canonica de sales_intelligence e a trilha de idempotencia em sync_events",
+    "nao_faz": [
+      "nao le QR/cracha nem importa planilha: aqui entra a COLETA ja' normalizada no formato deste contrato (o leitor e a planilha do evento sao operacao de n8n/operador — ver lacuna L2)",
+      "nao expoe endpoint HTTP publico nem pagina de inscricao",
+      "nao cria crm.lead nem escreve no Odoo: o evento PG -> Odoo de lead inbound nao existe no vocabulario congelado do Data Contract V1 (ver lacuna L1)",
+      "nao cria tabela de eventos: o vinculo do evento viaja no resumo/referencia da interacao e no payload da trilha (lacuna L3)",
+      "nao processa lote: uma coleta por execucao; lista de presenca e' laco do operador/n8n (lacuna L4)",
+      "nao calcula score, tier nem Next Best Action (ondas W4/W5)",
+      "nao envia e-mail, WhatsApp nem qualquer mensagem ao lead",
+      "nao atribui campanha a partir de clique/anuncio (W7-E02 Meta, W7-E03 Google)"
+    ]
+  },
+  "coleta": {
+    "formato": "JSON unico da coleta do evento (arquivo passado em --coleta, ou stdin com '-')",
+    "campos_obrigatorios": [
+      "captura_id",
+      "origem_evento.event_id",
+      "origem_evento.capture_method",
+      "origem_evento.capturado_em",
+      "consentimento.aceito",
+      "consentimento.legal_basis",
+      "consentimento.forma",
+      "empresa.nome",
+      "contato.nome",
+      "contato.email ou contato.telefone"
+    ],
+    "campos_opcionais": [
+      "origem_evento.evento_nome",
+      "origem_evento.evento_inicio",
+      "origem_evento.local",
+      "origem_evento.stand",
+      "empresa.cnpj",
+      "empresa.dominio",
+      "empresa.linkedin_url",
+      "empresa.cidade",
+      "empresa.estado",
+      "empresa.website_url",
+      "contato.cargo",
+      "contato.preferred_channel",
+      "contato.opt_out_email",
+      "contato.opt_out_whatsapp",
+      "contato.do_not_contact"
+    ],
+    "regra_do_vinculo_do_evento": "lead coletado em evento sem `origem_evento.event_id`, sem `capture_method` no vocabulario do contrato ou sem `origem_evento.capturado_em` e' RECUSADO (EVENTO_NAO_DECLARADO / SEM_DADOS_MINIMOS): sem o vinculo do evento a coleta vira lead sem atribuicao e contamina a base. E' a barreira propria deste canal (doc 03, Motor 3 — Relationship).",
+    "regra_de_consentimento": "consentimento.aceito tem de ser exatamente true, consentimento.legal_basis no vocabulario.legal_basis E consentimento.forma no vocabulario.forma_de_consentimento (a forma e' a evidencia de como o opt-in foi dado no evento). Sem isso a coleta e' RECUSADA (RECUSADO_CONSENTIMENTO) e NADA e' gravado em organizations/contacts/interactions (Data Contract V1 §9).",
+    "regra_de_dados_minimos": "sem empresa.nome, sem contato.nome, sem captura_id ou sem um canal de resposta (e-mail OU telefone) a coleta e' SEM_DADOS_MINIMOS/COLETA_INVALIDA: registra a trilha e nao inventa cadastro pela metade."
+  },
+  "vocabulario": {
+    "channel": ["EVENTO"],
+    "direction": ["INBOUND"],
+    "interaction_type": ["CAPTURA_EVENTO"],
+    "organization_source": ["EVENTO_CAPTURA"],
+    "organization_status": ["DISCOVERED"],
+    "contact_source": ["EVENTO_CAPTURA"],
+    "legal_basis": ["CONSENTIMENTO", "INTERESSE_LEGITIMO"],
+    "forma_de_consentimento": ["TERMO_DIGITAL", "FICHA_ASSINADA", "QR_INSCRICAO", "LISTA_PRESENCA"],
+    "capture_method": ["QR_CODE", "CRACHA", "FICHA", "IMPORTACAO_LISTA"],
+    "preferred_channel": ["email", "whatsapp", "telefone"],
+    "status_trilha": [
+      "CAPTURADO",
+      "JA_CAPTURADO",
+      "REVIEW_REQUIRED",
+      "RECUSADO_CONSENTIMENTO",
+      "EVENTO_NAO_DECLARADO",
+      "SEM_DADOS_MINIMOS",
+      "COLETA_INVALIDA"
+    ],
+    "observacao": "O Data Contract V1 fixa as COLUNAS (organizations.status/source, contacts.legal_basis/source, interactions.channel/direction) mas nao fecha o vocabulario deste canal: o vocabulario desta versao vive aqui e valor fora da lista RECUSA (CONTRATO_INVALIDO) em vez de ser inventado pelo codigo. organization_status usa o literal do contrato (DISCOVERED)."
+  },
+  "identificadores": {
+    "fortes": [
+      { "ordem": 1, "campo": "empresa.cnpj", "coluna": "cnpj", "confianca": 1.0, "normalizacao": "somente digitos" },
+      { "ordem": 2, "campo": "empresa.dominio", "coluna": "domain", "confianca": 1.0, "normalizacao": "minusculo, sem www." },
+      { "ordem": 3, "campo": "empresa.linkedin_url", "coluna": "linkedin_url", "confianca": 0.97, "normalizacao": "minusculo, barra final removida" }
+    ],
+    "fracos": [
+      { "ordem": 1, "campo": "empresa.nome + empresa.cidade", "colunas": ["trade_name", "city"], "confianca": 0.8 },
+      { "ordem": 2, "campo": "empresa.nome + contato.telefone", "colunas": ["trade_name", "contacts.phone"], "confianca": 0.75 }
+    ],
+    "limiar_de_merge_automatico": 0.95,
+    "regra": "identificador FORTE que casa reusa a organizacao existente (confianca >= limiar). Identificador FRACO que casa NAO faz merge: a coleta vai para REVIEW_REQUIRED (fila humana) e so' a trilha e' gravada — ambiguidade nao se resolve por heuristica (Data Contract V1 §5). Nada casando, a organizacao nasce com UUID canonico gerado no proprio componente, ANTES de qualquer chamada externa."
+  },
+  "escrita": {
+    "tabelas": ["organizations", "contacts", "interactions", "sync_events"],
+    "operacao": "INSERT apenas (a trilha de idempotencia e' append). Nao existe UPDATE/DELETE/TRUNCATE/DDL neste componente — a auditoria da propria fonte RECUSA antes de conectar.",
+    "uuid": "gen_random_uuid() no proprio INSERT: o ID nasce no sistema que testemunhou o fato (Data Contract V1 §3)",
+    "idempotencia": {
+      "chave": "evento:<event_id>:<captura_id>",
+      "tabela": "sales_intelligence.sync_events (idempotency_key e' UNIQUE no contrato)",
+      "regra": "coleta ja' capturada devolve JA_CAPTURADO, NAO grava de novo e nao cria linha nova de trilha. O event_id entra na chave: o mesmo lead em dois eventos sao duas coletas legitimas e ficam distintas."
+    },
+    "vinculo_da_interacao": "interactions.organization_id (NOT NULL) e' a organizacao resolvida/criada nesta mesma captura; channel=EVENTO, direction=INBOUND, interaction_type=CAPTURA_EVENTO, occurred_at=capturado_em, content_reference=captura_id",
+    "vinculo_do_evento": "nao existe tabela de eventos nas 12 tabelas core do Data Contract V1: o event_id, o evento_nome e o capture_method viajam no content_summary da interacao (texto legivel) e no request_payload da trilha (JSON estruturado), declarados na lacuna L3 — nada e' inventado como coluna"
+  },
+  "guardas_de_ambiente": {
+    "dev": "porta de banco LOCAL obrigatoria (`docker exec -i pg-<dev|aceite> psql ...`, via --porta-banco/TRE_EVENTO_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV, exit 3)",
+    "homolog": "exige TRE_EVENTO_APROVACAO_HUMANA registrada (HOMOLOG_SEM_APROVACAO, exit 3)",
+    "prod": "RECUSA por desenho (exit 4): nada nasce em producao e a promocao e' ato humano registrado (ADR-005)",
+    "escrita": "--confirmo e' obrigatorio para escrever; sem ele a rodada e' DRY_RUN e nada toca o banco"
+  },
+  "privacidade": {
+    "regra": "a saida (relatorio/trilha) MASCARA e-mail, telefone e CNPJ do lead; o valor cru nunca aparece na evidencia",
+    "bloqueio_nao_preferencia": "contato.do_not_contact / opt_out_email / opt_out_whatsapp da ficha do evento sao gravados como BLOQUEIO (nao contato), exatamente o que o Data Contract V1 §9 exige",
+    "campos_de_compliance_gravados": ["contacts.legal_basis", "contacts.source", "contacts.do_not_contact", "contacts.opt_out_email", "contacts.opt_out_whatsapp", "organizations.source"]
+  },
+  "lacunas": [
+    {
+      "id": "L1",
+      "lacuna": "o lead do evento nao chega ao Odoo por este card: o vocabulario fechado de eventos PG -> Odoo do Data Contract V1 (§6) nao tem evento de lead capturado, e o consumidor de outbox e' fail-closed (evento fora do contrato vira DEAD_LETTER). Criar `event_type` novo exige nova versao do contrato + aprovacao humana registrada (doc 12 / ADR-0004) — decisao do dono, nao do worker.",
+      "encaminhamento": "card de contrato/aprovacao antes de qualquer escrita no Odoo a partir de evento"
+    },
+    {
+      "id": "L2",
+      "lacuna": "nao existe leitor de QR/cracha nem endpoint de inscricao versionado: a captura recebe a coleta ja' normalizada em JSON. Ligar o leitor/app do evento e' operacao de n8n/operador, fora do repositorio.",
+      "encaminhamento": "card de integracao do leitor do evento (n8n) quando houver app/leitor escolhido"
+    },
+    {
+      "id": "L3",
+      "lacuna": "as 12 tabelas core do Data Contract V1 nao tem entidade de evento (nem presenca): o vinculo do evento vive no content_summary da interacao e no payload da trilha. Criar `events`/`event_attendances` e' mudanca de esquema do contrato, com nova versao + aprovacao humana.",
+      "encaminhamento": "card de contrato/esquema (W1/contrato) — decidir se evento passa a ser entidade"
+    },
+    {
+      "id": "L4",
+      "lacuna": "coleta em lote (lista de presenca do evento) nao e' processada aqui: uma coleta por execucao, e a chave de idempotencia e' por captura. O lote e' laco do operador/n8n sobre este mesmo componente.",
+      "encaminhamento": "card de importacao em lote se o volume de evento exigir"
+    },
+    {
+      "id": "L5",
+      "lacuna": "`collected_at`/`retention_until` continuam ausentes do schema (lacuna ja' declarada no Data Contract V1 §9) — a captura registra `created_at` e `capturado_em` (na interacao) e nao finge reter por prazo que o contrato nao tem.",
+      "encaminhamento": "W1/contrato"
+    }
+  ]
+}

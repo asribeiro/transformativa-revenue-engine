@@ -3,6 +3,34 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W7 — Inbound] — 03/10/2026
+
+### Added
+
+- **Captura de lead de evento v1** (`TRE-W7-E06-T01`) — componente `hermes/agentes/inbound/captura_evento.py`
+  (`captura-evento-v1`) + contrato `hermes/agentes/inbound/captura-evento-v1.json` (coletado em evento —
+  doc 03, Motor 3 "Relationship"): recebe a coleta do evento (QR/crachá/ficha/lista) já normalizada em JSON,
+  trata o **vínculo do evento como barreira** (sem `origem_evento.event_id`, sem `capture_method` no
+  vocabulário ou sem `capturado_em` válido a coleta é recusada com `EVENTO_NAO_DECLARADO` — lead de evento
+  sem o vínculo do evento é lead sem atribuição), trata **consentimento como barreira** (opt-in explícito +
+  base legal + **forma** do opt-in: `TERMO_DIGITAL`/`FICHA_ASSINADA`/`QR_INSCRICAO`/`LISTA_PRESENCA`),
+  resolve a identidade da empresa por **identificador forte** (CNPJ → domínio → LinkedIn, confiança ≥ 0,95)
+  antes do **fraco** (nome+cidade / nome+telefone), que vai para `REVIEW_REQUIRED` — nunca merge silencioso
+  (Data Contract V1 §5) —, grava `organizations`/`contacts`/`interactions` (canal `EVENTO`, direção
+  `INBOUND`, tipo `CAPTURA_EVENTO`, `occurred_at` = `capturado_em`) com UUID canônico no próprio INSERT e a
+  trilha de idempotência `evento:<event_id>:<captura_id>` em `sync_events` (o `event_id` entra na chave: o
+  mesmo lead em dois eventos são duas coletas legítimas e ficam distintas), e mascara e-mail/telefone/CNPJ na
+  evidência. Escrita só por INSERT nas 4 tabelas; auditoria da própria fonte recusa DDL/UPDATE/DELETE antes
+  de conectar. Guardas: dev exige porta de banco local (`docker exec -i pg-* psql`), `prod` recusa (exit 4),
+  `homolog` exige aprovação registrada, escrever exige `--confirmo` (senão `DRY_RUN`). Medição: suite offline
+  `VERIFICADOR_CAPTURA_EVENTO_PASS (46 itens + 5 dentes)` e aceite em PostgreSQL descartável
+  `ACEITE_CAPTURA_EVENTO_001_OK (60 itens, 0 falhas)`. Docs: `docs/runbooks/captura-de-lead-de-evento.md`.
+  **Lacunas declaradas:** o lead do evento não é escrito no Odoo por este card (o vocabulário de eventos
+  PG → Odoo do contrato V1 não tem evento de lead capturado e o consumidor de outbox é fail-closed; criar
+  `event_type` novo exige nova versão do contrato + aprovação humana — doc 12/ADR-0004) e as 12 tabelas core
+  **não têm entidade de evento**: o vínculo do evento vive no resumo/referência da interação e no payload da
+  trilha — nada é inventado como coluna.
+
 ## [W6 — Outbound] — 02/10/2026
 
 ### Added
