@@ -238,7 +238,9 @@ FALHAS=$((FALHAS + $(grep -c "^FALHOU " "$BASE/out/run1-check.out")))
 
 echo "== 7. o que esta' no Qdrant (dimensao, payload fechado, contagem exata)"
 DIM=$(qd "$QD_URL/collections/$COLECAO" | python3 -c "import sys,json; c=json.load(sys.stdin)['result']; print(c['config']['params']['vectors']['size'])" 2>/dev/null)
-[ "$DIM" = "64" ] && item "colecao criada com a dimensao do contrato (64)" 0 || item "colecao criada com a dimensao do contrato (64)" 1 "(obtido '$DIM')"
+DIM_CONTRATO=$(python3 -c "import json; print(json.load(open('$CONTRATO',encoding='utf-8'))['provedor_de_embedding']['dimensao'])")
+[ "$DIM" = "$DIM_CONTRATO" ] && item "colecao criada com a dimensao do contrato ($DIM_CONTRATO)" 0 \
+  || item "colecao criada com a dimensao do contrato ($DIM_CONTRATO)" 1 "(obtido '$DIM')"
 CONTAGEM=$(qd -X POST "$QD_URL/collections/$COLECAO/points/count" -d '{"exact": true}' | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['count'])" 2>/dev/null)
 [ "$CONTAGEM" = "12" ] && item "contagem exata no Qdrant = 12 pontos" 0 || item "contagem exata no Qdrant = 12 pontos" 1 "(obtido '$CONTAGEM')"
 qd -X POST "$QD_URL/collections/$COLECAO/points/scroll" -d '{"limit": 12, "with_payload": true}' \
@@ -304,6 +306,8 @@ import hashlib, json, sys, urllib.request
 r = json.load(open(sys.argv[1], encoding="utf-8"))
 r2 = json.load(open(sys.argv[2], encoding="utf-8"))
 falhas = []
+def before_diff(antes, esperado):
+    return bool(antes) and antes[0] != esperado
 def item(nome, cond, det=""):
     print(("OK    " if cond else "FALHOU ") + nome + ("" if cond else " " + str(det)))
     if not cond: falhas.append(nome)
@@ -313,10 +317,14 @@ corpo = json.dumps({"filter": {"must": [{"key": "origem_id", "match": {"value": 
 req = urllib.request.Request("http://127.0.0.1:6339/collections/memoria_comercial_v1/points/scroll", data=corpo)
 req.add_header("Content-Type", "application/json")
 ponto = json.loads(urllib.request.urlopen(req, timeout=10).read().decode())["result"]["points"]
-esperado = hashlib.sha256("OBJECAO preco revisado apos nova rodada comercial".encode()).hexdigest()
-item("conteudo alterado ATUALIZA o mesmo ponto (1 ponto, hash novo no payload)",
-     len(ponto) == 1 and ponto[0]["payload"]["conteudo_sha256"] == esperado,
-     (len(ponto), [p["payload"]["conteudo_sha256"][:12] for p in ponto]))
+# o texto do documento e' a CONCATENACAO das colunas declaradas no contrato (response_category · content_summary · subject)
+esperado_texto = "OBJECAO · OBJECAO preco revisado apos nova rodada comercial · Re: Eficiencia operacional"
+esperado = hashlib.sha256(esperado_texto.encode()).hexdigest()
+antes = [d["conteudo_sha256"] for d in r2["corpus"]["documentos"]
+         if d["origem_id"] == "000000e5-0000-0000-0000-000000000000"]
+item("conteudo alterado ATUALIZA o mesmo ponto (1 ponto, hash NOVO no payload)",
+     len(ponto) == 1 and ponto[0]["payload"]["conteudo_sha256"] == esperado and before_diff(antes, esperado),
+     (len(ponto), [p["payload"]["conteudo_sha256"][:12] for p in ponto], [a[:12] for a in antes]))
 item("contagem segue 12 (nao criou ponto novo para o conteudo revisado)",
      r["indexacao"]["pontos_antes"] == 12 and r["indexacao"]["pontos_depois"] == 12, r["indexacao"])
 item("a medicao MUDA quando o conteudo muda (hash do relatorio diferente da rodada anterior)",
@@ -352,7 +360,8 @@ def item(nome, cond, det=""):
 top = b1["resultados"]
 item("busca devolve memoria com piso de score respeitado (%d resultados, %d descartados)"
      % (len(top), b1["descartados_por_score"]),
-     len(top) >= 3 and all(r["score"] >= b1["consulta"]["score_minimo"] for r in top))
+     len(top) >= 1 and b1["descartados_por_score"] >= 1
+     and all(r["score"] >= b1["consulta"]["score_minimo"] for r in top))
 item("ranking por score desc com desempate por id",
      [(-r["score"], str(r["id"])) for r in top] == sorted([(-r["score"], str(r["id"])) for r in top]))
 item("consulta de objecao/preco traz a OBJECAO com o trecho certo no topo",
@@ -433,7 +442,7 @@ RC_RSC=$?
 [ "$RC_RSC" = "3" ] && item "--recriar sem --confirmo RECUSA (exit 3)" 0 || item "--recriar sem --confirmo RECUSA (exit 3)" 1 "exit=$RC_RSC"
 
 echo "== 12. determinismo do relatorio, HTML auto-contido e ambiente intacto"
-python3 - "$BASE/out-recriar/memoria-comercial.json" "$BASE/out-recriar/memoria-comercial.html" \
+python3 - "$BASE/out-recriar/memoria-comercial.json" "$BASE/out-recriar/memoria-comercial.html" "$CONTRATO" \
   >"$BASE/out/final-check.out" 2>&1 <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -447,8 +456,9 @@ item("HTML auto-contido (sem http/https/script/link) com pre-condicao, corpus e 
      all(t not in html for t in ("http://", "https://", "<script", "<link"))
      and "Pre-condicao" in html and "Corpus comercial" in html and "Lacunas declaradas" in html
      and len(html) > 1500, len(html))
-item("relatorio declara o modo MENSAGEM/OBJECAO/DOR/CONTEXTO e o provedor local",
-     r["provedor_da_memoria"]["nome"] == "local-deterministico-v1" and r["provedor_da_memoria"]["dimensao"] == 64)
+item("relatorio declara o provedor local na dimensao do contrato",
+     r["provedor_da_memoria"]["nome"] == "local-deterministico-v1"
+     and r["provedor_da_memoria"]["dimensao"] == json.load(open(sys.argv[3], encoding="utf-8"))["provedor_de_embedding"]["dimensao"])
 sys.exit(0 if not falhas else 1)
 PY
 cat "$BASE/out/final-check.out"

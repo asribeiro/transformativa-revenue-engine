@@ -241,6 +241,29 @@ def montar_consulta(tipo):
     return sql
 
 
+def extrair_json(saida):
+    """Interpreta a resposta da porta de banco.
+
+    ARMADILHA MEDIDA NA VPS (aceite): o `psql` devolve o array JSON em VARIAS linhas (quebra depois
+    da virgula, com indentacao) — parsear por linha pega um fragmento e falha com 'Extra data'.
+    A leitura correta e' o texto INTEIRO; a varredura por linha fica so' como ultimo recurso.
+    """
+    texto = (saida or "").strip()
+    if not texto:
+        raise Recusa("FONTE_SEM_JSON", "resposta vazia da fonte")
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        pass
+    for linha in reversed([l.strip() for l in texto.splitlines() if l.strip()]):
+        if linha[:1] in ("[", "{"):
+            try:
+                return json.loads(linha)
+            except json.JSONDecodeError:
+                continue
+    raise Recusa("FONTE_JSON_ILEGIVEL", "resposta da fonte nao e' JSON: %r" % texto[:200])
+
+
 def executar_consulta(porta_banco, sql):
     """Porta de banco = comando base do psql (o mesmo padrao dos irmaos). Sessao READ ONLY."""
     comando = shlex.split(porta_banco)
@@ -254,16 +277,7 @@ def executar_consulta(porta_banco, sql):
     proc = subprocess.run(args, capture_output=True, text=True)
     if proc.returncode != 0:
         raise Recusa("FONTE_INDISPONIVEL", (proc.stderr or proc.stdout or "").strip()[:400])
-    # A saida e' UMA linha JSON (json_agg): o `-q` silencia o rotulo do SET e, por seguranca,
-    # a linha util e' escolhida da ultima para a primeira (nunca por posicao fixa).
-    linhas = [l.strip() for l in (proc.stdout or "").splitlines() if l.strip()]
-    util = next((l for l in reversed(linhas) if l[:1] in ("[", "{")), "")
-    if not util:
-        raise Recusa("FONTE_SEM_JSON", "resposta da fonte sem JSON: %r" % (proc.stdout or "")[:200])
-    try:
-        return json.loads(util)
-    except json.JSONDecodeError as exc:
-        raise Recusa("FONTE_JSON_ILEGIVEL", "%s — %r" % (exc, util[:200]))
+    return extrair_json(proc.stdout)
 
 
 def corpus_de_leitura_pura(contrato, porta_banco):

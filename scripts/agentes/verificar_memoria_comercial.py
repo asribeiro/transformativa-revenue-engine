@@ -415,6 +415,24 @@ def i25(mod, contrato, ctx):
 # ------------------------------------------------------------------------------------------------
 # Autoteste por mutacao: cada mutacao tem de REPROVAR o item declarado
 # ------------------------------------------------------------------------------------------------
+@item("fonte: resposta multi-linha do psql e' lida inteira (armadilha medida no aceite)")
+def i26(mod, contrato, ctx):
+    multilinha = '[\n  {"a": "um"},\n  {"a": "dois"}\n]\n'
+    if mod.extrair_json(multilinha) != [{"a": "um"}, {"a": "dois"}]:
+        return False, "array multi-linha lido errado"
+    if mod.extrair_json('[{"a": "um"}]') != [{"a": "um"}]:
+        return False, "linha unica lida errado"
+    if mod.extrair_json("[]") != []:
+        return False, "lista vazia lida errado"
+    try:
+        mod.extrair_json("SET\nnao e json")
+        return False, "lixo passou como JSON"
+    except mod.Recusa as exc:
+        if exc.motivo != "FONTE_JSON_ILEGIVEL":
+            return False, exc.motivo
+    return True, "multi-linha, linha unica, lista vazia e lixo"
+
+
 MUTACOES = [
     ("M1 vetor sem normalizar L2", "    return [round(v / norma, 12) for v in vetor]", "    return vetor",
      "embedding: deterministico, com a dimensao do contrato e normalizado em L2"),
@@ -442,6 +460,10 @@ MUTACOES = [
      "payload: exatamente os campos declarados, sem campo de contato"),
     ("M10 HTML com script", '        "linhas": "".join(linhas),', '        "linhas": "<script>x</script>",',
      "saida: HTML auto-contido (sem rede/script) com pre-condicao e corpus"),
+    ("M11 leitura por linha (fragmento do psql)",
+     '    try:\n        return json.loads(texto)',
+     '    return json.loads([l for l in texto.splitlines() if l.strip()][-1])\n    try:\n        return json.loads(texto)',
+     "fonte: resposta multi-linha do psql e' lida inteira (armadilha medida no aceite)"),
 ]
 
 
