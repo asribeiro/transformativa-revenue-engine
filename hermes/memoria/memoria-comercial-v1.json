@@ -1,0 +1,156 @@
+{
+  "versao": "memoria-comercial-v1",
+  "card": "TRE-W9-E06-T01",
+  "onda": "W9 (Inteligencia Avancada)",
+  "titulo": "Memoria comercial em Qdrant — memoria semantica DERIVADA do corpus comercial, idempotente, sem PII e reconstruivel",
+  "pre_condicao": {
+    "nome": "corpus comercial estavel",
+    "natureza": "condicao do mundo real, nao card (doc 11: 'Depends on: corpus comercial estavel')",
+    "forma_testavel": "a memoria so' e' publicada se a base tiver `minimos.documentos` documentos indexaveis, `minimos.tipos_com_base` tipos com base e cada tipo declarado alcancar o seu `minimos.por_tipo`",
+    "quando_nao_atendida": "o relatorio e' gerado com `pre_condicao.atendida=false`, a lista `faltando` nomeada e `indexacao.memoria_publicada=false` — NADA e' escrito no Qdrant (fail-closed); a medicao do corpus continua sendo publicada"
+  },
+  "componente": {
+    "nome": "memoria_comercial",
+    "arquivo": "hermes/memoria/memoria_comercial.py",
+    "papel": "MEDIR a estabilidade do corpus comercial na base canonica `sales_intelligence` em LEITURA PURA e, SO' quando a pre-condicao e' atendida, DERIVAR a memoria semantica (documentos com vetor do provedor declarado) para a colecao do Qdrant e responder a busca por semelhanca com filtro declarado; saida JSON + HTML auto-contido",
+    "nao_faz": [
+      "NAO escreve na fonte canonica: leitura pura, SO' SELECT, dentro de sessao com `default_transaction_read_only = on` (o proprio PostgreSQL recusa escrita) e auditoria que reprova verbo de escrita ANTES de qualquer conexao — nenhuma tabela, coluna, metrica ou linha criada",
+      "NAO trata o Qdrant como fonte de verdade: a memoria e' DERIVADA e reconstruivel a partir do PostgreSQL; `--recriar --confirmo` derruba e reindexa a colecao sem perda de verdade",
+      "NAO le PII: o componente nunca consulta `contacts` — a unidade e' a organizacao (UUID canonico) e o contato nao entra nem como contagem",
+      "NAO indexa texto com PADRao de PII: documento que casa com `privacidade.padroes_proibidos` vai para lacuna `PII_SUSPEITA` com a origem e fica FORA da colecao",
+      "NAO carrega nome de modelo externo nem preco no contrato: o provedor e' um mecanismo local declarado; trocar de provedor ou de dimensao exige versao nova do contrato e reindexacao",
+      "NAO inventa semelhanca: resultado abaixo do `busca.score_minimo` e' descartado — consulta sem correspondencia devolve lista vazia, nunca 'o menos pior'",
+      "NAO envia mensagem, nao recomenda acao e nao alimenta o motor comercial: a memoria e' leitura e contexto, nao ato",
+      "NAO publica em homolog/producao: `prod` RECUSA por desenho (exit 4) e `homolog` exige `--confirmo` (ADR-005)"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "doc 02 §2 (Arquitetura da Solucao) — `Qdrant`: memoria semantica, embeddings, casos, mensagens, objecoes, contexto reutilizavel",
+      "doc 06 §10 (Integracoes) — Qdrant opcional no core MVP; fase posterior: embeddings de casos, mensagens, objecoes, playbooks, historico relevante",
+      "doc 04 / `db/migrations/0001_sales_intelligence_v1.sql` — origem canonica dos documentos (`interactions`, `pain_hypotheses`, `recommendations`)",
+      "doc 11 §W9 — `TRE-W9-E06-T01 — Qdrant commercial memory`, `Depends on: corpus comercial estavel`",
+      "ADR-005 (nada nasce em producao) e ADR-0007 (memoria vetorial vive na VPS de dados, nao na do Hermes)",
+      "hermes/agentes/analytics/previsao-canal-v1.json (card W9-E03-T01) — convencao de guarda de ambiente, leitura pura e fail-closed por pre-condicao"
+    ],
+    "fora_do_escopo": [
+      "escolher provedor externo de embeddings, contratar e medir qualidade semantica: decisao de operador, com versao nova deste contrato (o nome do modelo NAO mora aqui)",
+      "servir a memoria por HTTP, autenticar usuario ou hospedar pagina: passo de operador/homolog",
+      "usar a memoria para decidir contato, canal ou abordagem (W9-E02..E05): este card entrega a memoria, nao o uso dela",
+      "backup/restore do volume do Qdrant: a memoria e' derivada e reconstruivel, entao o backup do produto continua sendo o do PostgreSQL (W0-E01-T03)",
+      "producao: sequencia dev -> homolog -> producao com aprovacao humana registrada (ADR-005)"
+    ]
+  },
+  "fonte_de_verdade": "postgresql:sales_intelligence",
+  "colecao": {
+    "nome": "memoria_comercial_v1",
+    "versao": "v1",
+    "distancia": "Cosine",
+    "regra": "colecao com dimensao diferente da declarada RECUSA (`DIMENSAO_DIVERGENTE`) sem escrever; reindexar com outro provedor exige colecao/versao nova"
+  },
+  "provedor_de_embedding": {
+    "nome": "local-deterministico-v1",
+    "mecanismo": "hashing de tokens (blake2b com semente fixa) sobre vocabulario normalizado sem acento, acumulado em vetor de 64 posicoes com sinal, normalizado em L2",
+    "dimensao": 64,
+    "semente": "tre-memoria-comercial-v1",
+    "palavras_vazias": ["a", "o", "os", "as", "de", "da", "do", "das", "dos", "e", "em", "no", "na", "nos", "nas", "para", "por", "com", "sem", "que", "um", "uma", "ao", "aos", "se", "so", "sua", "seu", "mais", "como", "the", "of", "to", "and", "is"],
+    "propriedades": [
+      "deterministico: mesma entrada -> mesmo vetor, sem aleatoriedade e sem estado",
+      "sem rede e sem dependencia externa: roda no container do Hermes e na VPS com python3 puro",
+      "lexical: a v1 NAO alega qualidade semantica (sinonimia/parafrase) — a lacuna L4 viaja no relatorio"
+    ],
+    "troca_de_provedor": "declarar outro provedor (externo, com modelo nomeado no ambiente e nao no contrato) exige versao nova do contrato, dimensao declarada e reindexacao completa da colecao"
+  },
+  "tipos_de_documento": [
+    {
+      "nome": "MENSAGEM",
+      "papel": "mensagem outbound do historico comercial (assunto + resumo)",
+      "tabela": "sales_intelligence.interactions",
+      "id_coluna": "id",
+      "organization_id_coluna": "organization_id",
+      "canal_coluna": "channel",
+      "data_coluna": "occurred_at",
+      "colunas_de_texto": ["subject", "content_summary"],
+      "filtro": "direction = 'OUTBOUND'"
+    },
+    {
+      "nome": "OBJECAO",
+      "papel": "resposta inbound classificada (objecao/interesse/recusa) com o resumo do que o cliente disse",
+      "tabela": "sales_intelligence.interactions",
+      "id_coluna": "id",
+      "organization_id_coluna": "organization_id",
+      "canal_coluna": "channel",
+      "data_coluna": "occurred_at",
+      "colunas_de_texto": ["response_category", "content_summary", "subject"],
+      "filtro": "direction = 'INBOUND' AND response_category IS NOT NULL"
+    },
+    {
+      "nome": "DOR",
+      "papel": "hipotese de dor validada/pesquisada da organizacao (contexto reutilizavel)",
+      "tabela": "sales_intelligence.pain_hypotheses",
+      "id_coluna": "id",
+      "organization_id_coluna": "organization_id",
+      "canal_coluna": null,
+      "data_coluna": "created_at",
+      "colunas_de_texto": ["pain_category", "pain_statement", "evidence_summary"],
+      "filtro": null
+    },
+    {
+      "nome": "CONTEXTO",
+      "papel": "recomendacao/playbook registrado (acao + razao) — contexto reutilizavel do motor",
+      "tabela": "sales_intelligence.recommendations",
+      "id_coluna": "id",
+      "organization_id_coluna": "organization_id",
+      "canal_coluna": null,
+      "data_coluna": "created_at",
+      "colunas_de_texto": ["action", "description", "rationale"],
+      "filtro": null
+    }
+  ],
+  "minimos": {
+    "documentos": 10,
+    "tipos_com_base": 3,
+    "por_tipo": {"MENSAGEM": 3, "OBJECAO": 2, "DOR": 3, "CONTEXTO": 2},
+    "regra": "minimo e' PISO de estabilidade, nao meta de volume: corpus abaixo do piso nao gera memoria (fail-closed)"
+  },
+  "busca": {
+    "limite_padrao": 5,
+    "limite_maximo": 20,
+    "score_minimo": 0.05,
+    "desempate": "score desc, id asc (deterministico; sem heuristica escondida)",
+    "filtros": ["tipo", "organization_id"]
+  },
+  "payload_fechado": [
+    "tipo", "origem_tabela", "origem_id", "organization_id", "canal", "ocorrido_em",
+    "conteudo_sha256", "texto", "colecao_versao"
+  ],
+  "privacidade": {
+    "regra": "texto que casa com padrao proibido vai para lacuna `PII_SUSPEITA` com a origem e NAO e' indexado; `contacts` nunca e' lida pelo componente; o payload e' FECHADO (só os campos declarados acima)",
+    "padroes_proibidos": [
+      {"nome": "EMAIL", "regex": "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"},
+      {"nome": "TELEFONE", "regex": "\\+?55[ .-]?\\(?[0-9]{2}\\)?[ .-]?[0-9]{4,5}[ .-]?[0-9]{4}"},
+      {"nome": "TELEFONE_FIXO", "regex": "\\([0-9]{2}\\)[ .-]?[0-9]{4,5}[ .-]?[0-9]{4}"},
+      {"nome": "CNPJ", "regex": "[0-9]{2}\\.[0-9]{3}\\.[0-9]{3}/[0-9]{4}-[0-9]{2}"},
+      {"nome": "CPF", "regex": "[0-9]{3}\\.[0-9]{3}\\.[0-9]{3}-[0-9]{2}"}
+    ],
+    "o_que_fica_fora": "e-mail, telefone/WhatsApp, CNPJ, CPF e nome de contato — a memoria guarda o CONTEUDO comercial (assunto, resumo, dor, acao) endereçado pela organizacao"
+  },
+  "guardas_de_ambiente": {
+    "regras": [
+      "`prod` RECUSA por desenho (exit 4): a memoria comercial nao nasce em producao (ADR-005)",
+      "`homolog` exige `--confirmo` e Qdrant local",
+      "`dev` exige Qdrant em host local (127.0.0.1/localhost/[::1]); host remoto RECUSA (`QDRANT_NAO_E_DEV`)",
+      "`--recriar` exige `--confirmo` (a memoria e' derivada e reconstruivel)",
+      "colecao existente com dimensao diferente da declarada RECUSA sem escrever (`DIMENSAO_DIVERGENTE`)",
+      "uso errado = exit 2; recusa = exit 3; producao recusada = exit 4; segredo na evidencia = exit 5"
+    ]
+  },
+  "lacunas": [
+    "L1: a v1 indexa conteudo comercial derivado das tabelas canonicas — caso/playbook vive em `recommendations`/`pain_hypotheses`, nao existe tabela dedicada de playbook no Data Contract V1",
+    "L2: busca e' lexical (provedor local declarado); nao ha' alegacao de qualidade semantica nem de sinonimia — trocar de provedor exige versao nova + reindexacao",
+    "L3: a memoria nao e' consultada por nenhum agente ainda; liga-la ao motor comercial e' card posterior (W9-E02..E05)",
+    "L4: `ocorrido_em` vem de `occurred_at`/`created_at`; a janela temporal relevante do funil (W8-E01) nao e' aplicada aqui — a memoria e' o corpus inteiro disponivel",
+    "L5: o volume do Qdrant nao entra no backup do produto: perder a colecao custa uma reindexacao, nunca um dado (a fonte e' o PostgreSQL)",
+    "L6: `organization_id` nulo (receita do contrato aceita) aparece como `null` no payload; nenhum documento e' descartado por isso, a origem ja' carrega o vinculo quando existe"
+  ]
+}
