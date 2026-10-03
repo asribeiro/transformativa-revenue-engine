@@ -378,3 +378,48 @@ obrigatório, idempotência e ausência de credencial Titan no papel `dev-harnes
 `docs/runbooks/titan-smtp.md`, `scripts/verificar_estrutura.sh`.
 **Depends on:** W5-E08-T01 (fechado e medido) · **Destrava:** W6-E01-T02 (IMAP), W6-E04-T01 (send
 workflow) e, por consequência, o E2E Outbound #002.
+
+### TRE-W6-E04-T01 — Implementar o envio (send workflow)
+
+**Acceptance:** o envelope consome **so** o que o portao do card irmao libera: `--enviar <approval_id>` sem
+`--confirmo` e `PLANO` (nenhuma escrita, nenhum e-mail); com `--confirmo` o pedido `APPROVED` e entregue uma
+unica vez pelo primitivo de SMTP e o que fica no banco e `interactions` (canal/direcao/tipo do contrato, com
+`content_reference = envio:<approval_id>:<texto_hash>`) + `sync_events` (claim `ENVIANDO` antes do SMTP ->
+`ENVIADO` ligado a `interaction_id`; ou `FALHOU` com a trilha do primitivo, sem fato gravado). O corpo entregue
+e o **texto aprovado + CTA** e o destinatario e o **do pedido** (nao ha argumento de destino na linha de
+comando). Replay da mesma chave = `JA_ENVIADO` (nao reenvia); chave em voo = `ENVIO_EM_VOO`; chave `FALHOU`
+permite retentativa com `tentativas` incrementado. Pedido fora de `APPROVED`, com hash divergente, contato
+bloqueado ou inexistente recusa no portao (`PORTAO_NAO_LIBEROU`) sem enviar; `dev` so entrega para host loopback
+e dominio de dev (`DESTINO_NAO_DEV`) e `homolog` exige a aprovacao registrada (`HOMOLOG_SEM_APROVACAO`); `prod`
+exit 4 sem escrever. Escrita so em `interactions` e `sync_events` — DDL, `DELETE` e `UPDATE` fora das rodadas
+recusam antes de executar (`validar_sql`), e nenhuma outra tabela e tocada em rodada nenhuma. `--desfazer` em
+dry-run conta e nao escreve; `--confirmo` exige `--por` e `--motivo`, marca `DESFEITO` e **preserva o fato**
+(e um e-mail entregue nao volta: a barreira e o `--confirmo` antes do envio).
+
+**Test plan:** `python3 scripts/agentes/verificar_envio_outbound.py` (suite offline com duble de porta de banco
+e primitivo falso: 60 itens) + `--autoteste` (7 mutacoes no modulo, cada uma reprovando o item que nomeia) +
+`bash scripts/agentes/teste_envio_outbound_aceite.sh --prova-de-dente` na VPS do ambiente (PostgreSQL
+descartavel `pg-envio-acc` com a migration 0001 + **sink SMTP local** em `127.0.0.1` com certificado proprio;
+o pedido nasce do gerador irmao W6-E02 e e aprovado pelo workflow irmao W6-E03 — cadeia real) ->
+`ACEITE_ENVIO_OUTBOUND_001_OK (44 itens, 0 falhas)` + 3/3 dentes. Evidencia = saida completa com exit code.
+Doc: `docs/architecture/envio-outbound-v1.md`; runbook: `docs/runbooks/envio-outbound.md`.
+
+**Rollback:** `--desfazer <correlation_id> --confirmo --por --motivo` marca `DESFEITO` preservando o fato (para
+impedir envio futuro, rejeitar/expirar o pedido no card irmao); reverter o merge do branch — sem DDL, sem
+migration, sem credencial Titan e nenhum ato em producao. Mensagem ja entregue **nao** e recuperavel: o
+`--confirmo` antes do envio e a barreira.
+
+**Risk:** medio-alto — e o ato de outbound (falar com pessoa real em nome da Transformativa). Enderecado por:
+portao do card irmao obrigatorio (status + hash + compliance reavaliada), `--confirmo` explicito, guarda de
+ambiente/destino por ambiente, claim exatamente-uma-vez antes do SMTP com `ENVIO_EM_VOO` para nao repetir
+entrega, falha do primitivo sem fato gravado, escrita restrita a duas tabelas com guarda anti-DDL, `prod`
+recusado e a prova E2E inteira em banco descartavel com sink local (nenhuma credencial Titan, nenhum destino
+real). O que **nao** esta nesta v1: producao (decisao do dono), ingestao de resposta (W6-E05/IMAP) e o aceite
+com o `smtp.titan.email` real (homolog, com credencial do Sales AI e aprovacao do dono).
+
+**Components afetados:** `hermes/agents/outreach/` (novo `send_workflow.py`, `politica-envio-v1.json`,
+`envio-outbound-v1.json`), `scripts/agentes/` (novo verificador, duble de porta, aceite),
+`docs/architecture/envio-outbound-v1.md`, `docs/runbooks/envio-outbound.md`, `scripts/verificar_estrutura.sh`.
+**Depends on:** W6-E01-T01 (primitivo SMTP Titan, fechado e medido) e W6-E03-T01 (aprovacao humana, fechado e
+medido) — os dois pais integrados na base deste card. **Destrava:** o E2E Outbound #002 e o W6-E05-T01 (ingestao
+de resposta), que passa a ter envio registrado para casar.

@@ -2392,3 +2392,40 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   `t6smtp.aceite-base.out`, `t6smtp.aceite-dente.out` e `t6smtp.sha256.out` (anexados ao card).
 - Segredos: nenhum valor nesta entrada; a senha usada na prova e um valor de teste local gerado pelo
   proprio aceite e nunca entra em arquivo versionado, argumento de linha de comando ou log.
+
+## 2026-10-03 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) + container do Hermes — TRE-W6-E04-T01: envio outbound v1 medido por execucao real
+
+- **Objetivo:** fechar o card que **integra os dois pais** da onda W6 (W6-E01-T01 SMTP + W6-E03-T01 aprovacao):
+  entregar o orquestrador de envio outbound que consome um pedido aprovado por humano e o envia pelo primitivo
+  de SMTP, respeitando politica, guarda de escrita e contrato de dados.
+- **Entrega:** `hermes/agents/outreach/send_workflow.py`, `politica-envio-v1.json`,
+  `envio-outbound-v1.json`, `scripts/agentes/verificar_envio_outbound.py`,
+  `scripts/agentes/duble_psql_envio.py`, `scripts/agentes/teste_envio_outbound_aceite.sh`,
+  `docs/architecture/envio-outbound-v1.md`, `docs/runbooks/envio-outbound.md`.
+- **Como foi medido (execucao real, nao inspecao):**
+  1. **Suite offline** (`verificar_envio_outbound.py`, no container do Hermes, sem PostgreSQL e sem SMTP): duble
+     de porta de banco (`duble_psql_envio.py`) + primitivo falso que anota a mensagem => `PASS (60 itens, 0
+     falhas)`; com `--autoteste` (7 mutacoes no modulo, cada uma tem de reprovar o item que nomeia) => 7/7
+     dentes verdes.
+  2. **Aceite E2E** (`teste_envio_outbound_aceite.sh --prova-de-dente`, na VPS, PostgreSQL descartavel
+     `pg-envio-acc` com a migration 0001 e **sink SMTP local** em `127.0.0.1` com certificado proprio): o
+     pedido nasce do gerador irmao (W6-E02) e e aprovado pelo workflow irmao (W6-E03) — cadeia real; o envio
+     e conferido na captura do sink (TLS, `rcpt_to`, AUTH sem senha, assunto e corpo iguais ao aprovado) e no
+     banco (`interactions`, `sync_events`) => `ACEITE_ENVIO_OUTBOUND_001_OK (44 itens, 0 falhas)` + 3/3 dentes.
+- **Defeitos reais encontrados e corrigidos durante a medicao** (nenhum deles apareceria numa inspecao de
+  codigo): (a) `contact_id` de `interactions` recebia o **nome** do contato (uuid invalido) — o portao devolve
+  e-mail e nome, entao o id passou a ser lido do proprio pedido (`entity_id`, leitura); (b) o claim nao
+  registrava o primitivo usado (trilha incompleta) — passou a entrar no `request_payload`;
+  (c) `--desfazer` e replay ficaram medidos no banco; (d) o aceite precisou de certificado com SAN de IP
+  proprio porque o `-addext` do openssl deste host falha (configuracao de sistema incompleta).
+- **Decisoes:** worktree dedicado do card e branch baseada no pai da aprovacao com merge do pai do SMTP;
+  `acoes-declaradas.yaml` conflitado adotado do pai (`--theirs`); o orquestrador e o **unico** ponto de escrita
+  SQL (so `interactions` e `sync_events`), com `ddl`/`delete` declarados `recusado` na politica.
+- **Lacunas declaradas:** producao nao e deste componente (`prod` exit 4, por desenho); o aceite com o
+  `smtp.titan.email` real e de homolog (credencial do Sales AI + aprovacao do dono); a politica nasce
+  `PROPOSTA_A_HOMOLOGAR`; a ingestao de resposta e o W6-E05/IMAP.
+- **Logs brutos:** saidas completas em `/opt/data/cache/scratch/tre-e04t01/*.out` (suite offline, autoteste e
+  aceite E2E com dentes), anexadas ao card do board.
+- Segredos: nenhum valor nesta entrada. O aceite nao usa credencial Titan: a senha do sink e um valor de teste
+  local gerado pelo proprio aceite, nunca versionado, nunca em argumento de linha de comando e nunca em log
+  (ha item medindo isso na captura do sink).

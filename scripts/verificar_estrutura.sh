@@ -497,5 +497,35 @@ else
   FALHAS=$((FALHAS+1))
 fi
 
+# --- card TRE-W6-E04-T01 (envio outbound v1) ---------------------------------------------------------
+ENVIO="hermes/agents/outreach/send_workflow.py"
+for arquivo in "$ENVIO" hermes/agents/outreach/politica-envio-v1.json \
+               hermes/agents/outreach/envio-outbound-v1.json \
+               scripts/agentes/verificar_envio_outbound.py scripts/agentes/duble_psql_envio.py \
+               scripts/agentes/teste_envio_outbound_aceite.sh \
+               docs/architecture/envio-outbound-v1.md docs/runbooks/envio-outbound.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W6-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ENVIO" ]; then
+  if ! python3 -m py_compile "$ENVIO" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W6-E04-T01: $ENVIO nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'sales_intelligence.interactions' "$ENVIO" || ! grep -q 'sales_intelligence.sync_events' "$ENVIO"; then
+    echo "FALHOU card TRE-W6-E04-T01: escrita do envio fora das duas tabelas declaradas"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agents/outreach/politica-envio-v1.json ]; then
+  if ! grep -q '"ddl": "recusado"' hermes/agents/outreach/politica-envio-v1.json \
+     || ! grep -q '"delete": "recusado' hermes/agents/outreach/politica-envio-v1.json; then
+    echo "FALHOU card TRE-W6-E04-T01: politica de envio sem ddl/delete declarados recusado"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

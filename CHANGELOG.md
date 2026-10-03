@@ -1857,3 +1857,30 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   `BRANCHING.md`) e não depende de código das ondas anteriores.
 - Nada em produção e nenhuma credencial real usada: a prova de configuração em desenvolvimento usa um
   sink local descartável (ADR-005).
+
+## [W6 — Titan Outbound MVP] — 03/10/2026
+
+### Added
+
+- **`TRE-W6-E04-T01`** — envio outbound v1 (`envio-outbound-v1`): `hermes/agents/outreach/send_workflow.py`
+  integra os dois pais da onda — consome o pedido aprovado pelo workflow de aprovacao humana (W6-E03-T01) pelo
+  portao `consultar()` e entrega pelo primitivo de SMTP Titan (W6-E01-T01). Uma rodada: portao -> guardas de
+  ambiente/destino -> claim exatamente-uma-vez em `sync_events` (`ENVIANDO` **antes** do SMTP) -> envio ->
+  fato em `interactions` (`content_reference = envio:<approval_id>:<texto_hash>`) + `sync_events` `ENVIADO`
+  ligado a `interaction_id`. Idempotencia (`JA_ENVIADO`, `ENVIO_EM_VOO`, retentativa de `FALHOU`), `--confirmo`
+  obrigatorio, `--desfazer` que preserva o fato, `prod` recusado (exit 4) e escrita restrita a duas tabelas com
+  guarda anti-DDL/`DELETE`/`UPDATE` fora das rodadas.
+- Contrato do componente `hermes/agents/outreach/envio-outbound-v1.json` e politica
+  `hermes/agents/outreach/politica-envio-v1.json` (`PROPOSTA_A_HOMOLOGAR`).
+- Medicao: `scripts/agentes/verificar_envio_outbound.py` (suite offline, 60 itens, com `--autoteste` de 7
+  mutacoes) e `scripts/agentes/teste_envio_outbound_aceite.sh` (aceite E2E em PostgreSQL descartavel + sink
+  SMTP local, `--prova-de-dente`); duble de porta de banco `scripts/agentes/duble_psql_envio.py`.
+- Docs: `docs/architecture/envio-outbound-v1.md` e `docs/runbooks/envio-outbound.md`.
+
+### Notas de estado
+
+- Nada em producao e nenhuma credencial Titan: o aceite mede contra um **sink SMTP local** em `127.0.0.1` com
+  certificado proprio gerado na hora (ADR-005). O aceite com `smtp.titan.email` real e de **homolog**, com
+  credencial do Sales AI e aprovacao do dono.
+- A politica nasce `PROPOSTA_A_HOMOLOGAR`: `ddl` e `delete` declarados `recusado` (declarar outro veredito e
+  `RecusaDePolitica`).
