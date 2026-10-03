@@ -14,7 +14,9 @@ Saida: linhas `OK n. <item>` / `FALHOU n. <item>: <detalhe>` e, no fim, `PASS (N
 
 from __future__ import annotations
 
+import base64
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -367,7 +369,46 @@ def testar_envelope_http():
         servidor.shutdown()
 
 
-# ---------------------------------------------------------------- 6. propagacao e desfazer
+# ---------------------------------------------------------------- 6b. envelope da porta de banco
+class ProcessoFalso:
+    def __init__(self, stdout):
+        self.stdout = stdout
+        self.stderr = ""
+        self.returncode = 0
+
+
+def envelope_falso(payload_texto: str, corromper: bool = False) -> ProcessoFalso:
+    b64 = base64.b64encode(payload_texto.encode("utf-8")).decode("ascii")
+    digest = hashlib.md5(payload_texto.encode("utf-8")).hexdigest()
+    if corromper:
+        digest = hashlib.md5(b"outro payload").hexdigest()
+    # O QUE O ACEITE MEDIU: psql quebra a saida longa em varias linhas. A quebra aqui e' inocente
+    # (sem espaco) e o md5 prova que a costura foi exata.
+    pedacos = [b64[i:i + 40] for i in range(0, len(b64), 40)]
+    return ProcessoFalso("\n".join([digest + " " + pedacos[0]] + pedacos[1:] + [""]))
+
+
+def testar_envelope_de_banco():
+    porta = M.PortaBanco("docker exec -i pg-e06-acc psql -U sales_ai -d sales_intelligence", "dev")
+    original = M.subprocess.run
+    try:
+        M.subprocess.run = lambda *a, **k: envelope_falso(json.dumps([{"interaction_id": "x"}]))
+        linhas = porta.consultar("SELECT 1")
+        item("57. envelope do banco sobrevive a quebra de linha do psql (defeito medido no aceite)",
+             linhas == [{"interaction_id": "x"}], str(linhas))
+        M.subprocess.run = lambda *a, **k: envelope_falso(json.dumps([{"a": 1}]), corromper=True)
+        try:
+            porta.consultar("SELECT 1")
+            item("58. envelope com md5 divergente RECUSA (nunca segue com dado pela metade)", False,
+                 "nao levantou")
+        except M.Recusa as e:
+            item("58. envelope com md5 divergente RECUSA (nunca segue com dado pela metade)",
+                 e.motivo == "BANCO_RESPOSTA_CORROMPIDA", e.motivo)
+    finally:
+        M.subprocess.run = original
+
+
+# ---------------------------------------------------------------- 7. propagacao e desfazer
 def testar_propagacao():
     modulo = carregar()
     porta = PortaFake()
@@ -435,6 +476,9 @@ DENTES = [
     ("auditoria-de-fonte-morta", "trilha_por_insert",
      "    if \"INSERT INTO\" not in corpo:", "    if True:",
      "8. auditoria da propria fonte nao acusa violacao"),
+    ("sem-conferencia-de-md5", "BANCO_RESPOSTA_CORROMPIDA",
+     "        if hashlib.md5(dados).hexdigest() != digest:", "        if False:",
+     "58. envelope com md5 divergente RECUSA (nunca segue com dado pela metade)"),
 ]
 
 
@@ -486,6 +530,7 @@ def main() -> int:
         testar_plano()
         testar_execucao()
         testar_envelope_http()
+        testar_envelope_de_banco()
         testar_propagacao()
         print(f"{'PASS' if not FALHAS else 'FALHOU'} ({len(ITENS)} itens, {len(FALHAS)} falhas)")
         return 0 if not FALHAS else 1
@@ -494,6 +539,7 @@ def main() -> int:
     testar_plano()
     testar_execucao()
     testar_envelope_http()
+    testar_envelope_de_banco()
     testar_propagacao()
     veredito = "PASS" if not FALHAS else "FALHOU"
     print(f"{veredito} ({len(ITENS)} itens, {len(FALHAS)} falhas)")

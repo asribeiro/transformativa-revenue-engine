@@ -221,9 +221,12 @@ item "interactions continua com 5 linhas (nada alterado na materia-prima)" $([ "
 SECRETO=$(grep -c "$CHAVE" "$BASE/rodada.out" "$BASE/saida"/* 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
 item "a chave da API nao aparece na saida do componente (medido: $SECRETO)" $([ "$SECRETO" = "0" ]; echo $?)
 
-echo "== 9. verificacao de estrutura do repo =="
-bash scripts/verificar_estrutura.sh >"$BASE/estrutura.out" 2>&1
-item "portao de estrutura do repo PASS" $?
-tail -3 "$BASE/estrutura.out"
+echo "== 9. verificacao de estrutura do repo (roda no checkout COM git; aqui so' registro) =="
+if [ -d .git ]; then
+  bash scripts/verificar_estrutura.sh >"$BASE/estrutura.out" 2>&1
+  item "portao de estrutura do repo PASS" $?
+else
+  echo "PULADO: o checkout do aceite vem por 'git archive' (sem .git); o portao roda no repo"
+fi
 
 veredito

@@ -57,6 +57,8 @@ guarda/contrato/fonte · 4 = recusa de producao · 5 = segredo vazado (recusa de
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import re
@@ -340,36 +342,67 @@ class PortaBanco:
         except ValueError as e:
             raise Recusa("BANCO_NAO_DECLARADO", f"prefixo de banco invalido: {e}") from e
 
+    def _envelope(self, expressao: str) -> str:
+        """Envelope de leitura: md5 + base64 do payload.
+
+        O psql QUEBRA a linha quando o valor e' longo (medido no aceite: `json_agg` de 5 linhas voltou
+        em 5 linhas de saida), entao ler "a ultima linha" ja' quebrou uma rodada de verdade. O envelope
+        resolve em duas partes: base64 nao tem espaco nem quebra significativa (entao juntar as linhas
+        reconstroi o valor) e o md5 PROVA que a juncao foi exata — divergencia RECUSA, nunca segue com
+        dado pela metade.
+        """
+        return ("WITH dados AS (SELECT " + expressao + "::text AS payload) "
+                "SELECT md5(payload) || ' ' || encode(convert_to(payload, 'UTF8'), 'base64') FROM dados;")
+
+    def _decodificar(self, brutos: list) -> list:
+        linhas = [l for l in brutos if l.strip()]
+        if not linhas:
+            raise Recusa("BANCO_RESPOSTA_VAZIA", "a porta de banco nao devolveu payload")
+        texto = "".join(l.strip() for l in linhas).strip()
+        partes = texto.split(" ", 1)
+        if len(partes) != 2:
+            raise Recusa("BANCO_RESPOSTA_INVALIDA",
+                         f"a porta de banco nao devolveu o envelope esperado: {texto[:200]}")
+        digest, b64 = partes
+        try:
+            dados = base64.b64decode(b64, validate=True)
+        except Exception as e:  # noqa: BLE001 — qualquer falha de base64 e' envelope invalido
+            raise Recusa("BANCO_RESPOSTA_INVALIDA", f"payload base64 invalido: {e}") from e
+        if hashlib.md5(dados).hexdigest() != digest:
+            raise Recusa("BANCO_RESPOSTA_CORROMPIDA",
+                         "o md5 do payload nao confere (resposta truncada ou costurada)")
+        try:
+            return json.loads(dados.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise Recusa("BANCO_RESPOSTA_INVALIDA", f"payload nao e' JSON: {e}") from e
+
     def consultar(self, sql: str) -> list:
+        expressao = f"coalesce(json_agg(t), '[]'::json) FROM ({sql}) t"
         comando = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c",
-                                        f"SELECT coalesce(json_agg(t), '[]'::json)::text FROM ({sql}) t;"]
+                                        self._envelope(f"SELECT {expressao}")]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
                                           f"{(proc.stderr or proc.stdout).strip()[:400]}")
-        linhas = [l for l in (proc.stdout or "").splitlines() if l.strip()]
-        if not linhas:
-            raise Recusa("BANCO_RESPOSTA_VAZIA", "a porta de banco nao devolveu JSON")
-        try:
-            return json.loads(linhas[-1])
-        except json.JSONDecodeError as e:
-            raise Recusa("BANCO_RESPOSTA_INVALIDA",
-                         f"a porta de banco nao devolveu JSON: {linhas[-1][:200]}") from e
+        return self._decodificar((proc.stdout or "").splitlines())
 
     def executar(self, sql: str) -> list:
-        """Escreve (INSERT ... RETURNING) e devolve as linhas afetadas (envelope por CTE)."""
+        """Escreve (INSERT ... RETURNING) e devolve as linhas afetadas, pelo mesmo envelope."""
         comando_base = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c"]
+        # INSERT sem RETURNING nao pode ser lido por CTE ("WITH query does not have a RETURNING clause",
+        # defeito medido na rodada 2 do aceite do card irmao): sem RETURNING nao ha linhas a devolver.
         if "RETURNING" in sql.upper():
-            sql_exec = (f"WITH afetados AS ({sql}) "
-                        "SELECT coalesce(json_agg(afetados), '[]'::json)::text FROM afetados;")
+            expressao = f"coalesce(json_agg(afetados), '[]'::json) FROM (WITH afetados AS ({sql}) SELECT * FROM afetados) afetados"
+            comando = comando_base + [self._envelope(f"SELECT {expressao}")]
         else:
-            sql_exec = sql
-        proc = subprocess.run(comando_base + [sql_exec], capture_output=True, text=True, timeout=120)
+            comando = comando_base + [sql]
+        proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
                                           f"{(proc.stderr or proc.stdout).strip()[:400]}")
-        linhas = [l for l in (proc.stdout or "").splitlines() if l.strip()]
-        return json.loads(linhas[-1]) if linhas else []
+        if "RETURNING" not in sql.upper():
+            return []
+        return self._decodificar((proc.stdout or "").splitlines())
 
 
 def chave_de(interacao: dict) -> str:
