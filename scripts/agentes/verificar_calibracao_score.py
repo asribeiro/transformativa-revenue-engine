@@ -309,8 +309,9 @@ def itens(alvo):
 
 
 MUTACOES = [
-    ("guarda de producao desligada", "        if args.ambiente == \"prod\":\n            recusar_producao()",
-     "        if False:\n            recusar_producao()"),
+    ("corte ajuste/validacao ignorado (todos no ajuste)",
+     '    h = int(hashlib.sha256(org.encode("utf-8")).hexdigest()[:8], 16)\n    return (h % denominador) < numerador',
+     "    return True"),
     ("AUC invertida (ordem do sinal)", "            if p > n:\n                vitorias += 1.0",
      "            if p < n:\n                vitorias += 1.0"),
     ("base fina deixa de abster (proposta sobre base pequena)",

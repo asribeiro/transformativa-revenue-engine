@@ -681,3 +681,35 @@ Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos 
   existe coluna de tier; criar exige versão nova do contrato, §10/ADR-0004 — lacuna L4); (d) o componente é
   medido pelo **último** valor (lacuna L5, viés de sucessão de score); (e) tocar artefato do card pai —
   mitigado por refatoração sem mudança de saída, com o aceite do pai reexecutado **dentro** deste aceite.
+
+## TRE-W9-E01-T01 — Score calibration
+
+Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos e o card nasceu sem eles).
+**A pré-condição do card ("volume real suficiente") virou mecanismo:** medir é do W8-E03; aqui se
+**propõe** — e só se o volume sustentar, senão o componente **absteve** (exit 6).
+
+- **ACCEPTANCE:** `ACEITE_CALIBRACAO_SCORE_OK` (0 falhas) — gate de volume medido item a item e recusado
+  quando a base não sustenta (coorte com desfecho < 30, classe abaixo de 5, classe ausente em um dos lados
+  do ajuste → `CALIBRACAO_ABSTEVE_VOLUME`, `proposta.pesos: null`, `faixas_propostas: []`); pesos propostos
+  por grade determinística do simplexo (1.771 vetores), **AUC** contra Won/Lost em aritmética inteira,
+  corte ajuste/validação por `sha256(organization_id)` e **margem exigida na validação** (ganho só no ajuste
+  não propõe); faixas propostas por Youden recursivo, **contíguas e cobrindo 0..100** com cobertura
+  conferida por mecanismo (soma das faixas = coorte com desfecho); monotonicidade como **achado**;
+  dependências (instrumento W8-E03 e funil W8-E01) conferidas por versão e sha256, sem segunda verdade;
+  leitura pura provada por snapshot das 12 tabelas **e** pelo mecanismo `READ ONLY`; determinismo; saída sem
+  PII; HTML auto-contido; **proposta não aplicada** (`aplicado: false`, `exige_versao_nova: true`,
+  `aprovacao_humana: pendente`) e Data Contract com sha256 idêntico antes/depois; **regressão da suíte do
+  instrumento** exigida no próprio aceite.
+- **TEST:** `python3 scripts/agentes/verificar_calibracao_score.py --autoteste` (**51 itens + 7 mutações**)
+  e `bash scripts/agentes/teste_calibracao_score_aceite.sh` (PostgreSQL descartável `pg-analytics-calib` na
+  VPS de dev, container removido no fim). Evidência = saída completa com exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (arquivos novos + docs, **sem DDL** e sem migration) e remover o container
+  descartável do aceite. Nada em homolog/produção; nenhum serviço, nenhum cron, nenhuma credencial; nenhum
+  peso ou faixa gravado em lugar nenhum (a proposta é só relatório).
+- **RISK:** **médio** — leitura pura sobre base de dev, saída com contagem (sem PII), nenhum ato externo.
+  Riscos **declarados**: (a) **sobreajuste** (L3) — com ~30 organizações, 1.771 vetores e 4 classes de
+  desfecho a AUC de validação tem variância alta; a margem e a validação reduzem, não eliminam; (b) a
+  coorte é **acumulada** (L1: safra acumulada, não safra); (c) **associação não é causa** (L2) — o ganho de
+  AUC não estima efeito causal de mexer no score; (d) a faixa é **derivada**, não persistida (L4: criar
+  coluna exige versão nova do contrato); (e) o componente é medido pelo **último** valor (L5, viés de
+  sucessão); (f) Youden é **guloso** (L7: um caminho determinista, não o ótimo global).

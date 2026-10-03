@@ -3,6 +3,38 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W9 — Inteligência Avançada] — 03/10/2026
+
+### Added
+
+- **Calibração do score** (`TRE-W9-E01-T01`) — componente `hermes/agentes/analytics/calibracao_score.py`
+  (`calibracao-score-v1`) + contrato declarativo `hermes/agentes/analytics/calibracao-score-v1.json`:
+  **propõe** (nunca aplica) pesos e faixas novos para o score a partir do desfecho observado, em leitura
+  pura. A **pré-condição do card** ("volume real suficiente") virou mecanismo: coorte com desfecho
+  resolvido abaixo de `minimo_de_coorte` (30) ou com classe ausente/abaixo de `minimo_por_classe` (5) em
+  qualquer lado do ajuste → **absteve com exit 6** (`CALIBRACAO_ABSTEVE_VOLUME`), relatório sim e proposta
+  não. Com volume: busca **determinística** na grade do simplexo (passo 0,05, 1.771 vetores), métrica
+  **AUC** contra `Won=1/Lost=0` em aritmética inteira, corte ajuste/validação por
+  `sha256(organization_id) % 3 < 2`, desempate pela **menor distância L1** ao peso em vigor e **margem
+  exigida na VALIDAÇÃO** (+0,02) — ganho só no ajuste não propõe. Faixas propostas por **cortes de Youden
+  recursivos**, contíguas e cobrindo 0–100 (o componente confere a cobertura por mecanismo e recusa se não
+  fechar). O desfecho e a medição **não são reimplementados**: vêm de `alcance_por_organizacao` do
+  `funil.py` (W8-E01) e de `efetividade_score.py` (W8-E03), importados e conferidos por versão e sha256.
+  A proposta viaja marcada `aplicado: false`, `exige_versao_nova: true` e `aprovacao_humana: pendente`
+  (§10 do Data Contract + ADR-0004); `prod` recusa por desenho. Saída JSON + HTML auto-contido; sete
+  lacunas declaradas (safra, associação ≠ causa, sobreajuste, faixa derivada, viés de sucessão, `Lost` sem
+  ponto de perda, Youden guloso). Medido no aceite (VPS de dev, PostgreSQL descartável): incumbente com AUC
+  **0,000** na validação e **2 violações** de monotonicidade → proposta com AUC **1,000** na validação,
+  `ICP` zerado, `DATA_QUALITY` de 0,10 para 0,45 e **0 violações**; base fina (mesma base, contrato com
+  mínimo 41) → exit 6 e `proposta.pesos: null`.
+
+### Fixed
+
+- **Corte ajuste/validação não separava o que devia**: a primeira versão da sonda mostrou que amarrar os
+  limites das faixas ao **valor observado** (em vez dos cortes) abria buraco entre faixas justamente onde a
+  base é esparsa (43,40 → 47,75). Conserto: os limites saem dos cortes, e um item de suíte reprova a versão
+  antiga (a lacuna só aparece com valor esparso — o defeito não aparecia na fixture densa).
+
 ## [W8 — Analytics] — 03/10/2026
 
 ### Added

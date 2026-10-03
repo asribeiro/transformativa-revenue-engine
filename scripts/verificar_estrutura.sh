@@ -729,5 +729,67 @@ if [ -f scripts/agentes/teste_efetividade_score_aceite.sh ]; then
   fi
 fi
 
+# --- card TRE-W9-E01-T01 (Calibracao do score — proposta, nunca aplicacao) -----------------------------
+CONTRATO_CALIBRACAO="hermes/agentes/analytics/calibracao-score-v1.json"
+COMPONENTE_CALIBRACAO="hermes/agentes/analytics/calibracao_score.py"
+for arquivo in "$COMPONENTE_CALIBRACAO" "$CONTRATO_CALIBRACAO" scripts/agentes/verificar_calibracao_score.py \
+               scripts/agentes/teste_calibracao_score_aceite.sh docs/architecture/calibracao-score-v1.md \
+               docs/runbooks/calibracao-do-score.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E01-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E01-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CALIBRACAO" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CALIBRACAO" \
+       scripts/agentes/verificar_calibracao_score.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E01-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Gate, grade e dependencias sao LIDOS do contrato e conferidos pelo proprio componente.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CALIBRACAO" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E01-T01: --conferir recusou (contrato de dados, instrumento ou funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A medicao e o desfecho NAO podem ser reimplementados: tem de consumir o instrumento (W8-E03) e o funil.
+  for marca in "carregar_instrumento" "ler_tudo" "alcance_por_organizacao" "CODIGO_VOLUME"; do
+    if ! grep -q "$marca" "$COMPONENTE_CALIBRACAO"; then
+      echo "FALHOU card TRE-W9-E01-T01: componente sem $marca (dependencia do instrumento/funil)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in '"aplicado": False' '"exige_versao_nova": True' 'pendente'; do
+    if ! grep -q -F "$marca" "$COMPONENTE_CALIBRACAO"; then
+      echo "FALHOU card TRE-W9-E01-T01: componente sem a marca de proposta NAO aplicada ($marca)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in 'RECUSA por desenho (exit 4' 'READ ONLY' 'base_suficiente' 'minimo_de_coorte' \
+               'margem_de_ganho_na_validacao' 'lacunas_declaradas'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CALIBRACAO"; then
+      echo "FALHOU card TRE-W9-E01-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_calibracao_score_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_calibracao_score_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E01-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de declarar o marcador proprio E a regressao da dependencia (instrumento W8-E03).
+  for marca in 'ACEITE_CALIBRACAO_SCORE_OK' 'VERIFICADOR_EFETIVIDADE_PASS' 'exit 6' 'sha256'; do
+    if ! grep -q -F "$marca" scripts/agentes/teste_calibracao_score_aceite.sh; then
+      echo "FALHOU card TRE-W9-E01-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

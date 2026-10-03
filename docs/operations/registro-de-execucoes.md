@@ -2657,3 +2657,59 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   componente, funil e aceite).
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
   `TRE_EFETIVIDADE_TOKEN`, `TRE_EFETIVIDADE_SCORE_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.
+
+---
+
+## 2026-10-03 — TRE-W9-E01-T01: calibração do score (`calibracao-score-v1`) medida na VPS de dev
+
+- **Escopo entregue:** `hermes/agentes/analytics/calibracao_score.py` + contrato
+  `hermes/agentes/analytics/calibracao-score-v1.json`. O card **propõe** pesos e faixas novos a partir do
+  desfecho observado e **não aplica nada** (`aplicado: false`, `exige_versao_nova: true`,
+  `aprovacao_humana: pendente`). A pré-condição do card ("volume real suficiente") virou **gate medido**:
+  sem coorte com desfecho suficiente o componente **absteve com exit 6** e não há proposta. Dependências
+  importadas e conferidas por sha256: a medição e a leitura vêm do `efetividade_score.py` (W8-E03) e o
+  desfecho de `alcance_por_organizacao` do `funil.py` (W8-E01) — nada reimplementado.
+- **Suíte offline (`scripts/agentes/verificar_calibracao_score.py --autoteste`):** `PASS (51 itens,
+  0 falhas)` + `AUTOTESTE 7/7 mutações detectadas` (cada mutação reprova um item que o alvo limpo não
+  reprova: corte ajuste/validação ignorado, AUC invertida, base fina deixando de abster, desfecho do funil
+  ignorado, limites de faixa amarrados ao valor observado, margem de validação deixada de lado, proposta
+  marcada como aplicada).
+- **Aceite de ponta (`scripts/agentes/teste_calibracao_score_aceite.sh`, na VPS vmi3619453):** PostgreSQL
+  descartável `pg-analytics-calib` (127.0.0.1, imagem `postgres:16`, removido no fim) + migration 0001 +
+  base semeada (40 organizações, 160 componentes, 40 PRIORITY, 40 eventos de trilha Odoo → PostgreSQL) →
+  **`ACEITE_CALIBRACAO_SCORE_OK`, 32 itens, 0 falhas**.
+- **Números conferidos à mão no relatório** (`hash_do_relatorio ca8bcecf…`): gate **40/40/40** com
+  **21 Won / 19 Lost**, `base_suficiente: true`; corte por sha256 → ajuste **30** (16/14) e validação
+  **10** (5/5); **incumbente invertido** — AUC **0,107** no ajuste, **0,000** na validação e **0,085** na
+  coorte, com as faixas vigentes **anti-monotônicas** (Nurture **95%** > C **10,53%** > B **0%**, 2
+  violações); grade de **1.771 vetores** elegeu **`[0, 30, 25, 45]`** (L1 = **70** ao peso em vigor),
+  **aprovada** com AUC **0,911** no ajuste e **1,000** na validação (**ganho +1,000**, margem 0,02);
+  faixas propostas com cortes **47,31 / 51,81 / 54,51 / 56,76** → taxa de vitória **0% / 10% / 16,67% /
+  80% / 100%** e **0 violações** de monotonicidade. `status: PROPOSTA_GERADA`.
+- **Abstenção medida, não prometida:** a mesma base com um contrato de cópia com `minimo_de_coorte: 41`
+  (acima das 40 organizações) → **exit 6**, `CALIBRACAO_ABSTEVE_VOLUME`, motivo
+  `COORTE_COM_DESFECHO_ABAIXO_DO_MINIMO`, `proposta.status: ABSTEVE`, `proposta.pesos: null`,
+  `faixas_propostas: []` e `incumbente: null` (nada foi ajustado sobre base pequena).
+- **Leitura pura e não-aplicação provadas por mecanismo:** snapshot das 12 tabelas idêntico antes/depois;
+  transação `READ ONLY` recusando `INSERT` (`cannot execute INSERT in a read-only transaction`) e a escrita
+  recusada não deixando linha; **sha256 do Data Contract idêntico antes/depois** (a proposta não toca o
+  contrato). Determinismo (duas rodadas, mesmo `hash_do_relatorio`), saída sem PII e HTML auto-contido
+  também medidos. Hashes idênticos entre o repo e a cópia rodada na VPS para os 4 arquivos do card.
+- **Achados medidos durante o card (DETECTADO POR: sonda/suíte, antes de qualquer entrega):**
+  (1) limites de faixa amarrados ao **valor observado** deixavam buraco entre faixas com base esparsa
+  (43,40 → 47,75) — conserto: os limites saem dos **cortes** (defeito registrado no `CHANGELOG`, com item
+  de suíte que reprova a versão antiga); (2) o desfecho **perfeitamente separável** não oferece corte de
+  Youden (a recursão para em 2 grupos) e a proposta de faixas **não existe** — achado declarado em
+  `lacunas.faixas_nao_propostas`, e o aceite teve de semear desfecho **misto** para exercitar o caminho;
+  (3) a guarda de produção do componente é redundante com a da dependência (desligá-la não muda o exit 4)
+  — a mutação equivalente **não** é um dente válido e foi trocada pela do corte ajuste/validação.
+- **Ambiente:** nada em produção (ADR-005). O container descartável do aceite é removido no fim; os
+  containers do ambiente não foram tocados; nenhuma credencial real, nenhuma ponta externa.
+- **Lacunas declaradas (7, viajam no relatório):** L1 coorte acumulada (safra); L2 associação ≠ causa;
+  L3 sobreajuste (margem reduz, não elimina); L4 faixa derivada e não persistida; L5 viés de sucessão do
+  componente; L6 `Lost` sem ponto de perda; L7 Youden guloso (um caminho determinista, não o ótimo global).
+- **Evidência anexada ao card:** `aceite-calibracao-32ok.out`, `calibracao-score.json`,
+  `calibracao-score.html`, `calibracao-absteve.json`, `sha256-repo.out` e `sha256-vps.out`.
+- Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+  `TRE_CALIBRACAO_TOKEN`, `TRE_CALIBRACAO_SCORE_TOKEN`, `TRE_EFETIVIDADE_TOKEN` ou `TRE_FUNIL_TOKEN`
+  aparecer na evidência.
