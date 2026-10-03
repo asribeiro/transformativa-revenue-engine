@@ -304,11 +304,8 @@ def ler_aprovados(carregado: dict, prefixo: str, pedido_id: str | None = None,
     rc, saida, erro = executar_sql(sql_dos_aprovados(status_aprovado, pedido_id, limite), prefixo)
     if rc != 0:
         raise RecusaDeEnvio(MOTIVO_PORTA_DE_BANCO_AUSENTE, erro.strip()[:400])
-    linhas = linhas_de_json(saida)
-    if not linhas:
-        raise RecusaDeEnvio(MOTIVO_PORTA_DE_BANCO_AUSENTE,
-                            "a porta de banco nao devolveu JSON (o prefixo aponta para psql?)")
-    return linhas
+    # Lista VAZIA e resposta legitima (nao ha pedido aprovado); porta muda (rc != 0) ja RECUSOU acima.
+    return linhas_de_json(saida)
 
 
 def ler_claim(prefixo: str, chave: str) -> dict | None:
@@ -465,7 +462,11 @@ def enviar(carregado: dict, prefixo: str, ambiente: str, pedido_id: str, correla
            trilha: str | None) -> dict:
     politica = carregado["politica"]
     modulo_aprovacao = carregado["modulo_aprovacao"]
-    consulta = modulo_aprovacao.consultar(carregado["portao"], prefixo, pedido_id)
+    try:
+        consulta = modulo_aprovacao.consultar(carregado["portao"], prefixo, pedido_id)
+    except modulo_aprovacao.RecusaDeDecisao as recusa:
+        # pedido inexistente ou ilegivel na porta: o PORTAO nao liberou (nunca "envia assim mesmo")
+        raise RecusaDeEnvio(MOTIVO_PORTAO_NAO_LIBEROU, str(recusa)) from recusa
     if not consulta.get("pode_enviar"):
         raise RecusaDeEnvio(MOTIVO_PORTAO_NAO_LIBEROU,
                             consulta.get("motivo") or f"status {consulta.get('status')!r}")
@@ -671,7 +672,10 @@ def main(argv: list[str] | None = None) -> int:
                        "correlation_id": correlation_id, "iniciado_em": agora(),
                        "triggered_by": args.triggered_by}
     if args.fila:
-        relatorio["fila"] = fila(carregado, args.prefixo, args.ambiente, args.limite)
+        try:
+            relatorio["fila"] = fila(carregado, args.prefixo, args.ambiente, args.limite)
+        except RecusaDeEnvio as recusa:
+            relatorio["fila"] = {"veredito": RECUSADA, "motivo": recusa.motivo, "detalhe": recusa.detalhe}
         relatorio["veredito"] = relatorio["fila"]["veredito"]
     if args.enviar:
         resultados = []
