@@ -621,5 +621,50 @@ if [ -f "$ACEITE_E2E" ]; then
   fi
 fi
 
+# --- card TRE-W7-E03-T01 (atribuicao de lead do Google) ----------------------------------------------
+# Componente + contrato versionados, aceite com as pontas em loopback e suíte offline com dentes.
+ACEITE_GOOGLE="scripts/inbound/aceite-atribuicao-google.sh"
+for arquivo in hermes/inbound/google/atribuicao_google.py hermes/inbound/google/atribuicao-google-v1.json \
+               "$ACEITE_GOOGLE" scripts/inbound/verificar_atribuicao_google.py \
+               scripts/inbound/stub-google-ads-dev.py docs/runbooks/atribuicao-google-lead.md \
+               docs/architecture/atribuicao-google-v1.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_GOOGLE" ]; then
+  if ! bash -n "$ACEITE_GOOGLE" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E03-T01: $ACEITE_GOOGLE nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Sem resolvedor em loopback e sem guarda de producao o aceite nao mede o que promete.
+  for exigencia in '127.0.0.1' 'TRE_AMBIENTE=prod' 'pg-google-acc' 'GCLID_NAO_RESOLVIDO'; do
+    if ! grep -q "$exigencia" "$ACEITE_GOOGLE"; then
+      echo "FALHOU card TRE-W7-E03-T01: aceite sem '$exigencia'"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+# O contrato tem de declarar a tabela de atribuicao e as lacunas (o que nao e' medido fica escrito).
+for exigencia in '"tabela_de_atribuicao"' '"lacunas"' '"SEM_IDENTIFICADOR"' '"FORMULARIO_SEM_CAMPANHA"'; do
+  if ! grep -q "$exigencia" hermes/inbound/google/atribuicao-google-v1.json; then
+    echo "FALHOU card TRE-W7-E03-T01: contrato sem $exigencia"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+# Auditoria de fonte com o espaco declarado como pedaco proprio: o padrao antigo ("DE" + "LETE FROM")
+# avaliava para DELETEFROM e nunca casaria DELETE FROM (buraco medido nesta onda).
+if ! grep -q '" FROM"' hermes/inbound/google/atribuicao_google.py; then
+  echo "FALHOU card TRE-W7-E03-T01: auditoria de fonte sem o padrao com espaco separado"
+  FALHAS=$((FALHAS+1))
+fi
+
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

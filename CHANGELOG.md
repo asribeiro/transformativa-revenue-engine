@@ -3,6 +3,38 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W7 — Inbound/Multicanal] — 03/10/2026
+
+### Added
+
+- **Atribuicao de lead do Google v1** (`TRE-W7-E03-T01`) — componente
+  `hermes/inbound/google/atribuicao_google.py` (`google-lead-attribution-v1`) + contrato
+  `hermes/inbound/google/atribuicao-google-v1.json`: atribui um lead vindo do Google (formulario de
+  Lead Ads do Google Ads, ou formulario do site com `gclid`/`utm_*`) por **tabela declarada** — evidencia
+  `FORMULARIO_GOOGLE_ADS` (0,95), `GCLID_RESOLVIDO` (0,90), `GCLID_NAO_RESOLVIDO` (0,60),
+  `UTM_SOURCE_GOOGLE` (0,45) — e grava em `sales_intelligence.interactions` + trilha de idempotencia em
+  `sync_events` (envelope de atribuicao no `request_payload`). Sem evidencia nomeada o veredito e'
+  `NAO_ATRIBUIDO`/`SEM_IDENTIFICADOR` e **nada** e' gravado: fail-closed, nao se inventa canal/campanha.
+  `gclid` resolvido pela porta declarada da Ads API (loopback em dev, stub no aceite); contato
+  desconhecido → `SEM_VINCULO` sem inventar organizacao; escrita restrita a 2 tabelas e so INSERT;
+  resumo/assunto sem PII; guardas ADR-005 (`prod` recusa exit 4, segredo exit 5).
+- Suíte offline `scripts/inbound/verificar_atribuicao_google.py` (28 itens + autoteste 8/8 por mutacao)
+  e aceite E2E `scripts/inbound/aceite-atribuicao-google.sh` (PostgreSQL descartavel `pg-google-acc` +
+  stub local do resolvedor de `gclid`) medido na VPS do ambiente: `ACEITE_GOOGLE_LEADS_001_OK`
+  (35 itens / 0 falhas) com 3/3 dentes. Runbook `docs/runbooks/atribuicao-google-lead.md` e arquitetura
+  `docs/architecture/atribuicao-google-v1.md`, com as **lacunas declaradas** (Ads API real, outbox de
+  lead inbound e criacao de organizacao/contato ficam fora deste card).
+
+### Fixed
+
+- **Auditoria de fonte que nao via `DELETE FROM`** (`TRE-W7-E03-T01`, achado): o padrao herdado do
+  W6-E05 (`"DE" + "LETE FROM"`) avalia para `DELETEFROM` (sem espaco) e nunca casaria o comando real; o
+  novo componente declara o espaco como pedaco proprio e a suíte prova os dois lados. O mesmo padrao
+  permanece no componente do W6-E05 — registrado como achado no runbook deste card.
+- **Faixa de docstring lida por contagem de aspas** (`TRE-W7-E03-T01`): duas docstrings de uma linha
+  seguidas desalinham a regra "linha que comeca com aspas liga/desliga" e fazem o texto declarado ser
+  lido como codigo (falso positivo de `UPDATE`). A faixa agora vem do `ast`.
+
 ## [W6 — Outbound] — 02/10/2026
 
 ### Added

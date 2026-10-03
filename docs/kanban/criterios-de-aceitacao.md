@@ -588,3 +588,31 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
   — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
   caminho outbound provado ponta a ponta.
+
+## TRE-W7-E03-T01 — Google lead attribution
+
+- **ACCEPTANCE:** a atribuicao nasce de evidencia nomeada (`FORMULARIO_GOOGLE_ADS`, `GCLID_RESOLVIDO`,
+  `GCLID_NAO_RESOLVIDO`, `UTM_SOURCE_GOOGLE`), com a confianca declarada em contrato (0,95 / 0,90 / 0,60 /
+  0,45); sem evidencia o veredito e' `NAO_ATRIBUIDO`/`SEM_IDENTIFICADOR` e **nenhuma** linha em
+  `interactions` (fail-closed). Lead sem e-mail e sem telefone e' recusado; `google_ads_lead_form` sem
+  `campanha_id` e' `FORMULARIO_SEM_CAMPANHA`. Contato desconhecido → `SEM_VINCULO` (nao se inventa
+  organizacao/contato). Idempotencia por `google-lead:<fonte>:<lead_id>`: replay = `JA_INGERIDO` sem
+  linha nova. Escrita restrita a `interactions` e `sync_events`, so INSERT; resumo/assunto sem PII;
+  `ai_confidence` NULL. Guardas ADR-005: dev com banco local + resolvedor em loopback, homolog com
+  aprovacao registrada, prod recusa (exit 4), segredo na saida recusa (exit 5).
+- **TEST:** suíte offline `scripts/inbound/verificar_atribuicao_google.py` (28 itens, `--autoteste` com
+  8/8 dentes) e aceite E2E `scripts/inbound/aceite-atribuicao-google.sh` na VPS do ambiente
+  (PostgreSQL descartavel `pg-google-acc` + stub local do resolvedor de `gclid` em 127.0.0.1) —
+  `ACEITE_GOOGLE_LEADS_001_OK`, 35 itens / 0 falhas + 3/3 dentes.
+- **ROLLBACK:** reverter o commit da branch `feature/TRE-W7-E03-T01` (nada em producao: ADR-005); em
+  runtime `--desfazer <chave>` grava trilha `DESFEITO` (a trilha original nao e' apagada). Sem DDL.
+- **RISK:** medio — decide atribuicao de canal/campanha a partir de ponta externa e escreve em
+  `interactions`/`sync_events`; mitigado por tabela declarada, fail-closed, idempotencia e aceite medido.
+- **Components afetados:** `hermes/inbound/google/atribuicao_google.py` e `atribuicao-google-v1.json`
+  (novos), `hermes/inbound/google/exemplos/` (novos), `scripts/inbound/verificar_atribuicao_google.py`,
+  `scripts/inbound/aceite-atribuicao-google.sh`, `scripts/inbound/stub-google-ads-dev.py` (novos),
+  `docs/architecture/atribuicao-google-v1.md`, `docs/runbooks/atribuicao-google-lead.md`,
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** W6-E07-T01. **Destrava:** W8-E02 (conversao por segmento) e a leitura de canal do
+  funil — sem atribuicao medida, a conversao por canal mede o vazio.
