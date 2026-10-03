@@ -2784,3 +2784,31 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   nova); a análise é histórica, não previsão por lead; a grade cobre 24 h porque o contrato de dados não
   declara expediente; `contacts` sem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido pelo irmão
   de envio, então não há corte por canal nesta versão.
+
+
+## 2026-10-03 — TRE-W9-E05-T01 (Automated nurture / `nutricao-automatica-v1`) — entrega medida
+
+- **Comando (offline):** `python3 scripts/agentes/verificar_nutricao_automatica.py --autoteste` →
+  `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` + `AUTOTESTE OK (5/5 mutacoes detectadas)`,
+  exit 0. As fixtures sao montadas NA FORMA dos contratos dos pais (dias, faixas e fuso LIDOS de
+  `melhor-horario-v1.json`), e o dente da guarda de escrita planta um statement numa copia do componente
+  para provar que ela REPROVA (nao apenas documenta).
+- **Comando (E2E, VPS do ambiente):** `bash scripts/agentes/teste_nutricao_automatica_aceite.sh` em
+  `/tmp/tre-e05t01b` na VPS `vmi3619453` (usuario `tre-deploy`) → `ACEITE_NUTRICAO_AUTOMATICA_001_OK`
+  (36 itens, 0 falhas), exit 0. O aceite subiu PostgreSQL descartavel `pg-analytics-nurture-acc`
+  (`postgres:16`), aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 8 organizacoes / 3 canais
+  / bloqueios de opt-out / desfecho no funil e, na FORMA declarada pelos contratos, 5 envios com
+  `content_reference` (`envio:...`) e 2 respostas (`EMAIL_RESPOSTA`/`INTERESSE`) na MESMA celula de janela.
+- **O que ficou provado no E2E (cadeia real, nao fixture de leitura):** o pai do canal mediu a base com
+  pre-condicao ATENDIDA e 7 previsoes; o pai do horario escolheu a melhor janela com amostra; o nurture
+  derivou 28 toques (4 por organizacao) com canal = o previsto pelo pai, janela = a do pai, `due_at`
+  alinhado ao dia x faixa e nunca no passado, fila deterministica e todo toque com aprovacao humana
+  obrigatoria; abstencao medida quando a janela do pai vem sem amostra; duas rodadas com a mesma referencia
+  → mesmo `hash_do_plano`; contagem das 12 tabelas identica antes/depois (12|28|8); `--ambiente prod` →
+  exit 4.
+- **Segredos:** nenhum valor nesta entrada. O componente nao abre banco; o aceite usa container descartavel
+  em loopback e a senha do Postgres descartavel e' literal de teste do proprio aceite.
+- **Lacunas declaradas (medidas, nao escondidas):** o plano nao materializa nem agenda toques; nao avalia o
+  estagio do funil na derivacao (a parada por avanco/resposta e' condicao carregada em cada toque); janela
+  global e canal de coorte (sem segmentacao); cadencia declarada, nao medida; sem feriados/fuso do
+  destinatario; sem deduplicacao entre rodadas.

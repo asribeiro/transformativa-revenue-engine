@@ -2181,3 +2181,30 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
 - Mede o horário **observado** (histórico), não previsão por lead (W9-E02).
 - Grade cobre 24 h porque o Data Contract V1 não declara expediente comercial.
 - `contacts` não tem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido hoje pelo irmão de envio.
+
+## [W9-E05-T01] — Automated nurture (`nutricao-automatica-v1`) — 2026-10-03
+
+### Added
+
+- `hermes/agentes/analytics/nutricao_automatica.py` + `hermes/agentes/analytics/nutricao-automatica-v1.json`:
+  o nurture **planeja**, nao mede e nao envia. Consome os DOIS relatorios dos pais — `previsao-canal-v1`
+  (W9-E03-T01: canal previsto por organizacao e bloqueios de opt-out) e `melhor-horario-v1` (W9-E04-T01:
+  melhor janela dia x faixa e fuso declarado) — e deriva a fila de proximos toques com cadencia declarada de
+  4 passos (0/4/11/25 dias), `due_at_utc` calculado (ancora no dia da janela, passo deslocado ao dia-alvo,
+  nunca no passado e monotonico) e ordem deterministica (due_at, canal, organizacao). **Nada envia**: todo
+  toque carrega `exige_aprovacao_humana: true` e as condicoes de parada. Fail-closed: sem base de canal ou
+  sem janela com amostra o plano ABSTEM por inteiro, com a lista `faltando`. O componente **nao tem porta de
+  banco** (nenhum SQL/escrita) e a auditoria de codigo reprova statement de escrita.
+- `scripts/agentes/verificar_nutricao_automatica.py`: suite offline (**42 itens**) com fixtures na forma dos
+  contratos dos pais e **autoteste por mutacao (5/5)**; inclui o dente da guarda de escrita.
+- `scripts/agentes/teste_nutricao_automatica_aceite.sh`: aceite E2E da CADEIA em PostgreSQL descartavel
+  (`pg-analytics-nurture-acc`), **36 itens** medidos, com regressao das duas suites offline dos pais,
+  abstencao medida, reproducibilidade e prova de somente leitura nas 12 tabelas.
+- `docs/architecture/nutricao-automatica-v1.md` e `docs/runbooks/nutricao-automatica.md`.
+
+### Security
+
+- `prod` RECUSADO exit 4 (ADR-005) antes de qualquer leitura; `homolog` exige `--confirmo`; saida sem PII
+  (UUID, canal, janela e datas); fail-closed para contrato/dependencia incoerentes, fuso ilegivel e janela
+  fora da grade; nada e' materializado (sem tabela, sem cron, sem evento) — executar o toque e' do caminho
+  de outbound com aprovacao humana registrada.

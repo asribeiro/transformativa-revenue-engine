@@ -807,3 +807,51 @@ por organização; quem envia é o caminho de outbound (W6), com a própria pol�
   **Destrava:** `TRE-W9-E05-T01` (Automated nurture) na decisão de *quando* nutrir.
 - **Lacuna medida (declarada, não escondida):** o card mede o **horário observado** de desfecho, não uma
   previsão por lead; "best timing" aqui é melhor janela **com amostra**, e base pequena abstém.
+
+
+## TRE-W9-E05-T01 — Automated nurture (W9 · Inteligencia Avancada)
+
+- **ACCEPTANCE:** `hermes/agentes/analytics/nutricao_automatica.py` + contrato
+  `hermes/agentes/analytics/nutricao-automatica-v1.json` entregam a FILA de proximos toques de nurture por
+  organizacao, derivada dos DOIS relatorios dos pais: canal = `canal_previsto` do `previsao-canal-v1`
+  (W9-E03-T01), janela = `melhor_janela` (dia x faixa) e fuso do `melhor-horario-v1` (W9-E04-T01) — canal e
+  horario NAO sao remedidos. Cadencia declarada de 4 passos (0/4/11/25 dias) com `due_at_utc` calculado
+  (ancora = primeira ocorrencia do dia da janela a partir da referencia; cada passo avanca o intervalo e
+  volta ao dia-alvo, nunca no passado e monotonico por organizacao) e fila ordenada por
+  (due_at, canal, organizacao). Fail-closed: sem `previsao_emitida` do pai OU sem `melhor_janela` o plano
+  ABSTEM por inteiro (`PLANO_ABSTIDO`, `fila=[]`, lista `faltando`). **NADA ENVIA**: todo toque carrega
+  `exige_aprovacao_humana: true` + as condicoes de parada (opt-out/do_not_contact, resposta positiva com
+  handoff humano, resposta negativa, avanco no funil, `max_toques`). Guardas: `prod` RECUSA exit 4 (ADR-005)
+  antes de ler entrada; `homolog` exige `--confirmo`; o componente **nao tem porta de banco** (nenhum SQL,
+  nenhuma escrita) e a auditoria de codigo reprova statement de escrita; PII ausente (so' UUID, canal,
+  janela e datas).
+- **TEST:** offline `python3 scripts/agentes/verificar_nutricao_automatica.py --autoteste` →
+  `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` + **AUTOTESTE OK (5/5 mutacoes)**; E2E
+  `bash scripts/agentes/teste_nutricao_automatica_aceite.sh` (VPS, PostgreSQL descartavel
+  `pg-analytics-nurture-acc` + migration 0001) → `ACEITE_NUTRICAO_AUTOMATICA_001_OK` (36 itens, 0 falhas),
+  com regressao das duas suites offline dos pais, 7 organizacoes previstas → 28 toques, abstencao medida,
+  reproducibilidade (mesmo `hash_do_plano`) e contagem das 12 tabelas identica antes/depois; portao de
+  estrutura `PASS (0 falhas)`.
+- **ROLLBACK:** reverter o commit — arquivos novos (`nutricao_automatica.py`,
+  `nutricao-automatica-v1.json`, `verificar_nutricao_automatica.py`,
+  `teste_nutricao_automatica_aceite.sh`, `docs/architecture/nutricao-automatica-v1.md`,
+  `docs/runbooks/nutricao-automatica.md`), uma secao em criterios/registro/CHANGELOG e o bloco do portao.
+  ZERO migration, ZERO escrita, ZERO cron, ZERO credencial; container descartavel sai no `trap`.
+- **RISK:** BAIXO-MEDIO — o componente nao abre banco e nao escreve; o risco real e' de POLITICA (cadencia e
+  condicoes de parada DECLARADAS, nao medidas) e de INTERPRETACAO (o plano e' pedido, nao ato: por isso
+  `exige_aprovacao_humana` e' obrigatorio e o prod recusa). Limites declarados: janela global e canal de
+  coorte (sem segmentacao), sem avaliacao do estagio do funil na derivacao, sem materializacao/agendamento e
+  sem deduplicacao entre rodadas.
+- **Components afetados:** `hermes/agentes/analytics/nutricao-automatica-v1.json` (novo),
+  `hermes/agentes/analytics/nutricao_automatica.py` (novo),
+  `scripts/agentes/verificar_nutricao_automatica.py` (novo),
+  `scripts/agentes/teste_nutricao_automatica_aceite.sh` (novo),
+  `docs/architecture/nutricao-automatica-v1.md` (novo), `docs/runbooks/nutricao-automatica.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`. Reuso (nao alterado): `previsao_canal.py`/`previsao-canal-v1.json`
+  (W9-E03-T01) e `melhor_horario.py`/`melhor-horario-v1.json` (W9-E04-T01).
+- **Depends on:** `TRE-W9-E03-T01` (melhor canal previsto) e `TRE-W9-E04-T01` (melhor janela) — ambos
+  medidos e fechados. **Destrava:** nada nesta onda (P3, ultima peca do E05); a execucao dos toques e' do
+  caminho de outbound com aprovacao humana (W6).
+- **Lacuna medida (declarada, nao escondida):** o card entrega o PLANO do nurture, nao o nurture em execucao
+  — materializar/agendar exige contrato novo + aprovacao (doc 12 §10).

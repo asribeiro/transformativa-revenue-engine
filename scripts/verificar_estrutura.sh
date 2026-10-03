@@ -888,5 +888,66 @@ if [ -f "hermes/analytics/melhor_horario.py" ]; then
   fi
 fi
 
+# --- card TRE-W9-E05-T01 (Nurture automatizado — plano de toques, nunca envio) -------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o componente compila, o
+# contrato e' conferido pelo PROPRIO componente (`--conferir`) e o aceite e' bash valido com container
+# DESCARTavel. O nurture NAO tem porta de banco: a guarda de escrita (auditoria de codigo) tem de existir.
+CONTRATO_NURTURE="hermes/agentes/analytics/nutricao-automatica-v1.json"
+COMPONENTE_NURTURE="hermes/agentes/analytics/nutricao_automatica.py"
+ACEITE_NURTURE="scripts/agentes/teste_nutricao_automatica_aceite.sh"
+for arquivo in "$COMPONENTE_NURTURE" "$CONTRATO_NURTURE" scripts/agentes/verificar_nutricao_automatica.py \
+               "$ACEITE_NURTURE" docs/architecture/nutricao-automatica-v1.md docs/runbooks/nutricao-automatica.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_NURTURE" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_NURTURE" \
+       scripts/agentes/verificar_nutricao_automatica.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Quem decide se contrato e dependencia estao coerentes e' o proprio componente, nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_NURTURE" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: --conferir recusou (contrato, pais ou guarda de escrita)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O plano CONSOME os dois pais (canal e janela) em vez de remedir; e' pedido, nunca envio; e recusa prod.
+  for marca in 'previsao-canal-v1' 'melhor-horario-v1' 'exige_aprovacao_humana' 'NAO_ENVIA' \
+               'PROD_RECUSADO' 'auditar_proprio_codigo' 'porta de banco'; do
+    if ! grep -q -F "$marca" "$COMPONENTE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: componente sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in 'RECUSA por desenho (exit 4' 'NUNCA envia' 'exige_aprovacao_humana' 'lacunas_declaradas' \
+               'pre_condicao' 'porta de banco' 'condicoes_de_parada'; do
+    if ! grep -q -F "$marca" "$CONTRATO_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f "$ACEITE_NURTURE" ]; then
+  if ! bash -n "$ACEITE_NURTURE" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite mede a CADEIA: regressao dos dois pais, container descartavel e leitura pura antes/depois.
+  for marca in 'ACEITE_NUTRICAO_AUTOMATICA_001_OK' 'VERIFICADOR_PREVISAO_CANAL_PASS' 'VERIFICADOR_MELHOR_HORARIO_PASS' \
+               'pg-analytics-nurture-acc' 'PLANO_ABSTIDO' 'ANTES' 'DEPOIS'; do
+    if ! grep -q -F "$marca" "$ACEITE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
