@@ -125,6 +125,9 @@ for _ in $(seq 1 30); do
   sleep 0.3
 done
 item "stub respondeu em 127.0.0.1:$PORTA_API" $?
+# A sonda de prontidao acima JA' e' uma chamada registrada: tudo daqui pra frente e' medido em DELTA,
+# senao a contagem de chamadas do aceite acusa o proprio aquecimento (defeito medido na rodada 5).
+CHAMADAS_BASE=$(wc -l <"$BASE/stub.jsonl")
 
 export TRE_AMBIENTE=dev
 export TRE_ODOO_API_URL="http://127.0.0.1:$PORTA_API"
@@ -152,14 +155,14 @@ done
 $COMPONENTE --propagar --saida "$BASE/saida-dry" >"$BASE/dry.out" 2>&1
 item "dry-run conclui (exit 0)" $([ $? -eq 0 ]; echo $?)
 item "dry-run nao escreve trilha" $([ "$(psql_q "select count(*) from sales_intelligence.sync_events;")" = "0" ]; echo $?)
-DRY_CHAMADAS=$(wc -l <"$BASE/stub.jsonl")
+DRY_CHAMADAS=$(( $(wc -l <"$BASE/stub.jsonl") - CHAMADAS_BASE ))
 item "dry-run nao chama a API (medido: $DRY_CHAMADAS chamadas)" $([ "$DRY_CHAMADAS" = "0" ]; echo $?)
 
 $COMPONENTE --propagar --confirmo --saida "$BASE/saida" >"$BASE/rodada.out" 2>&1
 RC_RODADA=$?
 item "rodada confirmada conclui (exit 0)" $([ $RC_RODADA -eq 0 ]; echo $?)
 ATUALIZADOS=$(psql_q "select count(*) from sales_intelligence.sync_events where status='ATUALIZADO';")
-item "2 respostas propagadas (INTERESSE + OPT_OUT + SEM_INTERESSE): medido $ATUALIZADOS" $([ "$ATUALIZADOS" = "3" ]; echo $?)
+item "3 respostas propagadas (INTERESSE + OPT_OUT + SEM_INTERESSE): medido $ATUALIZADOS" $([ "$ATUALIZADOS" = "3" ]; echo $?)
 SEM_ATO=$(psql_q "select count(*) from sales_intelligence.sync_events where status='SEM_ATO';")
 item "BOUNCE registrado como SEM_ATO (medido: $SEM_ATO)" $([ "$SEM_ATO" = "1" ]; echo $?)
 SEM_VINCULO=$(psql_q "select count(*) from sales_intelligence.sync_events where status='SEM_VINCULO';")
@@ -168,7 +171,7 @@ TOTAL_TRILHA=$(psql_q "select count(*) from sales_intelligence.sync_events;")
 item "uma linha de trilha por interaction (medido: $TOTAL_TRILHA)" $([ "$TOTAL_TRILHA" = "5" ]; echo $?)
 
 echo "== 6. o que saiu do componente (registro do stub) =="
-CHAMADAS=$(wc -l <"$BASE/stub.jsonl")
+CHAMADAS=$(( $(wc -l <"$BASE/stub.jsonl") - CHAMADAS_BASE ))
 item "3 atos x (ler + upsert + atividade) = 9 chamadas (medido: $CHAMADAS)" $([ "$CHAMADAS" = "9" ]; echo $?)
 python3 - "$BASE/stub.jsonl" >"$BASE/stub-resumo.txt" <<'PY'
 import json, sys
@@ -197,7 +200,7 @@ $COMPONENTE --propagar --confirmo --saida "$BASE/saida2" >"$BASE/replay.out" 2>&
 item "replay conclui (exit 0)" $?
 DEPOIS_TRILHA=$(psql_q "select count(*) from sales_intelligence.sync_events;")
 item "replay nao duplica trilha (medido: $DEPOIS_TRILHA)" $([ "$DEPOIS_TRILHA" = "5" ]; echo $?)
-DEPOIS_CHAMADAS=$(wc -l <"$BASE/stub.jsonl")
+DEPOIS_CHAMADAS=$(( $(wc -l <"$BASE/stub.jsonl") - CHAMADAS_BASE ))
 item "replay nao chama a API (medido: $DEPOIS_CHAMADAS chamadas)" $([ "$DEPOIS_CHAMADAS" = "9" ]; echo $?)
 REPLAYS=$(grep -c "JA_ATUALIZADO" "$BASE/replay.out")
 item "replay devolve JA_ATUALIZADO (medido: $REPLAYS)" $([ "$REPLAYS" -ge 3 ]; echo $?)

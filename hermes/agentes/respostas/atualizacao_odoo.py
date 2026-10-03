@@ -25,8 +25,13 @@ Invariantes deste componente (cada um com item de aceite):
   5. VINCULO NAO SE INVENTA: sem `odoo_lead_id` (ou, quando a categoria exige contato, sem
      `contato.odoo_partner_id`), a resposta NAO vira escrita: a linha fica registrada em
      `sync_events` com `status = SEM_VINCULO` (auditavel, elegivel a reprocesso).
-  6. IDEMPOTENCIA: a chave e' `odoo-resposta:<interaction_id>` (indice unico em `sync_events`).
-     Replay devolve `JA_ATUALIZADO`, nao grava de novo e **nao chama a API**.
+  6. IDEMPOTENCIA: a chave do ato e' `odoo-resposta:<interaction_id>` (indice unico em
+     `sync_events`). Replay devolve `JA_ATUALIZADO`, nao grava de novo e **nao chama a API**. Cada
+     DECISAO tem chave propria (`:sem_ato`, `:sem_vinculo`, `:sem_config`, `:falha`) porque
+     `sync_events.idempotency_key` e' UNICO: a mesma interaction pode ter SEM_VINCULO hoje e ATUALIZADO
+     amanhã, e a trilha das duas tem de coexistir. A gravacao e' sempre
+     `ON CONFLICT (idempotency_key) DO NOTHING`: replay de uma decisao ja' registrada nao colide nem
+     duplica (defeito medido no aceite: `duplicate key value violates unique constraint`).
   7. SEGREDO: a chave da API so por `TRE_ODOO_API_KEY`; ela nunca entra em stdout, relatorio, trilha
      ou payload auditado; a gravacao confere e RECUSA se o valor aparecer (`SENHA_VAZADA`, exit 5).
   8. GUARDAS DE AMBIENTE (ADR-005 — nada nasce em producao): `dev` exige API em LOOPBACK
@@ -414,6 +419,23 @@ def chave_de(interacao: dict) -> str:
     return PREFIXO_CHAVE + str(interacao.get("interaction_id") or interacao.get("id"))
 
 
+# Cada DECISAO tem chave propria (o ato fica com a chave canonica, sem sufixo, porque e' ele que
+# `--desfazer` e o replay procuram). Sem isso, a MESMA interaction com SEM_VINCULO hoje e ATUALIZADO
+# amanha colide no indice unico de `sync_events.idempotency_key` — defeito medido no aceite.
+SUFIXOS_DE_STATUS = {
+    "ATUALIZADO": "",
+    "SEM_ATO": ":sem_ato",
+    "SEM_VINCULO": ":sem_vinculo",
+    "SEM_CONFIG_DE_ATIVIDADE": ":sem_config",
+    "FALHA": ":falha",
+    "DESFEITO": "#desfeito",
+}
+
+
+def chave_de_trilha(chave: str, status: str) -> str:
+    return chave + SUFIXOS_DE_STATUS.get(status, ":" + status.lower())
+
+
 def ja_propagado(porta: PortaBanco, chave: str) -> dict | None:
     linhas = porta.consultar(
         f"SELECT id::text, status, entity_id::text FROM {TABELA_SYNC} "
@@ -437,7 +459,14 @@ def ler_interacoes(porta: PortaBanco, limite: int) -> list:
 
 
 def gravar_trilha(porta: PortaBanco, chave: str, interacao: dict, status: str, operacao: str,
-                  payload: dict, erro: str | None = None) -> None:
+                  payload: dict, erro: str | None = None) -> bool:
+    """Grava UMA linha de trilha. Devolve True se a linha nasceu, False se ja' existia.
+
+    `ON CONFLICT (idempotency_key) DO NOTHING` e' o que torna o replay seguro: a decisao ja' registrada
+    (ex.: SEM_ATO de uma rodada anterior) nao colide nem duplica. A chave leva o sufixo da DECISAO
+    (`chave_de_trilha`) porque o indice e' unico e decisoes diferentes da mesma interaction precisam
+    coexistir.
+    """
     def q(valor):
         if valor is None:
             return "NULL"
@@ -446,9 +475,11 @@ def gravar_trilha(porta: PortaBanco, chave: str, interacao: dict, status: str, o
     sql = (f"INSERT INTO {TABELA_SYNC} (id, entity_type, entity_id, source_system, target_system, "
            f"operation, source_version, idempotency_key, status, request_payload, error_message, "
            f"completed_at) VALUES (gen_random_uuid(), 'interaction', {q(interacao.get('interaction_id'))}, "
-           f"'sales_intelligence', 'odoo', {q(operacao)}, {q(VERSAO)}, {q(chave)}, {q(status)}, "
-           f"{q(json.dumps(payload, ensure_ascii=False, sort_keys=True))}, {q(erro)}, NOW())")
-    porta.executar(sql)
+           f"'sales_intelligence', 'odoo', {q(operacao)}, {q(VERSAO)}, "
+           f"{q(chave_de_trilha(chave, status))}, {q(status)}, "
+           f"{q(json.dumps(payload, ensure_ascii=False, sort_keys=True))}, {q(erro)}, NOW()) "
+           f"ON CONFLICT (idempotency_key) DO NOTHING RETURNING id")
+    return bool(porta.executar(sql))
 
 
 # --------------------------------------------------------------------------------------------
@@ -759,16 +790,19 @@ def propagar(config: Configuracao, contrato: dict, saida: Saida, confirmo: bool,
             contagem["sem_ato"] += 1
             saida.evento(evento="SEM_ATO", interaction_id=interacao["interaction_id"],
                          categoria=plano.get("categoria"), motivo=plano["motivo"])
-            if confirmo:
-                gravar_trilha(porta, chave, interacao, "SEM_ATO", "NENHUMA", {"motivo": plano["motivo"]})
+            if confirmo and not gravar_trilha(porta, chave, interacao, "SEM_ATO", "NENHUMA",
+                                              {"motivo": plano["motivo"]}):
+                saida.evento(evento="JA_REGISTRADO", interaction_id=interacao["interaction_id"],
+                             status="SEM_ATO", detalhe="decisao ja' estava na trilha (replay)")
             continue
         if plano["status"] in ("SEM_VINCULO", "SEM_CONFIG_DE_ATIVIDADE"):
             contagem["sem_vinculo" if plano["status"] == "SEM_VINCULO" else "sem_config"] += 1
             saida.evento(evento=plano["status"], interaction_id=interacao["interaction_id"],
                          categoria=plano.get("categoria"), motivo=plano["motivo"])
-            if confirmo:
-                gravar_trilha(porta, chave, interacao, plano["status"], "NENHUMA",
-                              {"motivo": plano["motivo"]})
+            if confirmo and not gravar_trilha(porta, chave, interacao, plano["status"], "NENHUMA",
+                                              {"motivo": plano["motivo"]}):
+                saida.evento(evento="JA_REGISTRADO", interaction_id=interacao["interaction_id"],
+                             status=plano["status"], detalhe="decisao ja' estava na trilha (replay)")
             continue
         if not confirmo:
             contagem["dry_run"] += 1
@@ -825,7 +859,8 @@ def desfazer(config: Configuracao, saida: Saida, chave: str, confirmo: bool) -> 
         f"(gen_random_uuid(), 'interaction', {pq(anterior.get('entity_id'))}, 'odoo', "
         f"'sales_intelligence', 'DESFAZER', '{VERSAO}', "
         f"'{chave.replace(chr(39), chr(39) * 2)}#desfeito', 'DESFEITO', "
-        f"'{{\"marca\":\"DESFEITO\",\"preserva\":\"ATUALIZADO\"}}', NOW())")
+        f"'{{\"marca\":\"DESFEITO\",\"preserva\":\"ATUALIZADO\"}}', NOW()) "
+        "ON CONFLICT (idempotency_key) DO NOTHING")
     saida.evento(evento="DESFEITO", chave=chave,
                  detalhe="a linha ATUALIZADO e' preservada; o desfazer e' uma linha nova de trilha")
     saida.fechar("OK")

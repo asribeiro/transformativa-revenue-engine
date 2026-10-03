@@ -423,6 +423,38 @@ def testar_envelope_de_banco():
         M.subprocess.run = original
 
 
+class PortaFalsa:
+    """Porta de banco de mentira: registra os SQL e devolve o que o teste mandar."""
+
+    def __init__(self, resultado):
+        self.resultado = resultado
+        self.sqls = []
+
+    def executar(self, sql):
+        self.sqls.append(sql)
+        return self.resultado
+
+
+def testar_trilha_idempotente():
+    porta = PortaFalsa([{"id": "novo"}])
+    criou = M.gravar_trilha(porta, "odoo-resposta:x", {"interaction_id": "x"}, "ATUALIZADO",
+                            "ATUALIZACAO_CRM", {})
+    item("60. a trilha grava com ON CONFLICT (idempotency_key) DO NOTHING e diz se a linha nasceu",
+         criou is True and "ON CONFLICT (idempotency_key) DO NOTHING" in porta.sqls[0],
+         porta.sqls[0][-140:])
+    vazia = PortaFalsa([])
+    criou2 = M.gravar_trilha(vazia, "odoo-resposta:y", {"interaction_id": "y"}, "SEM_ATO", "NENHUMA", {})
+    item("61. replay de uma decisao ja' registrada nao cria linha nova (nada de duplicate key)",
+         criou2 is False, str(criou2))
+    item("62. decisoes diferentes da mesma interaction tem chaves distintas (o indice e' unico)",
+         M.chave_de_trilha("odoo-resposta:z", "SEM_ATO") == "odoo-resposta:z:sem_ato"
+         and M.chave_de_trilha("odoo-resposta:z", "SEM_VINCULO") == "odoo-resposta:z:sem_vinculo"
+         and M.chave_de_trilha("odoo-resposta:z", "ATUALIZADO") == "odoo-resposta:z"
+         and M.chave_de_trilha("odoo-resposta:z", "FALHA") == "odoo-resposta:z:falha",
+         str([M.chave_de_trilha("odoo-resposta:z", s)
+              for s in ("ATUALIZADO", "SEM_ATO", "SEM_VINCULO", "FALHA")]))
+
+
 # ---------------------------------------------------------------- 7. propagacao e desfazer
 def testar_propagacao():
     modulo = carregar()
@@ -498,6 +530,14 @@ DENTES = [
      "        return (\"WITH dados AS (SELECT \" + coluna + \" AS payload \" + origem + \") \"",
      "        return (\"WITH dados AS (\" + coluna + \" AS payload \" + origem + \") \"",
      "59. o SQL do envelope e' bem formado (coluna e FROM separados, dentro do WITH)"),
+    ("trilha-sem-chave-por-decisao", "chaves distintas",
+     "    return chave + SUFIXOS_DE_STATUS.get(status, \":\" + status.lower())",
+     "    return chave",
+     "62. decisoes diferentes da mesma interaction tem chaves distintas (o indice e' unico)"),
+    ("trilha-sem-on-conflict", "ON CONFLICT (idempotency_key) DO NOTHING",
+     "           f\"ON CONFLICT (idempotency_key) DO NOTHING RETURNING id\")",
+     "           f\"RETURNING id\")",
+     "60. a trilha grava com ON CONFLICT (idempotency_key) DO NOTHING e diz se a linha nasceu"),
 ]
 
 
@@ -550,6 +590,7 @@ def main() -> int:
         testar_execucao()
         testar_envelope_http()
         testar_envelope_de_banco()
+        testar_trilha_idempotente()
         testar_propagacao()
         print(f"{'PASS' if not FALHAS else 'FALHOU'} ({len(ITENS)} itens, {len(FALHAS)} falhas)")
         return 0 if not FALHAS else 1
@@ -559,6 +600,7 @@ def main() -> int:
     testar_execucao()
     testar_envelope_http()
     testar_envelope_de_banco()
+    testar_trilha_idempotente()
     testar_propagacao()
     veredito = "PASS" if not FALHAS else "FALHOU"
     print(f"{veredito} ({len(ITENS)} itens, {len(FALHAS)} falhas)")
