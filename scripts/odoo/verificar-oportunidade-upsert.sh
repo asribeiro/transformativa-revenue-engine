@@ -264,10 +264,16 @@ texto = texto.replace(
 
     # ---------------------------------------------------------------- dente 3
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
+    # Ancora do dente 3 atualizada (a antiga, "if existentes:", apodreceu quando o upsert por
+    # identidade foi reescrito no fecho do card): o mesmo ramo "ha' registro casado -> ATUALIZA"
+    # hoje e' o `if registros:` de `_executar_upsert` (controllers/api_controlada.py), logo abaixo
+    # da guarda de ambiguidade `if len(registros) > 1:`. Mutar esse ramo mantem a MESMA intencao do
+    # dente (desligar o upsert -> cria sempre -> duplicata) e a ancora continua EXATA: se o codigo
+    # mudar de novo, a mutacao nao aplica e o harness falha fechado.
     MUT3="$(mutar_python "$DENTE_DIR/m3/controllers/api_controlada.py" '
 texto = texto.replace(
-    "            if existentes:\n",
-    "            if False:  # mutacao: upsert por identidade desligado (cria sempre)\n",
+    "        if registros:\n",
+    "        if False:  # mutacao: upsert por identidade desligado (cria sempre)\n",
     1,
 )
 ')"
