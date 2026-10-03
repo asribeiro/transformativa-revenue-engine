@@ -681,3 +681,53 @@ Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos 
   existe coluna de tier; criar exige versão nova do contrato, §10/ADR-0004 — lacuna L4); (d) o componente é
   medido pelo **último** valor (lacuna L5, viés de sucessão de score); (e) tocar artefato do card pai —
   mitigado por refatoração sem mudança de saída, com o aceite do pai reexecutado **dentro** deste aceite.
+
+## TRE-W9-E03-T01 — Best channel prediction
+
+Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos e o card nasceu sem eles).
+**Medir canal não é enviar por ele:** o card mede a efetividade histórica de cada canal e prevê o melhor canal
+por organização; quem envia é o caminho de outbound (W6), com a própria política de compliance.
+
+- **PRÉ-CONDIÇÃO `dados multicanal` (não é card, doc 11):** forma testável declarada no contrato —
+  **≥ 2 canais** com `base_suficiente` (≥ 3 organizações abordadas por canal) e **≥ 4 organizações** com
+  interação registrada. Abaixo disso o relatório sai com `pre_condicao_dados_multicanal.atendida=false`,
+  `previsao_emitida=false`, a lista `faltando` (exigido × obtido) e `previsoes=[]` — **não prevê**. A medição por
+  canal continua publicada (é ela que mostra o que falta).
+- **ACCEPTANCE:** `ACEITE_PREVISAO_CANAL_OK` (0 falhas) — pré-condição medida na base; efetividade por canal
+  (organizações abordadas, outbound, respostas INBOUND classificadas, taxa de resposta, avanço no endpoint
+  `Reunião`, lift contra a taxa-base, Won/Lost e `base_suficiente`); **opt-out é bloqueio**:
+  `do_not_contact` bloqueia todos os canais e `opt_out_email`/`opt_out_whatsapp` bloqueiam o canal
+  correspondente — canal bloqueado **nunca** aparece como previsto e o motivo é nomeado na saída; previsão por
+  organização com taxa, `amostra_do_canal` e desempate **declarado** (taxa → resposta própria → interação
+  própria → `preferred_channel` → ordem do vocabulário); canal fora do vocabulário e organização sem canal
+  elegível em **lacuna nomeada**, nunca em chute; leitura pura provada por snapshot das 12 tabelas **e** pelo
+  mecanismo `READ ONLY`; determinismo (mesmo `hash_do_relatorio`); saída sem PII; dashboard HTML auto-contido;
+  **integração com o pai** (o avanço por canal fecha com `Reunião.alcancadas` do relatório do funil, sem segunda
+  verdade para o alcance).
+- **TEST:** `python3 scripts/agentes/verificar_previsao_canal.py --autoteste` (**23 itens + 8 mutações**) e
+  `bash scripts/agentes/teste_previsao_canal_aceite.sh` (PostgreSQL descartável `pg-analytics-canal` na VPS de dev
+  vmi3619453, container removido no fim). Evidência = saída completa com exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (componente, contrato, suíte, aceite e docs — arquivos **novos**, **sem DDL**,
+  sem migration, sem cron, sem credencial) e remover o container descartável do aceite. Nenhum artefato de card
+  anterior é alterado (`funil.py` é apenas importado, não modificado). Nada em homolog/produção.
+- **RISK:** **médio** — leitura pura sobre base de dev, saída com contagem e UUID (sem PII), nenhum ato externo,
+  nenhum envio. Riscos **declarados**: (a) **prior de canal da coorte, não personalização por contato** — amostra
+  por organização é pequena (lacuna L4); (b) **associação não é causa** — a v1 mede separação com
+  `base_suficiente`, não efeito causal (lacuna L2); (c) o Data Contract V1 **não congela vocabulário de
+  `interactions.channel`** — o vocabulário é declarado no contrato do componente e canal novo cai em lacuna até
+  ser declarado (lacuna L1); (d) `LINKEDIN` **não tem coluna de opt-out** no schema: o bloqueio vem de
+  `do_not_contact` e a ausência é declarada (lacuna L3); (e) coorte acumulada, sem comparação entre safras
+  (lacuna L5); (f) a previsão **não é ato** — virar `recommendations` exige versão nova do contrato de dados +
+  approval (lacuna L7).
+- **Defeito MEDIDO e corrigido no próprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o bloco de
+  números conferidos à mão do aceite chamava `O(i)` sobre uma **string** de formatação (`O = "000000%02d-..."`),
+  o que derrubava o bloco com `TypeError: 'str' object is not callable` — e o aceite, que contava apenas as
+  linhas `OK`/`FALHOU` impressas, **fechou PASS sem executar os 5 itens seguintes** (opt-out como bloqueio,
+  `do_not_contact`, lacunas nomeadas, contrato/dependência). Conserto: `def O(i)` + **item que exige o bloco
+  inteiro rodando até o fim** (`bloco ... rodou ate' o fim (exit 0)`, medido pelo exit code do heredoc). Sem
+  esse item, um bloco que morre no meio passa por suíte verde — o defeito era a **prova**, não o componente.
+  Remedição depois do conserto: **`ACEITE_PREVISAO_CANAL_OK`, 42 itens, 0 falhas**.
+- **Lacunas declaradas (7, viajam no relatório):** L1 vocabulário de canal não congelado no Data Contract;
+  L2 associação ≠ causa; L3 `LINKEDIN` sem coluna de opt-out própria; L4 prior de coorte, não personalização;
+  L5 coorte acumulada; L6 canal ≠ mensagem (`response_category` diz que houve resposta classificada, não a
+  qualidade); L7 previsão não é ato.

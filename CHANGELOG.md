@@ -3,6 +3,39 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W9 — Inteligência Avançada] — 03/10/2026
+
+### Added
+
+- **Previsão do melhor canal** (`TRE-W9-E03-T01`) — componente `hermes/agentes/analytics/previsao_canal.py`
+  (`previsao-canal-v1`) + contrato declarativo `hermes/agentes/analytics/previsao-canal-v1.json`: **mede** a
+  efetividade histórica de cada canal declarado e **prevê** o melhor canal por organização, sem enviar nada.
+  Lê a base canônica de `sales_intelligence` (leitura pura, transação `READ ONLY`) e cruza, por organização, a
+  **trilha de canal** de `interactions` (abordagens OUTBOUND, respostas INBOUND classificadas, taxa de resposta)
+  com o **desfecho no funil** obtido de `alcance_por_organizacao` do `funil.py` (card W8-E01-T01, importado — o
+  alcance não é reimplementado). Entrega: **pré-condição `dados multicanal` medida** (≥ 2 canais com base
+  suficiente e ≥ 4 organizações com interação; não atendida ⇒ `previsao_emitida=false`, `previsoes=[]` e a lista
+  `faltando` — fail-closed, não prevê com base de brinquedo); **efetividade por canal** (organizações abordadas,
+  outbound, respostas, taxa de resposta, avanço no endpoint `Reunião`, **lift** contra a taxa-base, Won/Lost e
+  `base_suficiente`); **ranking de canais elegíveis**; e **previsão por organização** com `amostra_do_canal` e
+  desempate **declarado** (taxa → resposta própria → interação própria → `preferred_channel` → ordem do
+  vocabulário). **Opt-out é bloqueio, não preferência** (contrato §9): `do_not_contact` bloqueia todos os canais,
+  `opt_out_email`/`opt_out_whatsapp` bloqueiam o canal correspondente, e canal bloqueado **nunca** aparece como
+  previsto — aparece com o motivo, contado em lacuna. O vocabulário de canal é **lido** do contrato (o Data
+  Contract V1 não congela valores de `interactions.channel`), valor fora da lista cai em lacuna nomeada e nada é
+  mapeado por semelhança. Saída em **JSON** + **HTML auto-contido**; sete lacunas declaradas (vocabulário em
+  aberto, associação ≠ causa, LinkedIn sem coluna de opt-out, prior de coorte e não personalização, coorte
+  acumulada, canal ≠ mensagem, a previsão não é ato) viajam no relatório.
+
+### Fixed
+
+- **Aceite da previsão de canal — prova que fechava sem rodar** (`TRE-W9-E03-T01`, detectado pelo próprio
+  aceite antes da entrega): o bloco de números conferidos à mão chamava `O(i)` sobre uma string de formatação e
+  morria com `TypeError: 'str' object is not callable`; como o instrumento contava apenas as linhas `OK`/`FALHOU`
+  impressas, ele **fechou PASS (34 itens) sem executar os 5 itens seguintes**. Conserto: `def O(i)` e um item
+  que exige cada bloco rodando **até o fim** (medido pelo exit code do heredoc) — sem ele, bloco que morre no
+  meio passa por suíte verde. Remedido: `ACEITE_PREVISAO_CANAL_OK`, 42 itens, 0 falhas.
+
 ## [W8 — Analytics] — 03/10/2026
 
 ### Added

@@ -1,0 +1,151 @@
+{
+  "versao": "previsao-canal-v1",
+  "card": "TRE-W9-E03-T01",
+  "onda": "W9 (Inteligencia Avancada)",
+  "titulo": "Previsao do melhor canal — efetividade historica por canal, com opt-out como bloqueio",
+  "pre_condicao": {
+    "nome": "dados multicanal",
+    "natureza": "condicao do mundo real, nao card (doc 11: 'Depends on: dados multicanal')",
+    "forma_testavel": "a previsao por organizacao so' e' emitida se `minimo_canais_com_base` canais distintos tiverem `base_suficiente` e a base tiver `minimo_organizacoes_com_evidencia` organizacoes com interacao registrada",
+    "quando_nao_atendida": "o relatorio e' gerado com `pre_condicao_dados_multicanal.atendida=false`, `previsao_emitida=false`, a lista `faltando` e `previsoes=[]` — o componente NAO preve' com base insuficiente (fail-closed), e a medicao por canal continua sendo publicada"
+  },
+  "componente": {
+    "nome": "previsao_canal",
+    "arquivo": "hermes/agentes/analytics/previsao_canal.py",
+    "papel": "MEDIR a efetividade historica de cada canal de interacao na base canonica de sales_intelligence (leitura pura) e, SO' quando a pre-condicao de dados multicanal e' atendida, PREVER o melhor canal por organizacao, respeitando opt-out como bloqueio e declarando a amostra de cada previsao; saida JSON + HTML auto-contido",
+    "nao_faz": [
+      "NAO escreve: leitura pura, SO' SELECT, dentro de transacao READ ONLY (nenhum INSERT/UPDATE/DELETE/DDL, nenhuma tabela, nenhuma coluna e nenhuma metrica persistida)",
+      "NAO envia nada: nao dispara e-mail, WhatsApp nem LinkedIn; nao cria recomendacao, nao muda estagio e nao toca o Odoo — a previsao e' um numero medido, nao um ato",
+      "NAO contorna opt-out: `do_not_contact`/`opt_out_email`/`opt_out_whatsapp` sao BLOQUEIO (contrato §9), nao preferencia — canal bloqueado nunca aparece como previsto, aparece como bloqueado e com o motivo",
+      "NAO usa `preferred_channel` como permissao: preferencia e' apenas DESEMPATE declarado entre canais ja' elegiveis",
+      "NAO le PII: nao seleciona e-mail, telefone, WhatsApp, CNPJ nem nome — a unidade e' a organizacao (UUID canonico do contrato §3) e o contato entra apenas como CONTAGEM de bloqueio e canal preferido",
+      "NAO reimplementa o funil: o desfecho por organizacao vem de `alcance_por_organizacao` do funil.py (card W8-E01-T01), importado e conferido; copiar a regra criaria duas verdades para o mesmo numero",
+      "NAO inventa canal: valor de `interactions.channel` fora do vocabulario declarado NAO vira canal — entra em lacuna (fail-closed), nunca mapeado por semelhanca",
+      "NAO inventa base: canal com menos de `minimo_organizacoes_por_canal` organizacoes abordadas nao sustenta previsao (`base_suficiente=false`) e nao entra no ranking elegivel",
+      "NAO estima efeito causal nem personaliza por contato: a v1 mede associacao entre canal e desfecho na coorte e o declara (lacuna L2/L4)",
+      "NAO publica em homolog/producao nem monta servico: o relatorio e' artefato gerado no ambiente de dev (ADR-005)"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "docs/data/data_contract_v1.json#compliance.required_fields — `do_not_contact`, `opt_out_email`, `opt_out_whatsapp`, `preferred_channel`: DONO das colunas de bloqueio e preferencia",
+      "docs/data/DATA_CONTRACT_V1.md §7 (vocabularios fechados), §7.1 (funil, dono Odoo) e §9 (compliance: 'nao contatar opt-out — `do_not_contact`/`opt_out_*` sao bloqueio, nao preferencia')",
+      "docs/data/DATA_CONTRACT_V1.md §4 (schema: `interactions.channel` VARCHAR(30), `direction`, `response_category`, `occurred_at`)",
+      "hermes/agentes/analytics/funil-v1.json (funil-v1, card W8-E01-T01) — DEPENDENCIA: define o alcance por organizacao usado como desfecho",
+      "hermes/scores/nba/politica-nba-v1.json (canal_de_linkedin = LINKEDIN) e hermes/agents/outreach/politica-envio-v1.json (channel = EMAIL) — evidencia de que canais sao gravados pelo projeto",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "escolher o melhor MOMENTO (W9-E04-T01) e automatizar o nurture (W9-E05-T01): dependem deste card e nao sao executados aqui",
+      "calibracao de score (W9-E01-T01) e score preditivo (W9-E02-T01)",
+      "materializar a previsao em tabela ou recomendacao (`recommendations`): exige versao nova do contrato de dados e approval — este card nao cria coluna nem linha",
+      "enviar pela via prevista: quem envia e' o caminho de outbound (W6) com a propria politica de compliance",
+      "servir o relatorio por HTTP, autenticar usuario ou hospedar pagina: passo de operador/homolog"
+    ]
+  },
+  "dependencia": {
+    "componente": "hermes/agentes/analytics/funil.py",
+    "contrato": "hermes/agentes/analytics/funil-v1.json",
+    "versao_exigida": "funil-v1",
+    "funcao_usada": "alcance_por_organizacao (nivel linear alcancado + rotulos com evidencia propria)",
+    "funcoes_reusadas": ["montar_consultas", "extrair_base", "resolver_evidencia", "executar_consulta", "auditar_fonte", "validar_ambiente", "normalizar_instante"],
+    "regra": "sem a funcao de alcance ou com versao diferente, RECUSA (DEPENDENCIA_*): o desfecho nao e' recalculado por conta propria",
+    "prova": "o sha256 do contrato do pai e o nome da funcao viajam no relatorio; o aceite confere que a taxa por canal fecha com o resumo do funil"
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3)",
+    "coorte": "organizacoes vivas (deleted_at IS NULL) com pelo menos uma interacao registrada na janela",
+    "regra": "organizacao sem interacao NAO recebe previsao; interacao de organizacao desconhecida nao entra em nenhum canal — vai para lacuna nomeada"
+  },
+  "vocabulario_de_canal": {
+    "declarado_por": "este contrato (o Data Contract V1 nao congela vocabulario para `interactions.channel` — lacuna L1)",
+    "regra": "o codigo NAO carrega canal literal: a lista e o bloqueio de cada canal sao LIDOS daqui a cada rodada; valor gravado fora da lista vai para lacuna e nunca e' mapeado por semelhanca",
+    "canais": [
+      { "nome": "EMAIL", "bloqueio": "opt_out_email",
+        "evidencia_do_projeto": "hermes/agents/outreach/politica-envio-v1.json (channel=EMAIL) e hermes/scores/nba/nba.py (i.channel = 'EMAIL')" },
+      { "nome": "WHATSAPP", "bloqueio": "opt_out_whatsapp",
+        "evidencia_do_projeto": "card TRE-W7-E05-T01 (workflow de WhatsApp); coluna `opt_out_whatsapp` existe no schema (contrato §9)" },
+      { "nome": "LINKEDIN", "bloqueio": "do_not_contact",
+        "evidencia_do_projeto": "hermes/scores/nba/politica-nba-v1.json (canal_de_linkedin=LINKEDIN) e hermes/agents/outreach/politica-outreach-v1.json (LINKEDIN bloqueado por do_not_contact)" }
+    ]
+  },
+  "parametros": {
+    "endpoint_principal": {
+      "nome": "Reunião",
+      "nivel_minimo": 6,
+      "por_que": "primeiro estagio em que o fato e' do Odoo (contrato §7.1): e' o primeiro marco comercial de fato, nao um sinal do proprio motor"
+    },
+    "endpoints": [
+      { "nome": "Engajamento", "nivel_minimo": 5 },
+      { "nome": "Reunião", "nivel_minimo": 6 },
+      { "nome": "Won", "rotulo": "Won" }
+    ],
+    "minimo_organizacoes_por_canal": 3,
+    "minimo_canais_com_base": 2,
+    "minimo_organizacoes_com_evidencia": 4,
+    "regra_do_endpoint": "atingiu(organizacao, endpoint) = nivel linear alcancado >= nivel_minimo OU rotulo terminal presente na evidencia propria (Won/Lost) — a mesma nocao de alcance do funil",
+    "taxa_base": "avanco entre as organizacoes com abordagem OUTBOUND em QUALQUER canal declarado (a uniao dos canais); canal sem taxa-base zero viaja com lift null",
+    "regra_do_desempate": "entre canais elegiveis e nao bloqueados, a ordem e' (1) maior taxa de avanco do canal, (2) resposta propria da organizacao naquele canal (INBOUND com `response_category`), (3) canal com interacao propria da organizacao, (4) `preferred_channel` do contato, (5) ordem do vocabulario — determinismo sem heuristica escondida",
+    "referencia_temporal": "`--agora` (ISO) ou o relogio da rodada; entra no relatorio como `referencia_temporal`, mas NAO entra no hash",
+    "base_suficiente": "canal com menos de `minimo_organizacoes_por_canal` organizacoes abordadas viaja com `base_suficiente: false` e fica FORA do ranking elegivel — numero medido, previsao NAO emitida por ele"
+  },
+  "metricas": {
+    "por_canal": ["canal", "organizacoes_abordadas", "interacoes_outbound", "organizacoes_com_resposta", "respostas_inbound", "taxa_de_resposta_pct", "endpoints (atingiram/taxa_pct/lift)", "taxa_de_avanco_pct", "lift_avanco", "ganharam", "perderam", "base_suficiente", "elegivel_para_previsao", "bloqueio"],
+    "ranking_de_canais": "canais com `base_suficiente=true`, ordenados pela taxa de avanco (desc) com empate desfeito pelo nome do canal",
+    "previsoes": ["organization_id", "canal_previsto", "taxa_de_avanco_pct", "lift_avanco", "amostra_do_canal", "resposta_propria", "canal_com_interacao_propria", "preferido", "empate_desfeito_por", "canais_considerados", "canais_bloqueados"],
+    "pre_condicao_dados_multicanal": ["atendida", "canais_com_base", "canais_suficientes", "organizacoes_com_interacao", "exigidos", "faltando"]
+  },
+  "fontes_do_funil": [
+    "BASE_ORGANIZACOES", "PESQUISA_CONCLUIDA", "SINAIS", "SCORE_PRIORITY", "CONTATO_COM_CANAL",
+    "INTERACAO_OUTBOUND", "INTERACAO_INBOUND_CLASSIFICADA", "RECOMENDACAO_REUNIAO", "TRILHA_ESTAGIO"
+  ],
+  "fontes_proprias": {
+    "INTERACOES_POR_CANAL": {
+      "tabela": "sales_intelligence.interactions",
+      "coluna_tempo": "occurred_at",
+      "recorte": "GROUP BY organization_id, channel, direction (a contagem e' o dado; nenhum conteudo de mensagem e' lido)",
+      "campos": "organization_id, channel, direction, total, respondidas (INBOUND com response_category), primeira e ultima ocorrencia",
+      "papel": "efetividade por canal, taxa de resposta, evidencia propria da organizacao e base de cada canal"
+    },
+    "BLOQUEIOS_POR_ORGANIZACAO": {
+      "tabela": "sales_intelligence.contacts",
+      "coluna_tempo": "created_at",
+      "recorte": "GROUP BY organization_id (somente CONTAGENS e `preferred_channel`: nenhuma coluna de contato direto entra no SELECT)",
+      "campos": "organization_id, contatos, do_not_contact, opt_out_email, opt_out_whatsapp, canais_preferidos",
+      "papel": "bloqueio por opt-out/do_not_contact e desempate por preferencia declarada"
+    }
+  },
+  "lacunas": {
+    "interacao_de_organizacao_desconhecida": "linha de `interactions` de organizacao que nao esta' na base viva",
+    "canal_fora_do_vocabulario": "valor de `channel` gravado que nao esta' no vocabulario declarado (lista mascarada; nunca mapeado por semelhanca)",
+    "organizacao_sem_interacao": "organizacao viva sem nenhuma interacao na janela — nao entra na coorte nem recebe previsao",
+    "organizacao_sem_contato": "organizacao da coorte sem contato registrado: nao ha' bloqueio nem preferencia a aplicar (declarado, nao presumido)",
+    "organizacao_sem_canal_elegivel": "organizacao cujos canais estao todos bloqueados ou sem base suficiente — vai para lacuna, NAO para chute",
+    "canal_bloqueado_por_do_not_contact": "canal bloqueado porque a organizacao tem contato com `do_not_contact` (bloqueio de TODOS os canais)",
+    "canal_bloqueado_por_opt_out": "por canal: contato com `opt_out_email`/`opt_out_whatsapp`",
+    "inbound_sem_classificacao": "interacao INBOUND sem `response_category`: conta como inbound, nao como resposta classificada",
+    "canal_sem_base_suficiente": "lista de canais abaixo de `minimo_organizacoes_por_canal` (medidos, fora do ranking)",
+    "previsao_nao_emitida": "pre-condicao de dados multicanal nao atendida: nenhuma previsao e' emitida"
+  },
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<sales|funil|analytics|aceite>... psql ...`, via --porta-banco/TRE_CANAL_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV); homolog exige --confirmo; prod e' RECUSA por desenho (exit 4)",
+    "leitura_pura": "toda consulta roda com default_transaction_read_only = on em dois `-c` (SET e depois SELECT: medido no W8-E01-T01 que um unico `-c` NAO vale) E a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "contrato": "vocabulario de canal vazio/duplicado, bloqueio de canal desconhecido, minimos incoerentes, endpoint fora dos estagios do pai e divergencia com as fontes do funil RECUSAM antes de ler o banco",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se valor de TRE_CANAL_TOKEN, TRE_PREVISAO_CANAL_TOKEN ou TRE_FUNIL_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "a saida carrega contagem e o UUID canonico da organizacao; nenhuma coluna de e-mail, telefone, WhatsApp, CNPJ ou nome e' selecionada (o aceite mede isso na saida)"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, referencia_temporal, contrato (versao + sha256), dependencia (funcao + contrato do pai + sha256), base (organizacoes + digest), parametros, pre_condicao_dados_multicanal, por_canal, ranking_de_canais, previsoes, resumo, lacunas, lacunas_declaradas, fontes e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com a pre-condicao, a tabela por canal com lift, o ranking e as previsoes com os bloqueios",
+    "determinismo": "a mesma base com o mesmo contrato, a mesma janela e a mesma referencia temporal produz o MESMO relatorio; `gerado_em` e `referencia_temporal` sao a unica diferenca e NAO entram no hash_do_relatorio"
+  },
+  "lacunas_declaradas": [
+    "L1: o Data Contract V1 nao congela vocabulario para `interactions.channel` (VARCHAR(30) declarado no schema, valores nao) — o vocabulario desta v1 e' DECLARADO por este contrato (EMAIL, WHATSAPP, LINKEDIN) a partir dos canais que o projeto ja' grava; canal novo cai em lacuna ate' ser declarado aqui, e fechar o vocabulario no contrato de dados e' decisao do dono",
+    "L2: associacao nao e' causa. Canal com taxa de avanco maior pode refletir o perfil da organizacao, o momento ou a mensagem — a v1 mede separacao declarada com `base_suficiente`, NAO estima efeito causal (isso pede desenho experimental)",
+    "L3: `LINKEDIN` nao tem coluna de opt-out no schema (existem `opt_out_email` e `opt_out_whatsapp`): o bloqueio de LinkedIn se apoia em `do_not_contact` e a ausencia de coluna propria e' declarada, nao presumida",
+    "L4: previsao e' PRIOR DE CANAL DA COORTE, nao personalizacao por contato: a amostra por organizacao e' pequena e a v1 nao ajusta por setor, porte nem historico individual — o desempate usa resposta propria e preferencia declarada, nada mais",
+    "L5: a coorte e' acumulada (L5 do funil): a janela filtra pela coluna de tempo de cada fonte, mas comparacao entre safras nao esta' na v1",
+    "L6: medir canal NAO e' medir mensagem: `response_category` diz que houve resposta classificada, nao a qualidade dela; performance de mensagem e' W8-E04-T01",
+    "L7: a previsao nao e' ato: nenhum envio, nenhuma recomendacao e nenhuma linha gravada. Virar `recommendations` exige versao nova do contrato de dados + approval (contrato §10)"
+  ]
+}

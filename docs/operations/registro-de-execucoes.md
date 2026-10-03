@@ -2657,3 +2657,65 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   componente, funil e aceite).
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
   `TRE_EFETIVIDADE_TOKEN`, `TRE_EFETIVIDADE_SCORE_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.
+
+---
+
+## 2026-10-03 — TRE-W9-E03-T01: previsão do melhor canal (`previsao-canal-v1`) medida na VPS de dev
+
+- **Escopo entregue:** `hermes/agentes/analytics/previsao_canal.py` + contrato
+  `hermes/agentes/analytics/previsao-canal-v1.json`. O card **mede** a efetividade histórica de cada canal
+  declarado (abordadas, outbound, respostas INBOUND classificadas, taxa de resposta, avanço no endpoint
+  `Reunião`, lift contra a taxa-base, Won/Lost, `base_suficiente`) e **prevê** o melhor canal por organização —
+  **apenas** quando a pré-condição `dados multicanal` é atendida. O desfecho vem do `funil.py`
+  (`alcance_por_organizacao`, card W8-E01-T01, **importado**, não reimplementado) e o vocabulário de canal é
+  **lido** de `previsao-canal-v1.json` (o Data Contract V1 não congela valores de `interactions.channel`).
+- **Pré-condição `dados multicanal` (não é card):** forma testável = ≥ 2 canais com base suficiente (≥ 3
+  organizações abordadas) e ≥ 4 organizações com interação. Não atendida ⇒ `atendida=false`,
+  `previsao_emitida=false`, `previsoes=[]` e `faltando` com exigido × obtido (fail-closed).
+- **Suíte offline (`scripts/agentes/verificar_previsao_canal.py --autoteste`):** `PASS (23 itens, 0 falhas)`
+  + `AUTOTESTE 8/8 mutações detectadas` (bloqueio de opt-out desligado no contrato, pré-condição afrouxada,
+  guarda de produção desligada, endpoint principal fora da lista, nível ignorado no avanço, ranking invertido,
+  bloqueio ignorado na escolha e vocabulário com nome duplicado). Base sintética conferida à mão em três
+  cenários: efetividade (**A**), **empate de taxa com os quatro desempates declarados** (B) e pré-condição não
+  atendida (C).
+- **Aceite de ponta (`scripts/agentes/teste_previsao_canal_aceite.sh`, na VPS vmi3619453):** PostgreSQL
+  descartável `pg-analytics-canal` (127.0.0.1, imagem `postgres:16`, removido no fim) + migration 0001 + base
+  semeada (8 organizações; 3 canais; `opt_out_email` em 2, `opt_out_whatsapp` em 1, `do_not_contact` em 1;
+  organização sem contato; canal `SMS` fora do vocabulário; direção `INTERNAL`; trilha Odoo → PostgreSQL com
+  Won/Lost/Reunião/Proposta) → **`ACEITE_PREVISAO_CANAL_OK`, 42 itens, 0 falhas**.
+- **Números conferidos à mão no banco:** pré-condição **ATENDIDA** (2 canais suficientes, 8 organizações com
+  interação); taxa-base de avanço **62,50%**; **EMAIL 4 abordadas / 50,00% / lift 0,80x**, **WHATSAPP 3 / 100,00%
+  / lift 1,60x**, **LINKEDIN 2 / sem base** (fora do ranking); taxa de resposta **EMAIL 3/7 = 42,86%** e
+  **WHATSAPP 1/5 = 20,00%**; **7 previsões** (WHATSAPP 6, EMAIL 1) com O1/O2/O4/O6/O7/O8 → WHATSAPP e O5 → EMAIL;
+  **opt-out é bloqueio** (O2/O7 com EMAIL bloqueado por `opt_out_email`, O5 com WHATSAPP bloqueado por
+  `opt_out_whatsapp`) e **`do_not_contact` bloqueia os 3 canais** (O3 sem previsão); lacunas nomeadas: `SMS`
+  fora do vocabulário = 1, direção estranha = 1, inbound sem `response_category` = 1, organização sem contato = 1,
+  canais sem base = `[LINKEDIN]`.
+- **Integração com o pai:** o avanço somado por canal fecha com o relatório do funil (**5 = `Reunião.alcancadas`**)
+  e Won/Lost dos canais batem com o resumo do funil (**1 e 1**) — o alcance não é recalculado por conta própria;
+  nenhuma previsão contradiz bloqueio (canal previsto nunca está em `canais_bloqueados`) e toda previsão viaja com
+  `amostra_do_canal ≥ 3`.
+- **Leitura pura provada por mecanismo:** snapshot das 12 tabelas igual antes/depois, transação `READ ONLY`
+  recusando `INSERT` (`cannot execute insert in a read-only transaction`) e a escrita recusada **não deixando
+  linha**; auditoria da fonte reprovando verbo de escrita antes de qualquer conexão. Determinismo (duas rodadas,
+  mesmo `hash_do_relatorio`), saída **sem PII** (nenhum e-mail/nome/domínio da base semeada, nenhuma coluna de
+  contato direto no SQL das fontes próprias) e dashboard HTML auto-contido também medidos.
+- **Defeito MEDIDO e corrigido no próprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o bloco de
+  números conferidos à mão chamava `O(i)` sobre uma **string** de formatação e morria com
+  `TypeError: 'str' object is not callable`; como o aceite contava só as linhas `OK`/`FALHOU` impressas, ele
+  **fechou PASS (34 itens) sem rodar os 5 itens seguintes** (opt-out como bloqueio, `do_not_contact`, lacunas
+  nomeadas, contrato/dependência). Conserto: `def O(i)` **e** um item que exige o bloco inteiro rodando até o
+  fim (`bloco ... rodou ate' o fim (exit 0)`, medido pelo exit code do heredoc) — o defeito era a **prova**, não
+  o componente. Remedição: **42 itens, 0 falhas**.
+- **Portão de estrutura:** `bash scripts/verificar_estrutura.sh` → **PASS (0 falhas)**, com o bloco do card
+  (arquivos versionados, `py_compile`, `--conferir` contra o Data Contract e a dependência, marcas de guarda
+  `RECUSA por desenho (exit 4)` / `READ ONLY` / `lacunas_declaradas` / `base_suficiente` / `dados_multicanal`,
+  presença de `alcance_por_organizacao` no componente e `ACEITE_PREVISAO_CANAL_OK` no aceite).
+- **Ambiente:** nada em produção (ADR-005). O container descartável do aceite é removido no fim; os containers do
+  ambiente não foram tocados; nenhuma credencial real, nenhuma ponta externa, nenhum envio.
+- **Lacunas declaradas (7, viajam no relatório):** L1 vocabulário de canal não congelado no Data Contract;
+  L2 associação ≠ causa; L3 `LINKEDIN` sem coluna de opt-out própria; L4 prior de canal da coorte, não
+  personalização por contato; L5 coorte acumulada; L6 canal ≠ mensagem; L7 a previsão não é ato (virar
+  `recommendations` exige versão nova do contrato + approval).
+- Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de `TRE_CANAL_TOKEN`,
+  `TRE_PREVISAO_CANAL_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.
