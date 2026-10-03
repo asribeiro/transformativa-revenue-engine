@@ -1,0 +1,68 @@
+{
+  "delivery_id": "TRE-W2",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W2 — Odoo (modulo transformativa_sales_ai e seguranca)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-03",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote RLS/tenant/isolamento"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W2-E07-T01",
+      "title": "Configurar ACLs/security (carteira x tenant)",
+      "stage": "VALIDATION",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_e0b1bcbf",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "FAIL",
+          "evidence": "modulo do develop (git archive 393bc45) medido em dupla descartavel propria (postgres:16 + odoo:19.0); os 26 testes do modulo passam, mas a prova negativa do aceite REPROVA: AC3 exige que a superficie de ACL do modulo seja SO tf.process.opportunity (2 ACLs) e o develop tem tambem tf.evento.outbox (5 ACLs). Nao houve escrita no banco do dev: a medicao usa containers descartaveis (o proprio aceite mede a instancia do dev antes/depois).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-acl-modulo.sh (dupla descartavel postgres:16+odoo:19.0)",
+                "exit": 1,
+                "resultado": "RESULTADO: ACL_FALHOU (51 itens, 4 falha(s)) — 2 passadas identicas (so rotulos de container/tmp diferem)"
+              }
+            ],
+            "motivo": "AC3 do aceite (provar_acl_modulo.py) exige que a superficie de ACL do modulo seja SO o modelo tf.process.opportunity (2 ACLs); o develop adicionou o modelo tf.evento.outbox com 3 ACLs (card posterior TRE-W3-E03-T01, commit d0b8d5a) -> 5 ACLs, e o harness do E07 (commit 060c369, ultimo a toca-lo) reprova: 'superficie de ACL do modulo: esperado so tf.process.opportunity' + 'ACLs do modulo: 5 (esperado 2)', arrastando 2 falhas em cascata na prova negativa. Defeito de INTEGRACAO entre ondas (o harness do E07 ficou preso a superficie de ACL do seu commit).",
+            "pre_condicao": "ampliar o harness do E07 (provar_acl_modulo.py / verificar-acl-modulo.sh) para declarar a superficie de ACL esperada INCLUINDO tf.evento.outbox, com aprovacao humana registrada; ou decisao de requisito. Entao regravar como PASS. (Nao e escrita em sales_intelligence: as ACLs sao do modulo Odoo.)"
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:44:52+00:00",
+      "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+      "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_e0b1bcbf"
+      ],
+      "production_promotion_authorized": false
+    }
+  ]
+}

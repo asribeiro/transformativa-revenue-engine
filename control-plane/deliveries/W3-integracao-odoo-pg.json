@@ -1,0 +1,164 @@
+{
+  "delivery_id": "TRE-W3",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W3 — Integracao Odoo -> PostgreSQL (n8n)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-03",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote RLS/tenant/isolamento"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W3-E04-T01",
+      "title": "Criar reconciliation job (n8n)",
+      "stage": "VALIDATION",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_2ee17829",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "aceite: scripts/n8n/verificar-reconciliacao.sh (trio descartavel + n8n)",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-reconciliacao.sh",
+                "exit": null,
+                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+              }
+            ],
+            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
+            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E03-T01",
+      "title": "Implementar Odoo→PG events",
+      "stage": "VALIDATION",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_85cb2838",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "aceite: scripts/n8n/verificar-odoo-eventos.sh (trio descartavel + n8n)",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-odoo-eventos.sh",
+                "exit": null,
+                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+              }
+            ],
+            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
+            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E02-T01",
+      "title": "Implementar outbox consumer n8n",
+      "stage": "VALIDATION",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_ba84b412",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "aceite: scripts/n8n/verificar-outbox-consumer.sh (trio descartavel + n8n)",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
+                "exit": null,
+                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+              }
+            ],
+            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
+            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E02-T02",
+      "title": "Implementar idempotency (dedup por idempotency_key)",
+      "stage": "VALIDATION",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_3bde06ab",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "aceite: scripts/n8n/verificar-outbox-consumer.sh (mesmo harness do T01; AC9 dedup)",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
+                "exit": null,
+                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+              }
+            ],
+            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
+            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:44:52+00:00",
+      "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+      "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_2ee17829",
+        "t_85cb2838",
+        "t_ba84b412",
+        "t_3bde06ab"
+      ],
+      "production_promotion_authorized": false
+    }
+  ]
+}
