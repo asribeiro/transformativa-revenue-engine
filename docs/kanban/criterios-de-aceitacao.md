@@ -544,3 +544,47 @@ com o `smtp.titan.email` real (homolog, com credencial do Sales AI e aprovacao d
 **Depends on:** W6-E01-T01 (primitivo SMTP Titan, fechado e medido) e W6-E03-T01 (aprovacao humana, fechado e
 medido) — os dois pais integrados na base deste card. **Destrava:** o E2E Outbound #002 e o W6-E05-T01 (ingestao
 de resposta), que passa a ter envio registrado para casar.
+
+## TRE-W6-E07-T01 — Executar E2E Outbound #002
+
+- **O que e':** o cenario do doc 08 §4 (10 passos do outbound) encadeado **num unico trio descartavel**,
+  com as pecas REAIS de cada card da onda W6 (nao dubles): PostgreSQL + **sink SMTP** local + **sink
+  IMAP** local + **stub da API controlada do Odoo**, todos em `127.0.0.1`. Aceite:
+  `scripts/e2e/verificar-e2e-outbound-002.sh`. Runbook: `docs/runbooks/e2e-outbound-002.md`.
+- **Cadeia medida:** lead A+ elegivel (registro TIER do W5) -> NBA `SEND_EMAIL` `OPEN` (W5-E07) ->
+  pedido de aprovacao `PENDING` com rascunho citando a recomendacao (W6-E02) -> `APPROVED` por operador
+  humano canonico com hash do texto (W6-E03) -> envio unico sob TLS ao contato do pedido (W6-E04) ->
+  `interactions` + `sync_events ENVIADO` -> resposta do lead ingerida e classificada `INTERESSE`
+  (W6-E05) -> CRM atualizado pela API controlada com `RESPOSTA_INTERESSE`/`RESPONDER_AGORA` (W6-E06) ->
+  NBA de novo: `CREATE_MEETING` SUPERSEDE a recomendacao anterior.
+- **ACCEPTANCE:** `ACEITE_E2E_OUTBOUND_002_OK` — **56 itens, 0 falhas**, exit 0. Cobre os 10 passos,
+  os invariantes herdados (leitura `EXAMINE`+`BODY.PEEK` re-medida de ponta, escrita restrita as duas
+  tabelas, idempotencia de envio e de ingesta, portao da aprovacao, hash do texto aprovado = texto
+  entregue), as **guardas de ambiente** (`prod` RECUSA exit 4 nos 4 componentes, exit 0) e o escopo
+  (nenhuma tabela nova; senha do sink e chave da API ausentes da saida).
+- **TEST:** `bash scripts/e2e/verificar-e2e-outbound-002.sh` (o aceite; ~1 min na VPS do ambiente) +
+  `--prova-de-dente` (**3 mutacoes** em copia de componente, cada uma reprovando o item que nomeia:
+  `sem-cta-na-mensagem` -> 5.7, `sem-supersessao` -> 10.3, `primeira-regra-sempre` -> 2.2) com o
+  controle verde. Evidencia = saida completa com exit code, anexada ao card.
+- **ROLLBACK:** o aceite **nao deixa nada**: o container do trio e' removido e os processos locais
+  (sink SMTP, sink IMAP, stub) sao mortos pelo proprio script (`--manter` existe so' para investigar).
+  Nao ha DDL nem migration. O que o card adiciona ao repositorio e' o aceite + runbook + docs; reverter
+  e' `git revert` do commit do card. A unica escrita fora do container descartavel e' o `UPDATE`
+  declarado da ponte do lead (item 9.2), que vive e morre no banco descartavel.
+- **RISK:** **medio-alto** — o aceite exercita a cadeia que fala com pessoa real (outbound por e-mail) e
+  escreve no CRM, ainda que contra pontas locais. Mitigado por: trio descartavel e **loopback only**
+  (nenhuma credencial Titan, nenhum destino real, nenhuma chave de API do Odoo), guarda que ABORTA se o
+  container ou as 3 portas ja' estiverem em uso (nao mede contra sobra de rodada), `prod` recusado por
+  medição nos 4 componentes, aprovacao humana obrigatoria no meio da cadeia, dry-run que nao entrega e
+  `--confirmo` explicito. O que **nao** esta medido (pontas Titan/Odoo reais, draft por LLM, o vinculo
+  `interactions.odoo_lead_id`) esta declarado no runbook §5.
+- **Lacuna medida (nao escondida):** **nenhum componente da onda W6 grava `interactions.odoo_lead_id`**.
+  O aceite mede o efeito (item 9.1: sem o vinculo o CRM responde `SEM_VINCULO`) e so' entao aplica a
+  **ponte declarada** do harness (item 9.2), que representa o papel do E2E #001 / fundacao W3-W4.
+  Fechar essa lacuna e' do caminho de fundacao/sync, nao deste card.
+- **Components afetados:** `scripts/e2e/verificar-e2e-outbound-002.sh` (novo),
+  `docs/runbooks/e2e-outbound-002.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+- **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
+  — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
+  caminho outbound provado ponta a ponta.

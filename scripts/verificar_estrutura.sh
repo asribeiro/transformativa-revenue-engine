@@ -588,5 +588,38 @@ if [ -f hermes/agents/outreach/politica-envio-v1.json ]; then
   fi
 fi
 
+# --- card TRE-W6-E07-T01 (E2E Outbound #002) ---------------------------------------------------------
+# O aceite da cadeia inteira: existe E esta versionado, com os 10 passos e as guardas de loopback.
+ACEITE_E2E="scripts/e2e/verificar-e2e-outbound-002.sh"
+for arquivo in "$ACEITE_E2E" docs/runbooks/e2e-outbound-002.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W6-E07-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W6-E07-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_E2E" ]; then
+  if ! bash -n "$ACEITE_E2E" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W6-E07-T01: $ACEITE_E2E nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Os 10 passos do doc 08 §4 tem de estar no aceite, e as pontas externas so' em loopback.
+  for passo in nba.py outreach_generator.py approval_workflow.py send_workflow.py \
+               ingestao_respostas.py atualizacao_odoo.py; do
+    if ! grep -q "$passo" "$ACEITE_E2E"; then
+      echo "FALHOU card TRE-W6-E07-T01: aceite nao encadeia $passo"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  if ! grep -q '127.0.0.1' "$ACEITE_E2E" || ! grep -q 'TRE_AMBIENTE=prod' "$ACEITE_E2E"; then
+    echo "FALHOU card TRE-W6-E07-T01: aceite sem as pontas de loopback/guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

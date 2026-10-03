@@ -2490,3 +2490,57 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
 - Segredos: nenhum valor nesta entrada. O aceite nao usa credencial Titan: a senha do sink e um valor de teste
   local gerado pelo proprio aceite, nunca versionado, nunca em argumento de linha de comando e nunca em log
   (ha item medindo isso na captura do sink).
+
+## 2026-10-03 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W6-E07-T01: E2E Outbound #002 medido ponta a ponta
+
+- **O que este card e':** o unico card da onda W6 que nao entrega componente novo — ele **encadeia** os
+  sete anteriores (`E01-T01`, `E01-T02`, `E02`, `E03`, `E04`, `E05`, `E06`) mais o NBA do W5 no
+  **cenario do doc 08 §4** (10 passos do outbound), com as pecas reais de cada card num **unico trio
+  descartavel** em loopback: PostgreSQL + sink SMTP + sink IMAP + stub da API controlada do Odoo.
+- **Integracao das linhas (parte do trabalho):** as duas linhas da onda estavam **separadas** no git
+  (`develop -> E01-T01 -> E01-T02 -> E05 -> E06` de um lado; `W5-E08 -> E02 -> E03 -> E04` do outro).
+  O branch do card integra as duas (merge com 3 conflitos, todos de **apendice de doc/portao**:
+  `criterios-de-aceitacao.md`, `registro-de-execucoes.md`, `verificar_estrutura.sh` — resolvidos
+  mantendo OS DOIS lados; no portao, o `fi` comum ao fim do bloco fechava um `if` diferente em cada
+  lado e passou a ser dois). Sem esse merge nao existe "cadeia W6" para medir.
+- **Defeito real medido na rodada 1 (e corrigido no modulo do aceite):** `correlation_id` e' coluna
+  `uuid` no banco canonico. Ids de mentira (`e2e002-nba1`) derrubavam a **auditoria** de TODOS os
+  componentes (`invalid input syntax for type uuid`) e o NBA nem gravava a recomendacao — o aceite
+  passou a gerar UUID de verdade.
+- **Defeito real medido na rodada 2 (e corrigido no modulo do aceite):** o stub da API do Odoo **nao
+  tinha pidfile**, entao o `--manter` de uma rodada deixou o processo de pe e a rodada seguinte falou
+  com o **stub velho** (chave velha -> `HTTP 401 credencial_invalida` em nome do componente). O aceite
+  agora grava o pid do stub e **ABORTA** se uma das 3 portas locais ja' estiver ocupada — medir contra
+  sobra de rodada e' falso negativo.
+- **Outros defeitos do instrumento corrigidos:** o `PEDIDO` vazio (efeito do primeiro) estourava SQL
+  com uuid vazio; a comparacao do operador era feita depois de `tr -d ' '` (nome virava
+  `AndersonRibeiro`); a fila de aprovacao imprime o resumo **sem** o bloco `fila` no stdout (o
+  `novos`/`veredito` estao no relatorio JSON); o dente reentrava no proprio bloco de dentes (precisou
+  de `--sub-run`); os sub-runs do dente precisavam das 3 portas que as pontas do aceite-pai ainda
+  seguravam (liberadas antes de medir).
+- **Medido por execucao real** (verde, exit 0): `bash scripts/e2e/verificar-e2e-outbound-002.sh` ->
+  **ACEITE_E2E_OUTBOUND_002_OK (56 itens, 0 FALHOU)**; `--prova-de-dente` -> **3/3** (`sem-cta-na-mensagem`
+  reprovou o item 5.7, `sem-supersessao` o 10.3, `primeira-regra-sempre` o 2.2) com o controle verde e o
+  veredito OK no fim. Itens de destaque: envio dry-run `PLANO` que **nao entrega**, entrega unica sob
+  TLS ao contato do pedido com corpo == texto aprovado + CTA (hash conferido), `interactions` com
+  `content_reference = envio:<pedido>:<hash>`, resposta do lead classificada `INTERESSE` com o
+  invariante de leitura re-medido no sink (`EXAMINE`, `0` buscas sem `PEEK`, `0` comandos de escrita,
+  nenhuma marca `\Seen`), CRM atualizado pela API controlada (`RESPOSTA_INTERESSE` + `RESPONDER_AGORA`,
+  atividade no contato, toda escrita com `idempotency_key`), NBA de novo com `CREATE_MEETING`
+  SUPERSEDENDO a recomendacao anterior, `prod` recusado (exit 4) nos **4** componentes e senha/chave
+  ausentes de toda saida.
+- **Lacuna MEDIDA, nao escondida:** nenhum componente da onda W6 grava `interactions.odoo_lead_id`. O
+  aceite **mede o efeito** (item 9.1: sem o vinculo o CRM responde `SEM_VINCULO`, exit 0) e so' depois
+  aplica a **ponte declarada** do harness (item 9.2), que representa o papel do E2E #001 / fundacao
+  W3-W4 (o lead nasce no CRM e o id volta para a interacao). Fechar a lacuna e' do caminho de
+  fundacao/sync, nao deste card.
+- **Ambiente e seguranca:** nada em producao (ADR-005). Toda ponta e' local (`127.0.0.1`) e
+  descartavel; nenhuma credencial Titan, nenhum destino real, nenhuma chave de API do Odoo. Os
+  containers do ambiente (`pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`, `proxy-dev`) **nao** foram
+  tocados: o aceite aborta se o container ou as 3 portas dele ja' estiverem em uso. O container do
+  trio (`pg-resp-e2e004`/`pg-resp-e2e005` nas rodadas medidas) e' removido no fim.
+- **Logs brutos:** saidas completas anexadas ao card —
+  `aceite-e2e-outbound-002-56ok.out` e `aceite-e2e-outbound-002-dentes-3de3.out` (mais
+  `sha256-artefatos.out`).
+- Segredos: nenhum valor nesta entrada. A senha do sink SMTP e a chave da API do stub sao valores de
+  teste gerados na hora pelo proprio aceite; ha item medindo 0 ocorrencias delas na saida.

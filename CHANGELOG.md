@@ -1982,3 +1982,50 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   credencial do Sales AI e aprovacao do dono.
 - A politica nasce `PROPOSTA_A_HOMOLOGAR`: `ddl` e `delete` declarados `recusado` (declarar outro veredito e
   `RecusaDePolitica`).
+
+## [W6 — Outbound · E2E] — 03/10/2026
+
+### Added
+
+- **E2E Outbound #002** (`TRE-W6-E07-T01`) — `scripts/e2e/verificar-e2e-outbound-002.sh`: encadeia os sete
+  cards da onda W6 mais o NBA do W5 no cenario do doc 08 §4 (10 passos do outbound) **num unico trio
+  descartavel** em loopback (PostgreSQL + sink SMTP + sink IMAP + stub da API controlada do Odoo), com as
+  pecas reais de cada card — nada de duble no lugar do componente. Mede o caminho inteiro: lead A+
+  elegivel (registro TIER do W5) → NBA `SEND_EMAIL` `OPEN` → pedido de aprovacao com rascunho citando a
+  recomendacao → `APPROVED` por operador humano canonico com hash do texto → envio unico sob TLS ao
+  contato do pedido → `interactions` + `sync_events ENVIADO` → resposta do lead ingerida e classificada
+  `INTERESSE` (invariante `EXAMINE`+`BODY.PEEK` re-medido de ponta) → CRM atualizado pela API controlada
+  (`RESPOSTA_INTERESSE` + `RESPONDER_AGORA`, atividade no contato, `idempotency_key` em toda escrita) →
+  NBA de novo: `CREATE_MEETING` SUPERSEDE a recomendacao anterior. Runbook:
+  `docs/runbooks/e2e-outbound-002.md`.
+- Guardas de execucao do aceite: aborta se o container do trio ja' existir (nao toca em
+  `pg-sales-dev`/`pg-odoo-dev`/`odoo-dev`/`proxy-dev`) ou se uma das 3 portas locais estiver ocupada
+  (sobra de rodada anterior = falso negativo medido); `--prova-de-dente` com 3 mutacoes nomeadas;
+  `--manter` para investigar.
+
+### Changed
+
+- Integracao das duas linhas da onda W6 no mesmo branch (`develop → E01-T01 → E01-T02 → E05 → E06` e
+  `W5-E08 → E02 → E03 → E04`) para que a cadeia exista num unico checkout — 3 conflitos, todos de
+  apendice (docs + portao de estrutura), resolvidos mantendo os dois lados.
+
+### Fixed
+
+- `correlation_id` de mentira (string) derrubava a auditoria de qualquer componente (`uuid` no banco
+  canonico) — o aceite passou a gerar UUID de verdade (defeito medido na rodada 1).
+- Stub da API do Odoo sem pidfile deixava processo de pe com `--manter` e a rodada seguinte media contra
+  o stub velho (`HTTP 401`) — agora ha pidfile e a guarda de porta (defeito medido na rodada 2).
+
+### Security
+
+- Aceite 100% em `127.0.0.1` com trio descartavel (ADR-005): nenhuma credencial Titan, nenhum destino
+  real, nenhuma chave de API do Odoo; `prod` recusado (exit 4) nos 4 componentes por medicao; senha do
+  sink e chave do stub ausentes de toda saida (itens medindo 0 ocorrencias).
+
+### Known gaps (declarados, nao escondidos)
+
+- **`interactions.odoo_lead_id` nao e' gravado por nenhum componente da onda W6.** O aceite mede o
+  efeito (`SEM_VINCULO`, item 9.1) e aplica uma ponte DECLARADA do harness (item 9.2) representando o
+  papel do E2E #001 / fundacao W3-W4. Fechar a lacuna e' do caminho de fundacao/sync.
+- Provas contra Titan e Odoo reais e draft por LLM ficam em **homolog**, com credencial do Sales AI e
+  aprovacao do dono.
