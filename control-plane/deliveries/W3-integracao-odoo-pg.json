@@ -185,6 +185,207 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W3-E01-T01",
+      "title": "Criar API controlada Odoo",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e0489efc",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da API controlada do Odoo (AC1..AC8) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0, rede/banco/nomes proprios): superficie fechada e declarada (1 rota, so' POST, politica versionada com ambiente unico dev); 0 SQL nos arquivos da API (so' ORM); filtro por campo declarado (campo/operador fora da declaracao recusa); credencial fora do repo/log (auth=bearer, 401 sem token, chave ausente do log/resposta); guarda de ambiente ADR-005; contrato de integracao (idempotency_key na escrita, dry_run nao escreve, correlation_id ecoado); rastro (UMA linha TF_API_AUDIT por chamada, sem token/payload); ambiente de execucao intocado (dev/homolog/prod medidos antes e depois). DUAS passadas identicas (exit 0 em ambas; 75 itens OK cada) e prova de dente 3/3.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t01_api imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T02",
+      "title": "Implementar company upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_cdc21b43",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `empresa_upsert` (AC1..AC8) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada com requer_idempotency_key (mesma porta unica); identidade declarada (sem identificador -> 422 identificador_ausente); upsert idempotente por identidade (0 duplicata medida no banco); ambiguidade -> 409 valor_ambiguo e NADA escrito; semantica de empresa (is_company=true, divergencia -> 422 campo_fixo_divergente); idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005 e UMA linha TF_API_AUDIT por chamada; ambiente intocado. DUAS passadas identicas (exit 0 em ambas; 104 itens OK cada) e prova de dente 3/3 (+2 controles do proprio harness).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_OK (104 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t02_empresa imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_OK (104 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T03",
+      "title": "Implementar contact upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e6e3b0b3",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `contato_upsert` (AC1..AC9) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada com requer_idempotency_key; identidade = `email` (sem valor -> 422 identificador_ausente; `identificador` escalar NAO substitui a identidade por lista); upsert idempotente (1 registro por e-mail depois de N chamadas); ambiguidade -> 409 valor_ambiguo e nada escrito/alterado; semantica de contato (is_company=false, divergencia -> 422 campo_fixo_divergente); idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005 (503 fora da politica, sem escrita); rastro TF_API_AUDIT sem token e SEM DADO PESSOAL; compliance do schema PG e' recusa nomeada (422). DUAS passadas identicas (exit 0 em ambas) e prova de dente 3/3 (+2 controles).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_OK (110 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t03_contato imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_OK (110 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T04",
+      "title": "Implementar opportunity upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_8b2ed1b7",
+          "stage": "VALIDATION",
+          "current_gate": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "NAO APROVADO nesta rodada. O aceite E2E da operacao `oportunidade_upsert` (AC1..AC8) PASSA por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada (modelo crm.lead, identidade tf_opportunity_id, chave exigida); identidade canonica por UUID; upsert por identidade (N chamadas -> UM registro; atualizacao parcial); fronteira de dono; idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005; UMA linha TF_API_AUDIT por chamada; ambiente intocado — DUAS passadas identicas (exit 0 em ambas; 125 itens OK cada). MAS a PROVA DE DENTE REPROVOU: `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` saiu exit 1 com `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas)` — o dente 3 (`controlador-sem-upsert`) NAO conseguiu nem aplicar a mutacao: a ancora de texto '            if existentes:' nao existe mais em controllers/api_controlada.py (hoje o controlador usa `if len(existentes) != 1:`), logo a prova NAO mede o que nomeia e o harness falha fechado (MUTACAO_NAO_APLICADA + 'o aceite NAO reprovou com a mutacao'). Defeito do PROPRIO VERIFICADOR (ancora de dente apodrecida apos o fecho do card), nao do aceite. Pela regra do lote ('dente que nao reprova = check que nao vale'), o card NAO recebe PASS.",
+          "pre_condicao": "Corrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t04_oportunidade imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente",
+                "exit": 1,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas): dente 1 e 2 OK; dente 3 'controlador-sem-upsert' com ancora desatualizada (MUTACAO_NAO_APLICADA) — prova inconclusiva, check nao vale"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T05",
+      "title": "Implementar activity create",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_cb615018",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `atividade_criar` (AC1..AC9) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): superficie fechada com ancora DECLARADA (res_model fixo da politica; res_id obrigatorio -> 422 campo_obrigatorio_ausente; campo fora da declaracao -> 422 campo_nao_declarado); a atividade NASCE no modelo declarado (medido no banco em mail_activity.res_model/res_id); idempotency_key/dry_run/correlation_id registrados na atividade; guarda de ambiente ADR-005 na escrita (503, nada criado); UMA linha TF_API_AUDIT por chamada sem payload; ACL respeitada (recusa 403 nomeada, sem sudo()); lacunas MEDIDAS (o REPLAY da mesma chave ainda cria segunda atividade; ancora crm.lead nao e' servida -> recusa nomeada). DUAS passadas identicas (exit 0 em ambas) e prova de dente 4/4.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t05_atividade imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_DENTE_OK (4 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -224,6 +425,20 @@
         "t_0b77a689"
       ],
       "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+      "scope": "lote 4 — prova de dente dos 6 aceites da W5 + W5-E07/E08 (NBA) + W3-E01 (API controlada Odoo)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T17:13:36+00:00",
+      "cards": [
+        "t_e0489efc",
+        "t_cdc21b43",
+        "t_e6e3b0b3",
+        "t_8b2ed1b7",
+        "t_cb615018"
+      ]
     }
   ]
 }

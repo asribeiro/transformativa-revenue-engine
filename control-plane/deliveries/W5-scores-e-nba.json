@@ -31,7 +31,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do agente ICP Score v1 medido por EXECUCAO REAL num container PostgreSQL DESCARTALVEL proprio: 6 scores CALCULADO com os valores conferidos um a um (sweet spot 100,00 / logistica 86,00 / B2C 0,00 / sem dado 0,00 / B2B2C 94,00 / porte derivado 100,00), explicacao fecha a conta, auditoria sem LLM; replay nao duplica (JA_EXISTE); a fonte que mente nao move o score; dado novo grava linha NOVA preservando o historico; guardas (prod recusado exit 4 sem escrita, --planejar sem conexao) e desfazer --confirmo apaga SO a rodada preservando auditoria; os 4 containers do dev INTACTOS.",
+          "evidence": "Aceite E2E do agente ICP Score v1 medido por EXECUCAO REAL num container PostgreSQL DESCARTALVEL proprio: 6 scores CALCULADO com os valores conferidos um a um (sweet spot 100,00 / logistica 86,00 / B2C 0,00 / sem dado 0,00 / B2B2C 94,00 / porte derivado 100,00), explicacao fecha a conta, auditoria sem LLM; replay nao duplica (JA_EXISTE); a fonte que mente nao move o score; dado novo grava linha NOVA preservando o historico; guardas (prod recusado exit 4 sem escrita, --planejar sem conexao) e desfazer --confirmo apaga SO a rodada preservando auditoria; os 4 containers do dev INTACTOS. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/agentes/teste_icp_score_aceite.sh --prova-de-dente` exit 0 — DENTE OK (9/9 mutacoes detectadas, cada uma pelo item esperado) (9 mutacoes em copia do icp_score.py reprovaram o item esperado (ausencia que vira fit, faixa derivada do count, peso do modelo zerado, idempotencia fora do SQL, fingerprint constante, prod liberado, fonte que contamina o score, etc.)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -44,6 +44,11 @@
                 "gate": "bash scripts/agentes/teste_icp_score_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_ICP_SCORE_001_OK (50 itens, 0 falhas) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_icp_score_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "DENTE OK (9/9 mutacoes detectadas, cada uma pelo item esperado)"
               }
             ]
           }
@@ -61,7 +66,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do Automation Fit Score v1 (A1..A14) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score gravado com tipo/versao/inputs/explicacao, LE o estado e NAO escreve nas tabelas de negocio (em especial organizations.data_quality_score), leitura filtrada por organization_id (sinal de terceiro fora da conta), determinismo no banco (JA_CALCULADO) e historico (estado novo cria linha nova), sem lastro RECUSADA sem escrita, identidade ambigua vai a fila humana sem score, discriminacao medida (faixas/margem/desvio), prod recusado exit 4 sem escrita, desfazer --confirmo apaga so a rodada preservando auditoria.",
+          "evidence": "Aceite E2E do Automation Fit Score v1 (A1..A14) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score gravado com tipo/versao/inputs/explicacao, LE o estado e NAO escreve nas tabelas de negocio (em especial organizations.data_quality_score), leitura filtrada por organization_id (sinal de terceiro fora da conta), determinismo no banco (JA_CALCULADO) e historico (estado novo cria linha nova), sem lastro RECUSADA sem escrita, identidade ambigua vai a fila humana sem score, discriminacao medida (faixas/margem/desvio), prod recusado exit 4 sem escrita, desfazer --confirmo apaga so a rodada preservando auditoria. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/agentes/teste_automation_fit_aceite.sh --prova-de-dente` exit 0 — DENTE OK (5/5 mutacoes detectadas, cada uma pelo item esperado) (5 mutacoes em copia do automation_fit.py reprovaram o item esperado (cobertura ignorada, score, idempotencia sem o estado, leitura sem filtro de empresa, prod liberado)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -74,6 +79,11 @@
                 "gate": "bash scripts/agentes/teste_automation_fit_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_AUTOMATION_FIT_001_OK (76 itens, 0 falhas) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_automation_fit_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "DENTE OK (5/5 mutacoes detectadas, cada uma pelo item esperado)"
               }
             ]
           }
@@ -91,7 +101,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do Buying Signal Score v1 (A1..A10) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score legitimo gravado em scores (tipo/versao/inputs/explicacao/valid_until) sem tocar signals nem organizations; prod recusado exit 4 sem escrita e --planejar sem conexao; replay nao duplica (idempotencia) e sinal novo gera linha NOVA (historico); sem sinal utilizavel o score e 0,00 com motivo SEM_SINAIS; empresa inexistente RECUSADA; desfazer --confirmo apaga so a rodada; agent_runs/sync_events registrados.",
+          "evidence": "Aceite E2E do Buying Signal Score v1 (A1..A10) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score legitimo gravado em scores (tipo/versao/inputs/explicacao/valid_until) sem tocar signals nem organizations; prod recusado exit 4 sem escrita e --planejar sem conexao; replay nao duplica (idempotencia) e sinal novo gera linha NOVA (historico); sem sinal utilizavel o score e 0,00 com motivo SEM_SINAIS; empresa inexistente RECUSADA; desfazer --confirmo apaga so a rodada; agent_runs/sync_events registrados. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/agentes/teste_buying_signal_aceite.sh --prova-de-dente` exit 0 — prova de dente OK: 4/4 mutacoes reprovaram o item esperado (ACEITE 40 OK / 0 FALHOU) (4 mutacoes em copia do modulo reprovaram o item esperado (sem-versao, sem-teto, sem-idempotencia, sem-validade)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -104,6 +114,11 @@
                 "gate": "bash scripts/agentes/teste_buying_signal_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_BSS_001_OK (36 OK / 0 FALHOU) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_buying_signal_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "prova de dente OK: 4/4 mutacoes reprovaram o item esperado (ACEITE 40 OK / 0 FALHOU)"
               }
             ]
           }
@@ -121,7 +136,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do Data Quality Score v1 (AC1..AC13) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: mede a organizacao que JA existe (recusa quem nao existe), grava UMA linha por organizacao em scores (DATA_QUALITY/v1.0) e espelha o valor atual em organizations.data_quality_score sem tocar nenhuma outra coluna (digital do estado de negocio IDENTICA antes/depois); valores exatos conferiveis (100,00 / 77,00 / 0,00 / 65,71); replay nao duplica (JA_EXISTE); dado novo gera medicao nova; --planejar nao escreve; prod recusado exit 4; soft-deleted fica fora; desfazer --confirmo restaura o valor anterior preservando auditoria.",
+          "evidence": "Aceite E2E do Data Quality Score v1 (AC1..AC13) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: mede a organizacao que JA existe (recusa quem nao existe), grava UMA linha por organizacao em scores (DATA_QUALITY/v1.0) e espelha o valor atual em organizations.data_quality_score sem tocar nenhuma outra coluna (digital do estado de negocio IDENTICA antes/depois); valores exatos conferiveis (100,00 / 77,00 / 0,00 / 65,71); replay nao duplica (JA_EXISTE); dado novo gera medicao nova; --planejar nao escreve; prod recusado exit 4; soft-deleted fica fora; desfazer --confirmo restaura o valor anterior preservando auditoria. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/scores/teste_data_quality_aceite.sh --prova-de-dente` exit 0 — prova de dente OK: 6/6 mutacoes reprovaram o item esperado; rodada de referencia verde apos os dentes (RESULTADO: ACEITE_DATA_QUALITY_001_OK, 35 itens, 0 falhas, 0 dentes reprovados) (6 mutacoes em copia do data_quality.py reprovaram o item esperado (idempotencia fora do SQL, espelho gravado nulo, prod passa a ser aceito, identidade sem normalizar a forma guardada, versao errada no insert, confiabilidade sem pesquisa)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -134,6 +149,11 @@
                 "gate": "bash scripts/scores/teste_data_quality_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_DATA_QUALITY_001_OK (35 itens, 0 falhas, 0 dentes reprovados) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/scores/teste_data_quality_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "prova de dente OK: 6/6 mutacoes reprovaram o item esperado; rodada de referencia verde apos os dentes (RESULTADO: ACEITE_DATA_QUALITY_001_OK, 35 itens, 0 falhas, 0 dentes reprovados)"
               }
             ]
           }
@@ -151,7 +171,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do Priority Score v1 (A1..A10) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score com o VALOR do contrato (0,35*94+0,30*76+0,25*83+0,10*100 = 86,45), inputs com os quatro componentes citados (id/versao/pesos) e sem renormalizacao; a gravacao NAO toca os scores dos componentes (digital valor+versao intacta) nem organizations; prod recusado exit 4 sem escrita e --planejar sem conexao; replay nao duplica e componente novo gera linha NOVA; componente AUSENTE/VENCIDO recusa com SEM_LASTRO_COMPLETO sem escrever (vencimento LIDO do banco); desfazer --confirmo apaga so a rodada.",
+          "evidence": "Aceite E2E do Priority Score v1 (A1..A10) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: score com o VALOR do contrato (0,35*94+0,30*76+0,25*83+0,10*100 = 86,45), inputs com os quatro componentes citados (id/versao/pesos) e sem renormalizacao; a gravacao NAO toca os scores dos componentes (digital valor+versao intacta) nem organizations; prod recusado exit 4 sem escrita e --planejar sem conexao; replay nao duplica e componente novo gera linha NOVA; componente AUSENTE/VENCIDO recusa com SEM_LASTRO_COMPLETO sem escrever (vencimento LIDO do banco); desfazer --confirmo apaga so a rodada. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/scores/teste_priority_aceite.sh --prova-de-dente` exit 0 — prova de dente OK: 5/5 mutacoes reprovaram o item esperado (ACEITE 51 OK / 0 FALHOU) (5 mutacoes em copia do priority_score.py reprovaram o item esperado (cobertura afrouxada, sem checagem de vencido, sem idempotencia, sem validade, sem soma de um componente)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -164,6 +184,11 @@
                 "gate": "bash scripts/scores/teste_priority_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_PRIORITY_001_OK (46 OK / 0 FALHOU) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/scores/teste_priority_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "prova de dente OK: 5/5 mutacoes reprovaram o item esperado (ACEITE 51 OK / 0 FALHOU)"
               }
             ]
           }
@@ -181,7 +206,7 @@
           "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
-          "evidence": "Aceite E2E do Tiering v1 (A1..A9) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: classificacao LEGITIMA registrada (operation=TIER em sync_events) com tier/faixa/faixas vigentes/identidade do PRIORITY lido; a rodada NAO toca scores (digital valor+versao intacta) nem organizations; prod recusado exit 4 sem escrita e --planejar/--faixas sem conexao; replay nao duplica e PRIORITY novo gera registro NOVO; empresa SEM PRIORITY recusa (SEM_PRIORITY) sem default Nurture; PRIORITY vencido recusa (vencimento lido do banco); tier e do ULTIMO PRIORITY; desfazer --confirmo apaga so o registro deixando a auditoria.",
+          "evidence": "Aceite E2E do Tiering v1 (A1..A9) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio: classificacao LEGITIMA registrada (operation=TIER em sync_events) com tier/faixa/faixas vigentes/identidade do PRIORITY lido; a rodada NAO toca scores (digital valor+versao intacta) nem organizations; prod recusado exit 4 sem escrita e --planejar/--faixas sem conexao; replay nao duplica e PRIORITY novo gera registro NOVO; empresa SEM PRIORITY recusa (SEM_PRIORITY) sem default Nurture; PRIORITY vencido recusa (vencimento lido do banco); tier e do ULTIMO PRIORITY; desfazer --confirmo apaga so o registro deixando a auditoria. | PROVA DE DENTE (fecha o furo declarado no lote 3): `bash scripts/scores/teste_tiering_aceite.sh --prova-de-dente` exit 0 — prova de dente OK: 6/6 mutacoes reprovaram o item esperado (ACEITE 53 OK / 0 FALHOU) (6 mutacoes em copia do modulo reprovaram o item esperado (ausencia vira registro, sem checagem de vencido, fronteira aberta, sem idempotencia, ultimo vira primeiro, operation trocada)); medido em copia isolada de dab62fd109bfa0cec610f7c43af6b6711253ad77 (script de aceite byte-identico a 3d64b8d48b37, sha256 conferido).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
           "eixo_de_risco": "DADO",
@@ -194,6 +219,91 @@
                 "gate": "bash scripts/scores/teste_tiering_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_TIERING_001_OK (47 OK / 0 FALHOU) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao)"
+              },
+              {
+                "gate": "bash scripts/scores/teste_tiering_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "prova de dente OK: 6/6 mutacoes reprovaram o item esperado (ACEITE 53 OK / 0 FALHOU)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W5-E07-T01",
+      "title": "Next Best Action V1",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_2ad13d64",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E do Next Best Action v1 (A1..A11) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio (pg-nba-acc): a recomendacao LEGITIMA e' gravada em `recommendations` (status OPEN) com a acao do contrato, prioridade/prazos da politica, contato escolhido e rationale com a evidencia, e auditoria em `agent_runs` sem LLM (model/tokens/custo NULL, sem `confidence` inventada); a rodada NAO toca score/tier/contato/interacao; a TABELA DE DECISAO e' a da politica (SEND_EMAIL, PREPARE_LINKEDIN, WAIT, FOLLOW_UP, CREATE_MEETING, NURTURE, DISQUALIFY, RESEARCH_MORE, FIND_DECISION_MAKER) e a PRIMEIRA regra que casa vence (compliance antes do tier); replay da MESMA entrada nao duplica (id deterministico) e evidencia nova gera recomendacao NOVA que SUPERSEDE a anterior; empresa SEM registro TIER RECUSA (SEM_TIER) e empresa inexistente e' RECUSADA sem gravar; `prod` recusado exit 4 sem escrita; `--planejar`/`--regras` sem conexao; `--desfazer` dry-run ate o `--confirmo`. DUAS passadas identicas (exit 0 em ambas; saida igual apos normalizar uuid do registro TIER citado no item A11) e prova de dente 6/6.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/scores/teste_nba_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_NBA_001_OK"
+              },
+              {
+                "gate": "bash scripts/scores/teste_nba_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "ACEITE_NBA_001_OK"
+              },
+              {
+                "gate": "bash scripts/scores/teste_nba_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "6/6 mutacoes reprovaram o item esperado (ACEITE 79 OK / 0 FALHOU): sem-supersessao, sem-idempotencia, sem-checagem-de-tier, primeira-regra-sempre, ordem-invertida, contato-bloqueado-ignorado"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W5-E08-T01",
+      "title": "Test scoring/NBA",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_537080f0",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da CADEIA W5 inteira (ICP -> AUTOMATION_FIT -> BUYING_SIGNAL -> DATA_QUALITY -> PRIORITY -> TIER -> NBA) por EXECUCAO REAL em container PostgreSQL DESCARTALVEL proprio (pg-w5-acc): as sete suites/verificadores OFFLINE rodam no MESMO commit antes do banco; a composicao e' medida no banco (o PRIORITY e' a formula do contrato sobre os quatro scores gravados, o registro TIER cita o PRIORITY lido, a recomendacao cita o TIER gravado); FAIL-CLOSED na cadeia (empresa SEM LASTRO nao ganha score/tier/recomendacao — cada etapa RECUSA com motivo nominal SEM_LASTRO/SEM_LASTRO_COMPLETO/SEM_PRIORITY/SEM_TIER); ESCOPO (tabelas de negocio intactas, outbox vazia, nenhuma rodada chama LLM); REPLAY sem duplicata; GUARDAS (`prod` recusado exit 4, `--planejar`/`--regras` sem conexao, `--desfazer` dry-run). DUAS passadas identicas (exit 0 em ambas; lista de itens OK/FALHOU identica entre as passadas) e prova de dente 4/4.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-scoring-nba.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_E2E_SCORING_NBA_001_OK"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-scoring-nba.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "ACEITE_E2E_SCORING_NBA_001_OK"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-scoring-nba.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "4/4 mutacoes reprovaram o item esperado (ACEITE E2E SCORING/NBA 76 OK / 0 FALHOU): sem-motivo-sem-priority, sem-motivo-sem-lastro, sem-checagem-de-tier, sem-idempotencia"
               }
             ]
           }
@@ -217,6 +327,23 @@
         "t_c6b9ecf1"
       ],
       "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+      "scope": "lote 4 — prova de dente dos 6 aceites da W5 + W5-E07/E08 (NBA) + W3-E01 (API controlada Odoo)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T17:13:36+00:00",
+      "cards": [
+        "t_2ad13d64",
+        "t_537080f0",
+        "t_e4a90eba",
+        "t_11815e63",
+        "t_967911e0",
+        "t_701c574f",
+        "t_8ab79fb9",
+        "t_c6b9ecf1"
+      ]
     }
   ]
 }
