@@ -588,3 +588,67 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
   — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
   caminho outbound provado ponta a ponta.
+
+## TRE-W8-E01-T01 — Funnel dashboard
+
+- **O que e':** o funil do doc 03 §2 / Data Contract V1 §7.1 **derivado em leitura** da base canonica
+  (`sales_intelligence`) e da **trilha** dos eventos Odoo -> PostgreSQL (`sync_events`), na ordem
+  congelada de estagios, contado por **organizacao** (UUID canonico), com **alcance cumulativo** e
+  conversoes, desenhado em **JSON** + **HTML auto-contido** (o dashboard). Componente
+  `hermes/agentes/analytics/funil.py` + contrato `hermes/agentes/analytics/funil-v1.json`; desenho
+  `docs/architecture/funil-v1.md`; runbook `docs/runbooks/funil.md`. **Leitura pura:** so' `SELECT`,
+  transacao em `READ ONLY` e auditoria da propria fonte que reprova verbo de escrita antes de conectar.
+- **Dono do estagio respeitado:** Descoberto…Engajamento por evidencia da inteligencia (PostgreSQL);
+  Reuniao…Won/Lost e Nurture pelo que o Odoo publica na trilha (o estagio e' do Odoo — contrato §2) ou
+  por `organizations.status` quando ele carregar um estagio declarado. `Won` e `Lost` dividem o nivel
+  terminal (perdido **nao** conta em ganho); `Nurture` e' ramo lateral e converte de `Qualificado`.
+- **Rotulo de estagio casa por IGUALDADE EXATA depois de normalizar** (trim, caixa, acento, espaco):
+  fora do vocabulario declarado **nao vira estagio** — vai para lacuna com a forma normalizada. Casar
+  prosa por semelhanca ja' foi reprovado tres vezes neste projeto (D04/D06/D07).
+- **Evento sem organizacao atribuivel nao entra no estagio** (lacuna nomeada por operacao): e' o caso de
+  `OPPORTUNITY_WON/LOST`, que carregam o UUID da **oportunidade**. E `score` sem `score_version` **nao**
+  qualifica (contrato §8).
+- **ACCEPTANCE:** `ACEITE_FUNIL_OK` — **34 itens, 0 falhas**, exit 0. Cobre: guardas de ambiente
+  (`prod` RECUSA exit 4 **antes** de qualquer leitura; dev com porta remota RECUSA); suite offline verde;
+  os numeros do funil **conferidos a mao** sobre base semeada (9 organizacoes cobrindo todos os niveis,
+  inclusive dois terminais e um ramo lateral); **contagem por organizacao** (3 interacoes de resposta no
+  banco viram 2 organizacoes — nao infla); **tres dentes de ponta medidos no banco** (rotulo de estagio
+  inventado na trilha nao vira estagio; `OPPORTUNITY_LOST` sem organizacao atribuivel nao entra em Lost;
+  `organizations.status` nao declarado fica em lacuna); **leitura pura provada por dois caminhos**
+  (snapshot md5 das 12 tabelas identico antes/depois **e** a transacao `READ ONLY` recusando a escrita de
+  prova, sem deixar linha); **determinismo** (duas rodadas -> mesmo `hash_do_relatorio`); saida **sem
+  PII** (nenhum e-mail, nenhum literal de contato da base semeada) e dashboard **auto-contido** (sem
+  `http`/`https`/`script`/`link`).
+- **TEST:** `python3 scripts/agentes/verificar_funil.py --autoteste` (**24 itens + 8 mutacoes**, cada
+  mutacao reprovando um item que o **alvo limpo nao reprova** — o aceite nao aceita dente que aproveita
+  falha pre-existente) e `bash scripts/agentes/teste_funil_aceite.sh` (PostgreSQL descartavel
+  `pg-funil-acc` na VPS de dev, ~17 s, container removido no fim). Evidencia = saida completa com exit
+  code, anexada ao card.
+- **ROLLBACK:** reverter o commit (5 arquivos novos + os docs do card, **sem DDL** e sem migration) e
+  remover o container descartavel do aceite. Nada em homolog/producao; nenhum servico, nenhum cron,
+  nenhuma credencial tocada.
+- **RISK:** **baixo** — leitura pura sobre base de dev, saida com contagem (sem PII), nenhum ato externo.
+  Riscos **declarados**: (a) o valor literal do vocabulario de estagio do Odoo (`crm.stage`) **nao** esta'
+  congelado no Data Contract V1 — so' a ordem conceitual —, entao rotulo fora da lista declarada cai em
+  lacuna ate' o vocabulario ser fechado (decisao do dono, lacuna L3); (b) `Lost` e' terminal sem registro
+  do estagio de origem, entao a organizacao perdida conta como tendo alcancado todos os niveis anteriores
+  (lacuna L4); (c) sem janela declarada o funil e' o acumulado da base (lacuna L5).
+- **Defeito MEDIDO e corrigido no proprio card (DETECTADO POR: aceite, antes de qualquer entrega):**
+  `psql -c "SET default_transaction_read_only = on; SELECT …"` num **unico** `-c` **nao** vale — a
+  transacao implicita ja' comecou antes do `SET` e a escrita de prova **passou** (`INSERT 0 1`). A
+  leitura pura era promessa, nao mecanismo. Conserto: dois `-c` (`SET` e depois a consulta) + item de
+  aceite que injeta a escrita e exige `cannot execute INSERT in a read-only transaction`, com a
+  verificacao de que a escrita recusada nao deixou linha.
+- **Lacunas declaradas (medidas, nao escondidas):** L1 nenhum componente materializa estagio em coluna do
+  PostgreSQL (o que existe e' a trilha — derivar dela e' leitura; virar tabela de negocio exige versao
+  nova do contrato de dados); L2 evento sem organizacao atribuivel; L3 vocabulario literal do estagio do
+  Odoo em aberto; L4 ponto de perda nao registrado; L5 janela/periodo. As cinco viajam no proprio
+  relatorio (`lacunas_declaradas`).
+- **Components afetados:** `hermes/agentes/analytics/` (novo: `funil.py`, `funil-v1.json`),
+  `scripts/agentes/` (novo: `verificar_funil.py`, `teste_funil_aceite.sh`),
+  `docs/architecture/funil-v1.md` (novo), `docs/runbooks/funil.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** W6-E07-T01 (E2E Outbound #002 — base da branch, fechado e medido). **Destrava:**
+  W8-E02-T01 (conversao por segmento), W8-E03-T01 (eficacia dos scores) e W8-E05-T01 (custo de agentes),
+  que dependem do funil derivado.

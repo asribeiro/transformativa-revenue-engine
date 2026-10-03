@@ -621,5 +621,50 @@ if [ -f "$ACEITE_E2E" ]; then
   fi
 fi
 
+# --- card TRE-W8-E01-T01 (Funil — dashboard derivado) -------------------------------------------------
+CONTRATO_FUNIL="hermes/agentes/analytics/funil-v1.json"
+COMPONENTE_FUNIL="hermes/agentes/analytics/funil.py"
+for arquivo in "$COMPONENTE_FUNIL" "$CONTRATO_FUNIL" scripts/agentes/verificar_funil.py \
+               scripts/agentes/teste_funil_aceite.sh docs/architecture/funil-v1.md docs/runbooks/funil.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E01-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E01-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_FUNIL" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_FUNIL" scripts/agentes/verificar_funil.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E01-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Os estagios do componente tem de bater com a lista CONGELADA do Data Contract V1 (ordem e rotulos):
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_FUNIL" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E01-T01: --conferir recusou (estagios divergem do contrato de dados)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Leitura pura declarada: o contrato do componente tem de declarar as guardas de ambiente e de escrita.
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas'; do
+    if ! grep -q -F "$marca" "$CONTRATO_FUNIL"; then
+      echo "FALHOU card TRE-W8-E01-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_funil_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_funil_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E01-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_FUNIL_OK' scripts/agentes/teste_funil_aceite.sh; then
+    echo "FALHOU card TRE-W8-E01-T01: aceite sem o marcador ACEITE_FUNIL_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

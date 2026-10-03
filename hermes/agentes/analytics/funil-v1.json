@@ -1,0 +1,233 @@
+{
+  "versao": "funil-v1",
+  "card": "TRE-W8-E01-T01",
+  "wave": "W8 (Analytics)",
+  "titulo": "Funil — dashboard derivado da base canonica e da trilha Odoo -> PostgreSQL",
+  "componente": {
+    "nome": "funil",
+    "arquivo": "hermes/agentes/analytics/funil.py",
+    "papel": "DERIVAR o funil do doc 03 §2 / Data Contract V1 §7.1 a partir da base canonica de sales_intelligence (inteligencia) e da trilha dos eventos Odoo -> PostgreSQL (sync_events), com a ordem de estagios congelada no contrato, contagem por organizacao, alcance cumulativo e conversoes, e desenhar o resultado em JSON e num HTML auto-contido (o dashboard do ambiente de dev)",
+    "nao_faz": [
+      "NAO escreve: leitura pura, SO' SELECT, dentro de transacao READ ONLY (nenhum INSERT/UPDATE/DELETE/DDL e nenhuma tabela nova)",
+      "NAO move estagio de funil no CRM: o dono do estagio e' o Odoo (contrato §2); este componente so' LE o que o Odoo ja' publicou na trilha e o que a inteligencia ja' gravou",
+      "NAO calcula score, tier nem Next Best Action: consome o que as ondas W4/W5 gravaram (score sem versao e' ignorado, como o contrato manda)",
+      "NAO inventa estagio: rotulo fora do vocabulario declarado NAO vira estagio — entra em lacuna (fail-closed), nunca mapeado por semelhanca",
+      "NAO cria segmentacao, performance de mensagem nem custo de agente: isso e' W8-E02/E04/E05, que dependem deste card",
+      "NAO publica em homolog/producao nem monta servico: o dashboard e' um artefato gerado (HTML+JSON) no ambiente de dev (ADR-005)",
+      "NAO expoe dado pessoal: nao le e-mail/telefone/CNPJ/nome — a unidade e' a organizacao (UUID canonico) e a saida so' carrega contagem",
+      "NAO decide se um lead e' real: mede o que foi registrado (organizacao, pesquisa, score, contato, interacao, reuniao, evento de estagio), sem reclassificar"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "doc 03 §2 (funil conceitual) e §3/§4 (scores e tiering)",
+      "docs/data/DATA_CONTRACT_V1.md §7 (vocabularios fechados) e §7.1 (funil, dono Odoo)",
+      "docs/data/data_contract_v1.json (funnel_stages — lista congelada) e §2 (source of truth)",
+      "n8n/contracts/odoo-events-ingest.v1.json (trilha dos eventos Odoo -> PostgreSQL: STAGE_CHANGED, MEETING_CREATED, OPPORTUNITY_WON/LOST e a regra do entity_id)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "o Odoo materializar estagio em coluna do PostgreSQL: a ingestao (TRE-W3-E03-T01) grava o EVENTO na trilha e deixa a materializacao para quem precisar — este componente e' quem precisa, e deriva da trilha em leitura",
+      "oportunidade, valor, motivo de perda e atividade: dono Odoo; aqui so' a CONTAGEM do fato publicado (W8-E04 trata valor/performance)",
+      "reconciliacao diaria da sincronizacao e dead-letter: TRE-W3-E04-T01/T03-E05-T01",
+      "servir o dashboard por HTTP, autenticar usuario ou hospedar pagina: passo de OPERADOR/homolog, nao deste card",
+      "calibracao de score, previsao de canal e de timing: W9"
+    ]
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3)",
+    "regra": "toda evidencia tem de resolver para uma organizacao conhecida; evidencia sem organizacao NAO entra em estagio nenhum — vai para lacunas (nada e' atribuido por suposicao)"
+  },
+  "estagios": [
+    {
+      "nome": "Descoberto",
+      "nivel": 0,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["BASE_ORGANIZACOES"],
+      "evidencia": "organizacao existente no contrato (linha viva em organizations)"
+    },
+    {
+      "nome": "Pesquisado",
+      "nivel": 1,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["PESQUISA_CONCLUIDA", "SINAIS"],
+      "evidencia": "research_run concluida OU sinal registrado (doc 02 §3)"
+    },
+    {
+      "nome": "Qualificado",
+      "nivel": 2,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["SCORE_PRIORITY"],
+      "evidencia": "score PRIORITY calculado E com versao (score sem versao nao e' reprodutivel e e' recusado pelo contrato §8)"
+    },
+    {
+      "nome": "Contato identificado",
+      "nivel": 3,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["CONTATO_COM_CANAL"],
+      "evidencia": "contato da organizacao com canal de resposta (e-mail OU telefone OU WhatsApp) — a existencia do contato, nunca o valor"
+    },
+    {
+      "nome": "Abordagem iniciada",
+      "nivel": 4,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["INTERACAO_OUTBOUND"],
+      "evidencia": "interacao OUTBOUND registrada (envio da onda W6)"
+    },
+    {
+      "nome": "Engajamento",
+      "nivel": 5,
+      "lateral": false,
+      "dono": "PostgreSQL",
+      "fontes": ["INTERACAO_INBOUND_CLASSIFICADA"],
+      "evidencia": "interacao INBOUND com response_category (resposta classificada, W6-E05) — resposta crua nao classificada nao engaja"
+    },
+    {
+      "nome": "Reunião",
+      "nivel": 6,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["RECOMENDACAO_REUNIAO", "TRILHA_ESTAGIO"],
+      "evidencia": "recomendacao CREATE_MEETING executada OU fato MEETING_CREATED na trilha"
+    },
+    {
+      "nome": "Diagnóstico",
+      "nivel": 7,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "estagio publicado pelo Odoo na trilha"
+    },
+    {
+      "nome": "Proposta",
+      "nivel": 8,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "estagio publicado pelo Odoo na trilha"
+    },
+    {
+      "nome": "Negociação",
+      "nivel": 9,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "estagio publicado pelo Odoo na trilha"
+    },
+    {
+      "nome": "Won",
+      "nivel": 10,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "fato OPPORTUNITY_WON (ou estagio Won) na trilha"
+    },
+    {
+      "nome": "Lost",
+      "nivel": 10,
+      "lateral": false,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "fato OPPORTUNITY_LOST (ou estagio Lost) na trilha"
+    },
+    {
+      "nome": "Nurture",
+      "nivel": null,
+      "lateral": true,
+      "dono": "Odoo",
+      "fontes": ["TRILHA_ESTAGIO"],
+      "evidencia": "ramo lateral a partir de Qualificado: conta so' com evidencia propria e NAO implica nem e' implicado pela sequencia linear"
+    }
+  ],
+  "fontes": {
+    "BASE_ORGANIZACOES": {
+      "tabela": "sales_intelligence.organizations",
+      "coluna_tempo": "created_at",
+      "papel": "unidade do funil: uma linha viva por organizacao (deleted_at IS NULL); a coluna status e' lida como evidencia de estagio declarado"
+    },
+    "PESQUISA_CONCLUIDA": {
+      "tabela": "sales_intelligence.research_runs",
+      "coluna_tempo": "created_at",
+      "filtro": "organization_id IS NOT NULL E (status = 'COMPLETED' OU completed_at IS NOT NULL)"
+    },
+    "SINAIS": {
+      "tabela": "sales_intelligence.signals",
+      "coluna_tempo": "detected_at",
+      "filtro": "organization_id IS NOT NULL"
+    },
+    "SCORE_PRIORITY": {
+      "tabela": "sales_intelligence.scores",
+      "coluna_tempo": "calculated_at",
+      "filtro": "score_type = 'PRIORITY' E score_version preenchida"
+    },
+    "CONTATO_COM_CANAL": {
+      "tabela": "sales_intelligence.contacts",
+      "coluna_tempo": "created_at",
+      "filtro": "e-mail, telefone ou WhatsApp preenchido — o VALOR nunca e' lido na saida"
+    },
+    "INTERACAO_OUTBOUND": {
+      "tabela": "sales_intelligence.interactions",
+      "coluna_tempo": "occurred_at",
+      "filtro": "direction = 'OUTBOUND'"
+    },
+    "INTERACAO_INBOUND_CLASSIFICADA": {
+      "tabela": "sales_intelligence.interactions",
+      "coluna_tempo": "occurred_at",
+      "filtro": "direction = 'INBOUND' E response_category preenchida"
+    },
+    "RECOMENDACAO_REUNIAO": {
+      "tabela": "sales_intelligence.recommendations",
+      "coluna_tempo": "created_at",
+      "filtro": "action = 'CREATE_MEETING' E status = 'EXECUTED'"
+    },
+    "TRILHA_ESTAGIO": {
+      "tabela": "sales_intelligence.sync_events",
+      "coluna_tempo": "created_at",
+      "filtro": "source_system = 'odoo' E status = 'COMPLETED' E operation em (STAGE_CHANGED, MEETING_CREATED, OPPORTUNITY_WON, OPPORTUNITY_LOST)",
+      "rotulo": "STAGE_CHANGED -> payload.estagio_novo; MEETING_CREATED -> 'Reunião'; OPPORTUNITY_WON -> 'Won'; OPPORTUNITY_LOST -> 'Lost'",
+      "atribuicao": "entity_id quando ele casa uma organizacao conhecida; senao payload.organizacao_id quando ele casa; senao LACUNA (evento sem atribuicao)"
+    }
+  },
+  "normalizacao_de_estagio": {
+    "regra": "o rotulo do estagio (vindo de organizations.status ou do payload da trilha) e' normalizado por trim, minusculas e remocao de acentos e espacos duplicados, e comparado por IGUALDADE EXATA contra os rotulos declarados; nao ha casamento por semelhanca, radical ou prefixo",
+    "por_que": "casar prosa por semelhanca foi reprovado tres vezes no roteador JEV deste projeto (D04/D06/D07): e' peneira. Rotulo nao declarado e' fail-closed",
+    "rotulo_nao_declarado": "NAO vira estagio: conta em lacunas.estagios_desconhecidos (com a forma normalizada, truncada) e a organizacao segue valendo apenas pelos outros fatos dela",
+    "status_reservado": "'DISCOVERED' e' o estado inicial do contrato e NAO e' estagio de funil: nao conta em Descoberto por rotulo (a linha viva ja' conta por BASE_ORGANIZACOES)"
+  },
+  "alcance": {
+    "semantica": "alcancadas(estagio) = organizacoes com evidencia PROPRIA do estagio OU evidencia de qualquer estagio LINEAR de nivel maior",
+    "por_que": "funil e' alcance acumulativo: quem chegou a Reuniao passou por Abordagem iniciada; contar so' a evidencia propria transforma o funil em contagem de fatos e quebra a leitura de conversao",
+    "nivel_terminal": "Won e Lost dividem o nivel 10: organizacao perdida NAO conta em Won (e vice-versa). No nivel terminal o alcance e' a evidencia PROPRIA do rotulo",
+    "lateral": "Nurture (nivel null, lateral = true) conta somente por evidencia propria e nao entra em nenhuma conta cumulativa",
+    "invariante": "alcancadas[i] >= alcancadas[i+1] para a sequencia linear, e alcancadas[Negociacao] >= won + lost"
+  },
+  "conversoes": {
+    "da_anterior": "100 * alcancadas[estagio] / alcancadas[estagio_anterior] na sequencia linear; o primeiro estagio nao tem conversao da anterior (null)",
+    "do_topo": "100 * alcancadas[estagio] / alcancadas[Descoberto]",
+    "nurture": "conversao_de = Qualificado (o ramo lateral sai de Qualificado, doc 03 §2)",
+    "denominador_zero": "denominador zero devolve null (nao 0 e nao erro): base vazia e' base vazia, nao conversao zero"
+  },
+  "lacunas_declaradas": [
+    "L1: o estagio de funil e' do Odoo (contrato §2). Nada materializa estagio em coluna do PostgreSQL hoje: o que existe e' a TRILHA (sync_events) com o payload integral. Este card deriva da trilha em leitura; materializar estagio em tabela de negocio exige versao nova do contrato de dados (decisao do dono)",
+    "L2: evento da trilha cujo entity_id nao casa organizacao conhecida (tipicamente OPPORTUNITY_WON/LOST, que carregam o UUID da OPORTUNIDADE) nao e' atribuivel por organizacao: fica contado em lacunas.eventos_sem_atribuicao e NAO entra no estagio",
+    "L3: o vocabulario literal dos estagios do Odoo (crm.stage) nao esta' congelado no Data Contract V1 — so' a ordem conceitual (funnel_stages). Rotulo que nao for exatamente um rotulo declarado cai em lacuna ate' o vocabulario ser fechado (decisao do dono)",
+    "L4: Lost e' terminal sem registro do estagio de origem: uma organizacao perdida conta como tendo alcancado todos os niveis lineares anteriores (doc 03 nao define o ponto de perda no V1)",
+    "L5: sem janela declarada, o funil e' o ACUMULADO de toda a base; janela (--desde/--ate) filtra pela coluna de tempo de cada fonte, e a comparacao de periodos nao esta' no V1"
+  ],
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<dev|aceite> psql ...`); prefixo remoto e' RECUSA (BANCO_NAO_E_DEV). homolog exige --confirmo. prod e' RECUSA por desenho (exit 4)",
+    "leitura_pura": "toda consulta roda com default_transaction_read_only = on (o próprio PostgreSQL recusa escrita) E a auditoria da própria fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se o valor de TRE_FUNIL_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "a saida carrega apenas contagem por estagio; o componente nao le coluna de e-mail, telefone, WhatsApp nem CNPJ (o filtro de contato e' por preenchimento, nao por valor)"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, contrato (versao + sha256), base (organizacoes + digest), estagios (nome, nivel, lateral, dono, alcancadas, evidencia_propria, conversoes), resumo, fontes (ORGANIZACOES DISTINTAS que cada fonte devolve — as consultas sao DISTINCT por organizacao, nao contagem de linhas), lacunas e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com as barras do funil, a tabela estagio/alcance/conversao, as lacunas declaradas e o rodape de proveniencia",
+    "determinismo": "a mesma base com o mesmo contrato produz o MESMO relatorio; gerado_em e' a unica diferenca e NAO entra no hash_do_relatorio"
+  }
+}

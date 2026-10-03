@@ -3,6 +3,40 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W8 — Analytics] — 03/10/2026
+
+### Added
+
+- **Funil — dashboard derivado v1** (`TRE-W8-E01-T01`) — componente `hermes/agentes/analytics/funil.py`
+  (`funil-v1`) + contrato declarativo `hermes/agentes/analytics/funil-v1.json`: deriva o funil do
+  doc 03 §2 na ordem **congelada** do Data Contract V1 (`funnel_stages`, contrato §7.1) a partir da base
+  canônica de `sales_intelligence` (organizations, research_runs, signals, scores, contacts,
+  interactions, recommendations) e da **trilha** dos eventos Odoo → PostgreSQL (`sync_events`), conta por
+  **organização** (UUID canônico), aplica **alcance cumulativo** (quem chegou a Reunião passou por
+  Abordagem iniciada), separa o **terminal** (`Won` não conta como `Lost`) e trata `Nurture` como **ramo
+  lateral** que converte de `Qualificado`; desenha o resultado em **JSON** e num **HTML auto-contido** (o
+  dashboard, sem recurso externo e sem servidor). Rótulo de estágio casa por **igualdade exata depois de
+  normalizar** — fora do vocabulário declarado vai para lacuna, nunca vira estágio; evento da trilha sem
+  organização atribuível (o caso de `OPPORTUNITY_WON/LOST`, que carregam o UUID da oportunidade) também
+  fica em lacuna e não entra no estágio. **Leitura pura:** só `SELECT`, transação em `READ ONLY` e
+  auditoria da própria fonte que reprova verbo de escrita antes de conectar; `prod` recusado por desenho
+  (exit 4), `dev` exige porta de banco local e `homolog` exige `--confirmo`. Medição: suíte offline
+  (`scripts/agentes/verificar_funil.py --autoteste`) **24 itens, 0 falhas + 8/8 mutações** cada uma
+  reprovando um item que o alvo limpo não reprova; aceite `ACEITE_FUNIL_OK` **34 itens, 0 falhas** em
+  PostgreSQL descartável na VPS de dev (`scripts/agentes/teste_funil_aceite.sh`, com os números do funil
+  conferidos à mão e 3 dentes de ponta medidos no banco); portão de estrutura PASS. Docs:
+  `docs/architecture/funil-v1.md`, `docs/runbooks/funil.md`.
+
+### Fixed
+
+- **`SET default_transaction_read_only` num único `-c` NÃO vale** (defeito medido pelo aceite do
+  `TRE-W8-E01-T01`, **DETECTADO POR:** aceite, antes de qualquer entrega): com
+  `psql -c "SET default_transaction_read_only = on; SELECT …"` a transação implícita já começou antes do
+  `SET` e a escrita de prova **passou** (`INSERT 0 1`) — a leitura pura era promessa, não mecanismo. O
+  componente passou a emitir **dois `-c`** (`SET` e depois a consulta) e o aceite ganhou o item que
+  injeta a escrita e exige `cannot execute INSERT in a read-only transaction`; a escrita recusada também
+  não pode deixar linha.
+
 ## [W6 — Outbound] — 02/10/2026
 
 ### Added

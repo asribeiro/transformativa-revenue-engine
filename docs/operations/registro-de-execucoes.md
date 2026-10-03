@@ -2544,3 +2544,51 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   `sha256-artefatos.out`).
 - Segredos: nenhum valor nesta entrada. A senha do sink SMTP e a chave da API do stub sao valores de
   teste gerados na hora pelo proprio aceite; ha item medindo 0 ocorrencias delas na saida.
+
+---
+
+## TRE-W8-E01-T01 — Funil (dashboard derivado) — 03/10/2026
+
+**Card:** `TRE-W8-E01-T01` (W8 / Analytics) · **Base:** `origin/feature/TRE-W6-E07-T01` @ `20e8ea6` ·
+**Branch:** `feature/TRE-W8-E01-T01` · **Máquina:** VPS Contabo `vmi3619453` (169.58.24.102), ambiente **dev**
+Transf: `tar` por ssh (sem `scp`) para `/opt/tre/w8e01t01-r3` (r1 e r2 foram as rodadas de conserto).
+
+**O que foi medido (por execução real, não por leitura do código):**
+
+- `python3 scripts/agentes/verificar_funil.py --autoteste` → **24 itens, 0 falhas + 8/8 mutações**
+  detectadas (`d1` rótulo trocado → item 2; `d2` estágio sem fonte → item 4; `d3` verbo de escrita no SQL →
+  item 5; `d4` guarda de `prod` desligada → item 9; `d5` guarda de container de dev desligada → item 8;
+  `d6` alcance cumulativo quebrado → a suíte REPROVA (o componente recusa funil não monotônico);
+  `d7` casamento por semelhança → item 11; `d8` Nurture deixando de ser lateral → item 3). Descoberto na
+  primeira rodada de autoteste: mutação só vale se reprovar item que o **alvo limpo não reprova** —
+  comparar contra falha pré-existente faz dente verde falso (corrigido antes do aceite).
+- `bash scripts/agentes/teste_funil_aceite.sh` → **`ACEITE_FUNIL_OK` (34 itens, 0 falhas, exit 0)**, ~17 s,
+  PostgreSQL descartável `pg-funil-acc` + migration 0001 + base semeada (9 organizações cobrindo todos os
+  níveis, 2 terminais e o ramo lateral). Itens de destaque: alcance por estágio **conferido à mão**
+  (9/5/5/5/5/5/4/3/3/2/1/1/1), conversões (55,56 / 80,0 / 75,0 / 66,67 / 50,0 e Nurture 20,0 de
+  Qualificado), **contagem por organização** (3 interações de resposta no banco → 2 organizações),
+  **três dentes medidos no banco** (rótulo de estágio inventado na trilha não vira estágio;
+  `OPPORTUNITY_LOST` sem organização atribuível não entra em Lost; `organizations.status` não declarado
+  fica em lacuna), `score_version` vazia **não** qualifica, **leitura pura** por snapshot md5 das 12
+  tabelas antes/depois **e** pela transação `READ ONLY` recusando a escrita de prova (sem deixar linha),
+  determinismo (mesmo `hash_do_relatorio` em duas rodadas), saída sem PII e dashboard auto-contido.
+- **Defeito medido pelo próprio aceite (DETECTADO POR: aceite, antes de qualquer entrega):**
+  `psql -c "SET default_transaction_read_only = on; SELECT …"` num único `-c` **não** vale — a transação
+  implícita já começou antes do `SET` e a escrita de prova passou (`INSERT 0 1`). Medido de novo em
+  container descartável: com **dois** `-c` o PostgreSQL responde
+  `cannot execute INSERT in a read-only transaction`. O componente passou a emitir dois `-c` (+`-q`, que
+  também tirou o eco do tag `SET` da saída — o eco inflava `fontes` em 1).
+- `bash scripts/verificar_estrutura.sh` → **PASS (0 falhas)**, com o bloco novo do card (arquivos
+  versionados, `py_compile`, `--conferir` contra o contrato de dados, marcas de guarda e validade do aceite).
+- **Ambiente:** nada em produção (ADR-005). O container descartável do aceite é removido no fim; os
+  containers do ambiente não foram tocados; nenhuma credencial real, nenhuma ponta externa (só `docker exec`
+  no container local + `127.0.0.1`).
+- **Lacunas declaradas:** as cinco do desenho (`docs/architecture/funil-v1.md` §5) viajam no relatório
+  (`lacunas_declaradas`). A que mais pesa na operação: **evento sem organização atribuível não entra no
+  estágio** (é o caso de `OPPORTUNITY_WON/LOST`, que carregam o UUID da oportunidade) — o conserto é o
+  produtor publicar `organizacao_id` no payload (ou materializar estágio na coluna do contrato), nunca
+  casar oportunidade com lead por semelhança.
+- **Evidência anexada ao card:** `aceite-funil-34ok.out`, `suite-funil-24ok-8dentes.out`,
+  `portao-estrutura.out` e `sha256-artefatos.out`.
+- Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+  `TRE_FUNIL_TOKEN` aparecer na evidência — item medido na suíte offline.
