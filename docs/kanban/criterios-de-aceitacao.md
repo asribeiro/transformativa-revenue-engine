@@ -344,3 +344,37 @@ empresa atuais), escrita restrita a duas tabelas com guarda anti-DDL, `prod` rec
 nos dois sentidos (replay nao reescreve, rodada repetida nao renotifica). O que **nao** esta coberto nesta v1:
 transporte real da notificacao (Telegram/e-mail e do W6-E04) e a qualidade da abordagem medida por resposta
 real (W9).
+## TRE-W6-E01-T01 — Configurar Titan SMTP
+
+- **Componente:** `hermes/integracoes/titan/smtp_titan.py` (versão `titan-smtp-v1`) + contrato
+  `hermes/integracoes/titan/titan-smtp-v1.json` + doc `docs/integrations/titan-smtp-v1.md`.
+- A configuração `TRE_TITAN_*` é **validada** antes de qualquer conexão: completude (faltantes
+  nomeados), **matriz porta × TLS do provedor** (`465` implicit_tls · `587` starttls · `25` recusada ·
+  outra porta recusada) e coerência entre porta e segurança declarada — divergência **RECUSA**
+  (`CONFIG_INCOERENTE`), nunca "conserta sozinho".
+- **Guardas de ambiente (ADR-005):** em `dev` só sink local e remetente/destino do domínio de dev
+  (`HOST_NAO_E_DEV`, `REMETENTE_NAO_DEV`, `DESTINO_NAO_PERMITIDO`); `homolog` exige aprovação
+  registrada (`HOMOLOG_SEM_APROVACAO`) e lista explícita de destinos; **`prod` RECUSA (exit 4)**.
+- **Segredo:** senha só por `TRE_TITAN_PASSWORD`, mascarada em todo relatório/trilha, sem caminho por
+  linha de comando, e **checagem fail-closed** de vazamento na gravação (exit 5 `SENHA_VAZADA`).
+- **Idempotência:** `--chave-idempotencia` obrigatória no envio; replay da mesma chave → `JA_ENVIADO`
+  sem novo envio e sem conexão; `--desfazer <chave>` é dry-run até `--confirmo` e preserva a auditoria.
+- `--planejar`/`--conferir` nunca abrem conexão; `--enviar` sem `--confirmo` é `DRY_RUN`.
+
+**Test plan:** `python3 scripts/integracoes/verificar_smtp_titan.py` (suite offline — config, matriz,
+guardas, segredo, trilha; **49 itens**) + `bash scripts/integracoes/teste_smtp_titan_aceite.sh`
+(sink SMTP descartável em `127.0.0.1` com TLS próprio: EHLO/TLS/AUTH/NOOP, entrega medida na captura,
+guardas, replay, desfazer; **23 itens**) + `--prova-de-dente` (5 mutações, cada uma reprovando o item
+esperado; **29 itens**). Evidência = saída completa com exit code. Runbook: `docs/runbooks/titan-smtp.md`.
+**Rollback:** `git revert` do commit do card — sem DDL, sem migration, sem tabela e sem ato em
+produção; chaves registradas podem ser marcadas com `--desfazer <chave> --confirmo` (um e-mail
+entregue não volta — o `--confirmo` antes do envio é a barreira).
+**Risco:** Médio-alto — é canal **outbound** (e-mail em nome da Transformativa). Mitigado por: guarda
+de dev (host loopback), remetente/destino de dev, aprovação registrada em homolog, `--confirmo`
+obrigatório, idempotência e ausência de credencial Titan no papel `dev-harness`. A prova contra
+`smtp.titan.email` é de **homolog**, com credencial do Sales AI e aprovação do dono (fora deste card).
+**Components afetados:** `hermes/integracoes/titan/`, `scripts/integracoes/`,
+`deploy/environments/dev-smtp.env`, `.env.example`, `docs/integrations/titan-smtp-v1.md`,
+`docs/runbooks/titan-smtp.md`, `scripts/verificar_estrutura.sh`.
+**Depends on:** W5-E08-T01 (fechado e medido) · **Destrava:** W6-E01-T02 (IMAP), W6-E04-T01 (send
+workflow) e, por consequência, o E2E Outbound #002.

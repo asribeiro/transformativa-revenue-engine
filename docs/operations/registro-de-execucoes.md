@@ -2321,3 +2321,74 @@ harness quando a ancora nao existe); a linha do conflito do A13 chamava o CLI se
 **Nao e homologacao:** o veredito tecnico deste registro e de quem entregou; a revisao independente e do
 perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A rodada nao envia nada —
 `entrega_externa: false` e `envio.executado: false` na auditoria; nenhum evento de outbox e criado.
+## 2026-10-02 — container do Hermes (workspace do board TRE, worktree `feature/TRE-W6-E01-T01`) — TRE-W6-E01-T01 (Titan SMTP): entrega medida, sem rede além do loopback
+
+- **O que este card e:** primeiro card da onda W6 (canal outbound do TRE). Entrega a camada de
+  **configuracao validada** do SMTP do Titan e o **primitivo de envio de uma mensagem**. Nao toca banco
+  (`sales_intelligence` intocado — o card nao abre conexao de banco), nao cria migration e nao usa
+  credencial Titan: o papel `dev-harness` **nao tem** `TRE_TITAN_*` (`hermes/policies/dev-harness.yaml`
+  -> `credenciais_proibidas`) e nao envia e-mail em nome da Transformativa. Onde o card roda: worktree
+  proprio no container do Hermes (nao ha docker daemon aqui e nao faz falta: a prova e de rede local).
+- **Artefatos sob teste (sha256, medidos antes da bateria):** `hermes/integracoes/titan/smtp_titan.py
+  993cf7c8b1853e5e881819e67ec90c6ac18208f60cb89ecbadae930b15fca1f0`;
+  `hermes/integracoes/titan/titan-smtp-v1.json d2b56f75d7fb50ce13e8ed1905aa87a98f795d4b33fdeb520e90ebbd88f612d3`;
+  `scripts/integracoes/sink-smtp-dev.py aee5c12ce8b79dc9a954b0f0c472336c1260acac749d4c01d2f9790cbe23f875`;
+  `scripts/integracoes/verificar_smtp_titan.py a733de146dd65be00f6c4515cb9874054f2f87d79d2a10b7803b54b7b6794869`;
+  `scripts/integracoes/teste_smtp_titan_aceite.sh 5a6a6a8c6ed0c012290512dc2b726cd18948ab492c65d376c98ff91cda81a104`;
+  `scripts/integracoes/mutar_smtp_titan.py 9ad2983a04ea64357583be004f17ea0f57ab5b4e9a80d9dc833f6b75f430a7fc`.
+- **Bateria final (3 comandos, 02/10/2026 23:1xZ; saida completa + exit code):**
+  - `python3 scripts/integracoes/verificar_smtp_titan.py` -> `SMTP_TITAN_SUITE_OK (49 itens, 0 falhas)`,
+    **exit 0** (nenhuma conexao: a suite so roda `--planejar`/`--conferir` e caminhos de recusa);
+  - `TRE_W6_TRABALHO=... bash scripts/integracoes/teste_smtp_titan_aceite.sh` ->
+    `ACEITE_SMTP_TITAN_001_OK (23 itens, 0 falhas)`, **exit 0**;
+  - `TRE_W6_TRABALHO=... bash scripts/integracoes/teste_smtp_titan_aceite.sh --prova-de-dente` ->
+    `ACEITE_SMTP_TITAN_001_OK (29 itens, 0 falhas)`, **exit 0**, com as **5 mutacoes** cada uma
+    reprovando o item esperado (`sem-guarda-de-host` -> item 5, `sem-matriz-porta-tls` -> item 6,
+    `ignora-confirmo` -> item 4, `senha-sem-mascara` -> item 7, `sem-idempotencia` -> item 9) e o
+    **controle** (item 11.1): a suite roda verde no modulo INTACTO depois das mutacoes.
+- **O que o aceite mediu de verdade (nao e leitura de codigo):** sink SMTP proprio em `127.0.0.1`
+  (TLS implicito em 2465 e STARTTLS em 2587, certificado gerado na hora por `openssl`, SAN
+  `IP:127.0.0.1`); `--provar` mediu `ehlo 250`, `versao_tls TLSv1.3`, `autenticacao 235 2.7.0
+  Autenticacao bem-sucedida` nos dois modos; entrega capturada pelo sink com `mail_from
+  no-reply@dev.local`, `rcpt_to [caixa@dev.local]`, `assunto prova-aceite`, corpo, `X-TRE-Card:
+  TRE-W6-E01-T01` e `autenticado_como sink-dev`; `--enviar` **sem** `--confirmo` nao entregou (caixa
+  0 -> 0) e **com** `--confirmo` entregou uma (0 -> 1); replay da mesma chave deu `JA_ENVIADO` com a
+  caixa parada em 1; chave nova entregou (1 -> 2); as guardas recusaram com a caixa intacta
+  (`HOST_NAO_E_DEV` 3, `PRODUCAO_NAO_E_DESTE_CARD` 4, `DESTINO_NAO_PERMITIDO` 3, `CONFIG_INCOERENTE`
+  3, `PORTA_NAO_AUTORIZADA` 3); o item 3.3 provou que o TLS nao foi decorativo (contra o sink TLS, o
+  caminho `nenhuma` FALHOU, exit 1).
+- **Nada saiu do loopback:** item 9.2 conferiu `execucoes.txt` — todo caso com host nao-loopback
+  (`192.0.2.1`, TEST-NET, nao roteavel) saiu em RECUSA medida (exit 3/4); se o modulo tivesse tentado
+  conectar, o exit seria 1. **Nada em producao:** item 9.1 comparou `git status --porcelain` antes e
+  depois (hashes identicos) e o aceite escreveu so no diretorio de trabalho proprio.
+- **Segredo:** o valor da senha (`sentinela-dev-...`, valor de teste do proprio aceite, nunca
+  versionado) nao apareceu em **nenhum** arquivo do trabalho nem na captura do sink (item 7.1 = 0
+  ocorrencias); a captura guarda o USUARIO autenticado, nunca a senha (o sink descarta a senha na
+  hora). O modulo ainda tem checagem fail-closed propria: senha no que seria gravado -> gravacao
+  recusada, exit 5 `SENHA_VAZADA`.
+- **Defeitos do INSTRUMENTO corrigidos durante o card (rodada 1 -> rodada 2), medidos:**
+  1. rodada 1 do aceite: **19 OK / 4 FALHOU** (itens 3.3, 4.1, 4.2, 9.2).
+  2. `contar()` imprimia `0\n0` (`grep -c .` ja imprime `0` e **sai 1**, e o `|| echo 0` somava um
+     segundo zero) -> os itens 4.1/4.2 reprovavam com a medicao certa na mao (`[: 0\n0: integer
+     expression expected`). Corrigido com captura de variavel.
+  3. `printf '%s' "$SAIDA" | grep -q ...` sob `set -o pipefail`: o `grep -q` fecha o pipe, o `printf`
+     morre por SIGPIPE e a pipeline devolve **141** — 6 dos 8 itens reprovados na rodada da suite
+     eram isso. Trocado por `contem()` (case/glob, sem pipe).
+  4. **Defeito REAL do modulo, achado pelo item 3.3:** em `TRE_TITAN_SMTP_SEGURANCA=nenhuma` o
+     `medidas["versao_tls"] = sessao.sock.version()` estourava `AttributeError` (socket TCP puro nao
+     tem `version()`) e a rodada morria **sem relatorio** (exit 1, sem `FALHOU`). Corrigido para
+     `sock.version() if isinstance(sock, ssl.SSLSocket) else None`. A rodada 2 ficou **22 OK / 1
+     FALHOU** (so o item 3.3) — o item 3.3 estava certo: ele expunha o defeito.
+  5. rodada 1 do dente: **28 OK / 1 FALHOU** — o dente `sem-matriz-porta-tls` media com
+     `--ambiente dev`, onde a guarda `HOST_NAO_E_DEV` mascarava a mutacao (o aceite continuava
+     reprovando, mas pelo motivo ERRADO, e o dente exige o item esperado). Corrigido para medir em
+     `homolog` com aprovacao, o mesmo ambiente do item 6 -> rodada 2: **29 OK / 0 FALHOU**, exit 0.
+- **Limites declarados:** (a) a prova contra `smtp.titan.email` NAO e deste card — exige credencial do
+  Sales AI + aprovacao registrada, e por isso e de **homolog**; (b) o aceite prova TLS contra um
+  certificado proprio de dev, o que mede negociacao TLS e AUTH, nao a cadeia de confianca publica
+  (que so o provedor real exercita); (c) a trilha de envio e arquivo JSONL fora do banco — quando o
+  banco do TRE estiver de pe, W6-E04 decide se ela passa a viver em `sync_events`.
+- **Logs brutos:** saidas completas em `/opt/data/cache/scratch/t6smtp.suite.out`,
+  `t6smtp.aceite-base.out`, `t6smtp.aceite-dente.out` e `t6smtp.sha256.out` (anexados ao card).
+- Segredos: nenhum valor nesta entrada; a senha usada na prova e um valor de teste local gerado pelo
+  proprio aceite e nunca entra em arquivo versionado, argumento de linha de comando ou log.

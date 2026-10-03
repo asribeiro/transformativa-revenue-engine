@@ -1815,3 +1815,45 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   aceite E2E em PostgreSQL descartavel (cadeia real com o gerador) `ACEITE_APROVACAO_001_OK (104 OK / 0 FALHOU)`
   com **4/4 dentes**. Correcao de defeito real: a idempotencia da notificacao ficava vazia porque
   `json_agg` de `output->'notificados'` produzia lista de listas — a segunda rodada renotificava todos os pedidos.
+## [W6 — Titan Outbound MVP] — 02/10/2026
+
+### Added
+
+- **Configuração do SMTP do Titan (`TRE-W6-E01-T01`)** — primeiro card da onda W6 (canal outbound).
+  Entrega a camada de configuração **validada** e o **primitivo de envio de uma mensagem**:
+  - `hermes/integracoes/titan/smtp_titan.py` (versão `titan-smtp-v1`) — lê `TRE_TITAN_*`, confere
+    **completude** (faltantes nomeados), **matriz porta × TLS do provedor** (`465` implicit_tls ·
+    `587` starttls · `25` recusada · outra porta recusada) e a **coerência** entre porta e segurança
+    declarada; conecta por TLS, mede EHLO/AUTH/NOOP (`--provar`) e envia **uma** mensagem;
+  - **guardas de ambiente (ADR-005)**: em `dev` só sink local e remetente/destino do domínio de dev
+    (`HOST_NAO_E_DEV`, `REMETENTE_NAO_DEV`, `DESTINO_NAO_PERMITIDO`) — o papel `dev-harness` não tem
+    credencial Titan (`hermes/policies/dev-harness.yaml`); `homolog` exige aprovação registrada
+    (`HOMOLOG_SEM_APROVACAO`); **`prod` RECUSA (exit 4)**;
+  - **segredo**: senha só por `TRE_TITAN_PASSWORD`, mascarada em todo relatório/trilha, sem caminho por
+    linha de comando e com checagem **fail-closed** de vazamento na gravação (exit 5 `SENHA_VAZADA`);
+  - **idempotência**: `--chave-idempotencia` obrigatória no envio; replay → `JA_ENVIADO` (sem novo
+    envio e sem conexão); `--desfazer <chave>` é dry-run até `--confirmo` e preserva a auditoria;
+  - `hermes/integracoes/titan/titan-smtp-v1.json` (contrato) e `docs/integrations/titan-smtp-v1.md`;
+  - `scripts/integracoes/sink-smtp-dev.py` — sink SMTP de desenvolvimento (só stdlib) para a prova
+    local em `127.0.0.1`; `deploy/environments/dev-smtp.env` (nomes não secretos);
+  - `scripts/integracoes/verificar_smtp_titan.py` — suite **offline** (49 itens: config, matriz,
+    guardas, segredo, trilha; nenhuma conexão);
+  - `scripts/integracoes/teste_smtp_titan_aceite.sh` — aceite com sink descartável e TLS próprio
+    (23 itens: EHLO/TLS/AUTH/NOOP, entrega medida na captura, guardas com caixa intacta, replay,
+    desfazer, escopo do repositório) e `--prova-de-dente` (5 mutações; 29 itens);
+  - `scripts/integracoes/mutar_smtp_titan.py` (mutações da prova de dente) e
+    `docs/runbooks/titan-smtp.md` (runbook + tabela de motivos de recusa).
+  - Medido em 02/10/2026, no worktree do card, sem rede além do loopback: suite `SMTP_TITAN_SUITE_OK
+    (49 itens, 0 falhas)` exit 0; aceite `ACEITE_SMTP_TITAN_001_OK (23 itens, 0 falhas)` exit 0;
+    `--prova-de-dente` `ACEITE_SMTP_TITAN_001_OK (29 itens, 0 falhas)` exit 0. `.env.example` ganhou os
+    nomes `TRE_TITAN_SMTP_SEGURANCA`, `TRE_TITAN_FROM`, `TRE_TITAN_TIMEOUT`, `TRE_TITAN_CA`,
+    `TRE_TITAN_DOMINIO_DEV`, `TRE_TITAN_DESTINOS_PERMITIDOS`, `TRE_TITAN_APROVACAO_HUMANA` (sem valor).
+    A prova contra `smtp.titan.email` fica em **homolog**, com credencial do Sales AI e aprovação do dono.
+
+### Notas de estado
+
+- A onda W6 nasce do plano (doc 11) — as ondas W2 a W5 estão entregues em suas branches
+  `feature/TRE-W*` e ainda não integradas em `develop`; este card ramificou de `develop` (convenção de
+  `BRANCHING.md`) e não depende de código das ondas anteriores.
+- Nada em produção e nenhuma credencial real usada: a prova de configuração em desenvolvimento usa um
+  sink local descartável (ADR-005).

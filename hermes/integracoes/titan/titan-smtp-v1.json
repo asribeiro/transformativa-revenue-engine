@@ -1,0 +1,113 @@
+{
+  "integracao": "Titan — SMTP outbound",
+  "nome": "titan-smtp-v1",
+  "versao": "titan-smtp-v1",
+  "card": "TRE-W6-E01-T01",
+  "onda": "W6",
+  "baseline": "V1.1.0",
+  "componente": "hermes/integracoes/titan/smtp_titan.py",
+  "papel": "configuracao validada (completude, matriz porta x TLS, guardas de ambiente) e primitivo de envio de UMA mensagem; NAO compoe outreach, NAO concede Human Approval, NAO ingere resposta",
+
+  "fonte_da_verdade": [
+    "docs/integrations/titan-smtp-v1.md (documento do contrato e das guardas)",
+    "docs/operations/gestao-de-secrets.md (§1 principios, §3 segregacao Dev Harness x Sales AI, §5 ciclo de vida)",
+    "hermes/policies/dev-harness.yaml (credenciais_proibidas: TRE_TITAN_*)",
+    "hermes/policies/sales-ai.yaml (who pode ler e enviar e-mail pelo Titan, apenas com Human Approval)",
+    "docs/adr/ADR-0005-separacao.md (nada nasce em producao)"
+  ],
+
+  "variaveis": [
+    {"nome": "TRE_TITAN_SMTP_HOST", "campo": "host", "obrigatoria": true, "uso": "servidor SMTP (smtp.titan.email em homolog/prod; sink local em dev)", "segredo": false},
+    {"nome": "TRE_TITAN_SMTP_PORT", "campo": "porta", "obrigatoria": true, "uso": "465 (implicit TLS) ou 587 (STARTTLS); em dev aceita porta de sink local com seguranca explicita", "segredo": false},
+    {"nome": "TRE_TITAN_SMTP_SEGURANCA", "campo": "seguranca", "obrigatoria": false, "uso": "implicit_tls | starttls | nenhuma; inferida da porta quando 465/587 e ausente; 'nenhuma' so em sink loopback", "segredo": false},
+    {"nome": "TRE_TITAN_USER", "campo": "usuario", "obrigatoria": true, "uso": "caixa autenticada", "segredo": false},
+    {"nome": "TRE_TITAN_PASSWORD", "campo": "senha", "obrigatoria": true, "uso": "senha da caixa; vive so em memoria, nunca em argumento, saida, relatorio ou trilha", "segredo": true},
+    {"nome": "TRE_TITAN_FROM", "campo": "remetente", "obrigatoria": false, "uso": "remetente canonico; assume TRE_TITAN_USER quando ausente", "segredo": false},
+    {"nome": "TRE_TITAN_TIMEOUT", "campo": "timeout", "obrigatoria": false, "uso": "segundos de espera da sessao; padrao 15", "segredo": false},
+    {"nome": "TRE_TITAN_CA", "campo": "ca", "obrigatoria": false, "uso": "CA de confianca alternativa (sink de dev com certificado proprio); ausente = CA do sistema", "segredo": false},
+    {"nome": "TRE_TITAN_DOMINIO_DEV", "campo": "dominio_dev", "obrigatoria": false, "uso": "dominio aceito em dev para remetente e destino; padrao dev.local", "segredo": false},
+    {"nome": "TRE_TITAN_DESTINOS_PERMITIDOS", "campo": "destinos_permitidos", "obrigatoria": false, "uso": "lista CSV de destinatarios autorizados em homolog/prod; fora da lista RECUSA", "segredo": false},
+    {"nome": "TRE_TITAN_APROVACAO_HUMANA", "campo": "aprovacao_humana", "obrigatoria": false, "uso": "identificador do registro de aprovacao; exigido para falar com o provedor em homolog", "segredo": false}
+  ],
+
+  "matriz_porta_tls": {
+    "465": "implicit_tls",
+    "587": "starttls",
+    "25": "RECUSA (PORTA_NAO_AUTORIZADA) — o provedor nao autoriza relay na 25",
+    "outra": "RECUSA (PORTA_NAO_PREVISTA), exceto sink loopback em dev com seguranca explicita",
+    "fonte": "matriz do provedor conferida pelo componente; divergencia entre porta e seguranca declarada RECUSA (CONFIG_INCOERENTE) em vez de corrigir sozinho",
+    "excecao_declarada": "em dev, host loopback (sink) aceita porta fora da matriz se TRE_TITAN_SMTP_SEGURANCA vier explicita — nao se infere TLS de porta de teste"
+  },
+
+  "ambientes": {
+    "dev": {
+      "host": "loopback/sink local obrigatorio (HOST_NAO_E_DEV caso contrario)",
+      "remetente": "dominio de dev obrigatorio (REMETENTE_NAO_DEV caso contrario)",
+      "destino": "dominio de dev obrigatorio (DESTINO_NAO_PERMITIDO caso contrario)",
+      "credencial_real": "nao existe: o papel dev-harness nao tem TRE_TITAN_* (policies/dev-harness.yaml)"
+    },
+    "homolog": {
+      "host": "provedor permitido",
+      "exige": ["TRE_TITAN_APROVACAO_HUMANA registrada", "destino na lista TRE_TITAN_DESTINOS_PERMITIDOS"],
+      "recusa": "HOMOLOG_SEM_APROVACAO / DESTINO_NAO_PERMITIDO"
+    },
+    "prod": {
+      "status": "RECUSADO por desenho (exit 4, PRODUCAO_NAO_E_DESTE_CARD)",
+      "regra": "ADR-005: nada nasce em producao; promocao e decisao humana registrada, com card proprio"
+    }
+  },
+
+  "guardas": {
+    "confirmo": "--enviar sem --confirmo e DRY_RUN: nao abre conexao e nao grava na trilha",
+    "chave_idempotencia": "obrigatoria no envio (exit 2 sem ela) — retry nao pode criar duplicata (doc 06 §7)",
+    "replay": "mesma chave com resultado ENVIADO na trilha => JA_ENVIADO, sem novo envio e sem conexao",
+    "fail_closed_do_segredo": "se o valor de TRE_TITAN_PASSWORD aparecer no que seria gravado, a gravacao e RECUSADA e o exit e 5 (SENHA_VAZADA)",
+    "desfazer": "--desfazer <chave> e dry-run ate --confirmo; marca DESFEITO e preserva a auditoria original; e-mail ja entregue nao volta"
+  },
+
+  "segredo": {
+    "origem": "TRE_TITAN_PASSWORD (cofre do ambiente; nunca em Git — .env.example so tem nomes vazios)",
+    "mascaramento": "todo relatorio/trilha mostra a senha como <oculta>; a impressao digital da configuracao (identidade_config) e sha256 de host|porta|seguranca|usuario|remetente|timeout|ca, SEM a senha",
+    "nenhum_caminho_por_cli": "o componente nao aceita senha em argumento de linha de comando",
+    "vazamento": "detectado e recusado no proprio componente (exit 5), com o fato registrado como SENHA_VAZADA"
+  },
+
+  "idempotencia": {
+    "chave": "--chave-idempotencia (string do chamador, ex.: 'w6-e04:<organization_id>:<oportunidade>')",
+    "trilha": "--registro <arquivo.jsonl> append-only, fora do banco; cada evento traz ambiente, identidade da configuracao, resultado e, no envio, Message-ID",
+    "por_que_fora_do_banco": "WS6-E04 ainda nao existe; a trilha em arquivo e o minimo auditavel desta v1 e nao inventa tabela (mudanca de schema exige contrato novo)"
+  },
+
+  "vereditos": {
+    "PLANO": "--planejar (nunca conecta; declara o que falta e as recusas)",
+    "CONFIG_COMPLETA": "--planejar com configuracao completa",
+    "CONFIG_INCOMPLETA": "--planejar/--conferir com variavel obrigatoria ausente (nomes, nunca valores)",
+    "CONFIGURACAO_OK": "--conferir aprovou completude, matriz e guardas (sem conexao)",
+    "CONEXAO_OK": "--provar mediu EHLO, TLS, AUTH e NOOP sem enviar mensagem",
+    "ENVIADO": "mensagem aceita pelo servidor (recusados_por_servidor vazio)",
+    "DRY_RUN": "--enviar sem --confirmo",
+    "JA_ENVIADO": "replay pela chave de idempotencia",
+    "RECUSADO": "guarda/configuracao recusou (exit 3) ou producao recusada (exit 4)",
+    "FALHOU": "falha de conexao/AUTH/envio (exit 1)"
+  },
+
+  "aceite": {
+    "suite_offline": "scripts/integracoes/verificar_smtp_titan.py (config, matriz, guardas, segredo, trilha — sem conexao)",
+    "aceite_com_sink": "scripts/integracoes/teste_smtp_titan_aceite.sh (sink descartavel em 127.0.0.1, TLS proprio, entrega medida)",
+    "runbook": "docs/runbooks/titan-smtp.md"
+  },
+
+  "fora_do_card": [
+    "compor o texto do outreach (W6-E02) e decidir/conceder Human Approval (W6-E03)",
+    "o workflow de envio em si, com fila e retry (W6-E04) — aqui existe o primitivo de UMA mensagem",
+    "ingestao e classificacao de resposta por IMAP (W6-E05; card irmao TRE-W6-E01-T02)",
+    "provar contra smtp.titan.email de verdade: exige credencial e aprovacao registrada (homolog), decisao do dono"
+  ],
+
+  "lacunas": [
+    "a trilha de envio e arquivo JSONL (nao tabela): quando o banco do TRE estiver de pe na VPS, W6-E04 decide se a trilha passa a viver em `sync_events` — nao inventar schema aqui",
+    "nao ha retry/backoff proprio: a v1 nao repete envio em falha de rede (quem repete e o chamador, com a mesma chave de idempotencia)",
+    "`TRE_TITAN_SMTP_SEGURANCA=nenhuma` existe para o sink de dev e e recusado fora do loopback; em homolog/prod a matriz exige TLS",
+    "o componente nao verifica SPF/DKIM/DMARC do dominio: e configuracao de DNS do dominio, fora do escopo deste card"
+  ]
+}
