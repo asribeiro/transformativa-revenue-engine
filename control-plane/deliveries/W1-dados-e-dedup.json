@@ -213,6 +213,136 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W1-E02-T01",
+      "title": "Criar tabelas core",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_d9cb5755",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "As 12 tabelas core do contrato nascem da propria migration 0001 congelada, e o fixture de smoke (db/fixtures/smoke_dev.sql) carrega de forma IDEMPOTENTE com contagem por tabela conferida. O verificador de fixture REPROVA linha a mais e linha a menos (dentes), e o rollback e reversivel; a aplicacao roda em container PostgreSQL DESCARTALVEL proprio, sem tocar nenhum ambiente real.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); container PostgreSQL DESCARTALVEL proprio com nome/prefixo unico (--rm), aplicando a migration 0001 congelada; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/teste-fixture-smoke.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_OK (12 itens, 0 falhas); verificador APROVA alvo integro (20 itens OK, 12 tabelas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E03-T01",
+      "title": "Criar constraints e índices",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_49e8e2e3",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O alvo nasce da propria migration congelada e tem exatamente os 30 indices do contrato (12 PK + 15 CREATE INDEX + 3 UNIQUE) e as PK/FK/UNIQUE item a item. O verificador de constraints e indices tem DENTE: 7 mutacoes proibidas pelo contrato (DROP/RENAME de indice, coluna errada, DROP de FK/UNIQUE/PK, indice a mais) reprovam o alvo e, desfeita a mutacao, ele volta a aprovar. Roda em container PostgreSQL DESCARTALVEL proprio.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "MIGRACAO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); container PostgreSQL DESCARTALVEL proprio com nome/prefixo unico (--rm), aplicando a migration 0001 congelada; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/teste-constraints-indices.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_OK (18 itens, 0 falhas); alvo integro 16 itens OK/30 indices; 7 mutacoes REPROVADAS e reversiveis — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E04-T02",
+      "title": "Implementar entity_match_confidence",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_430ba4cc",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O campo entity_match_confidence e calculado, classificado por faixa e PERSISTIDO e lido DE VOLTA do banco no registro auditado do merge (sync_events) e na pendencia da fila humana (human_approvals): 0,94 na faixa REVISAO_HUMANA e 0,95 na faixa de MERGE_AUTOMATICO, coerentes com o limiar do contrato (0,95); o campo canonico == alias do E04-T01. As 4 sabotagens (persistencia, coerencia, limiar, detalhe) reprovam a suite (dentes). O cenario usa container PostgreSQL DESCARTALVEL proprio com override declarado de dev.env — a escrita em sales_intelligence do dev e vedada nesta rodada.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); cenario medido em container PostgreSQL DESCARTALVEL proprio (trv-ent-*, --rm) com OVERRIDE DECLARADO de deploy/environments/dev.env apontando para o container descartavel (a escrita em sales_intelligence do dev e vedada nesta rodada); containers do dev INTOCADOS; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/dedup/teste_entity_match_confidence.sh dev",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_ENTITY_MATCH_CONFIDENCE_OK (22 itens, 0 falhas); CENARIO_OK (21 itens); TESTE_DEDUP_AMBIENTE_OK (4 itens) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E01-T01-EXEC",
+      "title": "Criar database/schema Sales Intelligence (execucao)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_969affa7",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O schema sales_intelligence existe de fato no dev (12 tabelas | 30 indices, medidos em leitura) e o registro da migration 0001 em public.tre_schema_migrations bate com o arquivo do repo; o verificador de constraints/indices passa READ-ONLY contra o alvo real (16 itens) e o verificador do contrato de dados passa offline (26 itens). Nenhuma DDL em producao; nenhuma escrita no dev nesta medicao. Item distinto do TRE-W1-E01-T01 (revisao independente, t_2cc57d80) para nao sobrescrever o veredito ja gravado.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "MIGRACAO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); medicao READ-ONLY contra o dev real (container pg-sales-dev, banco sales_intelligence, usuario sales_ai): estado_do_ambiente.sh + verificar_constraints_indices.py (somente SELECT) + verificar_contrato_dados.py offline; nenhuma escrita no dev; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/estado_do_ambiente.sh dev",
+                "exit": 0,
+                "resultado": "12 tabelas | 30 indices no schema sales_intelligence; registro da migration 0001 == arquivo do repo — 2 passadas identicas"
+              },
+              {
+                "gate": "python3 scripts/db/verificar_constraints_indices.py --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (16 itens, 0 falhas) — leitura pura, sem DDL/DML"
+              },
+              {
+                "gate": "python3 scripts/verificar_contrato_dados.py",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (26 itens, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -239,6 +369,19 @@
         "t_c7281fce",
         "t_e340c29b",
         "t_2cc57d80"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:45:55+00:00",
+      "by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+      "scope": "lote 2 — validacao integrada (nucleo de dados e credenciais)",
+      "cards": [
+        "t_d9cb5755",
+        "t_49e8e2e3",
+        "t_430ba4cc",
+        "t_969affa7"
       ],
       "production_promotion_authorized": false
     }

@@ -1,0 +1,98 @@
+{
+  "delivery_id": "TRE-W6",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W6 — Outbound e canais (Titan SMTP/IMAP, geracao de abordagem, aprovacao humana e envio)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-03",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote 2 (nucleo de dados e credenciais)"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W6-E01-T01",
+      "title": "Configurar Titan SMTP",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_6267d886",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Configuracao e primitivo de envio da Titan SMTP validados INTEIRO OFFLINE contra um sink SMTP descartavel proprio em 127.0.0.1 (TLS implicito 2465 e STARTTLS 2587, certificado gerado na hora): planejar/conferir, EHLO+TLS+AUTH+NOOP, entrega de UMA mensagem com --confirmo, idempotencia por chave, guardas (host real em dev, prod, destino fora do dominio de dev, porta x TLS, porta 25) todas RECUSADAS, senha nunca em claro e desfazer preservando a trilha. Nenhuma credencial Titan nem host externo usados; repo sai identico.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "CREDENCIAL",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "clone limpo (scratch) em origin/develop ec97374; aceite roda INTEIRO OFFLINE num sink descartavel proprio em 127.0.0.1 (TLS gerado na hora com openssl); nenhuma credencial Titan, nenhum host externo, nada de producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/integracoes/teste_smtp_titan_aceite.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: ACEITE_SMTP_TITAN_001_OK (23 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W6-E01-T02",
+      "title": "Configurar Titan IMAP",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_9d38e360",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Leitura validada e guardada da caixa Titan IMAP, medida INTEIRO OFFLINE contra um sink IMAP descartavel proprio em 127.0.0.1 (TLS implicito 2993 e STARTTLS 2143): planejar/conferir, TLS+LOGIN+CAPACIDADE+EXAMINE+NOOP, --listar sem marcar lido, ingesta com --confirmo gravando UMA copia por mensagem e replay JA_INGERIDO; INVARIANTE de leitura provado no sink (todas as selecoes em EXAMINE, zero busca sem PEEK, nenhuma flag \\Seen); guardas RECUSADAS; senha nunca em claro. Nenhuma credencial Titan nem host externo.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "CREDENCIAL",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "clone limpo (scratch) em origin/develop ec97374; aceite roda INTEIRO OFFLINE num sink descartavel proprio em 127.0.0.1 (TLS gerado na hora com openssl); nenhuma credencial Titan, nenhum host externo, nada de producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/integracoes/teste_imap_titan_aceite.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: ACEITE_IMAP_TITAN_001_OK (33 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:45:55+00:00",
+      "by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+      "scope": "lote 2 — validacao integrada (nucleo de dados e credenciais)",
+      "cards": [
+        "t_6267d886",
+        "t_9d38e360"
+      ],
+      "production_promotion_authorized": false
+    }
+  ]
+}
