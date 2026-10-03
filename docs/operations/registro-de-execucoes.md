@@ -2544,3 +2544,30 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   `sha256-artefatos.out`).
 - Segredos: nenhum valor nesta entrada. A senha do sink SMTP e a chave da API do stub sao valores de
   teste gerados na hora pelo proprio aceite; ha item medindo 0 ocorrencias delas na saida.
+
+## 03/10/2026 — TRE-W8-E04-T01 (Message performance / `desempenho-mensagens-v1`)
+
+- **Comando (offline):** `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (desempenho de mensagens v1: 48 itens, 0 falhas)`, exit 0, com **7/7 dentes** (cada mutacao aplicada
+  numa copia temporaria reprova o item que nomeia: sem normalizacao de canal, janela exclusiva no limite,
+  credito a todos os envios, auto-resposta contada como resposta, amostra desligada, sem guarda de prod e
+  referencia malformada aceita).
+- **Comando (E2E, VPS do ambiente):** `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh` em
+  `/tmp/tre-w8e04c-*` na VPS `vmi3619453` (usuario `tre-deploy`) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK
+  (19 itens, 0 falhas)`, exit 0. O aceite subiu PostgreSQL descartavel `pg-desemp-acc` (`postgres:16`),
+  aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 15 envios + 5 respostas **na forma declarada
+  pelos contratos irmaos** (canal/direcao/tipo lidos de `politica-envio-v1.json`; categorias de
+  `ingestao-respostas-v1.json`) e mediu a analise contra o banco real. Container removido no `trap`.
+- **O que ficou provado no E2E:** totais (15 enviadas / 4 respondidas / 3 positivas / 1 opt-out / 1
+  auto-resposta descartada), `taxa_de_interesse` da variante H1 = 0,4, tempo medio da H1 = 2,25h, taxa de
+  opt-out da H8 = 0,2, melhor variante = H1 (so entre as de amostra suficiente); **contagem das 12 tabelas
+  identica antes/depois** (`12|21|3|1`) — prova de que a analise e somente leitura; saida **reproduzivel**
+  (duas rodadas iguais, sem carimbo); saida sem `organization_id`/`contact_id`/`approval_id`; `--ambiente
+  prod` → exit 4.
+- **Segredos:** nenhum valor nesta entrada. Uso exclusivo de loopback/container descartavel; a senha do
+  Postgres descartavel e literal de teste do proprio aceite.
+- **Lacunas declaradas (medidas, nao escondidas):** `interactions` nao tem `delivered`/`opened`/`bounced`
+  (a taxa e de RESPOSTA, nao de entrega); o `channel` do envio (`EMAIL`) diverge do `channel` da ingestao
+  (`email`) — normalizado na leitura e registrado como defeito de FORMA do dado gravado; `campaign_id` e
+  vinculo logico sem FK/entidade; a cadeia real SMTP/IMAP ja foi medida no W6-E07 e no aceite do W6-E05 —
+  aqui o que roda de ponta a ponta e a ANALISE.
