@@ -29,24 +29,27 @@
         {
           "hermes_task_id": "t_2ee17829",
           "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
-          "evidence": "aceite: scripts/n8n/verificar-reconciliacao.sh (trio descartavel + n8n)",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-reconciliacao.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas) nas 2 passadas. Cobre passo 0/0b/0c/0d (lente estrutural, suite do nucleo, montador e prova de dente) e estados A-G (espelho saudavel OK, E1/E2/E4/I1/P1-P4 e porta unica fora do ar -> INDETERMINADO fail-closed). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
           "verification": {
-            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
-            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
             "passes_independentes": 2,
             "portoes": [
               {
+                "gate": "bash scripts/n8n/verificar-reconciliacao.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
                 "gate": "bash scripts/n8n/verificar-reconciliacao.sh",
-                "exit": null,
-                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+                "exit": 0,
+                "resultado": "RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
               }
-            ],
-            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
-            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+            ]
           }
         }
       ]
@@ -60,24 +63,27 @@
         {
           "hermes_task_id": "t_85cb2838",
           "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
-          "evidence": "aceite: scripts/n8n/verificar-odoo-eventos.sh (trio descartavel + n8n)",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-odoo-eventos.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: EVENTOS_ODOO_PG_OK (85 itens, 0 falhas) nas 2 passadas. Cobre passos A-F (7 eventos Odoo->PG na fila do Odoo, entrega pela porta unica, idempotencia/replay sem duplicata, recusas 422+REFUSED, retry com a porta fora do ar). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
           "verification": {
-            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
-            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
             "passes_independentes": 2,
             "portoes": [
               {
+                "gate": "bash scripts/n8n/verificar-odoo-eventos.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
                 "gate": "bash scripts/n8n/verificar-odoo-eventos.sh",
-                "exit": null,
-                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+                "exit": 0,
+                "resultado": "RESULTADO: EVENTOS_ODOO_PG_OK (85 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
               }
-            ],
-            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
-            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+            ]
           }
         }
       ]
@@ -91,24 +97,27 @@
         {
           "hermes_task_id": "t_ba84b412",
           "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
-          "evidence": "aceite: scripts/n8n/verificar-outbox-consumer.sh (trio descartavel + n8n)",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Cobre ciclos 1-4: entrega ponta a ponta (E1/E2 PROCESSED + parceiro no CRM + trilha COMPLETED), recusas nomeadas (E3-E7 DEAD_LETTER/REFUSED), retry transitorio (E8) e teto de tentativas (E9), com contagem das chamadas autenticadas e prova de serializacao do lote. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
           "verification": {
-            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
-            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
             "passes_independentes": 2,
             "portoes": [
               {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
                 "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
-                "exit": null,
-                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+                "exit": 0,
+                "resultado": "RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
               }
-            ],
-            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
-            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+            ]
           }
         }
       ]
@@ -122,24 +131,27 @@
         {
           "hermes_task_id": "t_3bde06ab",
           "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
-          "evidence": "aceite: scripts/n8n/verificar-outbox-consumer.sh (mesmo harness do T01; AC9 dedup)",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Mesmo harness do T01; cobre o AC9 (dedup por idempotency_key) no ciclo 5: E1 com chave COMPLETED volta a fila -> REPLAY sem nova chamada/linha/escrita no CRM; E7 com chave REFUSED volta a ser entregue. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
           "verification": {
-            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
-            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
             "passes_independentes": 2,
             "portoes": [
               {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
                 "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
-                "exit": null,
-                "resultado": "NAO EXECUTADO nesta rodada (exige trio descartavel n8n+odoo+postgres)"
+                "exit": 0,
+                "resultado": "RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
               }
-            ],
-            "motivo": "aceite E2E exige trio descartavel proprio (postgres + Odoo + n8n) com execucao real (scripts/n8n/verificar-*.sh); nao executado nesta rodada — fora do eixo RLS/tenant/isolamento e do mandato read-only desta rodada. A revisao independente (estagio 6) ja esta registrada no card.",
-            "pre_condicao": "rodar scripts/n8n/verificar-<card>.sh na VPS (trio descartavel proprio), duas passadas identicas; entao regravar PASS/FAIL."
+            ]
           }
         }
       ]
@@ -152,6 +164,19 @@
       "at": "2026-10-03T14:44:52+00:00",
       "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
       "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_2ee17829",
+        "t_85cb2838",
+        "t_ba84b412",
+        "t_3bde06ab"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "W3_E2E_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:31:05+00:00",
+      "by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+      "scope": "E2E da W3 (n8n) em trio descartavel proprio na VPS de dev; 2 passadas independentes por card; evidencia: exit 0",
       "cards": [
         "t_2ee17829",
         "t_85cb2838",
