@@ -2063,3 +2063,34 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   papel do E2E #001 / fundacao W3-W4. Fechar a lacuna e' do caminho de fundacao/sync.
 - Provas contra Titan e Odoo reais e draft por LLM ficam em **homolog**, com credencial do Sales AI e
   aprovacao do dono.
+
+## [W9-E04-T01] — Best timing (`melhor-horario-v1`) — 2026-10-03
+
+### Added
+
+- `hermes/analytics/melhor_horario.py` + `hermes/analytics/melhor-horario-v1.json`: melhor horário de
+  contato por **janela (dia da semana × faixa horária)** no fuso **declarado** no contrato
+  (`America/Sao_Paulo`, offset fixo `-03:00`). A janela é derivada do instante de ENVIO; o desfecho é a
+  resposta creditada pela **regra do card irmão W8-E04-T01** (o componente importa `desempenho_mensagens.py`
+  — atribuição é uma só no projeto). Grade completa de 49 células (inclusive vazias, com taxa `null`),
+  marginais fechando com o total, amostra mínima declarada e ranking determinístico; base pequena **abstém**
+  (`AMOSTRA_INSUFICIENTE`) em vez de coroar horário com ruído.
+- `scripts/agentes/verificar_melhor_horario.py`: suíte offline (**29 itens**) com duble da porta de banco
+  reusado do irmão e **autoteste por mutação (6/6)** — cada mutação reprova o item que nomeia.
+- `scripts/agentes/teste_melhor_horario_aceite.sh`: aceite E2E em PostgreSQL descartável (`pg-timing-acc`),
+  **19 itens** medidos, incluindo coerência com o irmão de desempenho e prova de somente leitura.
+- `docs/runbooks/melhor-horario.md`: runbook do operador.
+
+### Security
+
+- `prod` RECUSADO exit 4 (ADR-005); única instrução enviada à porta de banco é `SELECT` (guarda herdada do
+  irmão); saída agregada por célula (sem `organization_id`/`contact_id`/`approval_id`); fail-closed para
+  grade com buraco, fuso ilegível e vocabulário do dono divergente. Aceite 100% em loopback, container
+  descartável, nenhuma credencial real.
+
+### Known gaps (declarados, não escondidos)
+
+- Fuso é **offset declarado fixo**; horário de verão/segundo fuso exige versão nova do contrato.
+- Mede o horário **observado** (histórico), não previsão por lead (W9-E02).
+- Grade cobre 24 h porque o Data Contract V1 não declara expediente comercial.
+- `contacts` não tem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido hoje pelo irmão de envio.
