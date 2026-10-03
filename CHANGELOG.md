@@ -7,6 +7,23 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Added
 
+- **Atualização do Odoo a partir das respostas v1** (`TRE-W6-E06-T01`) — componente
+  `hermes/agentes/respostas/atualizacao_odoo.py` (`atualizacao-odoo-respostas-v1`) + contrato
+  `atualizacao-odoo-respostas-v1.json`: lê as respostas já classificadas em
+  `sales_intelligence.interactions` (card `TRE-W6-E05-T01`) e atualiza o CRM **somente pela API
+  controlada** do card `TRE-W3-E01-T05` (POST `/tf/api/v1/<operacao>` com `idempotency_key`,
+  `correlation_id` e `dry_run` — sem XML-RPC/JSON-RPC direto e sem SQL no banco do Odoo), com evento,
+  próxima ação e atividade por categoria (`INTERESSE` → `RESPONDER_AGORA`, `OPT_OUT` → `NAO_CONTATAR`,
+  `SEM_INTERESSE` → `ENCERRAR_COM_CORTESIA`); `BOUNCE` fica em `SEM_ATO` e resposta sem lead fica em
+  `SEM_VINCULO` (o vínculo não se inventa); trilha append-only em `sync_events` com chave única por
+  decisão e `ON CONFLICT DO NOTHING`; guardas de ambiente por medição (prod recusa, dev exige API em
+  loopback e banco em container local), dry-run que não escreve nem chama a API e `--desfazer` que marca
+  `DESFEITO` preservando a linha do ato. Medição: suite offline 67 itens 0 falhas, prova de dente 12
+  mutações cada uma reprovando o item que nomeia, aceite E2E `ACEITE_ATUALIZACAO_ODOO_RESPOSTAS_001_OK`
+  45 itens 0 falhas em Postgres descartável + stub loopback, portão de estrutura PASS. Stub de dev:
+  `scripts/agentes/stub-odoo-api-dev.py`. Docs: `docs/runbooks/atualizacao-odoo-respostas.md`,
+  `docs/validation/registro-de-execucoes-e06-t01.md`.
+
 - **Ingestão e classificação de respostas v1** (`TRE-W6-E05-T01`) — componente
   `hermes/agentes/respostas/ingestao_respostas.py` (`ingestao-respostas-v1`) + contrato declarativo
   `hermes/agentes/respostas/ingestao-respostas-v1.json`: lê a caixa de respostas pelo primitivo IMAP do

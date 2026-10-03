@@ -383,3 +383,39 @@ dev), `--confirmo` obrigatório, idempotência por `UIDVALIDITY:UID` e fail-clos
 **Depends on:** W6-E01-T02 (IMAP, fechado e medido — a branch do card ramifica dele) · **Destrava:**
 W6-E06 (fluxo de resposta) e o E2E Outbound #002.
 
+## TRE-W6-E06-T01 — atualizar o Odoo a partir das respostas (v1)
+
+**Entregue:** `hermes/agentes/respostas/atualizacao_odoo.py` (`atualizacao-odoo-respostas-v1`) + contrato
+`hermes/agentes/respostas/atualizacao-odoo-respostas-v1.json` (ato por categoria, campos escritos, limites
+e **lacunas** declaradas) + `--planejar/--conferir/--regras/--propagar/--desfazer`; atualização **somente
+pela API controlada** do card `TRE-W3-E01-T05` (POST `/tf/api/v1/<operacao>` com `idempotency_key`,
+`correlation_id` e `dry_run` — não existe XML-RPC/JSON-RPC direto nem SQL no banco do Odoo); stub local
+`scripts/agentes/stub-odoo-api-dev.py` (mesmo envelope da política v1.3.0) para medir em dev; trilha de
+idempotência em `sales_intelligence.sync_events` (`odoo-resposta:<interaction_id>`), só `INSERT` na
+tabela de trilha e `SEM_ATO`/`SEM_VINCULO` em vez de inventar ato ou vínculo.
+**Acceptance:** `bash scripts/agentes/teste_atualizacao_odoo_aceite.sh` termina em
+`ACEITE_ATUALIZACAO_ODOO_RESPOSTAS_001_OK` com **0 falhas** — Postgres descartável `pg-e06-acc` com a
+migration 0001 + corpus de 5 respostas já classificadas (INTERESSE com lead, OPT_OUT, SEM_INTERESSE,
+BOUNCE, INTERESSE sem lead) + stub loopback; mede guardas, trilha, chamadas à API, escopo das 9 tabelas
+intocadas e a chave da API ausente da saída.
+**Test plan:** `python3 scripts/agentes/verificar_atualizacao_odoo.py` (suite offline sem rede, banco e
+credencial — **67 itens**) + `--prova-de-dente` (**12 mutações**, cada uma reprovando o item que nomeia) +
+aceite E2E acima (**45 itens**) + portão de estrutura do repo (`scripts/verificar_estrutura.sh`, PASS 0
+falhas). Evidência = saída completa com exit code, anexada ao card.
+Runbooks: `docs/runbooks/atualizacao-odoo-respostas.md`, `docs/validation/registro-de-execucoes-e06-t01.md`.
+**Rollback:** `git revert` do commit do card — sem DDL, sem migration e sem ato em produção; a única
+escrita é `INSERT` em `sync_events` (trilha) do banco do ambiente e `--desfazer <chave>` marca `DESFEITO`
+preservando a linha do ato. A trilha é append-only: não existe UPDATE/DELETE no módulo (auditoria de
+fonte roda antes de qualquer conexão e recusa, exit 3).
+**Risco:** Alto — escreve no CRM (Odoo) e no banco canônico. Mitigado por: ausência total de acesso direto
+ao Odoo (só API controlada, verificado por item de suite), guardas de ambiente por medição (prod recusa
+exit 4; dev exige API em loopback e porta de banco em container local de dev/aceite), `--confirmo`
+obrigatório, dry-run que não escreve nem chama a API, idempotência por chave única por decisão
+(`ON CONFLICT DO NOTHING`), `VINCULO_NAO_SE_INVENTA` (`SEM_VINCULO`), auditoria da própria fonte e
+fail-closed de segredo (`SENHA_VAZADA`, exit 5).
+**Components afetados:** `hermes/agentes/respostas/`, `scripts/agentes/` (novo
+`stub-odoo-api-dev.py`, `verificar_atualizacao_odoo.py`, `teste_atualizacao_odoo_aceite.sh`),
+`docs/runbooks/`, `docs/validation/`, `CHANGELOG.md`, `.env.example`.
+**Depends on:** W6-E05-T01 (respostas classificadas em `interactions`) + W3-E01-T05 (API controlada) ·
+**Destrava:** o E2E Outbound #002 contra o Odoo de dev (`TRE-W6-E07`).
+
