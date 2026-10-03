@@ -424,17 +424,39 @@ def resolver_evidencia(contrato, fontes, organizacoes):
     return evidencia, lacunas
 
 
+def propria_por_estagio(contrato, organizacoes, evidencia):
+    """Evidencia PROPRIA por estagio, restrita as organizacoes conhecidas."""
+    conhecidas = set(organizacoes.keys())
+    return {e["nome"]: set(evidencia.get(e["nome"], set())) & conhecidas for e in contrato["estagios"]}
+
+
+def alcance_por_organizacao(contrato, organizacoes, evidencia):
+    """Alcance por ORGANIZACAO — exposicao deliberada da regra que ja' vale no relatorio.
+
+    `nivel` = maior nivel LINEAR alcancado por evidencia propria (None quando a organizacao so'
+    tem evidencia lateral, hoje Nurture). `rotulos` = os rotulos com evidencia propria, ordenados.
+    Quem DEPENDE deste funil (W8-E03, efetividade do score) le' o desfecho por organizacao daqui
+    em vez de reimplementar a regra: duplicar o alcance criaria duas verdades para o mesmo numero.
+    """
+    propria = propria_por_estagio(contrato, organizacoes, evidencia)
+    alcance = {}
+    for org in sorted(organizacoes):
+        niveis = [e["nivel"] for e in contrato["estagios"]
+                  if not e.get("lateral") and e.get("nivel") is not None and org in propria[e["nome"]]]
+        alcance[org] = {
+            "nivel": max(niveis) if niveis else None,
+            "rotulos": sorted(nome for nome, ids in propria.items() if org in ids),
+        }
+    return alcance
+
+
 def calcular_funil(contrato, organizacoes, evidencia, lacunas):
     estagios = contrato["estagios"]
     terminal = nivel_terminal(contrato)
     conhecidas = set(organizacoes.keys())
-    propria = {e["nome"]: set(evidencia.get(e["nome"], set())) & conhecidas for e in estagios}
-
-    nivel_max = {}
-    for org in conhecidas:
-        niveis = [e["nivel"] for e in estagios
-                  if not e.get("lateral") and e.get("nivel") is not None and org in propria[e["nome"]]]
-        nivel_max[org] = max(niveis) if niveis else None
+    propria = propria_por_estagio(contrato, organizacoes, evidencia)
+    nivel_max = {org: info["nivel"]
+                 for org, info in alcance_por_organizacao(contrato, organizacoes, evidencia).items()}
 
     estagios_saida = []
     alcancadas = {}
@@ -622,6 +644,31 @@ def construir_relatorio(contrato, porta_banco, ambiente, desde, ate, gerado_em=N
                             gerado_em=gerado_em)
 
 
+def exportar_por_organizacao(contrato, porta_banco, desde, ate, caminho):
+    """Escreve o alcance por organizacao em JSON (exportacao ADITIVA, fora do relatorio/hash).
+
+    Le a MESMA base pela MESMA derivacao do relatorio — nao ha' segunda verdade: o JSON sai de
+    `alcance_por_organizacao`, a funcao que `calcular_funil` usa.
+    """
+    if porta_banco is None:
+        raise Recusa("PORTA_BANCO_AUSENTE", "exportacao por organizacao exige --porta-banco")
+    consultas = montar_consultas(contrato, desde, ate)
+    brutas = ler_fontes(porta_banco, consultas)
+    organizacoes = extrair_base(brutas.get("BASE_ORGANIZACOES", []))
+    evidencia, _lacunas = resolver_evidencia(contrato, brutas, organizacoes)
+    alcance = alcance_por_organizacao(contrato, organizacoes, evidencia)
+    conteudo = {
+        "versao": VERSAO,
+        "card": contrato.get("card"),
+        "janela": {"desde": desde, "ate": ate},
+        "organizacoes": alcance,
+        "hash_do_alcance": _digest(alcance),
+    }
+    with open(caminho, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(conteudo, ensure_ascii=False, indent=2, sort_keys=True))
+    return conteudo
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Funil (dashboard) v1 — TRE-W8-E01-T01")
     parser.add_argument("--ambiente", required=True, choices=list(AMBIENTES))
@@ -632,6 +679,8 @@ def main(argv=None):
     parser.add_argument("--formato", default="json,html", choices=["json", "html", "json,html"])
     parser.add_argument("--confirmo", action="store_true")
     parser.add_argument("--planejar", action="store_true", help="imprime o plano declarado (sem banco)")
+    parser.add_argument("--por-organizacao", default=None,
+                        help="escreve o alcance por organizacao em JSON (insumo de quem depende deste funil)")
     parser.add_argument("--conferir", action="store_true", help="valida contrato e guardas (sem banco)")
     parser.add_argument("--contrato", default=CONTRATO_PADRAO)
     parser.add_argument("--raiz", default=os.path.join(AQUI, "..", "..", ".."))
@@ -684,6 +733,11 @@ def main(argv=None):
             if "html" in args.formato:
                 with open(os.path.join(args.saida, "funil.html"), "w", encoding="utf-8") as fh:
                     fh.write(saida_html)
+        if args.por_organizacao:
+            # Exportacao ADITIVA (nao entra no relatorio nem no hash): o alcance por organizacao que
+            # o proprio relatorio ja' usa, em JSON, para quem depende deste funil (W8-E03) ler o
+            # desfecho em vez de reimplementar a regra de alcance.
+            exportar_por_organizacao(contrato, args.porta_banco, desde, ate, args.por_organizacao)
         print(_resumo_texto(relatorio))
         return 0
     except Recusa as exc:

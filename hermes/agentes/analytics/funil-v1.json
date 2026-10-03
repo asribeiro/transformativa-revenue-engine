@@ -228,6 +228,7 @@
   "saida": {
     "json": "relatorio com versao, card, ambiente, janela, contrato (versao + sha256), base (organizacoes + digest), estagios (nome, nivel, lateral, dono, alcancadas, evidencia_propria, conversoes), resumo, fontes (ORGANIZACOES DISTINTAS que cada fonte devolve — as consultas sao DISTINCT por organizacao, nao contagem de linhas), lacunas e hash_do_relatorio",
     "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com as barras do funil, a tabela estagio/alcance/conversao, as lacunas declaradas e o rodape de proveniencia",
-    "determinismo": "a mesma base com o mesmo contrato produz o MESMO relatorio; gerado_em e' a unica diferenca e NAO entra no hash_do_relatorio"
+    "determinismo": "a mesma base com o mesmo contrato produz o MESMO relatorio; gerado_em e' a unica diferenca e NAO entra no hash_do_relatorio",
+    "por_organizacao": "EXPORTACAO ADITIVA (--por-organizacao <arquivo.json>, exigida pelo card TRE-W8-E03-T01): alcance por ORGANIZACAO (nivel linear alcancado + rotulos com evidencia propria + hash_do_alcance) gerado por `alcance_por_organizacao` — a MESMA funcao que o relatorio usa. Fica FORA do relatorio e do hash_do_relatorio: o `funil-v1` (JSON e HTML) nao muda por causa dela."
   }
 }

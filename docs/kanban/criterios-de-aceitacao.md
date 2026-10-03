@@ -652,3 +652,32 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** W6-E07-T01 (E2E Outbound #002 — base da branch, fechado e medido). **Destrava:**
   W8-E02-T01 (conversao por segmento), W8-E03-T01 (eficacia dos scores) e W8-E05-T01 (custo de agentes),
   que dependem do funil derivado.
+
+## TRE-W8-E03-T01 — Score effectiveness
+
+Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos e o card nasceu sem eles).
+**Medir não é recalibrar:** o card mede a efetividade do score; quem mexe em peso é o W9-E01-T01.
+
+- **ACCEPTANCE:** `ACEITE_EFETIVIDADE_SCORE_OK` (0 falhas) — cobertura medida e lacunas nomeadas (sem
+  PRIORITY, sem versão, vencido, fora da escala); taxa de avanço por faixa do Data Contract com lift contra
+  a taxa-base; Won/Lost e taxa de vitória; monotonicidade como **achado** e `base_suficiente` por faixa;
+  adesão do PRIORITY **armazenado** à fórmula V1 (pesos lidos do Data Contract), com desvio medido e
+  divergência contada; quartis por componente (Q1 = maiores valores); integração com o pai (totais por
+  faixa fecham com o resumo do funil); leitura pura provada por snapshot das 12 tabelas **e** pelo
+  mecanismo `READ ONLY`; determinismo; saída sem PII; dashboard auto-contido; **regressão do pai**
+  (`ACEITE_FUNIL_OK`) exigida no próprio aceite.
+- **TEST:** `python3 scripts/agentes/verificar_efetividade_score.py --autoteste` (**22 itens + 8 mutações**)
+  e `bash scripts/agentes/teste_efetividade_score_aceite.sh` (PostgreSQL descartável `pg-analytics-efet` na
+  VPS de dev, container removido no fim, mais o aceite do card pai). Evidência = saída completa com exit
+  code, anexada ao card.
+- **ROLLBACK:** reverter o commit (arquivos novos + docs, **sem DDL** e sem migration) e remover o
+  container descartável do aceite. A mudança no `funil.py` é **aditiva** (função de alcance por organização
+  + `--por-organizacao`, fora do relatório e do hash): reverter devolve o pai ao estado `a5d9af3`. Nada em
+  homolog/produção; nenhum serviço, nenhum cron, nenhuma credencial.
+- **RISK:** **médio** — leitura pura sobre base de dev, saída com contagem (sem PII), nenhum ato externo.
+  Riscos **declarados**: (a) **amostra pequena** — taxa por faixa com base insuficiente não sustenta
+  conclusão (`base_suficiente`, lacuna L3: é o gatilho declarado do W9); (b) **associação não é causa**
+  (lacuna L2) — não há experimento nem controle na v1; (c) a faixa é **derivada**, não persistida (não
+  existe coluna de tier; criar exige versão nova do contrato, §10/ADR-0004 — lacuna L4); (d) o componente é
+  medido pelo **último** valor (lacuna L5, viés de sucessão de score); (e) tocar artefato do card pai —
+  mitigado por refatoração sem mudança de saída, com o aceite do pai reexecutado **dentro** deste aceite.

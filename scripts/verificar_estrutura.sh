@@ -666,5 +666,68 @@ if [ -f scripts/agentes/teste_funil_aceite.sh ]; then
   fi
 fi
 
+# --- card TRE-W8-E03-T01 (Efetividade do score — medicao sobre o funil) ------------------------------
+CONTRATO_EFETIVIDADE="hermes/agentes/analytics/efetividade-score-v1.json"
+COMPONENTE_EFETIVIDADE="hermes/agentes/analytics/efetividade_score.py"
+for arquivo in "$COMPONENTE_EFETIVIDADE" "$CONTRATO_EFETIVIDADE" scripts/agentes/verificar_efetividade_score.py \
+               scripts/agentes/teste_efetividade_score_aceite.sh docs/architecture/efetividade-score-v1.md \
+               docs/runbooks/efetividade-do-score.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_EFETIVIDADE" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_EFETIVIDADE" \
+       scripts/agentes/verificar_efetividade_score.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E03-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Faixas/pesos sao LIDOS do Data Contract e a dependencia (funil) e' conferida: quem decide e' o
+  # proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_EFETIVIDADE" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E03-T01: --conferir recusou (contrato de dados ou dependencia do funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O desfecho NAO pode ser reimplementado: o componente tem de consumir o alcance do funil (W8-E01-T01).
+  if ! grep -q "alcance_por_organizacao" "$COMPONENTE_EFETIVIDADE"; then
+    echo "FALHOU card TRE-W8-E03-T01: componente nao consome o alcance por organizacao do funil"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'base_suficiente'; do
+    if ! grep -q -F "$marca" "$CONTRATO_EFETIVIDADE"; then
+      echo "FALHOU card TRE-W8-E03-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+# A extensao do pai (exportacao aditiva) tem de estar declarada no contrato do funil.
+if [ -f "$CONTRATO_FUNIL" ]; then
+  if ! grep -q "por_organizacao" "$CONTRATO_FUNIL"; then
+    echo "FALHOU card TRE-W8-E03-T01: contrato do funil sem a exportacao por organizacao declarada"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f scripts/agentes/teste_efetividade_score_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_efetividade_score_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E03-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_EFETIVIDADE_SCORE_OK' scripts/agentes/teste_efetividade_score_aceite.sh; then
+    echo "FALHOU card TRE-W8-E03-T01: aceite sem o marcador ACEITE_EFETIVIDADE_SCORE_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite deste card exige o aceite do pai (prova de que a extensao nao mudou o funil-v1).
+  if ! grep -q 'ACEITE_FUNIL_OK' scripts/agentes/teste_efetividade_score_aceite.sh; then
+    echo "FALHOU card TRE-W8-E03-T01: aceite sem a regressao do pai (ACEITE_FUNIL_OK)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

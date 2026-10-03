@@ -2590,5 +2590,70 @@ Transf: `tar` por ssh (sem `scp`) para `/opt/tre/w8e01t01-r3` (r1 e r2 foram as 
   casar oportunidade com lead por semelhança.
 - **Evidência anexada ao card:** `aceite-funil-34ok.out`, `suite-funil-24ok-8dentes.out`,
   `portao-estrutura.out` e `sha256-artefatos.out`.
+Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+`TRE_FUNIL_TOKEN` aparecer na evidência — item medido na suíte offline.
+
+---
+
+## 2026-10-03 — TRE-W8-E03-T01: efetividade do score (`efetividade-score-v1`) medida na VPS de dev
+
+- **Escopo entregue:** `hermes/agentes/analytics/efetividade_score.py` + contrato
+  `hermes/agentes/analytics/efetividade-score-v1.json`. O card mede (não recalibra): cobertura do score,
+  taxa de avanço por faixa do Data Contract com lift, adesão do PRIORITY **armazenado** à fórmula V1,
+  monotonicidade como **achado** com `base_suficiente`, e efetividade por componente (quartis de posto).
+  O desfecho vem do próprio `funil.py` (`alcance_por_organizacao`, card W8-E01-T01, importado) — sem
+  segunda verdade para o alcance. Faixas e pesos são **lidos** de `docs/data/data_contract_v1.json#scores`.
+- **Suíte offline (`scripts/agentes/verificar_efetividade_score.py --autoteste`):** `PASS (22 itens, 0 falhas)`
+  + `AUTOTESTE 8/8 mutações detectadas` (cada mutação reprova um item que o alvo limpo não reprova:
+  peso do Data Contract alterado, faixa com lacuna, guarda de produção desligada, endpoint rebaixado,
+  alcance por organização do pai quebrado, adesão sempre-conforme, faixa sem limite superior e quartis
+  invertidos).
+- **Aceite de ponta (`scripts/agentes/teste_efetividade_score_aceite.sh`, na VPS vmi3619453):**
+  PostgreSQL descartável `pg-analytics-efet` (127.0.0.1, imagem `postgres:16`, removido no fim) + migration
+  0001 + base semeada (15 organizações, 58 linhas de `scores`, trilha Odoo → PostgreSQL e interações
+  cobrindo as 5 faixas, os 4 endpoints e as 4 lacunas) → **`ACEITE_EFETIVIDADE_SCORE_OK`, 41 itens,
+  0 falhas**. Deste total, **34 itens são do aceite do card PAI**, reexecutado dentro deste aceite:
+  `ACEITE_FUNIL_OK (34 itens, 0 falhas)` — é a prova de que expor o alcance por organização no `funil.py`
+  **não** mudou o relatório `funil-v1` (JSON, HTML e `hash_do_relatorio`).
+- **Números conferidos à mão no banco:** cobertura **11/15 = 73,33%** com lacunas nomeadas
+  (sem PRIORITY=1, sem versão=1, vencida=1, fora da escala=1, histórico ignorado=1); taxa-base de avanço
+  (`Reunião`) **45,45%**; taxa por faixa **A+ 100% / A 100% / B 0% / C 100% / Nurture 0%**; lift **A+ 2,20x**
+  e **B 0,00x**; Won/Lost separados (1 e 1) e taxa de vitória 100% (C) / 0% (A); **achado de
+  monotonicidade**: B (0%) abaixo de C (100%) → `monotonico: false` com a violação nomeada (achado medido,
+  não erro); **base insuficiente declarada** (nenhuma faixa com 5 organizações → `base_suficiente_para_conclusao:
+  false`, o gatilho do W9-E01-T01); adesão à fórmula **9 comparáveis / 8 conformes / 1 divergente**
+  (desvio 1,00, 88,89%), com `DATA_QUALITY` ausente em 1 organização e versão divergente em 1; quartis por
+  componente com **DATA_QUALITY Q1 100% vs Q4 50% (lift 2,0x)**; integração com o pai: as somas por faixa
+  fecham com o resumo do funil (coorte 11, avanço 5 = `Reunião.alcancadas`, won 1, lost 1) e a exportação
+  `--por-organizacao` entrega o **mesmo** alcance usado no relatório (org 1 nível 8, org 5 com rótulo `Won`).
+- **Leitura pura provada por mecanismo:** snapshot das 12 tabelas igual antes/depois, transação `READ ONLY`
+  recusando `INSERT` (`cannot execute INSERT in a read-only transaction`) e a escrita recusada **não
+  deixando linha**; auditoria da fonte reprovando verbo de escrita antes de qualquer conexão. Determinismo
+  (duas rodadas, mesmo `hash_do_relatorio`), saída **sem PII** e dashboard HTML auto-contido também medidos.
+- **Achados/defeitos medidos durante o card (todos com a suíte como DETECTADO POR):**
+  (1) o CSS do dashboard tinha `width:100%;` dentro de string formatada com `%` → `ValueError` que
+  derrubava a rodada (exit 1) em vez de gerar o relatório; conserto: `100%%`;
+  (2) a dependência tem a **própria** classe `Recusa` (`funil.py`), que escapava do `except Recusa` do
+  componente e virava **exit 1 (traceback)** em vez de exit 3 — a recusa de guarda parecia quebra; conserto:
+  captura por atributo `motivo`/`codigo`, com recusa de qualquer origem saindo pelo código dela;
+  (3) as faixas voltavam em ordem **ascendente** (Nurture → A+), o que invertia a leitura da monotonicidade
+  (a violação saía como "Nurture >= C") e elegia a pior faixa como "melhor"; conserto: **melhor faixa
+  primeiro** (A+ … Nurture), ordem em que a monotonicidade é conferida;
+  (4) o aceite dependia de `/tmp/aceite-w8e01t01` do card pai, que já pertencia a `root` de uma rodada
+  anterior — o aceite do pai falhava por **permissão**, não por regressão; conserto: base própria
+  (`TRE_ACEITE_BASE="$BASE/pai"`). Os itens 2 e 4 foram pegos pela **primeira** rodada do aceite na VPS.
+- **Portão de estrutura:** `bash scripts/verificar_estrutura.sh` → **PASS (0 falhas)**, com o bloco do card
+  (arquivos versionados, `py_compile`, `--conferir` contra o Data Contract e a dependência, marcas de
+  guarda, presença de `alcance_por_organizacao`, extensão declarada no contrato do funil e a exigência de
+  `ACEITE_FUNIL_OK` no aceite).
+- **Ambiente:** nada em produção (ADR-005). O container descartável do aceite é removido no fim; os
+  containers do ambiente não foram tocados; nenhuma credencial real, nenhuma ponta externa.
+- **Lacunas declaradas (6, viajam no relatório):** L1 coorte acumulada (safra); L2 associação ≠ causa;
+  L3 coorte pequena (`base_suficiente: false`); L4 faixa derivada e não persistida (criar coluna exige
+  versão nova do contrato); L5 viés de sucessão do componente (último valor sobre desfecho passado);
+  L6 `Lost` sem ponto de perda no V1 → `taxa_de_vitoria_pct` é `won/(won+lost)`.
+- **Evidência anexada ao card:** `aceite-efetividade-41ok.out`, `suite-efetividade-22ok-8dentes.out`,
+  `portao-estrutura.out` e `sha256-artefatos.out` (hash idêntico entre o repo e a cópia rodada na VPS para
+  componente, funil e aceite).
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
-  `TRE_FUNIL_TOKEN` aparecer na evidência — item medido na suíte offline.
+  `TRE_EFETIVIDADE_TOKEN`, `TRE_EFETIVIDADE_SCORE_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.

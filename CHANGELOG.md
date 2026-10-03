@@ -7,6 +7,31 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Added
 
+- **Efetividade do score** (`TRE-W8-E03-T01`) — componente `hermes/agentes/analytics/efetividade_score.py`
+  (`efetividade-score-v1`) + contrato declarativo `hermes/agentes/analytics/efetividade-score-v1.json`:
+  **mede** se o score funciona, sem recalibrar nada. Lê a base canônica de `sales_intelligence` (leitura
+  pura, transação `READ ONLY`) e cruza, por organização, o **PRIORITY mais recente válido** (versão
+  preenchida, `valid_until` não vencido, valor na escala) com o **desfecho no funil** obtido de
+  `alcance_por_organizacao` do `funil.py` (card W8-E01-T01, importado — o alcance não é reimplementado).
+  Entrega: **cobertura** com lacunas nomeadas; **efetividade por faixa** (`A+ A B C Nurture`, faixas
+  **lidas** do Data Contract, com taxa de avanço em quatro endpoints, Won/Lost, taxa de vitória e **lift**
+  contra a taxa-base); **monotonicidade como achado** (violação medida, não recusa) com `base_suficiente`
+  por faixa; **adesão à fórmula** V1 (pesos lidos de `priority_weights`, recálculo `SUM(peso × componente)`
+  na mesma `score_version`, tolerância 0,01, desvio medido e até 5 exemplos de divergência); e
+  **efetividade por componente** por quartis de posto (Q1 = maiores valores). Contrato de dados incoerente
+  (peso que não soma 1,00, faixa com lacuna/sobreposição) e dependência incompatível **recusam** antes de
+  ler o banco; `prod` recusa por desenho (ADR-005). Saída em **JSON** + **HTML auto-contido**. Seis lacunas
+  declaradas (safra acumulada, associação ≠ causa, coorte pequena, faixa derivada e não persistida, viés de
+  sucessão do componente, `Lost` sem ponto de perda) viajam no relatório.
+
+### Changed
+
+- **Funil (`funil-v1`)** — extensão aditiva exigida pelo card `TRE-W8-E03-T01`: `funil.py` expõe
+  `propria_por_estagio` e `alcance_por_organizacao` (a regra de alcance que o próprio relatório já usava,
+  extraída de `calcular_funil` **sem mudança de saída**) e o modo `--por-organizacao <arquivo.json>`
+  (exportação **fora** do relatório e do `hash_do_relatorio`). O relatório `funil-v1` (JSON e HTML) e o seu
+  hash não mudam — provado reexecutando o aceite do card pai (34 itens) com o funil estendido.
+
 - **Funil — dashboard derivado v1** (`TRE-W8-E01-T01`) — componente `hermes/agentes/analytics/funil.py`
   (`funil-v1`) + contrato declarativo `hermes/agentes/analytics/funil-v1.json`: deriva o funil do
   doc 03 §2 na ordem **congelada** do Data Contract V1 (`funnel_stages`, contrato §7.1) a partir da base

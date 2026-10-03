@@ -1,0 +1,151 @@
+{
+  "versao": "efetividade-score-v1",
+  "card": "TRE-W8-E03-T01",
+  "onda": "W8 (Analytics)",
+  "titulo": "Efetividade do score — o score separa desfecho? (medicao, nao recalibracao)",
+  "componente": {
+    "nome": "efetividade_score",
+    "arquivo": "hermes/agentes/analytics/efetividade_score.py",
+    "papel": "MEDIR a efetividade do score da base canonica de sales_intelligence: cobertura, taxa de avanco no funil por faixa do Data Contract, lift, adesao do PRIORITY armazenado a formula V1 e separacao de desfecho por componente (quartis) — em leitura pura, com saida JSON + HTML auto-contido",
+    "nao_faz": [
+      "NAO recalibra nem propoe peso novo: medir nao e' ajustar. Recalibracao e' TRE-W9-E01-T01 e exige versao nova do contrato + aprovacao humana registrada (§10 / ADR-0004)",
+      "NAO escreve: leitura pura, SO' SELECT, dentro de transacao READ ONLY (nenhum INSERT/UPDATE/DELETE/DDL, nenhuma tabela, nenhuma coluna e nenhum score_type novo)",
+      "NAO le PII: nao seleciona e-mail, telefone, WhatsApp, CNPJ nem nome — a unidade e' a organizacao (UUID canonico do contrato §3) e a saida carrega contagem",
+      "NAO reimplementa o funil: o desfecho por organizacao vem de `alcance_por_organizacao` do funil.py (card W8-E01-T01), importado e conferido; copiar a regra criaria duas verdades para o mesmo numero",
+      "NAO inventa faixa: organizacao sem PRIORITY (ou com score sem versao / vencido / fora da escala) NAO recebe tier — vai para lacuna nomeada. Faixa e' o rotulo de quem TEM dado",
+      "NAO carrega faixa nem peso em forma executavel: os dois sao LIDOS de docs/data/data_contract_v1.json#scores (contrato incoerente RECUSA antes de ler o banco)",
+      "NAO decide se um lead e' real nem se o score esta' certo: mede o que foi registrado e declara o achado, inclusive a violacao de monotonicidade",
+      "NAO publica em homolog/producao nem monta servico: o relatorio e' artefato gerado no ambiente de dev (ADR-005)",
+      "NAO faz previsao, atribuicao causal nem calibracao de janela: W9"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "docs/data/data_contract_v1.json#scores — faixas (`tiers`), pesos da formula V1 (`priority_weights`), tipos de score (`types`) e a exigencia de versao (`requires_version_column`): DONO das faixas e dos pesos",
+      "docs/data/DATA_CONTRACT_V1.md §8 (Score model + tiering) e §10 (governanca da mudanca)",
+      "03_ARQUITETURA_DE_NEGOCIO.md §3 (scores e formula) e §4 (tiering)",
+      "Data Contract V1 §7.1 (funil) e §2 (dono do estagio: Odoo) — o desfecho e' o alcance do funil",
+      "hermes/agentes/analytics/funil-v1.json (funil-v1, card W8-E01-T01) — DEPENDENCIA: define o alcance por organizacao e os estagios usados aqui",
+      "hermes/scores/priority/score-priority-v1.json (priority-v1) — 30 dias de validade do score e recusa de componente ausente/vencido",
+      "hermes/scores/tiering/score-tiering-v1.json (tiering-v1) — mesma leitura das faixas e mesma recusa de PRIORITY vencido",
+      "ADR-005 (nada nasce em producao) e ADR-0004 (mudanca estrutural exige aprovacao humana registrada)"
+    ],
+    "fora_do_escopo": [
+      "recalibrar peso ou trocar formula: W9-E01-T01 (score calibration); aqui a formula so' e' CONFERIDA",
+      "conversao por segmento (W8-E02-T01) e performance de mensagem (W8-E04-T01)",
+      "atribuicao causal do desfecho ao score: a v1 mede associacao declarada por faixa, com base suficiente declarada — nao ha' experimento nem controle",
+      "materializar tier/faixa ou metrica em tabela: exige versao nova do contrato de dados (decisao do dono); este card nao cria coluna",
+      "servir o relatorio por HTTP, autenticar usuario ou hospedar pagina: passo de operador/homolog"
+    ]
+  },
+  "dependencia": {
+    "componente": "hermes/agentes/analytics/funil.py",
+    "contrato": "hermes/agentes/analytics/funil-v1.json",
+    "versao_exigida": "funil-v1",
+    "funcao_usada": "alcance_por_organizacao (nivel linear alcancado + rotulos com evidencia propria)",
+    "funcoes_reusadas": ["montar_consultas", "extrair_base", "resolver_evidencia", "executar_consulta", "auditar_fonte", "validar_ambiente", "normalizar_instante"],
+    "regra": "sem a funcao de alcance ou com versao diferente, RECUSA (DEPENDENCIA_*): o desfecho nao e' recalculado por conta propria",
+    "prova": "o sha256 do contrato do pai e o nome da funcao viajam no relatorio; o aceite confere que os totais por faixa fecham com o resumo do funil"
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3)",
+    "coorte": "organizacoes vivas (deleted_at IS NULL) com PRIORITY valido: versao preenchida, `valid_until` nao vencido na referencia temporal e valor dentro da escala do Data Contract",
+    "regra": "organizacao sem score valido NAO entra em nenhuma taxa por faixa — entra em lacuna nomeada"
+  },
+  "parametros": {
+    "endpoint_principal": {
+      "nome": "Reunião",
+      "nivel_minimo": 6,
+      "por_que": "primeiro estagio em que o fato e' do Odoo (contrato §7.1): e' o primeiro marco comercial de fato, e nao um sinal do proprio motor de score"
+    },
+    "endpoints": [
+      { "nome": "Engajamento", "nivel_minimo": 5 },
+      { "nome": "Reunião", "nivel_minimo": 6 },
+      { "nome": "Proposta", "nivel_minimo": 8 },
+      { "nome": "Won", "rotulo": "Won" }
+    ],
+    "minimo_por_faixa": 5,
+    "tolerancia_de_adesao": "0.01",
+    "quartis": 4,
+    "regra_do_endpoint": "atingiu(organizacao, endpoint) = nivel linear alcancado >= nivel_minimo OU rotulo terminal presente na evidencia propria (Won/Lost) — a mesma nocao de alcance do funil",
+    "referencia_temporal": "`--agora` (ISO) ou o relogio da rodada; entra no relatorio como `referencia_temporal`, mas NAO entra no hash (o que entra no hash e' o estado medido: quantos scores estavam vencidos naquele instante)",
+    "base_suficiente": "faixa com menos de `minimo_por_faixa` organizacoes viaja com `base_suficiente: false` — numero medido, conclusao NAO sustentada"
+  },
+  "metricas": {
+    "cobertura": ["organizacoes", "com_priority_valido", "taxa_pct"],
+    "por_faixa": ["faixa", "min", "max", "organizacoes", "endpoints (atingiram/taxa_pct/lift)", "avanco_pct", "lift_avanco", "ganharam", "perderam", "em_aberto", "taxa_de_vitoria_pct", "base_suficiente"],
+    "resumo": ["coorte", "endpoint_principal", "taxa_base_avanco_pct", "monotonico", "violacoes", "melhor_faixa", "melhor_faixa_avanco_pct", "pior_faixa", "pior_faixa_avanco_pct", "amplitude_pct", "faixas_com_base_suficiente", "faixas_sem_base_suficiente", "base_suficiente_para_conclusao"],
+    "adesao_a_formula": ["comparaveis", "conformes", "divergentes", "taxa_de_conformidade_pct", "tolerancia", "desvio_maximo", "desvio_medio", "pesos_usados", "exemplos_de_divergencia", "fonte"],
+    "por_componente": ["score_type", "comparaveis", "endpoint", "quartis (organizacoes/atingiram/taxa_pct)", "lift_q1_vs_q4", "base_suficiente"],
+    "lift": "taxa da faixa / taxa-base da coorte (o ganho de usar a faixa em vez de tratar todo mundo igual); `null` quando a taxa-base e' zero",
+    "quartis": "por POSTO, ordem decrescente de valor (Q1 = maiores valores), empate desfeito por organization_id; grupo maior primeiro — quartil com base insuficiente e' declarado, nao escondido",
+    "monotonicidade": "na ordem das faixas do Data Contract, a taxa de avanco NAO deve SUBIR ao descer de faixa; violacao vira `achado` com os dois numeros (nao e' recusa: medir um score que nao separa e' resultado legitimo)"
+  },
+  "adesao": {
+    "pergunta": "o PRIORITY ARMAZENADO bate com a formula declarada?",
+    "recalculo": "SUM(peso * componente) para ICP, AUTOMATION_FIT, BUYING_SIGNAL e DATA_QUALITY, com pesos lidos do Data Contract; arredondamento ROUND_HALF_UP em 2 casas (escala NUMERIC(5,2))",
+    "comparavel": "a organizacao entra na conta so' com os QUATRO componentes presentes, com versao preenchida, nao vencidos, dentro da escala e na MESMA score_version da linha PRIORITY",
+    "fora_da_conta": "componente ausente / sem versao / vencido / fora da escala / versao diferente: o motivo entra em lacuna nomeada — nada e' estimado",
+    "divergencia": "|armazenado - recalculado| > tolerancia: contado, com desvio maximo/medio e ate' 5 exemplos (organization_id, faixa, valores e score_version) — divergencia e' ACHADO, nunca corrigida aqui"
+  },
+  "fontes_do_funil": [
+    "BASE_ORGANIZACOES", "PESQUISA_CONCLUIDA", "SINAIS", "SCORE_PRIORITY", "CONTATO_COM_CANAL",
+    "INTERACAO_OUTBOUND", "INTERACAO_INBOUND_CLASSIFICADA", "RECOMENDACAO_REUNIAO", "TRILHA_ESTAGIO"
+  ],
+  "fontes_proprias": {
+    "PRIORITY_ULTIMO": {
+      "tabela": "sales_intelligence.scores",
+      "coluna_tempo": "calculated_at",
+      "recorte": "DISTINCT ON (organization_id) ... ORDER BY organization_id, calculated_at DESC, id DESC (mesmo recorte que o tiering usa: o PRIORITY mais recente)",
+      "campos": "organization_id, score_id, score_value, score_version, calculated_at, valid_until e o historico de linhas PRIORITY da organizacao",
+      "papel": "cobertura, faixa e adesao a formula"
+    },
+    "COMPONENTES_ULTIMOS": {
+      "tabela": "sales_intelligence.scores",
+      "coluna_tempo": "calculated_at",
+      "recorte": "DISTINCT ON (organization_id, score_type) para ICP, AUTOMATION_FIT, BUYING_SIGNAL e DATA_QUALITY",
+      "campos": "organization_id, score_type, score_value, score_version, valid_until",
+      "papel": "adesao a formula e separacao de desfecho por componente (quartis)"
+    }
+  },
+  "lacunas": {
+    "prioridade_ausente": "organizacao viva sem nenhuma linha PRIORITY",
+    "prioridade_sem_versao": "PRIORITY sem score_version: score nao reprodutivel e' recusado pelo contrato §8 (mesma regra do funil e do tiering)",
+    "prioridade_vencida": "valid_until no passado: a politica de 30 dias nasceu no W5-E05 e o tiering tambem recusa",
+    "prioridade_fora_da_escala": "score_value fora da escala do Data Contract (0..100)",
+    "faixa_nao_atribuida": "valor dentro da escala que nao caiu em faixa nenhuma (so' possivel com contrato incoerente, ja' recusado antes)",
+    "historico_ignorado": "linhas PRIORITY antigas da organizacao: o mais recente vale, o resto e' historico preservado (score e' historico, nao mutavel)",
+    "componente_ausente": "por score_type: a organizacao nao tem aquele componente (sem lastro completo nao ha' recalculo)",
+    "componente_sem_versao": "por score_type: componente sem score_version",
+    "componente_vencido": "por score_type: componente com valid_until no passado",
+    "componente_fora_da_escala": "por score_type: componente fora de 0..100",
+    "versoes_divergentes": "organizacao cujos componentes nao estao todos na mesma score_version da linha PRIORITY (misturar versoes nao reconstroi o numero)",
+    "evidencia_orfa": "linha de PRIORITY de organizacao que nao esta' na base viva"
+  },
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<sales|funil|analytics|aceite>... psql ...`, via --porta-banco/TRE_EFETIVIDADE_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV); homolog exige --confirmo; prod e' RECUSA por desenho (exit 4)",
+    "leitura_pura": "toda consulta roda com default_transaction_read_only = on em dois `-c` (SET e depois SELECT: medido no W8-E01-T01 que um unico `-c` NAO vale) E a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "contrato": "faixa com lacuna/sobreposicao, peso que nao soma 1.00, componente fora de `scores.types` ou divergencia com as fontes do funil RECUSAM antes de ler o banco",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se valor de TRE_EFETIVIDADE_TOKEN, TRE_EFETIVIDADE_SCORE_TOKEN ou TRE_FUNIL_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "a saida carrega contagem e o UUID canonico da organizacao; nenhuma coluna de e-mail, telefone, WhatsApp, CNPJ ou nome e' lida"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, referencia_temporal, contrato (versao + sha256), dependencia (funcao + contrato do pai + sha256), base (organizacoes + digest), parametros, cobertura, efetividade_por_faixa, resumo, adesao_a_formula, por_componente, lacunas, lacunas_declaradas, fontes e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com cobertura, tabela por faixa, violacoes de monotonicidade, adesao a formula, quartis por componente e lacunas medidas",
+    "determinismo": "a mesma base com o mesmo contrato, a mesma janela e a mesma referencia temporal produz o MESMO relatorio; `gerado_em` e `referencia_temporal` sao a unica diferenca e NAO entram no hash_do_relatorio"
+  },
+  "extensao_do_pai": {
+    "arquivo": "hermes/agentes/analytics/funil.py",
+    "o_que_muda": "expoe `propria_por_estagio` e `alcance_por_organizacao` (a regra de alcance que o proprio relatorio ja' usava) e o modo `--por-organizacao <arquivo.json>` (exportacao ADITIVA, fora do relatorio e do hash)",
+    "o_que_nao_muda": "o relatorio `funil-v1` (JSON e HTML) e o hash_do_relatorio: a refatoracao e' sem mudanca de saida — provado reexecutando o aceite do card pai",
+    "por_que": "medir efetividade exige o desfecho POR ORGANIZACAO; reimplementar o alcance aqui criaria duas verdades para o mesmo numero (o defeito que este projeto ja' pagou caro para aprender)"
+  },
+  "lacunas_declaradas": [
+    "L1: o desfecho e' o alcance do funil (doc 03 §2 / contrato §7.1), que acumula TODA a base (L5 do funil): a efetividade medida aqui e' de coorte acumulada, nao de safra. Janela (--desde/--ate) filtra pela coluna de tempo de cada fonte, mas comparacao entre safras nao esta' na v1",
+    "L2: associacao nao e' causa. Faixa alta pode coincidir com desfecho por tamanho de amostra, setor ou canal — a v1 mede separacao com base declarada e NAO estima efeito causal (isso pede desenho experimental, W9)",
+    "L3: coorte pequena. Com a base real de hoje varias faixas ficam abaixo do minimo de 5 organizacoes: as taxas viajam com `base_suficiente: false` e a conclusao NAO esta' sustentada — e' o gatilho declarado do W9-E01-T01 ('volume real suficiente')",
+    "L4: a faixa e' DERIVADA do valor aqui e nao persistida no banco (nao existe coluna de tier; criar coluna exige versao nova do contrato, §10/ADR-0004). Se o Odoo calcular tier com faixa diferente, a divergencia so' aparece quando o vocabulario do tier for congelado",
+    "L5: componente medido pelo ULTIMO valor por score_type, sem janela de validade alem de `valid_until`: um ICP recalculado depois da abordagem ja' e' leitura do presente sobre um desfecho do passado (vies de sucessao de score) — declarado, nao corrigido",
+    "L6: 'avanco' usa o nivel linear alcancado (Reuniao = 6) e Won por rotulo; Lost nao tem ponto de perda registrado no V1 (lacuna L4 do funil), entao `taxa_de_vitoria_pct` e' won/(won+lost) e nao 'conversao de propostas'"
+  ]
+}
