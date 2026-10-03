@@ -396,23 +396,21 @@ class PortaBanco:
         return self._decodificar((proc.stdout or "").splitlines())
 
     def executar(self, sql: str) -> list:
-        """Escreve (INSERT ... RETURNING) e devolve as linhas afetadas, pelo mesmo envelope."""
-        comando_base = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c"]
-        # INSERT sem RETURNING nao pode ser lido por CTE ("WITH query does not have a RETURNING clause",
-        # defeito medido na rodada 2 do aceite do card irmao): sem RETURNING nao ha linhas a devolver.
-        if "RETURNING" in sql.upper():
-            comando = comando_base + [self._envelope(
-                "coalesce(json_agg(afetados), '[]'::json)::text",
-                f"FROM (WITH afetados AS ({sql}) SELECT * FROM afetados) afetados")]
-        else:
-            comando = comando_base + [sql]
-        proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
+        """Escreve e devolve as linhas afetadas (uma por linha de `RETURNING`).
+
+        `RETURNING` devolve uuid curto — uma linha por registro, sem risco de quebra de largura —, entao
+        NAO passa pelo envelope base64. Embrulhar a escrita numa CTE de leitura foi tentado e o Postgres
+        recusou: `WITH clause containing a data-modifying statement must be at the top level` (defeito
+        medido no aceite). Sem `RETURNING` nao ha linhas a devolver.
+        """
+        proc = subprocess.run(self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c", sql],
+                              capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
                                           f"{(proc.stderr or proc.stdout).strip()[:400]}")
         if "RETURNING" not in sql.upper():
             return []
-        return self._decodificar((proc.stdout or "").splitlines())
+        return [{"id": linha.strip()} for linha in (proc.stdout or "").splitlines() if linha.strip()]
 
 
 def chave_de(interacao: dict) -> str:

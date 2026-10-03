@@ -453,6 +453,18 @@ def testar_trilha_idempotente():
          and M.chave_de_trilha("odoo-resposta:z", "FALHA") == "odoo-resposta:z:falha",
          str([M.chave_de_trilha("odoo-resposta:z", s)
               for s in ("ATUALIZADO", "SEM_ATO", "SEM_VINCULO", "FALHA")]))
+    original = M.subprocess.run
+    try:
+        M.subprocess.run = lambda *a, **k: envelope_sql_medido(*a, **k)
+        escrita = "INSERT INTO sales_intelligence.sync_events (id) VALUES (gen_random_uuid()) RETURNING id"
+        M.PortaBanco("docker exec -i pg-e06-acc psql -U sales_ai -d sales_intelligence",
+                     "dev").executar(escrita)
+        item("63. a escrita com RETURNING vai ao banco CRUA (o Postgres recusa CTE que modifica dados "
+             "fora do topo) e le uma linha por id",
+             _SQL_VISTO["sql"].startswith("INSERT INTO") and "WITH afetados" not in _SQL_VISTO["sql"],
+             _SQL_VISTO["sql"][:160])
+    finally:
+        M.subprocess.run = original
 
 
 # ---------------------------------------------------------------- 7. propagacao e desfazer
@@ -538,6 +550,10 @@ DENTES = [
      "           f\"ON CONFLICT (idempotency_key) DO NOTHING RETURNING id\")",
      "           f\"RETURNING id\")",
      "60. a trilha grava com ON CONFLICT (idempotency_key) DO NOTHING e diz se a linha nasceu"),
+    ("escrita-embrulhada-em-cte", "CRUA",
+     "        proc = subprocess.run(self._argumentos() + [\"-v\", \"ON_ERROR_STOP=1\", \"-q\", \"-t\", \"-A\", \"-c\", sql],",
+     "        proc = subprocess.run(self._argumentos() + [\"-v\", \"ON_ERROR_STOP=1\", \"-q\", \"-t\", \"-A\", \"-c\", \"WITH afetados AS (\" + sql + \") SELECT * FROM afetados\"],",
+     "63. a escrita com RETURNING vai ao banco CRUA (o Postgres recusa CTE que modifica dados fora do topo) e le uma linha por id"),
 ]
 
 
