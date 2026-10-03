@@ -666,5 +666,52 @@ if [ -f scripts/agentes/teste_funil_aceite.sh ]; then
   fi
 fi
 
+# --- card TRE-W8-E05-T01 (Custo de agentes) ------------------------------------------------------------
+CONTRATO_CUSTO="hermes/agentes/analytics/custo-agentes-v1.json"
+COMPONENTE_CUSTO="hermes/agentes/analytics/custo_agentes.py"
+for arquivo in "$COMPONENTE_CUSTO" "$CONTRATO_CUSTO" scripts/agentes/verificar_custo_agentes.py \
+               scripts/agentes/teste_custo_agentes_aceite.sh docs/architecture/custo-agentes-v1.md \
+               docs/runbooks/custo-de-agentes.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CUSTO" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CUSTO" scripts/agentes/verificar_custo_agentes.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # As colunas lidas tem de existir na DDL congelada e o vocabulario de status tem de estar coerente:
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CUSTO" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: --conferir recusou (colunas divergem da DDL ou vocabulario incoerente)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Leitura pura e nulo-nao-e-zero declarados: o contrato do componente tem de carregar as marcas.
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' \
+               'runs_sem_custo' 'tokens_input' 'estimated_cost'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CUSTO"; then
+      echo "FALHOU card TRE-W8-E05-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_custo_agentes_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_custo_agentes_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_CUSTO_AGENTES_OK' scripts/agentes/teste_custo_agentes_aceite.sh; then
+    echo "FALHOU card TRE-W8-E05-T01: aceite sem o marcador ACEITE_CUSTO_AGENTES_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

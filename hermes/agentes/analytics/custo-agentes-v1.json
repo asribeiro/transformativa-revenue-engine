@@ -1,0 +1,148 @@
+{
+  "nome": "custo-agentes-v1",
+  "versao": "custo-agentes-v1",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "card": "TRE-W8-E05-T01",
+  "onda": "W8",
+  "epico": "E05",
+  "papel": "analise_de_custo_e_eficiencia_dos_agentes",
+  "componente": {
+    "arquivo": "hermes/agentes/analytics/custo_agentes.py",
+    "modo": "LEITURA (SELECT somente) sobre sales_intelligence.agent_runs",
+    "nao_faz": [
+      "NAO executa agente, NAO escolhe modelo e NAO rebaixa lane: consome a auditoria ja gravada pelos cards irmaos (research, scout, icp_score, contact_research, automation_fit, pain_hypothesis, signal, buying_signal, priority, tiering, nba, data_quality, outreach, approval_workflow)",
+      "NAO escreve: nenhuma tabela e tocada; a unica instrucao enviada a porta de banco e um SELECT",
+      "NAO cria tabela, coluna, view materializada, indice nem DDL — isso e mudanca de contrato (governanca §10)",
+      "NAO calcula preco: NAO multiplica token por tarifa e NAO tem tabela de precos. Reporta o `estimated_cost` GRAVADO pelo executor; unidade = a que o produtor declarou, nunca inferida aqui",
+      "NAO chama LLM: e aritmetica declarada sobre colunas do contrato"
+    ]
+  },
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#tables['agent_runs'] — o DONO do fato (auditoria de execucao de agente; contrato §9 do projeto fisico)",
+    "docs/data/data_contract_v1.json#artifacts.schema_sql (db/migrations/0001_sales_intelligence_v1.sql §9) — a FORMA congelada das colunas; o card LE a DDL e RECUSA se a coluna que a metrica precisa nao existir (fail-closed)",
+    "os contratos irmaos que ESCREVEM a auditoria — a FORMA do que se grava: hermes/agents/outreach/gerador-abordagem-v1.json (grava tokens_input/tokens_output/estimated_cost a partir do provedor), hermes/agents/research/agente-research-v1.json (grava NULL nessas tres colunas), hermes/scores/tiering|priority|nba (status COMPLETED/REJECTED/FAILED)",
+    "docs/data/data_contract_v1.json#correlation_columns — `agent_runs.correlation_id` liga a cadeia de execucao; este card NAO le a coluna (nao e metrica e nao vai para a saida)",
+    "hermes/jev/policy_v1_2.yaml#custo — na POLITICA DE LANE o custo e' unidade relativa declarada e a politica PROIBE fixar preco; este card respeita isso: nao converte token em dinheiro, so' reporta o custo que o executor gravou",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §11 (W8) — 'custo de agentes' e' a entrega deste epico; o doc 11 nao detalha, entao os campos ACCEPTANCE/TEST/ROLLBACK/RISK sao declarados neste card (docs/kanban/criterios-de-aceitacao.md)",
+    "ADR-005 — nada nasce em producao: este componente RECUSA o ambiente prod (exit 4)"
+  ],
+  "entrada": {
+    "formato": "--ambiente {dev,homolog} --porta-banco \"<comando de porta de banco>\" [--desde ISO] [--ate ISO] [--limite-amostra N] [--saida DIR] [--formato json,csv,html] [--contrato ARQ] [--raiz DIR] [--confirmo] [--planejar] [--conferir]",
+    "porta_de_banco": "o mesmo contrato dos cards irmaos: o comando que fala psql (ex.: `docker exec -i pg-analytics-acc psql -U sales_ai -d sales_intelligence`); a porta responde em `-tA -F'|'`",
+    "janela": "filtro por `started_at` (o instante da execucao). Com janela declarada, execucao SEM started_at fica de fora dela — a lacuna L5 registra que o filtro e' por started_at",
+    "determinismo": "com --desde e --ate informados a saida e' reproduzivel: nao ha carimbo de tempo por padrao (--com-carimbo inclui 'gerado_em', que NAO entra no hash_do_relatorio)"
+  },
+  "fontes": {
+    "EXECUCOES_DE_AGENTE": "uma linha por execucao em `sales_intelligence.agent_runs`, com as 14 colunas declaradas em colunas_de_leitura.selecionadas, na ordem em que aparecem, separadas por `|` (`psql -tA -F'|'`). O componente confere: fontes declaradas aqui tem de ser EXATAMENTE as fontes montadas no codigo (FONTES_DIVERGEM_DO_CONTRATO, exit 3) e a linha tem de ter 14 campos (LINHA_FORA_DO_FORMATO, exit 3)"
+  },
+  "unidade": {
+    "execucao": "uma linha de `agent_runs` = UMA execucao de agente (agent_name + agent_version + ocorrencia). A contagem e' por linha, nao por organizacao: aqui a metrica e' de esforco/custo, nao de funil",
+    "agrupamento_principal": "agent_name — o AGENTE. agent_role, agent_version, workflow e model viajam no detalhe do grupo (versoes distintas listadas), porque a versao do agente nao deve FRAGMENTAR o ranking de custo",
+    "agrupamento_secundario": "model — o modelo e' o que mais explica o custo; e' a visao 'por onde o dinheiro sai'",
+    "agrupamento_terciario": "workflow — a visao de processo"
+  },
+  "vocabulario_status": {
+    "dono": "os irmaos que escrevem a auditoria (hermes/agents/**/STATUS_AGENT_RUNS e hermes/scores/**/STATUS_AGENT_RUNS)",
+    "medido_em": "2026-10-03 — uniao dos mapas STATUS_AGENT_RUNS dos 13 irmaos: COMPLETED, FAILED, REJECTED, REVIEW_REQUIRED",
+    "classes": {
+      "CONCLUIDA": ["COMPLETED"],
+      "FALHA": ["FAILED"],
+      "RECUSADA": ["REJECTED"],
+      "REVISAO": ["REVIEW_REQUIRED"]
+    },
+    "regra": "as classes ACIMA tem de PARTICIONAR exatamente o vocabulario (sem sobra, sem falta, sem repeticao) — duplicidade ou classe vazia = CONTRATO_INCOERENTE, exit 3, fail-closed",
+    "sucesso": "somente CONCLUIDA e' sucesso. REJEITADO e EM_REVISAO NAO sao sucesso e NAO sao falha: sao medidas proprias (recusada/revisao) — recusa declarada nao e' defeito",
+    "fora_do_vocabulario": "status desconhecido ou ausente NAO e' chutado nem somado: vai para lacuna (status_fora_do_vocabulario / runs_sem_status) e a execucao NAO entra em concluidas, falhas, recusadas nem revisao"
+  },
+  "colunas_de_leitura": {
+    "arquivo": "db/migrations/0001_sales_intelligence_v1.sql",
+    "tabela": "sales_intelligence.agent_runs",
+    "selecionadas": [
+      "agent_name",
+      "agent_role",
+      "agent_version",
+      "workflow",
+      "workflow_version",
+      "model",
+      "triggered_by",
+      "organization_id",
+      "started_at",
+      "finished_at",
+      "status",
+      "tokens_input",
+      "tokens_output",
+      "estimated_cost"
+    ],
+    "proibidas_no_select": {
+      "input": "JSONB de entrada do agente — pode carregar texto de empresa, e-mail e nome (PII). NAO e' selecionado",
+      "output": "JSONB de saida do agente — mesma razao. NAO e' selecionado",
+      "error": "JSONB de erro — pode carregar payload do provedor. NAO e' selecionado",
+      "correlation_id": "liga a cadeia de execucao; nao e' metrica e nao vai para a saida",
+      "id": "chave da execucao; nao vai para a saida (a saida e' agregada)",
+      "created_at": "carimbo de gravacao; a janela e' por started_at, de proposito"
+    },
+    "organization_id": "lido APENAS para CONTAR organizacoes distintas; o UUID nunca vai para a saida (a saida carrega contagem)",
+    "validade": "cada coluna declarada acima TEM de existir no CREATE TABLE de agent_runs da DDL congelada; coluna ausente = CONTRATO_DIVERGE_DA_DDL, exit 3 (a metrica nao se inventa)"
+  },
+  "metricas": {
+    "runs": "execucoes do grupo",
+    "concluidas": "execucoes de classe CONCLUIDA",
+    "falhas": "execucoes de classe FALHA",
+    "recusadas": "execucoes de classe RECUSADA (medida propria: nao soma em falha)",
+    "revisao": "execucoes de classe REVISAO (medida propria)",
+    "sem_status": "execucoes cujo status nao pertence ao vocabulario (lacuna, nao classificadas)",
+    "taxa_de_falha": "falhas / CLASSIFICADAS (concluidas+falhas+recusadas+revisao), 4 casas; null quando nao ha classificada",
+    "taxa_de_recusa": "recusadas / CLASSIFICADAS, 4 casas",
+    "tokens_input": "soma dos tokens de entrada DECLARADOS",
+    "tokens_output": "soma dos tokens de saida DECLARADOS",
+    "tokens_totais": "tokens_input + tokens_output declarados",
+    "runs_sem_tokens": "execucoes com tokens_input OU tokens_output nulos (NAO entram na soma e NAO viram 0)",
+    "custo_total": "soma dos `estimated_cost` DECLARADOS (unidade = a que o produtor gravou), como STRING decimal de 6 casas — dinheiro NAO vira float, para nao perder o valor gravado",
+    "runs_com_custo": "execucoes com estimated_cost declarado (inclui o zero declarado)",
+    "runs_sem_custo": "execucoes com estimated_cost NULO — lacuna, NAO custo zero",
+    "custo_medio_por_execucao": "custo_total / runs_com_custo (STRING decimal de 6 casas); null quando nenhuma declarou custo",
+    "custo_por_execucao_concluida": "custo_total / concluidas (STRING decimal de 6 casas); null quando concluidas = 0 OU quando o grupo NAO declara custo em TODAS as execucoes — total subdeclarado nao vira media de sucesso",
+    "latencia_media_s": "media de (finished_at - started_at) em segundos, so' das execucoes com os dois carimbos e fim >= inicio",
+    "latencia_mediana_s": "mediana do mesmo conjunto (2 casas, metodo do posto mais proximo, declarado)",
+    "latencia_p95_s": "percentil 95 do mesmo conjunto (metodo do posto mais proximo, declarado), 2 casas",
+    "organizacoes": "organization_id distintos do grupo",
+    "amostra_suficiente": "concluidas >= limite_amostra (default 3, declarado) — grupo com amostra menor NAO pode ganhar o ranking"
+  },
+  "ranking": {
+    "alvo": "agente_mais_caro_por_execucao_concluida",
+    "candidatos": "grupos com amostra_suficiente E runs_sem_custo = 0. Um grupo que NAO declara custo em parte das execucoes tem total SUBDECLARADO: compara-lo coroaria como 'barato' exatamente quem menos declara — por isso ele fica FORA, com o motivo no relatorio",
+    "ordem": "custo_por_execucao_concluida desc, concluidas desc, agente asc (deterministico)",
+    "motivos": {
+      "SEM_EXECUCOES": "o recorte nao tem execucao alguma",
+      "SEM_CUSTO_DECLARADO": "nenhum grupo declara custo: nao ha o que comparar (nao se coroa o mais barato entre desconhecidos)",
+      "CUSTO_NAO_DECLARADO_EM_PARTE": "existem grupos com amostra, mas todos declaram custo so' em parte das execucoes",
+      "AMOSTRA_INSUFICIENTE": "os grupos com custo completo ficam abaixo do limite de amostra"
+    }
+  },
+  "vereditos": {
+    "ANALISADO": "recorte lido e metricas calculadas (ha pelo menos uma execucao no recorte)",
+    "SEM_EXECUCOES": "recorte lido e nenhuma execucao identificada: somas ficam 0 e medias ficam null (nunca 0.0 fingindo que mediu)",
+    "RECUSADA": "ambiente prod, porta de banco ausente/remota, contrato incoerente com a DDL ou com o vocabulario: nada medido, motivo declarado"
+  },
+  "saida": {
+    "formatos": ["json", "csv", "html"],
+    "json": "relatorio completo (resumo, por_agente, por_modelo, por_workflow, ranking, lacunas, lacunas_declaradas, hash_do_relatorio)",
+    "csv": "uma linha por agente (a visao de gestao)",
+    "html": "dashboard auto-contido, sem recurso externo e sem servidor",
+    "privacidade": "a saida carrega CONTAGEM e NOME DE AGENTE/MODELO/WORKFLOW (vocabulario do proprio sistema, nao dado pessoal). Nao carrega organization_id, correlation_id, id de execucao, e-mail, nome de contato, texto de entrada/saida nem payload de erro"
+  },
+  "guardrails": {
+    "ambiente": "prod RECUSADO exit 4 (ADR-005); permitidos dev e homolog (homolog exige --confirmo)",
+    "somente_leitura": "todo SQL enviado a porta tem de comecar por SELECT/WITH e nao conter verbo de escrita (INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/COPY/CALL/DO/VACUUM/REINDEX); qualquer outro statement RECUSA exit 3 — e a consulta roda com `default_transaction_read_only = on` em `-c` SEPARADO (medido: num unico `-c` o SET nao vale)",
+    "fail_closed": "contrato divergente do vocabulario ou da DDL = exit 3; porta que nao responde = exit 2; linha da porta fora do formato de 14 colunas = exit 3",
+    "nao_interpreta": "status desconhecido NAO e' chutado nem somado: e' contado em lacuna",
+    "segredo": "se o valor de TRE_CUSTO_AGENTES_TOKEN aparecer na evidencia, a rodada e' RECUSADA (SENHA_VAZADA, exit 5)"
+  },
+  "lacunas_declaradas": [
+    "L1 — hoje NEM TODO irmao grava tokens/custo: research grava NULL nas tres colunas (hermes/agents/research/research.py) enquanto outreach grava a partir do provedor (`provedor_meta`). Enquanto for assim, o custo medido e' o custo das execucoes que DECLARAM — nunca o custo do sistema inteiro. A lacuna e' do produtor, nao desta analise",
+    "L2 — nao existe tabela de precos no Data Contract V1 e a politica de lane PROIBE fixar preco (hermes/jev/policy_v1_2.yaml). O `estimated_cost` e' multiplicado pelo produtor, com a tarifa dele, na hora dele: duas execucoes do mesmo modelo podem trazer tarifas diferentes e o card NAO tenta conciliar",
+    "L3 — a unidade do `estimated_cost` (moeda/base) nao esta declarada no contrato de dados: o relatorio reporta o numero GRAVADO, sem rotular moeda nem converter. Fechar a unidade e' decisao do dono do dado",
+    "L4 — `agent_runs.status` nao tem CHECK na DDL: o vocabulario vive nos mapas STATUS_AGENT_RUNS dos irmaos. Um status novo gravado por um irmao sem atualizar este contrato cai em lacuna (visivel, nao silencioso) — e' o comportamento desejado, mas a suite so' cobre o vocabulario medido em 2026-10-03",
+    "L5 — a janela filtra por `started_at`; execucao sem started_at fica fora dela. E o recorte e' por execucao de agente: nao ha atribuicao de custo a CARD do board nem a receita (o 'custo por card VERIFIED' da politica de lane nao e' medivel aqui — o recibo do JEV nao carrega custo)"
+  ]
+}
