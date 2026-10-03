@@ -1,0 +1,128 @@
+{
+  "delivery_id": "TRE-W1",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W1 — Nucleo de dados (PostgreSQL / Sales Intelligence)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-03",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote 1 (dados, dedup, credencial, migracao)"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W1-E04-T01",
+      "title": "Implementar deduplicacao strong identifiers",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_595dc9be",
+          "stage": "DONE",
+          "validation_result": "PASS",
+          "evidence": "motor scripts/dedup/deduplicar_organizacoes.py (CNPJ -> dominio -> LinkedIn) com suite sintetica offline",
+          "current_gate": "DONE",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/dedup/teste_dedup_sintetico.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_DEDUP_SINTETICO_OK (7 itens, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E04-T01-D04",
+      "title": "DEFEITO: verificador de estrutura imprimia PASS com metade dos checks como codigo morto",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_967965f0",
+          "stage": "DONE",
+          "validation_result": "PASS",
+          "evidence": "correcao do verificador: o resumo/exit saiu do meio do script e o fim deixou de ser inalcancavel",
+          "current_gate": "DONE",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "eixo_de_risco": "ISOLAMENTO (integridade da medicao)",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/verificar_estrutura.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (0 falhas), 386 linhas OK; ultimo bloco (pontuacao-preditiva) presente -> fim do script nao esta morto"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E05-T01-D01",
+      "title": "DEFEITO: migration 0001 registrada em dev diverge do arquivo do repo e trava o runner",
+      "stage": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_39838c5b",
+          "stage": "VALIDATION",
+          "validation_result": "BLOCKED",
+          "evidence": "parte offline medida: sha256 do arquivo da migration bate com o registro citado (0484a3701b8c85243e5bc92ca8822074fa90fb1d7c91c0a995aaeabd816fbb6e)",
+          "current_gate": "VALIDATION",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "eixo_de_risco": "MIGRACAO",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "sha256sum db/migrations/0001_sales_intelligence_v1.sql",
+                "exit": 0,
+                "resultado": "0484a3701b8c85243e5bc92ca8822074fa90fb1d7c91c0a995aaeabd816fbb6e"
+              }
+            ],
+            "motivo": "o aceite exige medir o REGISTRO em public.tre_schema_migrations no banco de dev vivo (scripts/db/aplicar_migracoes.sh dev --somente-checar + suite_banco.sh dev); essa medicao exige ambiente vivo e credencial, indisponiveis a uma verificacao offline",
+            "pre_condicao": "na VPS do TRE (vmi3619453), com pg-sales-dev: aplicar_migracoes.sh dev --somente-checar -> MIGRACAO_OK (exit 0) e suite_banco.sh dev; entao regravar o veredito como PASS"
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:23:41+00:00",
+      "by": "Hermes — validacao integrada (lote 1, offline)",
+      "scope": "lote 1 — validacao integrada offline",
+      "cards": [
+        "t_595dc9be",
+        "t_967965f0",
+        "t_39838c5b"
+      ],
+      "production_promotion_authorized": false
+    }
+  ]
+}

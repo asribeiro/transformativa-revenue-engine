@@ -6,7 +6,7 @@
   "release_status": "DELIVERED",
   "current_gate": "DONE",
   "production_promotion_authorized": false,
-  "updated_at": "2026-09-30",
+  "updated_at": "2026-10-03",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -81,7 +81,27 @@
         {
           "hermes_task_id": "t_4be20bcc",
           "stage": "DONE",
-          "evidence": "docs/operations/gestao-de-secrets.md homologada em 29/09/2026 — commit 340b9ae"
+          "evidence": "docs/operations/gestao-de-secrets.md homologada em 29/09/2026 — commit 340b9ae",
+          "validation_result": "PASS",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/secret_scan.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (nenhum segredo versionado)"
+              },
+              {
+                "gate": "bash scripts/hooks/pre-commit (com padrao ghp_ no staged)",
+                "exit": 1,
+                "resultado": "COMMIT BLOQUEADO (teste negativo: o hook RECUSA o segredo)"
+              }
+            ]
+          }
         }
       ]
     },
@@ -105,7 +125,22 @@
         {
           "hermes_task_id": "t_722b6cbd",
           "stage": "DONE",
-          "evidence": "Data Contract V1.0: 12 tabelas, IDs canonicos, ownership, eventos, vocabularios fechados e score model. verificar_contrato_dados.py PASS 26 itens + teste negativo de 6 mutacoes. Commits 5be6a68 e 35e8050."
+          "evidence": "Data Contract V1.0: 12 tabelas, IDs canonicos, ownership, eventos, vocabularios fechados e score model. verificar_contrato_dados.py PASS 26 itens + teste negativo de 6 mutacoes. Commits 5be6a68 e 35e8050.",
+          "validation_result": "PASS",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_contrato_dados.py",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (26 itens, 0 falhas)"
+              }
+            ]
+          }
         }
       ]
     },
@@ -258,6 +293,17 @@
       "by": "Anderson Ribeiro",
       "production_promotion_authorized": false,
       "note": "fechamento da W0: itens declarados DONE; promocao a producao deliberadamente nao autorizada"
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:23:41+00:00",
+      "by": "Hermes — validacao integrada (lote 1, offline)",
+      "scope": "lote 1 — validacao integrada offline",
+      "cards": [
+        "t_4be20bcc",
+        "t_722b6cbd"
+      ],
+      "production_promotion_authorized": false
     }
   ]
 }
