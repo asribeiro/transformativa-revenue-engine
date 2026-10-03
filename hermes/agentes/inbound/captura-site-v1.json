@@ -1,0 +1,123 @@
+{
+  "versao": "captura-site-v1",
+  "componente": {
+    "nome": "captura_site",
+    "card": "TRE-W7-E01-T01",
+    "wave": "W7 (Inbound / Multicanal)",
+    "arquivo": "hermes/agentes/inbound/captura_site.py",
+    "papel": "capturar o lead que chega pelo formulario do site: validar consentimento e campos minimos, resolver a identidade da empresa (identificador forte antes do fraco, nunca merge silencioso), gravar organizations/contacts/interactions na base canonica de sales_intelligence e a trilha de idempotencia em sync_events",
+    "nao_faz": [
+      "nao expoe endpoint HTTP publico: quem recebe o POST do formulario e' o n8n/operador; aqui entra a SUBMISSAO ja' em JSON no formato deste contrato",
+      "nao cria crm.lead nem escreve no Odoo: o evento PG -> Odoo de lead inbound nao existe no vocabulario congelado do Data Contract V1 (ver lacunas)",
+      "nao calcula score, tier nem Next Best Action (ondas W4/W5)",
+      "nao envia e-mail, WhatsApp nem qualquer mensagem ao lead",
+      "nao atribui campanha a partir de clique/anuncio (W7-E03 Google lead attribution, W7-E02 Meta)"
+    ]
+  },
+  "submissao": {
+    "formato": "JSON unico da submissao do formulario (arquivo passado em --submissao, ou stdin com '-')",
+    "campos_obrigatorios": [
+      "submission_id",
+      "consentimento.aceito",
+      "consentimento.legal_basis",
+      "empresa.nome",
+      "contato.nome",
+      "contato.email ou contato.telefone"
+    ],
+    "campos_opcionais": [
+      "enviado_em",
+      "origem.pagina",
+      "origem.utm_source",
+      "origem.utm_campaign",
+      "empresa.cnpj",
+      "empresa.dominio",
+      "empresa.linkedin_url",
+      "empresa.cidade",
+      "empresa.estado",
+      "empresa.website_url",
+      "contato.cargo",
+      "contato.preferred_channel",
+      "contato.opt_out_email",
+      "contato.opt_out_whatsapp",
+      "contato.do_not_contact"
+    ],
+    "regra_de_consentimento": "consentimento.aceito tem de ser exatamente true e consentimento.legal_basis tem de estar em vocabulario.legal_basis. Sem isso a submissao e' RECUSADA (RECUSADO_CONSENTIMENTO) e NADA e' gravado em organizations/contacts/interactions — a barreira e' de compliance, nao uma preferencia (Data Contract V1 §9).",
+    "regra_de_dados_minimos": "sem empresa.nome, sem contato.nome, sem submission_id ou sem um canal de resposta (e-mail OU telefone) a submissao e' SUBMISSAO_INVALIDA/SEM_DADOS_MINIMOS: registra a trilha e nao inventa cadastro pela metade."
+  },
+  "vocabulario": {
+    "channel": ["WEBSITE"],
+    "direction": ["INBOUND"],
+    "interaction_type": ["FORMULARIO_SITE"],
+    "organization_source": ["WEBSITE_FORMULARIO"],
+    "organization_status": ["DISCOVERED"],
+    "legal_basis": ["CONSENTIMENTO", "INTERESSE_LEGITIMO"],
+    "contact_source": ["WEBSITE_FORMULARIO"],
+    "preferred_channel": ["email", "whatsapp", "telefone"],
+    "status_trilha": [
+      "CAPTURADO",
+      "JA_CAPTURADO",
+      "REVIEW_REQUIRED",
+      "RECUSADO_CONSENTIMENTO",
+      "SEM_DADOS_MINIMOS",
+      "SUBMISSAO_INVALIDA"
+    ],
+    "observacao": "O Data Contract V1 fixa as COLUNAS (organizations.status/source, contacts.legal_basis/source, interactions.channel/direction) mas nao fecha o vocabulario deste canal: o vocabulario desta versao vive aqui e valor fora da lista RECUSA (CONTRATO_INVALIDO) em vez de ser inventado pelo codigo. organization_status usa o literal do contrato (DISCOVERED)."
+  },
+  "identificadores": {
+    "fortes": [
+      { "ordem": 1, "campo": "empresa.cnpj", "coluna": "cnpj", "confianca": 1.0, "normalizacao": "somente digitos" },
+      { "ordem": 2, "campo": "empresa.dominio", "coluna": "domain", "confianca": 1.0, "normalizacao": "minusculo, sem www." },
+      { "ordem": 3, "campo": "empresa.linkedin_url", "coluna": "linkedin_url", "confianca": 0.97, "normalizacao": "minusculo, barra final removida" }
+    ],
+    "fracos": [
+      { "ordem": 1, "campo": "empresa.nome + empresa.cidade", "colunas": ["trade_name", "city"], "confianca": 0.8 },
+      { "ordem": 2, "campo": "empresa.nome + contato.telefone", "colunas": ["trade_name", "contacts.phone"], "confianca": 0.75 }
+    ],
+    "limiar_de_merge_automatico": 0.95,
+    "regra": "identificador FORTE que casa reusa a organizacao existente (confianca >= limiar). Identificador FRACO que casa NAO faz merge: a submissao vai para REVIEW_REQUIRED (fila humana) e so' a trilha e' gravada — ambiguidade nao se resolve por heuristica (Data Contract V1 §5). Nada casando, a organizacao nasce com UUID canonico gerado no proprio componente, ANTES de qualquer chamada externa."
+  },
+  "escrita": {
+    "tabelas": ["organizations", "contacts", "interactions", "sync_events"],
+    "operacao": "INSERT apenas (a trilha de idempotencia e' append). Nao existe UPDATE/DELETE/TRUNCATE/DDL neste componente — a auditoria da propria fonte RECUSA antes de conectar.",
+    "uuid": "gen_random_uuid() no proprio INSERT: o ID nasce no sistema que testemunhou o fato (Data Contract V1 §3)",
+    "idempotencia": {
+      "chave": "site:<submission_id>",
+      "tabela": "sales_intelligence.sync_events (idempotency_key e' UNIQUE no contrato)",
+      "regra": "submissao ja' capturada devolve JA_CAPTURADO, NAO grava de novo e nao cria linha nova de trilha"
+    },
+    "vinculo_da_interacao": "interactions.organization_id (NOT NULL) e' a organizacao resolvida/criada nesta mesma captura; channel=WEBSITE, direction=INBOUND, interaction_type=FORMULARIO_SITE, content_reference=submission_id"
+  },
+  "guardas_de_ambiente": {
+    "dev": "porta de banco LOCAL obrigatoria (`docker exec -i pg-<dev|aceite> psql ...`, via --porta-banco/TRE_SITE_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV, exit 3)",
+    "homolog": "exige TRE_SITE_APROVACAO_HUMANA registrada (HOMOLOG_SEM_APROVACAO, exit 3)",
+    "prod": "RECUSA por desenho (exit 4): nada nasce em producao e a promocao e' ato humano registrado (ADR-005)",
+    "escrita": "--confirmo e' obrigatorio para escrever; sem ele a rodada e' DRY_RUN e nada toca o banco"
+  },
+  "privacidade": {
+    "regra": "a saida (relatorio/trilha) MASCARA e-mail, telefone e CNPJ do lead; o valor cru nunca aparece na evidencia",
+    "bloqueio_nao_preferencia": "contato.do_not_contact / opt_out_email / opt_out_whatsapp do formulario sao gravados como BLOQUEIO (nao contato), exatamente o que o Data Contract V1 §9 exige",
+    "campos_de_compliance_gravados": ["contacts.legal_basis", "contacts.source", "contacts.do_not_contact", "contacts.opt_out_email", "contacts.opt_out_whatsapp", "organizations.source"]
+  },
+  "lacunas": [
+    {
+      "id": "L1",
+      "lacuna": "o lead inbound nao chega ao Odoo por este card: o vocabulario fechado de eventos PG -> Odoo do Data Contract V1 (§6) nao tem evento de lead capturado, e o consumidor de outbox e' fail-closed (evento fora do contrato vira DEAD_LETTER). Criar `event_type` novo exige nova versao do contrato + aprovacao humana registrada (doc 12 / ADR-0004) — decisao do dono, nao do worker.",
+      "encaminhamento": "card de contrato/aprovacao antes de qualquer escrita no Odoo a partir do site"
+    },
+    {
+      "id": "L2",
+      "lacuna": "nao existe endpoint HTTP versionado do formulario (pagina/politica de privacidade como artefato): a captura recebe a submissao ja' normalizada em JSON. Publicar o endpoint e' operacao de n8n/website, fora do repositorio.",
+      "encaminhamento": "card de integracao do formulario (n8n) quando a pagina entrar no ar"
+    },
+    {
+      "id": "L3",
+      "lacuna": "atribuicao de campanha por UTM/anuncio nao e' medida aqui alem do que o formulario declara (origem.utm_*): atribuicao de clique e' W7-E03 (Google) / W7-E02 (Meta).",
+      "encaminhamento": "cards W7-E02/E03"
+    },
+    {
+      "id": "L4",
+      "lacuna": "`collected_at`/`retention_until` continuam ausentes do schema (lacuna ja' declarada no Data Contract V1 §9) — a captura registra `created_at` e nao finge reter por prazo que o contrato nao tem.",
+      "encaminhamento": "W1/contrato"
+    }
+  ]
+}
