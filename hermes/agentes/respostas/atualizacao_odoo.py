@@ -342,7 +342,7 @@ class PortaBanco:
         except ValueError as e:
             raise Recusa("BANCO_NAO_DECLARADO", f"prefixo de banco invalido: {e}") from e
 
-    def _envelope(self, expressao: str) -> str:
+    def _envelope(self, coluna: str, origem: str) -> str:
         """Envelope de leitura: md5 + base64 do payload.
 
         O psql QUEBRA a linha quando o valor e' longo (medido no aceite: `json_agg` de 5 linhas voltou
@@ -350,8 +350,12 @@ class PortaBanco:
         resolve em duas partes: base64 nao tem espaco nem quebra significativa (entao juntar as linhas
         reconstroi o valor) e o md5 PROVA que a juncao foi exata — divergencia RECUSA, nunca segue com
         dado pela metade.
+
+        A coluna e o `FROM` vao SEPARADOS por parametro de proposito: colar a expressao inteira numa
+        string unica ja' produziu `... ) t AS payload` (o alias do `AS payload` caindo na tabela) e o
+        SQL quebrado no aceite. Quem monta o envelope nao adivinha onde termina a coluna.
         """
-        return ("WITH dados AS (SELECT " + expressao + " AS payload) "
+        return ("WITH dados AS (SELECT " + coluna + " AS payload " + origem + ") "
                 "SELECT md5(payload) || ' ' || encode(convert_to(payload, 'UTF8'), 'base64') FROM dados;")
 
     def _decodificar(self, brutos: list) -> list:
@@ -377,9 +381,9 @@ class PortaBanco:
             raise Recusa("BANCO_RESPOSTA_INVALIDA", f"payload nao e' JSON: {e}") from e
 
     def consultar(self, sql: str) -> list:
-        expressao = f"coalesce(json_agg(t), '[]'::json)::text FROM ({sql}) t"
         comando = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c",
-                                        self._envelope(expressao)]
+                                        self._envelope("coalesce(json_agg(t), '[]'::json)::text",
+                                                       f"FROM ({sql}) t")]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
@@ -392,9 +396,9 @@ class PortaBanco:
         # INSERT sem RETURNING nao pode ser lido por CTE ("WITH query does not have a RETURNING clause",
         # defeito medido na rodada 2 do aceite do card irmao): sem RETURNING nao ha linhas a devolver.
         if "RETURNING" in sql.upper():
-            expressao = (f"coalesce(json_agg(afetados), '[]'::json)::text FROM "
-                         f"(WITH afetados AS ({sql}) SELECT * FROM afetados) afetados")
-            comando = comando_base + [self._envelope(expressao)]
+            comando = comando_base + [self._envelope(
+                "coalesce(json_agg(afetados), '[]'::json)::text",
+                f"FROM (WITH afetados AS ({sql}) SELECT * FROM afetados) afetados")]
         else:
             comando = comando_base + [sql]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)

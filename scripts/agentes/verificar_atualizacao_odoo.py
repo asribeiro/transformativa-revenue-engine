@@ -407,9 +407,10 @@ def testar_envelope_de_banco():
              linhas == [{"interaction_id": "x"}], str(linhas))
         M.subprocess.run = lambda *a, **k: envelope_sql_medido(*a, **k)
         porta.consultar("SELECT 1 AS um")
-        item("59. o SQL do envelope e' bem formado (uma expressao + FROM dentro do WITH)",
-             _SQL_VISTO["sql"].startswith("WITH dados AS (SELECT coalesce(")
-             and ") t AS payload) SELECT md5(payload)" in _SQL_VISTO["sql"], _SQL_VISTO["sql"][:160])
+        item("59. o SQL do envelope e' bem formado (coluna e FROM separados, dentro do WITH)",
+             _SQL_VISTO["sql"].startswith(
+                 "WITH dados AS (SELECT coalesce(json_agg(t), '[]'::json)::text AS payload FROM (")
+             and ") t) SELECT md5(payload)" in _SQL_VISTO["sql"], _SQL_VISTO["sql"][:200])
         M.subprocess.run = lambda *a, **k: envelope_falso(json.dumps([{"a": 1}]), corromper=True)
         try:
             porta.consultar("SELECT 1")
@@ -494,9 +495,9 @@ DENTES = [
      "        if hashlib.md5(dados).hexdigest() != digest:", "        if False:",
      "58. envelope com md5 divergente RECUSA (nunca segue com dado pela metade)"),
     ("envelope-sql-malformado", "bem formado",
-     "        return (\"WITH dados AS (SELECT \" + expressao + \" AS payload) \"",
-     "        return (\"WITH dados AS (\" + expressao + \" AS payload) \"",
-     "59. o SQL do envelope e' bem formado (uma expressao + FROM dentro do WITH)"),
+     "        return (\"WITH dados AS (SELECT \" + coluna + \" AS payload \" + origem + \") \"",
+     "        return (\"WITH dados AS (\" + coluna + \" AS payload \" + origem + \") \"",
+     "59. o SQL do envelope e' bem formado (coluna e FROM separados, dentro do WITH)"),
 ]
 
 
