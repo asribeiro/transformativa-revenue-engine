@@ -123,7 +123,7 @@
     },
     {
       "id": "L3",
-      "lacuna": "as 12 tabelas core do Data Contract V1 nao tem entidade de evento (nem presenca): o vinculo do evento vive no content_summary da interacao e no payload da trilha. Criar `events`/`event_attendances` e' mudanca de esquema do contrato, com nova versao + aprovacao humana.",
+      "lacuna": "as 12 tabelas core do Data Contract V1 nao tem entidade de evento (nem presenca): o vinculo do evento vive no content_summary da interacao e no payload da trilha. Criar `events`/`event_attendances` e' mudanca de esquema do contrato, com nova versao + aprovacao humana. NAO confundir com o caminho de eventos Odoo -> PostgreSQL (W3-E03, `n8n/sql/ingerir-evento.sql`, runbook `odoo-eventos-para-pg.md`): aquele e' o FUNIL do Odoo (`crm.lead`/`mail.activity`/`calendar.event`, source_system `odoo`) gravando SO' a trilha, sem materializar dado de negocio e sem identidade de presenca; este card e' o inverso — lead COLETADO no evento entrando no cadastro canonico.",
       "encaminhamento": "card de contrato/esquema (W1/contrato) — decidir se evento passa a ser entidade"
     },
     {

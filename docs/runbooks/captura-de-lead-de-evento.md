@@ -99,7 +99,11 @@ O aceite exige `docker` com a imagem `postgres:16` e roda **na VPS do ambiente**
    leitor/app do evento é operação de n8n/operador, fora do repositório.
 3. **Sem entidade de evento no schema.** As 12 tabelas core não têm `events`/`event_attendances`: o vínculo
    do evento vive no `content_summary` da interação e no payload da trilha. Promover evento a entidade é
-   mudança de esquema do contrato (nova versão + aprovação humana).
+   mudança de esquema do contrato (nova versão + aprovação humana). **Não confundir** com o caminho de eventos
+   Odoo → PostgreSQL (`TRE-W3-E03-T01`, `n8n/sql/ingerir-evento.sql`, runbook `odoo-eventos-para-pg.md`):
+   aquele é o **funil do Odoo** (`crm.lead`/`mail.activity`/`calendar.event`, `source_system` `odoo`) gravando
+   **só** a trilha, sem materializar dado de negócio e sem identidade de presença — este card é o inverso: o
+   lead **coletado** no evento entrando no cadastro canônico.
 4. **Sem processamento em lote.** Uma coleta por execução; a lista de presença do evento é laço do
    operador/n8n sobre este mesmo componente.
 5. `collected_at`/`retention_until` continuam ausentes do schema (lacuna já declarada no Data Contract V1 §9).
