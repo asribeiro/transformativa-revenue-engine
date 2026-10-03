@@ -155,6 +155,36 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W3-E05-T01",
+      "title": "Criar observabilidade de sync",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_0b77a689",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da observabilidade de sincronizacao (TRE-W3-E05-T01) medido por EXECUCAO REAL num trio DESCARTÁVEL proprio (postgres:16 + n8nio/n8n:latest, nomes/banco/rede proprios): o workflow versionado e' o montado agora pelos artefatos versionados (lente estrutural); os estados A..H produzem o veredito atribuivel (pior sinal: A OK, B ATENCAO, C CRITICO por dead-letter SEM motivo, D ATENCAO por dead-letter COM motivo, E/F/G/H CRITICO) e a medicao e' replicada pelos DOIS caminhos (consulta direta no psql x relatorio do workflow no n8n); retrato das duas tabelas IDENTICO antes/depois (somente leitura); ambiente do dev intocado (lista de bancos identica), homolog/prod sem arquivo novo, nenhum segredo em claro no cofre do n8n descartavel.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "3d64b8d48b376a3ed09916d1ae9f947623c89475",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote3/repo (git archive de 3d64b8d); trio DESCARTÁVEL proprio (postgres:16 + n8nio/n8n:latest) com rede/banco/nomes proprios (rede e05t01-<rand>, banco tre_obs_<rand>, --rm), dev/homolog/producao medidos ANTES e DEPOIS; containers do dev INTOCADOS; duas passadas identicas (saida normalizada por nome do banco descartavel/tmp/repo).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-observabilidade-sync.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: OBSERVABILIDADE_SYNC_OK (119 itens, 0 falhas) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao do nome do banco descartavel)"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -182,6 +212,16 @@
         "t_85cb2838",
         "t_ba84b412",
         "t_3bde06ab"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T16:00:33+00:00",
+      "by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
+      "scope": "lote 3 — validacao integrada (scores W5 e observabilidade W3)",
+      "cards": [
+        "t_0b77a689"
       ],
       "production_promotion_authorized": false
     }
