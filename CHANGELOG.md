@@ -7,6 +7,23 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
 
 ### Added
 
+- **Pontuacao preditiva** (`TRE-W9-E02-T01`) — componente `hermes/agentes/analytics/pontuacao_preditiva.py`
+  (`pontuacao-preditiva-v1`) + contrato declarativo `hermes/agentes/analytics/pontuacao-preditiva-v1.json`:
+  transforma o **score ordinal** de PRIORITY em **probabilidade de ganho** por organizacao — curva em
+  **10 binos** do score ponderado no lado do ajuste, com **PAVA** (monotonicidade nao-decrescente,
+  ponderada por n) — e **mede a previsao fora da amostra** (AUC, **Brier**, **Brier skill** contra a
+  taxa-base, log-loss e tabela de confiabilidade). Os pesos sao os da **calibracao** (proposta quando
+  aprovada; senao os em vigor) e a particao ajuste/validacao e' **a mesma do relatorio** — sem o
+  relatorio o componente RECUSA (`DEPENDENCIA_CALIBRACAO`) e com corte diferente RECUSA
+  (`CORTE_DIVERGENTE`). Bino sem base **herda o bloco anterior** e, antes do primeiro bloco, a
+  organizacao fica `sem_base` (nunca zero). A pre-condicao do card virou **gate medido**: coorte com
+  desfecho < 30 ou lado sem as duas classes → **absteve com exit 6**, sem `modelo` e sem previsao.
+  Emite a previsao das organizacoes **em aberto** (UUID canonico, score, bino, faixa do Data Contract,
+  probabilidade). Leitura pura (nenhum SQL proprio: reusa instrumento/funil/calibracao), nada aplicado
+  (`aplicado: false`, `exige_versao_nova: true`, `aprovacao_humana: pendente`), determinismo por
+  `hash_do_relatorio`, saida sem PII e HTML auto-contido. Suite offline **66 itens + 8 dentes**;
+  aceite de ponta **34 itens** em PostgreSQL descartavel na VPS de dev.
+
 - **Calibração do score** (`TRE-W9-E01-T01`) — componente `hermes/agentes/analytics/calibracao_score.py`
   (`calibracao-score-v1`) + contrato declarativo `hermes/agentes/analytics/calibracao-score-v1.json`:
   **propõe** (nunca aplica) pesos e faixas novos para o score a partir do desfecho observado, em leitura

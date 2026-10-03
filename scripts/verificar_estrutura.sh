@@ -791,5 +791,74 @@ if [ -f scripts/agentes/teste_calibracao_score_aceite.sh ]; then
   done
 fi
 
+# --- card TRE-W9-E02-T01 (Pontuacao preditiva — probabilidade derivada, nunca aplicada) ---------------
+CONTRATO_PONTUACAO="hermes/agentes/analytics/pontuacao-preditiva-v1.json"
+COMPONENTE_PONTUACAO="hermes/agentes/analytics/pontuacao_preditiva.py"
+for arquivo in "$COMPONENTE_PONTUACAO" "$CONTRATO_PONTUACAO" scripts/agentes/verificar_pontuacao_preditiva.py \
+               scripts/agentes/teste_pontuacao_preditiva_aceite.sh docs/architecture/pontuacao-preditiva-v1.md \
+               docs/runbooks/pontuacao-preditiva.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E02-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E02-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_PONTUACAO" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_PONTUACAO" \
+       scripts/agentes/verificar_pontuacao_preditiva.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E02-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O corte ajuste/validacao e os pesos vem do CONTRATO e do RELATORIO da calibracao (dependencia medida).
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_PONTUACAO" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E02-T01: --conferir recusou (contrato de dados, instrumento ou funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A medicao, o desfecho e a coorte NAO podem ser reimplementados: tem de consumir calibracao -> instrumento -> funil.
+  for marca in "carregar_calibracao" "ler_tudo" "montar_coorte" "separar_lados" "CODIGO_VOLUME" \
+               "DEPENDENCIA_CALIBRACAO" "CORTE_DIVERGENTE"; do
+    if ! grep -q "$marca" "$COMPONENTE_PONTUACAO"; then
+      echo "FALHOU card TRE-W9-E02-T01: componente sem $marca (dependencia calibracao/instrumento)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in '"aplicado": False' '"exige_versao_nova": True' 'pendente'; do
+    if ! grep -q -F "$marca" "$COMPONENTE_PONTUACAO"; then
+      echo "FALHOU card TRE-W9-E02-T01: componente sem a marca de previsao NAO aplicada ($marca)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  # A leitura pura nao pode virar SQL proprio (seria uma segunda verdade sobre o mesmo numero).
+  if grep -qE "SELECT |INSERT |UPDATE |DELETE " "$COMPONENTE_PONTUACAO"; then
+    echo "FALHOU card TRE-W9-E02-T01: componente com SQL proprio (leitura e' do instrumento)"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4' 'READ ONLY' 'base_suficiente' 'minimo_de_coorte' \
+               'bins_da_curva' 'fracao_de_ajuste' 'lacunas_declaradas'; do
+    if ! grep -q -F "$marca" "$CONTRATO_PONTUACAO"; then
+      echo "FALHOU card TRE-W9-E02-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_pontuacao_preditiva_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_pontuacao_preditiva_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E02-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de declarar o marcador proprio E a regressao da dependencia (calibracao W9-E01-T01).
+  for marca in 'ACEITE_PONTUACAO_PREDITIVA' 'VERIFICADOR_PONTUACAO_PASS' \
+               'VERIFICADOR_CALIBRACAO_PASS' 'exit 6' 'sha256'; do
+    if ! grep -q -F "$marca" scripts/agentes/teste_pontuacao_preditiva_aceite.sh; then
+      echo "FALHOU card TRE-W9-E02-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

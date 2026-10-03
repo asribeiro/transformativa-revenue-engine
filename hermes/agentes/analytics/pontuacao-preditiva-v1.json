@@ -1,0 +1,130 @@
+{
+  "versao": "pontuacao-preditiva-v1",
+  "card": "TRE-W9-E02-T01",
+  "onda": "W9 (Inteligencia Avancada)",
+  "titulo": "Pontuacao preditiva — probabilidade de ganho DERIVADA do score ordinal, ajustada no lado do ajuste e MEDIDA fora da amostra (nunca aplicada)",
+  "pre_condicao_do_card": {
+    "declarada": "volume real suficiente",
+    "como_virou_mecanismo": "o gate de volume e' medido, nomeado e recusado em codigo: coorte com desfecho resolvido abaixo de `minimo_de_coorte`, ou qualquer lado (ajuste/validacao) sem as duas classes em `minimo_por_classe` => ABSTEVE (exit 6), sem curva e sem previsao. Base pequena NAO vira probabilidade."
+  },
+  "componente": {
+    "nome": "pontuacao_preditiva",
+    "arquivo": "hermes/agentes/analytics/pontuacao_preditiva.py",
+    "papel": "Transformar o score ORDINAL de PRIORITY em probabilidade de ganho por organizacao (curva em binos + PAVA, ajustada no lado do ajuste), MEDIR essa previsao fora da amostra (AUC, Brier, Brier skill, log-loss, confiabilidade) e emitir a PREVISAO das organizacoes ainda em aberto — em leitura pura, com saida JSON + HTML auto-contido",
+    "nao_faz": [
+      "NAO aplica nada: a previsao nasce marcada `aplicacao.aplicado: false`, `exige_versao_nova: true` e `aprovacao_humana: pendente`. Persistir probabilidade (coluna, tabela, score_type novo) e' decisao estrutural (§10 do Data Contract + ADR-0004) e quem aplica e' operador com aprovacao registrada",
+      "NAO escreve: leitura pura, SO' SELECT, dentro de transacao READ ONLY do INSTRUMENTO (nenhum INSERT/UPDATE/DELETE/DDL, nenhuma tabela, nenhuma coluna, nenhuma migration)",
+      "NAO reimplementa a medicao, o desfecho nem a coorte: leitura/validacao/alcance por organizacao vem de `efetividade_score.py` (W8-E03-T01) e, por ele, de `funil.py` (W8-E01-T01); coorte, corte ajuste/validacao, aritmetica do score ponderado e AUC vem de `calibracao_score.py` (W9-E01-T01), importados e conferidos por versao e sha256",
+      "NAO inventa numero: organizacao sem PRIORITY valido, sem os QUATRO componentes na mesma versao ou sem desfecho resolvido fica FORA do ajuste em lacuna nomeada — nunca em zero, nunca em media. Bino sem base herda o bloco ANTERIOR (regra declarada) e, sem bloco anterior, a organizacao fica `sem_base` em vez de receber probabilidade",
+      "NAO atribui causalidade: mede a probabilidade de ganho observada na coorte; nao ha' experimento nem controle na v1",
+      "NAO publica em homolog/producao nem monta servico: o relatorio e' artefato gerado no ambiente de dev (ADR-005)"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "hermes/agentes/analytics/calibracao-score-v1.json (card W9-E01-T01) — DONO dos pesos em uso (proposta, quando houver) e da particao ajuste/validacao; sem esse relatorio nao ha' previsao",
+      "docs/data/data_contract_v1.json#scores — faixas (`tiers`) e tipos de score: DONO das faixas usadas para rotular a previsao",
+      "docs/data/DATA_CONTRACT_V1.md §8 (Score model + tiering) e §10 (governanca da mudanca)",
+      "ADR-0004 (mudanca estrutural exige aprovacao humana registrada) e ADR-005 (nada nasce em producao)",
+      "docs/architecture/calibracao-score-v1.md (card W9-E01-T01) — o instrumento direto desta previsao",
+      "hermes/agentes/analytics/funil-v1.json (funil-v1, card W8-E01-T01) — DEPENDENCIA transitiva: o desfecho por organizacao"
+    ],
+    "fora_do_escopo": [
+      "aplicar a previsao (migration, coluna/tabela nova, gravacao de probabilidade no banco)",
+      "calibrar pesos e faixas (card W9-E01-T01) e escolher canal/timing (W9-E03/T01, W9-E04/T01)",
+      "escolher o modelo de negocio por tras de um limiar de probabilidade (custo de falso positivo, capacidade comercial): numero nao decide isso",
+      "servir a previsao por HTTP, autenticar usuario ou hospedar pagina: passo de operador/homolog"
+    ]
+  },
+  "dependencia": {
+    "calibracao": {
+      "componente": "hermes/agentes/analytics/calibracao_score.py",
+      "contrato": "hermes/agentes/analytics/calibracao-score-v1.json",
+      "versao_exigida": "calibracao-score-v1",
+      "card_exigido": "TRE-W9-E01-T01",
+      "entrada_obrigatoria": "o relatorio JSON da rodada de calibracao (--calibracao)",
+      "funcoes_reusadas": ["ler_tudo", "montar_coorte", "separar_lados", "score_cents", "auc"],
+      "regra": "sem o relatorio (ou de outro card, ou sem hash_do_relatorio, ou sem gate_de_volume medido) RECUSA (DEPENDENCIA_CALIBRACAO); com corte ajuste/validacao diferente do relatorio RECUSA (CORTE_DIVERGENTE) — os dois numeros so' sao comparaveis sobre a MESMA particao",
+      "origem_dos_pesos": "`proposta_de_calibracao` quando o relatorio traz proposta aprovada; senao `contrato_em_vigor` (os pesos do Data Contract que o proprio relatorio publicou em `parametros.pesos_em_vigor`)",
+      "prova": "o sha256 do relatorio, o hash_do_relatorio e a origem dos pesos viajam no relatorio desta rodada"
+    },
+    "instrumento": {
+      "componente": "hermes/agentes/analytics/efetividade_score.py",
+      "versao_exigida": "efetividade-score-v1",
+      "regra": "a leitura pura, a validacao e o alcance por organizacao sao do instrumento; reimplementar criaria duas verdades para o mesmo numero"
+    },
+    "funil": {
+      "componente": "hermes/agentes/analytics/funil.py",
+      "versao_exigida": "funil-v1",
+      "funcao_do_desfecho": "alcance_por_organizacao (transitiva, via instrumento)"
+    }
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3)",
+    "coorte": "organizacoes vivas (deleted_at IS NULL) com PRIORITY valido e os QUATRO componentes do Data Contract validos na MESMA score_version",
+    "coorte_do_ajuste": "subconjunto da coorte com DESFECHO RESOLVIDO (Won=1 / Lost=0), cortado em dois lados deterministicos por sha256(organization_id)",
+    "populacao_prevista": "organizacoes com lastro completo e desfecho EM ABERTO — a previsao existe para elas, nao para quem nao tem lastro",
+    "regra": "quem nao tem lastro completo nao e' estimado: entra em lacuna nomeada"
+  },
+  "parametros": {
+    "minimo_de_coorte": 30,
+    "minimo_por_classe": 5,
+    "bins_da_curva": 10,
+    "limite_de_previsoes": 50,
+    "fracao_de_ajuste": { "numerador": 2, "denominador": 3,
+      "regra": "o lado do ajuste e' `sha256(organization_id) % denominador < numerador` — o MESMO corte do relatorio de calibracao, conferido no contrato (divergencia RECUSA)" },
+    "modelo": "curva determinista em dois passos: (1) taxa de vitoria observada por bino de 10 pontos do score ponderado no lado do AJUSTE; (2) PAVA (pool adjacent violators) impondo monotonicidade nao-decrescente, com bloco ponderado por n",
+    "regra_do_bino_sem_base": "bino sem organizacao no ajuste NAO recebe valor proprio: herda a probabilidade do bloco ANTERIOR (regra declarada e determinista); sem bloco anterior, a organizacao sai `sem_base` e conta em lacuna — nunca zero, nunca media, nunca taxa global",
+    "metricas_de_qualidade": ["AUC (probabilidade prevista contra o desfecho)", "Brier", "Brier skill contra a taxa-base do ajuste (probabilidade constante)", "log-loss com p limitado a [1e-6, 1-1e-6]", "tabela de confiabilidade (previsto x observado por bino)"],
+    "referencia_temporal": "`--agora` (ISO) ou o relogio da rodada; entra no relatorio e NAO entra no hash (o que entra no hash e' o estado medido)",
+    "base_suficiente": "`false` significa: NAO ha' curva nem previsao. O relatorio sai com o gate nomeado item a item e a rodada termina em exit 6 (ABSTEVE)"
+  },
+  "metricas": {
+    "gate_de_volume": ["organizacoes", "coorte_valida", "com_desfecho", "won", "lost", "sem_desfecho", "minimo_de_coorte", "minimo_por_classe", "base_suficiente", "motivos"],
+    "modelo": ["bins", "contagens_do_ajuste (bino, min, max, n, won, taxa)", "blocos (de, ate, n, won, probabilidade)", "bins_sem_base", "taxa_de_base_do_ajuste"],
+    "avaliacao": ["organizacoes", "won", "lost", "com_previsao", "sem_base", "cobertura_pct (ajuste e validacao)", "validacao: auc, brier, brier_de_base, brier_skill, log_loss"],
+    "confiabilidade": ["bino", "n", "previsto", "observado", "desvio"],
+    "previsao_por_organizacao": ["organizacao (UUID)", "score", "bino", "faixa", "probabilidade_de_ganho"],
+    "leitura_do_numero": "o ganho que vale e' o de VALIDACAO: Brier skill > 0 significa que a curva bate a taxa-base constante; Brier skill <= 0 e' resultado legitimo e publicavel (a curva nao bate a constante)"
+  },
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<sales|funil|analytics|aceite>... psql ...`, via --porta-banco/TRE_PONTUACAO_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV); homolog exige --confirmo; prod e' RECUSA por desenho (exit 4, antes de ler contrato)",
+    "leitura_pura": "toda consulta roda pelo INSTRUMENTO com default_transaction_read_only = on e a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3); este componente nao tem SQL proprio",
+    "previsao_nao_aplicada": "o relatorio carrega `aplicacao.aplicado: false`, `exige_versao_nova: true` e `aprovacao_humana: pendente`; a suite offline reprova o componente que escrever (grep de verbo de escrita) e o aceite prova o snapshot das 12 tabelas identico antes/depois",
+    "contrato": "contrato com versao diferente, minimos ausentes, `bins_da_curva` fora de 2..100, fracao de ajuste invalida, faixa do Data Contract com lacuna/sobreposicao, peso que nao soma 100, componente fora de `scores.types`, dependencia com versao/card/hash divergente RECUSAM antes de ler o banco",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se valor de TRE_PONTUACAO_TOKEN, TRE_CALIBRACAO_TOKEN ou TRE_EFETIVIDADE_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "a saida carrega contagem, o UUID canonico da organizacao e o numero previsto; nenhuma coluna de e-mail, telefone, WhatsApp, CNPJ ou nome e' lida"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, referencia_temporal, contrato (versao + sha256), calibracao (arquivo + sha256 + hash_do_relatorio + origem_dos_pesos + pesos), dependencia (instrumento + funil + sha256), base (contagem + digest), parametros, gate_de_volume, modelo (bins + blocos + taxa de base), avaliacao (ajuste x validacao: AUC, Brier, Brier skill, log-loss, cobertura), confiabilidade (previsto x observado por bino), previsao_por_organizacao, aplicacao (aplicado=false), lacunas, lacunas_declaradas, fontes e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com o gate de volume, a curva do ajuste, os blocos PAVA, a avaliacao fora da amostra, a confiabilidade e a previsao por organizacao",
+    "determinismo": "a mesma base com o mesmo relatorio de calibracao e a mesma referencia temporal produz o MESMO relatorio (binos, PAVA e ordem sao deterministicos); `gerado_em` e `referencia_temporal` sao a unica diferenca e NAO entram no hash_do_relatorio",
+    "codigos_de_saida": "0 = relatorio gerado (com ou sem previsao) · 2 = uso errado · 3 = recusa (contrato/dependencia/fonte/guarda/banco) · 4 = producao recusada · 5 = segredo vazado · 6 = VOLUME INSUFICIENTE (absteve)"
+  },
+  "lacunas": {
+    "sem_desfecho": "organizacao com lastro completo mas desfecho EM ABERTO: e' a POPULACAO PREVISTA (nao entra no ajuste)",
+    "sem_classe": "lado (ajuste/validacao) sem as duas classes: ABSTEVE (nada e' medido sobre um lado de uma so' classe)",
+    "sem_base": "organizacao em aberto cujo bino nao tem bloco proprio NEM anterior: fica sem previsao (contada e nomeada)",
+    "bino_sem_base": "bino do ajuste sem organizacao: nao recebe probabilidade propria (herda o bloco anterior)",
+    "prioridade_ausente": "organizacao viva sem nenhuma linha PRIORITY (herdada do instrumento)",
+    "prioridade_vencida": "valid_until no passado (politica de 30 dias do W5-E05)",
+    "componente_ausente": "por score_type: a organizacao nao tem aquele componente",
+    "versoes_divergentes": "componentes que nao estao todos na mesma score_version do PRIORITY",
+    "evidencia_orfa": "linha de PRIORITY de organizacao que nao esta' na base viva"
+  },
+  "fontes_do_funil": [
+    "BASE_ORGANIZACOES", "PESQUISA_CONCLUIDA", "SINAIS", "SCORE_PRIORITY", "CONTATO_COM_CANAL",
+    "INTERACAO_OUTBOUND", "INTERACAO_INBOUND_CLASSIFICADA", "RECOMENDACAO_REUNIAO", "TRILHA_ESTAGIO"
+  ],
+  "fontes_reusadas_do_instrumento": ["PRIORITY_ULTIMO", "COMPONENTES_ULTIMOS"],
+  "lacunas_declaradas": [
+    "L1: a curva le' a coorte ACUMULADA (o desfecho e' o alcance do funil, que soma a base toda): a probabilidade e' da safra acumulada, nao de uma safra; comparacao entre safras nao esta' na v1",
+    "L2: associacao nao e' causa. A probabilidade descreve o desfecho REGISTRADO na coorte observada; sem experimento, Brier skill positivo nao estima efeito de agir sobre a previsao",
+    "L3: com ~30 organizacoes por lado, Brier e Brier skill tem variancia alta e a curva em 10 binos fica fracionaria; a metrica e' honesta sobre a base que existe, nao precisa",
+    "L4: a probabilidade e' DERIVADA e nao persistida (nao existe coluna de probabilidade; criar exige versao nova do contrato, §10/ADR-0004). O que o card entrega e' o numero no relatorio",
+    "L5: o componente medido e' o ULTIMO valor por score_type (vies de sucessao do score: um ICP recalculado depois do desfecho e' leitura do presente sobre o passado) — L5 do instrumento, declarada e nao corrigida",
+    "L6: `Lost` no V1 nao tem ponto de perda: o alvo e' 'ganhou x perdeu', entao a probabilidade e' de GANHO registrado, nao de conversao de proposta",
+    "L7: PAVA e' determinista e guloso (funde vizinhos violadores na ordem do score): outra curva monotona com Brier parecido pode existir e nao e' explorada — a v1 declara UM caminho, nao o otimo global",
+    "L8: a previsao cobre as organizacoes em aberto COM lastro completo; quem esta' em lacuna de score nao recebe numero, e a fracao coberta sai declarada em `cobertura_pct`"
+  ]
+}

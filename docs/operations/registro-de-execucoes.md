@@ -2713,3 +2713,27 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
   `TRE_CALIBRACAO_TOKEN`, `TRE_CALIBRACAO_SCORE_TOKEN`, `TRE_EFETIVIDADE_TOKEN` ou `TRE_FUNIL_TOKEN`
   aparecer na evidência.
+
+## 2026-10-03 — TRE-W9-E02-T01 (Pontuacao preditiva)
+
+- **Componente novo:** `hermes/agentes/analytics/pontuacao_preditiva.py` (`pontuacao-preditiva-v1`)
+  + contrato `hermes/agentes/analytics/pontuacao-preditiva-v1.json`. Transforma o score ordinal em
+  **probabilidade de ganho** por organizacao (curva em 10 binos + **PAVA** no lado do ajuste) e
+  **mede fora da amostra** (AUC, Brier, Brier skill contra a taxa-base, log-loss, confiabilidade),
+  prevendo as organizacoes **em aberto**. Nada e' aplicado (`aplicado: false`).
+- **Dependencia medida:** o relatorio da calibracao (W9-E01-T01) e' entrada obrigatoria — pesos e
+  particao ajuste/validacao vem dele; sem ele `DEPENDENCIA_CALIBRACAO` (exit 3) e com corte diferente
+  `CORTE_DIVERGENTE` (exit 3). A coorte, o score ponderado e a AUC sao **reusados** da calibracao,
+  que reusa o instrumento (W8-E03) e o funil (W8-E01).
+- **Medido por execucao real (VPS de dev, container descartavel `pg-analytics-pred`):** 50
+  organizacoes semeadas (40 com desfecho, 10 **em aberto**), migration 0001 aplicada, calibracao
+  rodando antes e a pontuacao em seguida. `ACEITE_PONTUACAO_PREDITIVA_OK`, **0 falhas**: gate com
+  50/50/40/10 e won 21/lost 19; blocos PAVA monotonicos cobrindo o lado do ajuste; AUC de validacao
+  acima de 0,8 e Brier menor que o da taxa-base (skill > 0); 10 organizacoes em aberto previstas com
+  UUID, score, bino, faixa e probabilidade; **snapshot das 12 tabelas identico** antes/depois;
+  transacao `READ ONLY` recusando INSERT; determinismo por `hash_do_relatorio`; Data Contract intacto.
+- **Suite offline:** `VERIFICADOR_PONTUACAO_PASS (66 itens, 0 falhas) + autoteste OK (8/8 dentes)`.
+- **Abstencao exercitada:** contrato com `minimo_de_coorte=41` => exit 6, `modelo: null`, nenhuma
+  previsao — a pre-condicao do card ("volume real suficiente") e' gate medido, nao prosa.
+- **Ambiente:** nada em producao (ADR-005); container descartavel removido no fim; nenhuma
+  credencial real, nenhuma ponta externa. Segredos: nenhum valor nesta evidencia.

@@ -713,3 +713,39 @@ Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos 
   AUC não estima efeito causal de mexer no score; (d) a faixa é **derivada**, não persistida (L4: criar
   coluna exige versão nova do contrato); (e) o componente é medido pelo **último** valor (L5, viés de
   sucessão); (f) Youden é **guloso** (L7: um caminho determinista, não o ótimo global).
+
+---
+
+## TRE-W9-E02-T01 — Pontuacao preditiva (`pontuacao-preditiva-v1`)
+
+Card da onda W9 que depende da **calibracao** (W9-E01-T01): o objeto aqui **nao** e' o peso, e' a
+**probabilidade de ganho** por organizacao — derivada do score ordinal no lado do ajuste
+(curva em 10 binos + **PAVA** determinista) e **medida fora da amostra** no lado de validacao.
+
+- **ACCEPTANCE:** `ACEITE_PONTUACAO_PREDITIVA_OK` (0 falhas). Gate de volume medido item a item:
+  coorte com desfecho < 30, ou lado (ajuste/validacao) sem 5 de cada classe → **absteve com exit 6**,
+  relatorio sai com `modelo: null`, `avaliacao: null` e nenhuma previsao. Com volume: pesos vindos do
+  **relatorio da calibracao** (`origem_dos_pesos: proposta_de_calibracao` ou `contrato_em_vigor`),
+  corte ajuste/validacao **igual ao do relatorio** (divergente → `CORTE_DIVERGENTE`, exit 3), blocos
+  **monotonicos nao-decrescentes** (PAVA ponderado por n), bino sem base herdando o **bloco anterior**
+  (antes do primeiro bloco: `sem_base`, nunca zero), previsao das organizacoes em aberto com UUID,
+  score, bino, **faixa do Data Contract** e probabilidade em [0,1]; avaliacao com **AUC, Brier,
+  Brier skill contra a taxa-base e log-loss** na validacao; **previsao nao aplicada**
+  (`aplicado: false`, `exige_versao_nova: true`, `aprovacao_humana: pendente`) e Data Contract com
+  sha256 identico antes/depois; leitura pura por snapshot das 12 tabelas **e** pelo `READ ONLY`;
+  determinismo; saida sem PII; HTML auto-contido; **nenhum SQL proprio** no componente.
+- **TEST:** `python3 scripts/agentes/verificar_pontuacao_preditiva.py --autoteste` (**66 itens +
+  8 mutacoes**) e `bash scripts/agentes/teste_pontuacao_preditiva_aceite.sh` (PostgreSQL descartavel
+  `pg-analytics-pred` na VPS de dev, com a **calibracao rodando antes** como dependencia medida e a
+  suite offline do pai como regressao; container removido no fim). Evidencia = saida completa com
+  exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (arquivos novos + docs, **sem DDL** e sem migration) e remover o
+  container descartavel do aceite. Nada em homolog/producao; nenhum servico, cron ou credencial;
+  nenhuma probabilidade gravada em lugar nenhum (a previsao e' so' relatorio).
+- **RISK:** **medio** — leitura pura sobre base de dev, saida com contagem e UUID canonico (sem PII),
+  nenhum ato externo. Riscos **declarados**: (a) **variancia alta** (L3) — com ~30 organizacoes por
+  lado, Brier e Brier skill oscilam; (b) coorte **acumulada** (L1); (c) **associacao nao e' causa**
+  (L2): Brier skill positivo nao estima efeito de agir sobre a previsao; (d) probabilidade **derivada**
+  e nao persistida (L4); (e) **vies de sucessao** do componente (L5, ultimo valor); (f) alvo e'
+  'ganhou x perdeu', nao conversao de proposta (L6); (g) PAVA e' **guloso** (L7, um caminho
+  determinista); (h) cobertura parcial quando falta lastro (L8, declarada em `cobertura_pct`).
