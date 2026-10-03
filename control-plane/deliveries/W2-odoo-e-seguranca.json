@@ -23,30 +23,43 @@
     {
       "id": "TRE-W2-E07-T01",
       "title": "Configurar ACLs/security (carteira x tenant)",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_e0b1bcbf",
-          "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "FAIL",
-          "evidence": "modulo do develop (git archive 393bc45) medido em dupla descartavel propria (postgres:16 + odoo:19.0); os 26 testes do modulo passam, mas a prova negativa do aceite REPROVA: AC3 exige que a superficie de ACL do modulo seja SO tf.process.opportunity (2 ACLs) e o develop tem tambem tf.evento.outbox (5 ACLs). Nao houve escrita no banco do dev: a medicao usa containers descartaveis (o proprio aceite mede a instancia do dev antes/depois).",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "FAIL->PASS por DECISAO DO DONO (opcao A, 03/10/2026; linha no registro de aprovacoes). O veredito anterior era FAIL e e' real: o harness do E07 (`scripts/odoo/verificar-acl-modulo.sh` + `provar_acl_modulo.py`, ultimo a toca-lo o commit 060c369) media a superficie de ACL contra um SO modelo (`tf.process.opportunity`, 2 ACLs); o card posterior TRE-W3-E03-T01 (commit d0b8d5a) entregou o consumidor de outbox e o modelo `tf.evento.outbox` ganhou 3 ACLs -> 5 ACLs em 2 modelos, e o aceite reprovava com 'esperado so tf.process.opportunity' + 'ACLs do modulo: 5 (esperado 2)' + 2 falhas em cascata. O dono escolheu NAO reverter o `tf.evento.outbox` (o consumidor existe e e' usado) e mandou ATUALIZAR o harness para uma ALLOW-LIST EXPLICITA, sem afrouxar o guardrail: ACL INESPERADA (fora da allow-list) reprova e ACL FALTANDO tambem. Realinhado o harness (commit 3d1506f), o aceite fica verde e o veredito volta a PASS. Nao houve escrita em sales_intelligence (ACL e' dado do modulo Odoo); a medicao usa dupla descartavel propria (postgres:16 + odoo:19.0) que o proprio harness sobe e remove, conferindo a instancia do dev antes/depois.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "validated_by": "Hermes — resolucao do defeito de integracao do W2 (decisao A do dono)",
           "verification": {
-            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
-            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "commit": "3d1506fa3578fd86a6f2f12d8ec148097ac95f29",
+            "ambiente": "VPS Contabo vmi3619453 (dev): modulo e harness lidos da copia isolada /opt/tre/dev/w2fix-acl (tar do develop, sha256 conferidos dos dois lados), NUNCA a copia operacional; medicao em dupla descartavel propria (postgres:16 + odoo:19.0) que o proprio harness sobe e remove, com conferencia da instancia do dev antes/depois e de /opt/tre/{homolog,prod} com 0 arquivo; nada escrito em sales_intelligence",
             "passes_independentes": 2,
             "portoes": [
               {
-                "gate": "bash scripts/odoo/verificar-acl-modulo.sh (dupla descartavel postgres:16+odoo:19.0)",
+                "gate": "bash scripts/odoo/verificar-acl-modulo.sh (modulo do develop; dupla descartavel postgres:16+odoo:19.0)",
+                "exit": 0,
+                "resultado": "RESULTADO: ACL_OK (51 itens, 0 falhas) — 2 passadas identicas (so rotulos de container/tmp e o diretorio de log diferem); superficie de ACL = allow-list explicita (tf.evento.outbox, tf.process.opportunity); ACLs = allow-list explicita (5 xmlids)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-acl-modulo.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas) — dente 1 (regra de carteira aberta) e dente 2 (ACL plantada em res.users) continuam reprovando o aceite"
+              },
+              {
+                "gate": "PROVA NEGATIVA (ACL INESPERADA) — copia descartavel com 'access_tf_evento_outbox_plantada' no ir.model.access.csv",
                 "exit": 1,
-                "resultado": "RESULTADO: ACL_FALHOU (51 itens, 4 falha(s)) — 2 passadas identicas (so rotulos de container/tmp diferem)"
+                "resultado": "RESULTADO: ACL_FALHOU (45 itens, 3 falha(s)): 'ACLs do modulo fora da allow-list: ...access_tf_evento_outbox_plantada...'; a superficie de MODELOS segue OK — so a allow-list de XMLIDs pega a escalacao"
+              },
+              {
+                "gate": "PROVA NEGATIVA (ACL FALTANDO) — copia descartavel sem 'access_tf_evento_outbox_system'",
+                "exit": 1,
+                "resultado": "RESULTADO: ACL_FALHOU (45 itens, 3 falha(s)): 'ACLs do modulo fora da allow-list: ... (esperado: ...access_tf_evento_outbox_system...)'; a regressao de seguranca reprova"
               }
-            ],
-            "motivo": "AC3 do aceite (provar_acl_modulo.py) exige que a superficie de ACL do modulo seja SO o modelo tf.process.opportunity (2 ACLs); o develop adicionou o modelo tf.evento.outbox com 3 ACLs (card posterior TRE-W3-E03-T01, commit d0b8d5a) -> 5 ACLs, e o harness do E07 (commit 060c369, ultimo a toca-lo) reprova: 'superficie de ACL do modulo: esperado so tf.process.opportunity' + 'ACLs do modulo: 5 (esperado 2)', arrastando 2 falhas em cascata na prova negativa. Defeito de INTEGRACAO entre ondas (o harness do E07 ficou preso a superficie de ACL do seu commit).",
-            "pre_condicao": "ampliar o harness do E07 (provar_acl_modulo.py / verificar-acl-modulo.sh) para declarar a superficie de ACL esperada INCLUINDO tf.evento.outbox, com aprovacao humana registrada; ou decisao de requisito. Entao regravar como PASS. (Nao e escrita em sales_intelligence: as ACLs sao do modulo Odoo.)"
+            ]
           }
         }
       ]
@@ -62,6 +75,18 @@
       "cards": [
         "t_e0b1bcbf"
       ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "VALIDATION_VERDICT_RESOLVED",
+      "at": "2026-10-03T15:13:19+00:00",
+      "by": "Hermes — resolucao do defeito de integracao do W2 (decisao A do dono)",
+      "card": "t_e0b1bcbf",
+      "from": "FAIL",
+      "to": "PASS",
+      "resolution": "decisao do dono (opcao A, 03/10/2026): atualizar o harness de ACL do E07 para ALLOW-LIST EXPLICITA do conjunto conhecido (5 ACLs em 2 modelos), reconhecendo tf.evento.outbox; NAO reverter o consumidor de outbox. Guardrail mantido com dente (ACL inesperada e ACL ausente reprovam).",
+      "approval_line": "docs/operations/registro-de-aprovacoes.md (linha de 03/10/2026)",
+      "commit": "3d1506fa3578fd86a6f2f12d8ec148097ac95f29",
       "production_promotion_authorized": false
     }
   ]
