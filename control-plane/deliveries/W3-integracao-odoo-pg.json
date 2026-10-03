@@ -391,6 +391,51 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W3-E06-T01",
+      "title": "Executar E2E Foundation #001",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_fcbe3d7d",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E 'Foundation #001' (doc 08 §3, passos 1..3 e 11..19 + o sentido Odoo->PG pela porta de ingestao) executado por EXECUCAO REAL num UNICO trio DESCARTALVEL proprio (postgres:16 + odoo:19.0 com o modulo transformativa_sales_ai instalado + n8nio/n8n:latest com os 4 workflows importados) — o mesmo banco, o mesmo n8n e o mesmo Odoo do primeiro ao ultimo passo. Os passos 4..10 (research/scores/tier/NBA/pain) aparecem como 2 linhas DECLARADAS fora do escopo, nunca como OK: PASS aqui significa 'a fundacao fecha o caminho ponta a ponta e nao duplica', NAO o doc 08 §3 inteiro. Passo 0 roda os gates do projeto (estrutura/secret/papeis/contrato) e os 4 aceites de origem em --apenas-codigo; o cenario cobre: organizacao da ACME por UUID canonico (AC2), evento COMPANY_QUALIFIED -> consumidor n8n -> POST /tf/api/v1/empresa_upsert gravando UM res.partner com tf_company_id = UUID (porta unica como unico caminho de escrita, AC3), contato_upsert e atividade_criar pela MESMA porta (AC4), trilha sync_events COMPLETED com o id do Odoo (AC5), ZERO duplicatas por REPLAY do evento e do envelope Odoo->PG (AC6), fail-closed DEAD_LETTER para evento sem event_version SEM chamar a porta (AC7), reconciliacao E04 com 0 divergencia e observabilidade E05 OK na rodada saudavel (AC8), regressao das 4 portas em --apenas-codigo no MESMO run (AC9) e ambiente descartavel com sha256 reconferido e nenhum arquivo em homolog/producao (AC10). DUAS passadas identicas (exit 0 em ambas; 139 itens, 0 falhas, 2 passos DECLARADOS fora do escopo cada; saida normalizada identica, sha256 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0 nas duas) e prova de dente 3/3 (baseline NAO mutado verde + 3 mutacoes nomeadas do consumidor, cada uma reprovando O ITEM ESPERADO). Historico do BLOCKED: o card nasceu como alvo de maior risco do lote 5 e e' fechado aqui sem nenhum registro de BLOCKED anterior.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 6 — E2E Foundation #001 + outbound W6)",
+          "verification": {
+            "commit": "b1cb7f7051d8bf58bdfaf7fcef878437a70574fa",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone isolado /tmp/tre_lote6/repo em b1cb7f7 (bundle git do develop, 14M). Cada aceite sobe containers DESCARTALVEIS proprios (postgres:16 e, no E2E Foundation, tambem odoo:19.0 + n8nio/n8n:latest), com nomes/banco/rede proprios; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas por aceite (saida normalizada por nome de container/rede/pid/porta/uuid/timestamp/hash de fixture aleatoria). Higiene: os descartaveis sao removidos com 'docker rm -f -v' (commit b1cb7f7) — volumes dangling medidos em 1802 antes e 1802 depois da rodada (zero crescimento); nenhum container ficou de pe (docker ps -aq = 5, so' os do dev).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_OK (9 itens, 0 falhas) — gate estrutura OK + regressao das 4 portas (OUTBOX_CONSUMER_OK / EVENTOS_ODOO_PG_OK(28) / RECONCILIACAO_OK(37) / OBSERVABILIDADE_SYNC_OK(3))"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh (passada 1, cenario completo)",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas, 2 passo(s) declarado(s) fora do escopo) banco=tre_e06_e2e banco_si=sales_intelligence imagens=odoo:19.0+postgres:16+n8nio/n8n:latest"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida normalizada BYTE-IDENTICA a passada 1 (sha256 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0 == 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0); RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_DENTE_OK (3/3 dentes cumpridos; juiz conferido; baseline nao mutado verde). DENTE_CUMPRIDO em: sem_validacao_de_envelope (reprova 'evento sem event_version vai para DEAD_LETTER sem chamada'), mapeamento_trocado (reprova 'o parceiro nasceu com o dominio do evento'), sem_consulta_de_trilha (reprova 'repetir o evento NAO duplica')"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -459,6 +504,16 @@
         "t_b4e01433",
         "t_1a85a424",
         "t_a32ae24f"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 6 — E2E Foundation #001 + outbound W6)",
+      "scope": "lote 6 — E2E Foundation #001 (W3) + outbound/canais W6 (eixo 2)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T18:52:12+00:00",
+      "cards": [
+        "t_fcbe3d7d"
       ]
     }
   ]
