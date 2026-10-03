@@ -37,7 +37,7 @@ item() { # item <nome> <0|1> [detalhe]
   if [ "$2" = "0" ]; then echo "OK    $1"; OK=$((OK+1)); else echo "FALHOU $1 ${3:-}"; FALHAS=$((FALHAS+1)); fi
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
-limpar() { docker rm -f "$PG" >/dev/null 2>&1; }
+limpar() { docker rm -f -v "$PG" >/dev/null 2>&1; }
 [ "$MANTER" = "1" ] || trap limpar EXIT
 
 rm -rf "$BASE"; mkdir -p "$BASE/out"
@@ -91,7 +91,7 @@ else
 fi
 
 echo "== 3. PostgreSQL descartavel + migration 0001"
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD=dev -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container descartavel $PG criado" $?
 pronto=1

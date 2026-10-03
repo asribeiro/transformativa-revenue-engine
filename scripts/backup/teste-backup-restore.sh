@@ -131,7 +131,7 @@ esperar_postgres() {
 
 # no modo ambiente o container de origem NAO e nosso: nada dele e removido
 if [ "$MODO" = "descartavel" ]; then
-  trap 'docker rm -f "$SERVICO" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"' EXIT
+  trap 'docker rm -f -v "$SERVICO" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"' EXIT
 else
   trap 'echo; echo "artefatos do teste em: $TMP"' EXIT
 fi

@@ -39,7 +39,7 @@ item() { # item <nome> <0|1>
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
 limpar() {
-  docker rm -f "$PG" >/dev/null 2>&1
+  docker rm -f -v "$PG" >/dev/null 2>&1
   [ -n "${PID_SINK:-}" ] && kill "$PID_SINK" >/dev/null 2>&1
   wait "$PID_SINK" 2>/dev/null
 }
@@ -62,7 +62,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout "$BASE/ca/dev.key" -out "$BASE
 item "certificado TLS proprio gerado" $?
 
 echo "== 2. PostgreSQL descartavel + migration 0001"
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD=dev -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container descartavel $PG criado" $?
 pronto=1

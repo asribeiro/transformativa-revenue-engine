@@ -141,8 +141,8 @@ ALVO_DESCART=""
 CO_LOCADO=""
 TMP_DESCART=""
 limpar_descartaveis() {
-  [ -n "$CO_LOCADO" ] && docker rm -f "$CO_LOCADO" >/dev/null 2>&1
-  [ -n "$ALVO_DESCART" ] && docker rm -f "$ALVO_DESCART" >/dev/null 2>&1
+  [ -n "$CO_LOCADO" ] && docker rm -f -v "$CO_LOCADO" >/dev/null 2>&1
+  [ -n "$ALVO_DESCART" ] && docker rm -f -v "$ALVO_DESCART" >/dev/null 2>&1
   echo
   echo "artefatos do teste em: ${TMP_DESCART:-/tmp}"
 }
@@ -285,7 +285,7 @@ prova_de_dente() {
     ko "3. nao consegui criar o segundo servico de base"
   fi
   prova 3c "co-locacao no host: segundo servico de base servindo o schema" - - 1 "provisionada"
-  if docker rm -f "$CO_LOCADO" >/dev/null 2>&1; then
+  if docker rm -f -v "$CO_LOCADO" >/dev/null 2>&1; then
     ok "3. segundo servico de base removido (co-locacao no host desfeita)"; CO_LOCADO=""
   else
     ko "3. nao consegui remover o segundo servico de base"; CO_LOCADO=""

@@ -527,8 +527,8 @@ if [ "$FALHAS" -gt 0 ]; then resumo; fi
 # helpers
 # ---------------------------------------------------------------------------
 limpeza() {
-    [ -n "$API_CT" ] && docker rm -f "$API_CT" >/dev/null 2>&1
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    [ -n "$API_CT" ] && docker rm -f -v "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     docker network rm "$NET_TMP" >/dev/null 2>&1
     [ -n "$DESC_DIR" ] && rm -rf "$DESC_DIR"
 }
@@ -1017,7 +1017,7 @@ JSON
     else
         ok "nenhum payload de negocio entra na trilha de auditoria"
     fi
-    docker rm -f "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
     API_CT=""
     ok "servidor de API encerrado (container descartavel removido)"
 
@@ -1056,7 +1056,7 @@ JSON
         || falhou "trilha da fase 3d: $LINHAS_3D linha(s) (esperado 1)"
     grep -q '"codigo": "ambiente_nao_permitido"' "$LOG_DIR/3d-servidor.log" \
         && ok "trilha da fase 3d nomeia o codigo da recusa" || falhou "trilha da 3d sem o codigo"
-    docker rm -f "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
     API_CT=""
     ok "servidor da fase 3d encerrado (container descartavel removido)"
 fi
@@ -1158,7 +1158,7 @@ else
     if banco_existe "$BANCO"; then falhou "banco descartavel $BANCO nao foi removido"
     else ok "banco descartavel $BANCO removido"; fi
 fi
-docker rm -f "$PG_TMP" >/dev/null 2>&1
+docker rm -f -v "$PG_TMP" >/dev/null 2>&1
 if [ -z "$(docker ps -q --filter "name=^$PG_TMP\$")" ]; then ok "postgres descartavel $PG_TMP removido"
 else falhou "postgres descartavel $PG_TMP continua de pe"; fi
 docker network rm "$NET_TMP" >/dev/null 2>&1

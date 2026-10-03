@@ -188,7 +188,7 @@ fi
 # ---------------------------------------------------------------------------
 limpeza() {
     if [ -n "$DESC_DIR" ]; then
-        docker rm -f "$PG_TMP" >/dev/null 2>&1
+        docker rm -f -v "$PG_TMP" >/dev/null 2>&1
         docker network rm "$NET_TMP" >/dev/null 2>&1
         rm -rf "$DESC_DIR"
     fi
@@ -485,7 +485,7 @@ else
     banco_limpo "$BANCO"
     if banco_existe "$BANCO"; then falhou "banco descartavel $BANCO nao foi removido"; else ok "banco descartavel $BANCO removido"; fi
 fi
-docker rm -f "$PG_TMP" >/dev/null 2>&1
+docker rm -f -v "$PG_TMP" >/dev/null 2>&1
 if [ -z "$(docker ps -q --filter "name=^$PG_TMP$")" ]; then ok "postgres descartavel $PG_TMP removido"; else falhou "postgres descartavel $PG_TMP continua de pe"; fi
 docker network rm "$NET_TMP" >/dev/null 2>&1
 if [ -z "$(docker network ls -q --filter "name=^$NET_TMP$")" ]; then ok "rede descartavel $NET_TMP removida"; else falhou "rede descartavel $NET_TMP continua"; fi

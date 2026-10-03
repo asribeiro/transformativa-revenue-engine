@@ -57,7 +57,7 @@ if ! docker run -d --name "$NOME" \
   echo; echo "RESULTADO: RESTORE_FALHOU ($ITENS itens, $FALHAS falha(s))"
   exit 1
 fi
-trap 'docker rm -f "$NOME" >/dev/null 2>&1' EXIT
+trap 'docker rm -f -v "$NOME" >/dev/null 2>&1' EXIT
 ok "container de verificacao no ar"
 
 # 2. espera o servidor DEFINITIVO (a imagem oficial derruba um servidor temporario no init —
