@@ -132,8 +132,8 @@
     "privacidade": "a saida carrega CONTAGEM e NOME DE AGENTE/MODELO/WORKFLOW (vocabulario do proprio sistema, nao dado pessoal). Nao carrega organization_id, correlation_id, id de execucao, e-mail, nome de contato, texto de entrada/saida nem payload de erro"
   },
   "guardrails": {
-    "ambiente": "prod RECUSADO exit 4 (ADR-005); permitidos dev e homolog (homolog exige --confirmo)",
-    "somente_leitura": "todo SQL enviado a porta tem de comecar por SELECT/WITH e nao conter verbo de escrita (INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/COPY/CALL/DO/VACUUM/REINDEX); qualquer outro statement RECUSA exit 3 — e a consulta roda com `default_transaction_read_only = on` em `-c` SEPARADO (medido: num unico `-c` o SET nao vale)",
+    "ambiente": "prod RECUSA por desenho (exit 4) — ADR-005; permitidos dev e homolog (homolog exige --confirmo)",
+    "somente_leitura": "todo SQL enviado a porta tem de comecar por SELECT/WITH e nao conter verbo de escrita (INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/COPY/CALL/DO/VACUUM/REINDEX); qualquer outro statement RECUSA exit 3 — e a consulta roda em READ ONLY (`default_transaction_read_only = on`) num `-c` SEPARADO (medido: num unico `-c` o SET nao vale)",
     "fail_closed": "contrato divergente do vocabulario ou da DDL = exit 3; porta que nao responde = exit 2; linha da porta fora do formato de 14 colunas = exit 3",
     "nao_interpreta": "status desconhecido NAO e' chutado nem somado: e' contado em lacuna",
     "segredo": "se o valor de TRE_CUSTO_AGENTES_TOKEN aparecer na evidencia, a rodada e' RECUSADA (SENHA_VAZADA, exit 5)"
