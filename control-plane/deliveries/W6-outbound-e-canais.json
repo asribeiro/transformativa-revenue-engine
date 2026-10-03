@@ -44,6 +44,11 @@
                 "gate": "bash scripts/integracoes/teste_smtp_titan_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_SMTP_TITAN_001_OK (23 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              },
+              {
+                "gate": "bash scripts/integracoes/teste_smtp_titan_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ACEITE_SMTP_TITAN_001_OK (29 itens, 0 falhas) — as 5 mutacoes reprovam O ITEM ESPERADO (guarda de host, matriz porta x TLS, --confirmo, mascara de senha, idempotencia) e o modulo INTACTO volta verde (controle)"
               }
             ]
           }
@@ -74,6 +79,11 @@
                 "gate": "bash scripts/integracoes/teste_imap_titan_aceite.sh",
                 "exit": 0,
                 "resultado": "RESULTADO: ACEITE_IMAP_TITAN_001_OK (33 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              },
+              {
+                "gate": "bash scripts/integracoes/teste_imap_titan_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ACEITE_IMAP_TITAN_001_OK (40 itens, 0 falhas) — as 6 mutacoes reprovam O ITEM ESPERADO (host, matriz porta x TLS, --confirmo, senha, busca sem PEEK, idempotencia) e o modulo INTACTO volta verde (controle)"
               }
             ]
           }
@@ -86,6 +96,17 @@
     {
       "event": "INTEGRATED_VALIDATION_RECORDED",
       "at": "2026-10-03T15:45:55+00:00",
+      "by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+      "scope": "lote 2 — validacao integrada (nucleo de dados e credenciais)",
+      "cards": [
+        "t_6267d886",
+        "t_9d38e360"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:47:46+00:00",
       "by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
       "scope": "lote 2 — validacao integrada (nucleo de dados e credenciais)",
       "cards": [

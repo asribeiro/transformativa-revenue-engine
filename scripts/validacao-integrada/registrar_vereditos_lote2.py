@@ -264,7 +264,16 @@ ITENS_W6: list[dict] = [
                             "RESULTADO: ACEITE_SMTP_TITAN_001_OK (23 itens, 0 falhas) — exit 0 nas 2 "
                             "passadas independentes"
                         ),
-                    }
+                    },
+                    {
+                        "gate": "bash scripts/integracoes/teste_smtp_titan_aceite.sh --prova-de-dente",
+                        "exit": 0,
+                        "resultado": (
+                            "RESULTADO: ACEITE_SMTP_TITAN_001_OK (29 itens, 0 falhas) — as 5 mutacoes "
+                            "reprovam O ITEM ESPERADO (guarda de host, matriz porta x TLS, --confirmo, "
+                            "mascara de senha, idempotencia) e o modulo INTACTO volta verde (controle)"
+                        ),
+                    },
                 ],
             }
         ],
@@ -298,7 +307,16 @@ ITENS_W6: list[dict] = [
                             "RESULTADO: ACEITE_IMAP_TITAN_001_OK (33 itens, 0 falhas) — exit 0 nas 2 "
                             "passadas independentes"
                         ),
-                    }
+                    },
+                    {
+                        "gate": "bash scripts/integracoes/teste_imap_titan_aceite.sh --prova-de-dente",
+                        "exit": 0,
+                        "resultado": (
+                            "RESULTADO: ACEITE_IMAP_TITAN_001_OK (40 itens, 0 falhas) — as 6 mutacoes "
+                            "reprovam O ITEM ESPERADO (host, matriz porta x TLS, --confirmo, senha, "
+                            "busca sem PEEK, idempotencia) e o modulo INTACTO volta verde (controle)"
+                        ),
+                    },
                 ],
             }
         ],
@@ -428,29 +446,32 @@ def gravar(caminho: pathlib.Path, novo: dict, backup: bool) -> None:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--aplicar", action="store_true", help="escreve (com backup datado)")
+    p.add_argument("--onda", choices=["W1", "W6", "ambas"], default="ambas",
+                   help="restringe o registro a uma onda (default: ambas)")
     args = p.parse_args()
 
     board = ler_board()
     todos = [c["hermes_task_id"] for lst in (ITENS_W1, ITENS_W6) for it in lst for c in it["children"]]
     conferir_board(board, todos)
 
-    if not ARTEFATO_W1.is_file():
-        raise SystemExit(f"FAIL-CLOSED: artefato W1 ausente: {ARTEFATO_W1}")
-    w1 = json.loads(ARTEFATO_W1.read_text(encoding="utf-8"))
-    novo_w1 = _aplicar_itens(w1, ITENS_W1, "TRE-W1", w1.get("wave"))
-
-    w6_antigo = json.loads(ARTEFATO_W6.read_text(encoding="utf-8")) if ARTEFATO_W6.is_file() else None
-    novo_w6 = _aplicar_itens(
-        w6_antigo, ITENS_W6, "TRE-W6",
-        "W6 — Outbound e canais (Titan SMTP/IMAP, geracao de abordagem, aprovacao humana e envio)",
-    )
+    alvos: list[tuple[str, pathlib.Path, list[dict], str, str]] = []
+    if args.onda in ("W1", "ambas"):
+        if not ARTEFATO_W1.is_file():
+            raise SystemExit(f"FAIL-CLOSED: artefato W1 ausente: {ARTEFATO_W1}")
+        w1 = json.loads(ARTEFATO_W1.read_text(encoding="utf-8"))
+        alvos.append(("W1", ARTEFATO_W1, ITENS_W1, "TRE-W1", w1.get("wave")))
+    if args.onda in ("W6", "ambas"):
+        w6_antigo = json.loads(ARTEFATO_W6.read_text(encoding="utf-8")) if ARTEFATO_W6.is_file() else None
+        alvos.append((
+            "W6", ARTEFATO_W6, ITENS_W6, "TRE-W6",
+            "W6 — Outbound e canais (Titan SMTP/IMAP, geracao de abordagem, aprovacao humana e envio)",
+        ))
 
     print("=== REGISTRO DOS VEREDITOS — LOTE 2 —",
           "APLICANDO" if args.aplicar else "DRY-RUN (nada escrito)", "===")
-    for nome, caminho, novo, backup in (
-        ("W1", ARTEFATO_W1, novo_w1, True),
-        ("W6", ARTEFATO_W6, novo_w6, w6_antigo is not None),
-    ):
+    for nome, caminho, itens, delivery_id, wave in alvos:
+        antigo = json.loads(caminho.read_text(encoding="utf-8")) if caminho.is_file() else None
+        novo = _aplicar_itens(antigo, itens, delivery_id, wave)
         print(f"{nome}: {caminho.name} | updated_at={novo['updated_at']} | "
               f"prod_autorizada={novo['production_promotion_authorized']}")
         for it in novo["work_items"]:
@@ -458,7 +479,7 @@ def main() -> int:
                 if c["hermes_task_id"] in todos:
                     print(f"   {it['id']:<24} {c['hermes_task_id']} -> {c['validation_result']}")
         if args.aplicar:
-            gravar(caminho, novo, backup)
+            gravar(caminho, novo, antigo is not None)
             print("   GRAVADO")
     print("(dry-run: rode com --aplicar para escrever)" if not args.aplicar else "OK")
     return 0
