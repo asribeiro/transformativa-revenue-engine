@@ -314,36 +314,41 @@
       "children": [
         {
           "hermes_task_id": "t_8b2ed1b7",
-          "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
-          "evidence": "NAO APROVADO nesta rodada. O aceite E2E da operacao `oportunidade_upsert` (AC1..AC8) PASSA por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada (modelo crm.lead, identidade tf_opportunity_id, chave exigida); identidade canonica por UUID; upsert por identidade (N chamadas -> UM registro; atualizacao parcial); fronteira de dono; idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005; UMA linha TF_API_AUDIT por chamada; ambiente intocado — DUAS passadas identicas (exit 0 em ambas; 125 itens OK cada). MAS a PROVA DE DENTE REPROVOU: `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` saiu exit 1 com `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas)` — o dente 3 (`controlador-sem-upsert`) NAO conseguiu nem aplicar a mutacao: a ancora de texto '            if existentes:' nao existe mais em controllers/api_controlada.py (hoje o controlador usa `if len(existentes) != 1:`), logo a prova NAO mede o que nomeia e o harness falha fechado (MUTACAO_NAO_APLICADA + 'o aceite NAO reprovou com a mutacao'). Defeito do PROPRIO VERIFICADOR (ancora de dente apodrecida apos o fecho do card), nao do aceite. Pela regra do lote ('dente que nao reprova = check que nao vale'), o card NAO recebe PASS.",
-          "pre_condicao": "Corrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS.",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "RESOLVIDO no lote 5. A ancora do dente 3 (`controlador-sem-upsert`) do aceite foi corrigida para o codigo ATUAL: o ramo \"ha' registro casado -> ATUALIZA\" de `_executar_upsert` em controllers/api_controlada.py passou a ser ancorado em `if registros:` (logo abaixo da guarda de ambiguidade `if len(registros) > 1:`), com a MESMA intencao do antigo `if existentes:` (desligar o ramo de atualizacao -> cria sempre -> duplicata). A ancora continua EXATA: mutacao que nao aplica reprova o harness (fail-closed). PROVAS no commit 903424e (copia isolada /tmp/tre_lote5/repo): (1) `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` -> exit 0, `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas)`; o dente 3 reprova o item nomeado 'segunda chamada nao atualizou' com 96 itens medidos; (2) PROVA NEGATIVA da propria reparacao: com a mutacao (`if registros:` -> `if False:`) aplicada A MAO numa copia do modulo, `--apenas-http` -> exit 1, `RESULTADO: OPORTUNIDADE_UPSERT_FALHOU (108 itens, 12 falhas)`, entre elas 'FALHOU segunda chamada nao atualizou' — o aceite REPROVA a mutacao como esperado; (3) DUAS passadas identicas do aceite normal: exit 0 nas duas, 125 itens OK cada, saida BYTE-IDENTICA, `RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)`.\n\n[HISTORICO DO VEREDITO BLOCKED — lote 4, PRESERVADO INTEGRALMENTE]\nNAO APROVADO nesta rodada. O aceite E2E da operacao `oportunidade_upsert` (AC1..AC8) PASSA por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada (modelo crm.lead, identidade tf_opportunity_id, chave exigida); identidade canonica por UUID; upsert por identidade (N chamadas -> UM registro; atualizacao parcial); fronteira de dono; idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005; UMA linha TF_API_AUDIT por chamada; ambiente intocado — DUAS passadas identicas (exit 0 em ambas; 125 itens OK cada). MAS a PROVA DE DENTE REPROVOU: `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` saiu exit 1 com `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas)` — o dente 3 (`controlador-sem-upsert`) NAO conseguiu nem aplicar a mutacao: a ancora de texto '            if existentes:' nao existe mais em controllers/api_controlada.py (hoje o controlador usa `if len(existentes) != 1:`), logo a prova NAO mede o que nomeia e o harness falha fechado (MUTACAO_NAO_APLICADA + 'o aceite NAO reprovou com a mutacao'). Defeito do PROPRIO VERIFICADOR (ancora de dente apodrecida apos o fecho do card), nao do aceite. Pela regra do lote ('dente que nao reprova = check que nao vale'), o card NAO recebe PASS.\n\n[PRE-CONDICAO REGISTRADA NO BLOCKED — cumprida no lote 5]\nCorrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS.",
           "validated_at": "2026-10-03",
-          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "validated_by": "Hermes — validacao integrada (lote 5 — destrava do BLOCKED W3-E01-T04 + agentes W4 + E2E SI)",
           "eixo_de_risco": "INTEGRACAO",
           "verification": {
-            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
-            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
-            "passes_independentes": 2,
+            "commit": "903424ee4834ced1648d370b5ceae19bd4e7e8d1",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote5/repo (git archive de 903424ee4834ced1648d370b5ceae19bd4e7e8d1, 11M). Os aceites sobem containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas por aceite (saida normalizada por nome de container/pid/porta/uuid/timestamp; no lote 5 as passadas sairam BYTE-IDENTICAS).",
+            "passes_independentes": "2",
             "portoes": [
               {
-                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 1)",
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 1, apos conserto da ancora)",
                 "exit": 0,
                 "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t04_oportunidade imagens=odoo:19.0+postgres:16"
               },
               {
                 "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 2, identica)",
                 "exit": 0,
-                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)"
+                "resultado": "saida BYTE-IDENTICA a passada 1 (sha256 A3_pass1==A4_pass2); RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)"
               },
               {
                 "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas): dente 1/2 OK; dente 3 'controlador-sem-upsert' (ancora nova `if registros:`) reprova o item 'segunda chamada nao atualizou' com 96 itens medidos"
+              },
+              {
+                "gate": "PROVA NEGATIVA (mutation aplicada a mao na copia; ESPERA-SE exit != 0)",
                 "exit": 1,
-                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas): dente 1 e 2 OK; dente 3 'controlador-sem-upsert' com ancora desatualizada (MUTACAO_NAO_APLICADA) — prova inconclusiva, check nao vale"
+                "resultado": "mutacao `if registros:` -> `if False:` numa copia do modulo; `--apenas-http` -> RESULTADO: OPORTUNIDADE_UPSERT_FALHOU (108 itens, 12 falhas); entre elas 'FALHOU segunda chamada nao atualizou' — reprovacao esperada da prova negativa"
               }
             ]
-          }
+          },
+          "pre_condicao_cumprida": "Corrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS."
         }
       ]
     },
@@ -438,6 +443,22 @@
         "t_e6e3b0b3",
         "t_8b2ed1b7",
         "t_cb615018"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 5 — destrava do BLOCKED W3-E01-T04 + agentes W4 + E2E SI)",
+      "scope": "lote 5 — destrava do BLOCKED W3-E01-T04 (oportunidade upsert) + agentes W4 (eixo 3) + E2E Sales Intelligence (eixo 2)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T17:55:39+00:00",
+      "cards": [
+        "t_8b2ed1b7",
+        "t_fd3e41f0",
+        "t_d9be7d3c",
+        "t_61a620b4",
+        "t_b4e01433",
+        "t_1a85a424",
+        "t_a32ae24f"
       ]
     }
   ]
