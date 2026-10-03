@@ -1,0 +1,104 @@
+{
+  "nome": "desempenho-mensagens-v1",
+  "versao": "1.0.0",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "card": "TRE-W8-E04-T01",
+  "onda": "W8",
+  "epico": "E04",
+  "papel": "analise_de_desempenho_de_mensagens",
+  "componente": {
+    "arquivo": "hermes/analytics/desempenho_mensagens.py",
+    "modo": "LEITURA (SELECT somente) sobre sales_intelligence.interactions",
+    "nao_faz": [
+      "NAO envia, NAO aprova e NAO classifica resposta: consome o fato ja gravado pelos cards irmaos (W6-E04 envio, W6-E05 ingestao/classificacao)",
+      "NAO escreve: nenhuma tabela e tocada; a unica instrucao enviada a porta de banco e um SELECT",
+      "NAO cria tabela, coluna, view materializada, indice nem DDL — isso e mudanca de contrato (governanca §10)",
+      "NAO chama LLM: e aritmetica declarada sobre colunas do contrato"
+    ]
+  },
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#tables['interactions'] — o DONO do fato: channel, direction, interaction_type, occurred_at, content_reference, sentiment, response_category, intent, campaign_id",
+    "hermes/agents/outreach/politica-envio-v1.json#interacoes — a FORMA do envio gravado (channel EMAIL, direction OUTBOUND, interaction_type OUTBOUND_EMAIL, content_reference `envio:<approval_id>:<texto_hash>`)",
+    "hermes/agentes/respostas/ingestao-respostas-v1.json#vocabulario.response_category — o DONO do vocabulario de resposta (categoria/intent/sentiment); este card NAO inventa categoria",
+    "07_ROADMAP_DE_IMPLEMENTACAO.md §11 (W8) — 'performance de mensagens' e a entrega deste epico; o doc 11 nao detalha, entao os campos ACCEPTANCE/TEST/ROLLBACK/RISK sao declarados neste card",
+    "04_PROJETO_FISICO_DE_DADOS.md §7 (interactions) e premissa de leitura, sem escrita",
+    "ADR-005 — nada nasce em producao: este componente RECUSA o ambiente prod (exit 4)"
+  ],
+  "entrada": {
+    "formato": "--ambiente {dev,homolog} --prefixo \"<comando de porta de banco>\" [--desde ISO] [--ate ISO] [--janela-dias N] [--limite-amostra N] [--json arq] [--csv arq] [--regras] [--com-carimbo]",
+    "porta_de_banco": "o mesmo contrato dos cards irmaos: o comando que fala psql (ex.: `docker exec -i pg-analise-acc psql -U sales_ai -d sales_intelligence`); a porta responde em `-tA -F'|'`",
+    "recorte": "envios com occurred_at em [desde, ate]; respostas candidatas com occurred_at em [desde, ate + janela] (uma resposta posterior ao fim do recorte ainda pertence a um envio dentro dele)",
+    "determinismo": "com --desde e --ate informados a saida e reproduzivel: nao ha carimbo de tempo por padrao (--com-carimbo inclui 'gerado_em')"
+  },
+  "identidade_da_mensagem": {
+    "envio": "direction OUTBOUND e content_reference na forma `envio:<approval_id>:<texto_hash>` (exatamente 3 partes, nenhuma vazia)",
+    "variante": "o `<texto_hash>` — a identidade do TEXTO aprovado (duas variantes de texto sao duas mensagens diferentes, mesmo com o mesmo CTA)",
+    "canal": "interactions.channel NORMALIZADO (trim + caixa alta). Motivo medido: o irmao de ENVIO grava `EMAIL` (politica-envio-v1.json#interacoes) e o irmao de INGESTAO grava `email` (ingestao-respostas-v1.json#persistencia) — sem normalizar, resposta e envio nunca se encontrariam",
+    "excluidos": {
+      "OUTBOUND sem prefixo `envio:`": "excluida como `outbound_sem_referencia_de_envio` (nao e abordagem deste fluxo) — nunca contada como enviada",
+      "`envio:` com partes erradas": "excluida como `referencia_malformada`",
+      "INBOUND sem `response_category`": "excluida como `inbound_sem_categoria` (ex.: lead de formulario do W7, que nao e resposta a mensagem)",
+      "INBOUND com categoria fora do vocabulario do irmao": "excluida como `inbound_categoria_fora_do_vocabulario` (nao vira match silencioso)"
+    }
+  },
+  "classes_de_resposta": {
+    "RESPOSTA_POSITIVA": ["INTERESSE"],
+    "RESPOSTA_NEGATIVA": ["SEM_INTERESSE", "OPT_OUT"],
+    "RESPOSTA_INDEFINIDA": ["INDEFINIDO"],
+    "NAO_E_RESPOSTA_DE_LEAD": ["AUTO_RESPOSTA", "BOUNCE", "RUIDO"]
+  },
+  "vocabulario_irmao": {
+    "arquivo": "hermes/agentes/respostas/ingestao-respostas-v1.json",
+    "caminho": "vocabulario.response_category",
+    "nao_persistidas": ["NAO_RESPOSTA"],
+    "regra": "as quatro classes acima tem de PARTICIONAR exatamente o vocabulario do irmao menos as nao persistidas (sem sobra, sem falta, sem repeticao). Divergencia = CONTRATO_INCOERENTE, exit 3, fail-closed: a analise para em vez de medir com classe inventada"
+  },
+  "criterio_de_atribuicao": {
+    "regra": "uma resposta e creditada a NO MAXIMO UM envio: o envio mais PROXIMO ANTERIOR que a antecede (nearest preceding)",
+    "escopo": "mesma organization_id e mesmo canal normalizado, em DUAS faixas de especificidade: (1) envio com o MESMO contact_id da resposta; (2) se nenhum da faixa 1 servir, envio SEM contato declarado (a mensagem foi para a organizacao). Envio com contato DIFERENTE do da resposta NUNCA concorre — a mensagem foi para outra pessoa",
+    "janela": "tempo_de_resposta <= janela_dias (default 14); o limite e INCLUSIVO; ocorrencia exatamente no limite CONTA",
+    "por_que_nearest_preceding": "sem essa regra, dois envios a mesma organizacao creditariam a MESMA resposta duas vezes e a taxa de resposta inflaria com o volume de envios (a metrica mediria esforco, nao efeito)"
+  },
+  "metricas": {
+    "por_variante": "agrupa por (texto_hash, canal normalizado)",
+    "enviadas": "numero de envios do grupo",
+    "organizacoes": "organization_id distintos do grupo",
+    "respondidas": "envios com >= 1 resposta CREDITADA de classe comercial (positiva, negativa ou indefinida)",
+    "positivas": "envios com >= 1 resposta POSITIVA (INTERESSE)",
+    "negativas": "envios com >= 1 resposta NEGATIVA (SEM_INTERESSE)",
+    "opt_outs": "envios com >= 1 resposta OPT_OUT (compliance: nunca somado a 'positiva')",
+    "indefinidas": "envios com >= 1 resposta INDEFINIDA",
+    "taxa_de_resposta": "respondidas / enviadas (4 casas)",
+    "taxa_de_interesse": "positivas / enviadas (4 casas)",
+    "taxa_de_opt_out": "opt_outs / enviadas (4 casas)",
+    "tempo_medio_de_resposta_horas": "media, em horas, do tempo ate a PRIMEIRA resposta comercial creditada (2 casas)",
+    "tempo_mediano_de_resposta_horas": "mediana do mesmo conjunto (2 casas) — robusta a outlier de resposta tardia",
+    "respostas_comerciais": "numero de RESPOSTAS creditadas de classe comercial (contagem de resposta, nao de envio)",
+    "respostas_descartadas": "numero de RESPOSTAS creditadas de classe NAO_E_RESPOSTA_DE_LEAD (auto-resposta, bounce, ruido): medida e reportada, jamais somada como resposta de lead",
+    "amostra_suficiente": "enviadas >= limite_amostra (default 5, declarado) — variante com 1 envio NAO pode ser coroada melhor"
+  },
+  "ranking": {
+    "melhor_variante": "somente entre variantes com amostra_suficiente; ordem: taxa_de_interesse desc, taxa_de_resposta desc, enviadas desc, texto_hash asc (deterministico)",
+    "sem_amostra": "melhor_variante = null com motivo AMOSTRA_INSUFICIENTE — nao se escolhe vencedor com ruido",
+    "sem_variantes": "melhor_variante = null com motivo SEM_VARIANTES"
+  },
+  "vereditos": {
+    "ANALISADO": "recorte lido e metricas calculadas (ha pelo menos um envio no recorte)",
+    "SEM_MENSAGENS": "recorte lido e nenhum envio identificado: taxas ficam null (nunca 0.0 fingindo que mediu)",
+    "RECUSADA": "ambiente prod, porta de banco ausente, contrato incoerente ou escrita recusada: nada medido, motivo declarado"
+  },
+  "guardrails": {
+    "ambiente": "prod RECUSADO exit 4 (ADR-005); permitidos dev e homolog",
+    "somente_leitura": "todo SQL enviado a porta tem de comecar por SELECT/WITH e nao conter verbo de escrita (INSERT/UPDATE/DELETE/CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/COPY/CALL/DO); qualquer outro statement RECUSA exit 3",
+    "pii": "a saida e AGREGADA: nao carrega organization_id, contact_id, e-mail, nome, telefone nem o approval_id — so o hash do texto, o canal e contagens. O approval_id (chave da aprovacao humana) NAO vai para a saida",
+    "fail_closed": "contrato/politica incoerente com o vocabulario do irmao = exit 3; porta que nao responde = exit 2; resposta da porta fora do formato de 9 colunas = exit 3",
+    "nao_interpreta": "categoria de resposta desconhecida NAO e chutada nem somada: e contada como excluida"
+  },
+  "lacunas": [
+    "Entrega/abertura/bounce NAO existem no contrato V1 como coluna: `interactions` nao tem delivered/opened/bounced. A taxa deste card e de RESPOSTA, nao de entrega; BOUNCE entra como categoria de resposta do irmao (classe NAO_E_RESPOSTA_DE_LEAD) e e reportado como descarte, nao como falha de entrega",
+    "`interactions.campaign_id` e vinculo LOGICO sem FK e sem entidade de campanha no contrato V1 (data_contract_v1.json#logical_links_without_fk): a analise NAO agrupa por campanha; agrupa por texto_hash e canal",
+    "Canal divergente entre os irmaos (EMAIL x email) e defect de FORMA no dado gravado, nao do contrato: este card normaliza na leitura e o registra; corrigir a FORMA na gravacao e do dono do dado (card de defeito, se ele quiser)",
+    "So o canal EMAIL e produzido hoje pelo irmao de envio (W6-E04); WhatsApp/LinkedIn assistidos do W7 nao passam pelo mesmo `envio:` — enquanto nao passarem, aparecem como excluidas",
+    "Sem materializacao: a analise roda sob demanda; nao ha tabela de metrica nem agendamento (criar um exige contrato novo + aprovacao humana)"
+  ]
+}
