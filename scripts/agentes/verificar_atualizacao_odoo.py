@@ -388,6 +388,15 @@ def envelope_falso(payload_texto: str, corromper: bool = False) -> ProcessoFalso
     return ProcessoFalso("\n".join([digest + " " + pedacos[0]] + pedacos[1:] + [""]))
 
 
+_SQL_VISTO = {"sql": ""}
+
+
+def envelope_sql_medido(*a, **k):
+    comando = a[0] if a else k.get("args") or []
+    _SQL_VISTO["sql"] = comando[-1] if comando else ""
+    return envelope_falso(json.dumps([]))
+
+
 def testar_envelope_de_banco():
     porta = M.PortaBanco("docker exec -i pg-e06-acc psql -U sales_ai -d sales_intelligence", "dev")
     original = M.subprocess.run
@@ -396,6 +405,11 @@ def testar_envelope_de_banco():
         linhas = porta.consultar("SELECT 1")
         item("57. envelope do banco sobrevive a quebra de linha do psql (defeito medido no aceite)",
              linhas == [{"interaction_id": "x"}], str(linhas))
+        M.subprocess.run = lambda *a, **k: envelope_sql_medido(*a, **k)
+        porta.consultar("SELECT 1 AS um")
+        item("59. o SQL do envelope e' bem formado (uma expressao + FROM dentro do WITH)",
+             _SQL_VISTO["sql"].startswith("WITH dados AS (SELECT coalesce(")
+             and ") t AS payload) SELECT md5(payload)" in _SQL_VISTO["sql"], _SQL_VISTO["sql"][:160])
         M.subprocess.run = lambda *a, **k: envelope_falso(json.dumps([{"a": 1}]), corromper=True)
         try:
             porta.consultar("SELECT 1")
@@ -479,6 +493,10 @@ DENTES = [
     ("sem-conferencia-de-md5", "BANCO_RESPOSTA_CORROMPIDA",
      "        if hashlib.md5(dados).hexdigest() != digest:", "        if False:",
      "58. envelope com md5 divergente RECUSA (nunca segue com dado pela metade)"),
+    ("envelope-sql-malformado", "bem formado",
+     "        return (\"WITH dados AS (SELECT \" + expressao + \" AS payload) \"",
+     "        return (\"WITH dados AS (\" + expressao + \" AS payload) \"",
+     "59. o SQL do envelope e' bem formado (uma expressao + FROM dentro do WITH)"),
 ]
 
 

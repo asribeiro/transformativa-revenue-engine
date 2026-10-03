@@ -351,7 +351,7 @@ class PortaBanco:
         reconstroi o valor) e o md5 PROVA que a juncao foi exata — divergencia RECUSA, nunca segue com
         dado pela metade.
         """
-        return ("WITH dados AS (SELECT " + expressao + "::text AS payload) "
+        return ("WITH dados AS (SELECT " + expressao + " AS payload) "
                 "SELECT md5(payload) || ' ' || encode(convert_to(payload, 'UTF8'), 'base64') FROM dados;")
 
     def _decodificar(self, brutos: list) -> list:
@@ -377,9 +377,9 @@ class PortaBanco:
             raise Recusa("BANCO_RESPOSTA_INVALIDA", f"payload nao e' JSON: {e}") from e
 
     def consultar(self, sql: str) -> list:
-        expressao = f"coalesce(json_agg(t), '[]'::json) FROM ({sql}) t"
+        expressao = f"coalesce(json_agg(t), '[]'::json)::text FROM ({sql}) t"
         comando = self._argumentos() + ["-v", "ON_ERROR_STOP=1", "-q", "-t", "-A", "-c",
-                                        self._envelope(f"SELECT {expressao}")]
+                                        self._envelope(expressao)]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise Recusa("BANCO_RECUSOU", f"porta de banco falhou ({proc.returncode}): "
@@ -392,8 +392,9 @@ class PortaBanco:
         # INSERT sem RETURNING nao pode ser lido por CTE ("WITH query does not have a RETURNING clause",
         # defeito medido na rodada 2 do aceite do card irmao): sem RETURNING nao ha linhas a devolver.
         if "RETURNING" in sql.upper():
-            expressao = f"coalesce(json_agg(afetados), '[]'::json) FROM (WITH afetados AS ({sql}) SELECT * FROM afetados) afetados"
-            comando = comando_base + [self._envelope(f"SELECT {expressao}")]
+            expressao = (f"coalesce(json_agg(afetados), '[]'::json)::text FROM "
+                         f"(WITH afetados AS ({sql}) SELECT * FROM afetados) afetados")
+            comando = comando_base + [self._envelope(expressao)]
         else:
             comando = comando_base + [sql]
         proc = subprocess.run(comando, capture_output=True, text=True, timeout=120)
