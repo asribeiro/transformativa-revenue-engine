@@ -27,6 +27,28 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   conferidos à mão e 3 dentes de ponta medidos no banco); portão de estrutura PASS. Docs:
   `docs/architecture/funil-v1.md`, `docs/runbooks/funil.md`.
 
+- **Conversão por segmento v1** (`TRE-W8-E02-T01`) — componente
+  `hermes/agentes/analytics/conversao_segmento.py` (`conversao-segmento-v1`) + contrato
+  `hermes/agentes/analytics/conversao-segmento-v1.json`: **recorta o funil do card W8-E01-T01** por **eixo
+  de segmentação declarado** e mede a conversão de cada segmento contra a base inteira. **A derivação do
+  funil é uma só:** o componente **importa `funil.py`** e usa as mesmas funções de contrato, guarda,
+  leitura pura, resolução de evidência, alcance cumulativo, terminal Won/Lost e ramo Nurture — não existe
+  segunda implementação de estágio, ordem, alcance nem atribuição (o aceite exige igualdade item a item
+  entre o recorte da base inteira e o relatório do `funil.py` na mesma base). Dois eixos, com vocabulário
+  **fechado** vindo do Data Contract V1: `faixa_funcionarios` (`employee_band`, doc 03 §5) e
+  `tier_prioridade` (**tier derivado** da pontuação vigente — `PRIORITY` com `score_version`, maior
+  `calculated_at`, empate pelo maior valor — aplicada às faixas congeladas do doc 03 §4). Valor fora do
+  vocabulário **não vira segmento** (bucket `FORA_DO_VOCABULARIO`), valor ausente vai para `SEM_DADO` (e
+  são coisas diferentes), a soma dos buckets **fecha** com a base (`RECORTE_NAO_FECHA_COM_A_BASE`),
+  cobertura é publicada por eixo e segmento abaixo de `amostra_minima` (5) é marcado `amostra_pequena` —
+  o componente não elege vencedor. Saída em JSON + HTML auto-contido, com `taxa_conversao_pct`,
+  `indice_vs_base_pct`, won/lost/nurture e os estágios do recorte. Medição: suíte offline
+  (`scripts/agentes/verificar_conversao_segmento.py --autoteste`) **34 itens, 0 falhas + 12/12 mutações**;
+  aceite `ACEITE_CONVERSAO_SEGMENTO_OK` **43 itens, 0 falhas** em PostgreSQL descartável na VPS de dev
+  (`pg-analytics-seg-acc`), com os números conferidos à mão e o dente de faixa quase idêntica ao
+  vocabulário (`150_299X` não entra em `150_299`); portão de estrutura PASS. Docs:
+  `docs/architecture/conversao-por-segmento-v1.md`, `docs/runbooks/conversao-por-segmento.md`.
+
 ### Fixed
 
 - **`SET default_transaction_read_only` num único `-c` NÃO vale** (defeito medido pelo aceite do

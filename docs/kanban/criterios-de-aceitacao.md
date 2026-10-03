@@ -652,3 +652,56 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** W6-E07-T01 (E2E Outbound #002 — base da branch, fechado e medido). **Destrava:**
   W8-E02-T01 (conversao por segmento), W8-E03-T01 (eficacia dos scores) e W8-E05-T01 (custo de agentes),
   que dependem do funil derivado.
+
+## TRE-W8-E02-T01 — Conversion by segment
+
+- **O que e':** **recorte do funil** do card W8-E01-T01 por **eixo de segmentacao declarado**, medindo a
+  conversao de cada segmento contra a base inteira. Componente
+  `hermes/agentes/analytics/conversao_segmento.py` + contrato
+  `hermes/agentes/analytics/conversao-segmento-v1.json`; desenho
+  `docs/architecture/conversao-por-segmento-v1.md`; runbook `docs/runbooks/conversao-por-segmento.md`.
+- **A derivacao do funil e' UMA so' (decisao de arquitetura):** o componente **importa `funil.py`** e usa
+  as MESMAS funcoes de contrato, guarda, leitura pura, resolucao de evidencia, alcance cumulativo,
+  terminal Won/Lost, ramo Nurture e lacunas. Nao existe segunda regra de estagio, ordem, nivel, alcance
+  nem atribuicao — duas copias divergiriam em silencio.
+- **Eixos com vocabulario FECHADO do Data Contract V1:** `faixa_funcionarios` (`employee_band`, doc 03 §5,
+  igualdade exata) e `tier_prioridade` (**tier derivado** da pontuacao vigente — `PRIORITY` com
+  `score_version`, maior `calculated_at`, empate pelo maior `score_value` — aplicada as faixas congeladas
+  do doc 03 §4). Valor fora do vocabulario **nao vira segmento** (`FORA_DO_VOCABULARIO`), valor ausente vai
+  para `SEM_DADO`, e os dois **nao** sao a mesma coisa; `UNKNOWN` e' valor declarado (lacuna L10).
+- **Cobertura declarada, nunca maquiada:** por eixo o relatorio publica `classificadas`, `cobertura_pct`,
+  `sem_dado` e `fora_do_vocabulario`; a soma dos buckets tem de **fechar** com a base
+  (`RECORTE_NAO_FECHA_COM_A_BASE`). Segmento sem organizacao aparece com taxa `null` (nao `0`); segmento
+  abaixo de `amostra_minima` (5) carrega `amostra_pequena: true` — o componente nao elege "vencedor".
+- **Leitura pura onde o mecanismo vale:** SO' `SELECT`, com `default_transaction_read_only = on` em DOIS
+  `-c` (o defeito do `SET` num unico `-c` foi medido e corrigido no W8-E01-T01) e auditoria da fonte que
+  reprova verbo de escrita antes de conectar. `prod` RECUSA por desenho (exit 4, com a recusa herdada do
+  funil tambem medida), `dev` exige porta de banco local e `homolog` exige `--confirmo`.
+- **ACCEPTANCE:** `ACEITE_CONVERSAO_SEGMENTO_OK` — **43 itens, 0 falhas**, exit 0. Cobre: guardas de
+  ambiente com o MOTIVO da recusa (nao so' o codigo); suite offline 34 itens + 12/12 dentes; base semeada
+  com 12 organizacoes conferidas por contagem; **COERENCIA COM O FUNIL** (recorte da base inteira igual ao
+  relatorio do `funil.py` na mesma base em estagios/alcance/conversoes, won/lost/nurture e **lacunas**);
+  buckets e contagens por eixo conferidos a mao; **dentes medidos no banco** (faixa quase identica
+  `150_299X` nao entra em `150_299`; `SEM_DADO` != `FORA_DO_VOCABULARIO`; tier da pontuacao **vigente**
+  (70 recente -> B) e nao da maior historica (95 -> A+); score **sem versao** nao qualifica); conversao e
+  indice vs base a mao (150_299 1/6 = 16,67% indice 66,68; LT_70 1/3 = 33,33% indice 133,32; global 3/12 =
+  25,0%); leitura pura (snapshot das 12 tabelas + transacao READ ONLY recusando escrita); determinismo;
+  saida sem PII e sem organizacao nominal; HTML auto-contido.
+- **TEST:** `python3 scripts/agentes/verificar_conversao_segmento.py --autoteste` e
+  `bash scripts/agentes/teste_conversao_segmento_aceite.sh` (container descartavel
+  `pg-analytics-seg-acc` — nome dentro dos prefixos de dev aceitos pela guarda reusada).
+- **ROLLBACK:** o componente **nao escreve nada** (sem migracao, coluna ou evento). Reverter = reverter os
+  arquivos do commit do card; a base fica intacta. O container do aceite e' descartavel e removido no fim.
+- **RISK:** **baixo** — leitura pura sobre base de dev, saida com contagem/taxa (sem PII) e nenhum ato
+  externo. Riscos **declarados** (viajam no relatorio): L6 o eixo e' a **foto de hoje** (mudar faixa/tier
+  move a organizacao de bucket retroativamente — nao ha historia de segmento no contrato); L7
+  `employee_band` fora do vocabulario congela em lacuna; L8 tier so' existe com pontuacao versionada
+  vigente (a cobertura cai quando nao existe); L9 o contrato nao persiste tier (a faixa e' derivada na
+  leitura, por isso versao + sha256 viajam).
+- **Componentes afetados:** `hermes/agentes/analytics/` (novo: `conversao_segmento.py`,
+  `conversao-segmento-v1.json`), `scripts/agentes/` (novo: `verificar_conversao_segmento.py`,
+  `teste_conversao_segmento_aceite.sh`), `docs/architecture/conversao-por-segmento-v1.md` (novo),
+  `docs/runbooks/conversao-por-segmento.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+- **Depends on:** W8-E01-T01 (funil — base da branch e derivacao reusada). **Destrava:** W8-E03-T01
+  (eficacia dos scores) e W8-E05-T01 (custo de agente) herdam o recorte por eixo.
