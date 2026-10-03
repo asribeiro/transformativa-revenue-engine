@@ -67,6 +67,16 @@ carteira/tenant (o contrato não tem a dimensão e coluna nova é gatilho de nov
 as regras nativas de `res.partner`/`crm.lead`, não cria view (E06), não cria API (W3) e **não**
 toca o registro de aprovações nem o gate JEV.
 
+**Nota datada (03/10/2026) — a superfície de ACL do módulo passou a incluir `tf.evento.outbox`.**
+O card posterior `TRE-W3-E03-T01` (commit `d0b8d5a`) entregou o consumidor de outbox e o modelo
+`tf.evento.outbox` passou a ter 3 ACLs (`_user`, `_manager` e `_system`), além das 2 de
+`tf.process.opportunity` — 5 ACLs em 2 modelos. Por decisão do dono (opção A, 03/10/2026; linha no
+registro de aprovações) o consumidor **não** foi revertido e o verificador deste card passou a
+medir a superfície contra uma **allow-list explícita** (modelos E xmlids): ACL inesperada
+(superfície nova ou escalação plantada) reprova e ACL da lista que sumiu também reprova — o
+guardrail não foi afrouxado. Nada mais mudou: as 3 regras de registro (ainda só de
+`tf.process.opportunity`), os 2 grupos e as 2 matrizes de permissão seguem medidas como antes.
+
 ## 3. Procedimento (na VPS do dev)
 
 ```bash

@@ -43,6 +43,14 @@ set -u
 
 MODULO="${TRE_MODULO:-transformativa_sales_ai}"
 MODELO="${TRE_MODELO:-tf.process.opportunity}"
+# Superficie de ACL do modulo = ALLOW-LIST EXPLICITA (decisao do dono, 03/10/2026, opcao A do
+# defeito de integracao do W2 / card t_e0b1bcbf). O card TRE-W3-E03-T01 (commit d0b8d5a) entregou
+# o consumidor de outbox e o modelo `tf.evento.outbox` passou a ter ACL: a superficie do modulo
+# deixou de ser so `tf.process.opportunity`. O guardrail NAO foi afrouxado — a expectativa continua
+# um CONJUNTO FECHADO de modelos E de xmlids: ACL INESPERADA (fora da lista) reprova e ACL da lista
+# AUSENTE tambem reprova. Nao e "qualquer superficie serve" nem contagem implicita.
+SUPERFICIE_ACL_ESPERADA="${TRE_SUPERFICIE_ACL_ESPERADA:-tf.evento.outbox, tf.process.opportunity}"
+ACLS_ESPERADAS="${TRE_ACLS_ESPERADAS:-access_tf_evento_outbox_manager access_tf_evento_outbox_system access_tf_evento_outbox_user access_tf_process_opportunity_manager access_tf_process_opportunity_user}"
 AQUI="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 MODULO_DIR="${TRE_MODULO_DIR:-/opt/tre/dev/modulos/$MODULO}"
 PROVA="${TRE_PROVA:-$AQUI/provar_acl_modulo.py}"
@@ -361,12 +369,16 @@ ESCALADA="$(psql_bd "$BANCO" "select count(*) from res_groups_implied_rel ir joi
 [ "$ESCALADA" = "0" ] && ok "nenhum grupo do modulo alcanca administracao do Odoo (group_system/group_erp_manager)" \
     || falhou "$ESCALADA ligacao(oes) de grupo do modulo com administracao do Odoo"
 
+# AC3 — a superficie de ACL do modulo e a ALLOW-LIST explicita: modelo a modelo E xmlid a xmlid.
+# ACL fora da lista (superficie nova ou escalacao plantada) reprova; ACL da lista que sumiu
+# (regressao de seguranca) tambem reprova. O conjunto e fechado — nao ha "qualquer superficie serve".
 SUPERFICIE="$(psql_bd "$BANCO" "select string_agg(distinct m.model, ', ' order by m.model) from ir_model_data d join ir_model_access a on a.id = d.res_id join ir_model m on m.id = a.model_id where d.module = '$MODULO' and d.model = 'ir.model.access'")"
-[ "$SUPERFICIE" = "$MODELO" ] && ok "superficie de ACL do modulo e so o modelo do modulo ($SUPERFICIE)" \
-    || falhou "superficie de ACL do modulo: '$SUPERFICIE' (esperado so '$MODELO')"
+[ "$SUPERFICIE" = "$SUPERFICIE_ACL_ESPERADA" ] && ok "superficie de ACL do modulo = allow-list explicita ($SUPERFICIE)" \
+    || falhou "superficie de ACL do modulo: '$SUPERFICIE' (allow-list: '$SUPERFICIE_ACL_ESPERADA')"
 
-N_ACL="$(psql_bd "$BANCO" "select count(*) from ir_model_data where module = '$MODULO' and model = 'ir.model.access'")"
-[ "$N_ACL" = "2" ] && ok "modulo declara 2 ACLs (vendedor e gestor)" || falhou "ACLs do modulo: $N_ACL (esperado 2)"
+ACLS_MEDIDAS="$(psql_bd "$BANCO" "select string_agg(name, ' ' order by name) from ir_model_data where module = '$MODULO' and model = 'ir.model.access'")"
+[ "$ACLS_MEDIDAS" = "$ACLS_ESPERADAS" ] && ok "ACLs do modulo = allow-list explicita ($ACLS_MEDIDAS)" \
+    || falhou "ACLs do modulo fora da allow-list: '$ACLS_MEDIDAS' (esperado: '$ACLS_ESPERADAS')"
 
 MATRIZ_VENDEDOR="$(psql_bd "$BANCO" "select a.perm_read, a.perm_write, a.perm_create, a.perm_unlink from ir_model_access a join ir_model_data d on d.res_id = a.id where d.module = '$MODULO' and d.name = 'access_tf_process_opportunity_user'")"
 [ "$MATRIZ_VENDEDOR" = "t|t|t|f" ] && ok "ACL do vendedor = le/cria/escreve, sem apagar (t|t|t|f)" \
