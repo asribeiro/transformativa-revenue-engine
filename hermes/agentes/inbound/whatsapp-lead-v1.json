@@ -1,0 +1,263 @@
+{
+  "versao": "whatsapp-lead-v1",
+  "componente": {
+    "nome": "whatsapp_lead",
+    "card": "TRE-W7-E05-T01",
+    "wave": "W7 (Inbound / Multicanal)",
+    "arquivo": "hermes/agentes/inbound/whatsapp_lead.py",
+    "papel": "conduzir o lead JA' ENGajado que escreve por WhatsApp: validar o evento do provedor, resolver a identidade pelo telefone (nunca inventar organizacao/contato), classificar a mensagem por regra declarada, medir a janela de atendimento do provedor e gravar a interacao INBOUND + a trilha de idempotencia na base canonica",
+    "nao_faz": [
+      "NAO envia mensagem, template nem resposta: outbound de WhatsApp e' acao L1 (primeiro contato/reengajamento) com aprovacao humana registrada; a saida daqui e' uma PROPOSTA (proximo_passo)",
+      "nao expoe webhook/endpoint HTTP: quem recebe o callback do provedor e' o n8n/operador; aqui entra a mensagem ja' normalizada no formato deste contrato",
+      "nao cria organizacao nem contato: telefone desconhecido fica SEM_VINCULO ate existir vinculo real na base (nada de cadastro pela metade)",
+      "nao escreve no Odoo: o vocabulario de eventos PG -> Odoo do Data Contract V1 (§6) nao tem evento de mensagem de canal, e o consumidor de outbox e' fail-closed",
+      "nao altera contacts (do_not_contact/opt_out_whatsapp): dono operacional do contato e' o Odoo (doc 05 §4); a propagacao de descadastro classificado aqui e' do card W6-E06",
+      "nao escreve recommendations, human_approvals nem outbox_events (donos W5, W6-E03 e ADR-0003): a proposta de reengajamento e' apresentada na propria trilha e o encaminhamento e' a fila humana",
+      "nao baixa nem interpreta midia: imagem/audio/documento viram interacao com metadados e categoria INDEFINIDO, nunca transcricao inventada",
+      "nao usa LLM: a classificacao e' a forca da regra declarada, com evidencia (padroes que casaram) e fail-closed em INDEFINIDO",
+      "nao toca qualquer tabela alem de interactions e sync_events (somente INSERT; sem DDL, UPDATE, DELETE ou TRUNCATE)"
+    ]
+  },
+  "evento": {
+    "formato": "JSON unico da mensagem inbound normalizada pelo conector do provedor (arquivo passado em --evento, ou stdin com '-')",
+    "campos_obrigatorios": [
+      "message_id",
+      "recebido_em",
+      "remetente.telefone",
+      "mensagem.tipo"
+    ],
+    "campos_opcionais": [
+      "remetente.nome_perfil",
+      "mensagem.texto",
+      "mensagem.midia_id",
+      "mensagem.midia_mime",
+      "canal.origem",
+      "canal.numero_destino"
+    ],
+    "regra_de_dados_minimos": "sem message_id, sem remetente.telefone com nucleo de identidade.digitos_minimos digitos, ou com mensagem.tipo fora do vocabulario, o evento e' recusado (SEM_DADOS_MINIMOS / EVENTO_INVALIDO): registra a trilha e nao inventa cadastro, timestamp nem tipo de mensagem.",
+    "regra_de_tempo": "recebido_em tem de ser ISO-8601 parseavel; ausente ou invalida RECUSA (EVENTO_INVALIDO) — a mensagem nao e' datada por heuristica, porque a janela de atendimento e a ordem do historico dependem desse instante"
+  },
+  "vocabulario": {
+    "channel": ["WHATSAPP"],
+    "direction": ["INBOUND"],
+    "interaction_type": ["WHATSAPP_MENSAGEM"],
+    "tipo_mensagem": ["TEXTO", "IMAGEM", "AUDIO", "VIDEO", "DOCUMENTO", "LOCALIZACAO", "CONTATO", "FIGURINHA", "SISTEMA"],
+    "response_category": ["OPT_OUT", "SEM_INTERESSE", "INTERESSE", "AUTO_RESPOSTA", "RUIDO", "INDEFINIDO"],
+    "intent": ["DESCADASTRO", "RECUSA", "PEDIDO_DE_CONVERSA", "RESPOSTA_AUTOMATICA", "RUIDO_COMERCIAL", "INDEFINIDO"],
+    "sentiment": ["POSITIVO", "NEUTRO", "NEGATIVO"],
+    "proximo_passo": [
+      "RESPOSTA_LIVRE_SUGERIDA",
+      "REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA",
+      "NENHUM_FILA_HUMANA"
+    ],
+    "status_trilha": [
+      "RECEBIDO",
+      "JA_RECEBIDO",
+      "SEM_VINCULO",
+      "REVIEW_REQUIRED",
+      "BLOQUEADO_POR_BLOQUEIO",
+      "EVENTO_INVALIDO",
+      "SEM_DADOS_MINIMOS"
+    ],
+    "observacao": "O Data Contract V1 fixa as COLUNAS (interactions.channel/direction/interaction_type/response_category/intent/sentiment) mas nao fecha o vocabulario deste canal: o vocabulario desta versao vive aqui, e valor fora da lista RECUSA (CONTRATO_INVALIDO) em vez de ser inventado pelo codigo. O valor de `channel` respeita o canal declarado no Data Contract V1 (doc 06) e em maiusculas, como o card irmao do site (WEBSITE)."
+  },
+  "identidade": {
+    "colunas": ["contacts.whatsapp", "contacts.phone"],
+    "digitos_minimos": 10,
+    "normalizacao": "somente digitos; quando o total tem 12+ digitos e comeca com 55 (codigo do pais), o 55 e' removido; compara-se o nucleo nacional de ate 11 digitos (right(...,11) nos dois lados) — `+55 11 98888-7777`, `11988887777` e `5511988887777` tem o MESMO nucleo",
+    "ambiguidade": "mais de um contato casando o mesmo nucleo vai para REVIEW_REQUIRED (fila humana): identidade ambigua nao se resolve por heuristica (Data Contract V1 §5)",
+    "sem_par": "SEM_VINCULO: nada e' criado — o lead engajado e' o que ja' esta na base; desconhecido vai para triagem humana"
+  },
+  "regras": [
+    {
+      "ordem": 1,
+      "categoria": "OPT_OUT",
+      "intent": "DESCADASTRO",
+      "sentiment": "NEGATIVO",
+      "confianca": 0.9,
+      "descricao": "pedido explicito de descadastro/nao-contato. Vence sobre qualquer sinal de interesse: errar para menos aqui custa compliance (o oposto do interesse, onde errar para mais custa atencao comercial)",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["texto"],
+        "padroes": [
+          "\\bparar\\b",
+          "pare de (me )?(mandar|enviar|contatar|chamar)",
+          "sair da lista",
+          "cancelar (o )?(envio|contato|cadastro)",
+          "n[aã]o quero (mais )?(receber|ser contatado|que me (mande|envie|contate))",
+          "n[aã]o me (contate|contacte|mande|envie|chame)",
+          "remov[ae]r? (meu|o meu) (contato|numero|n[uú]mero|cadastro)",
+          "descadastr",
+          "opt-?out",
+          "unsubscribe",
+          "\\bstop\\b"
+        ]
+      }
+    },
+    {
+      "ordem": 2,
+      "categoria": "AUTO_RESPOSTA",
+      "intent": "RESPOSTA_AUTOMATICA",
+      "sentiment": "NEUTRO",
+      "confianca": 0.85,
+      "descricao": "resposta automatica do numero empresarial (aviso de ausencia/atendimento automatico): nao e' a pessoa respondendo",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["texto"],
+        "padroes": [
+          "mensagem autom[aá]tica",
+          "resposta autom[aá]tica",
+          "atendimento autom[aá]tico",
+          "aviso autom[aá]tico",
+          "fora do (escrit[oó]rio|expediente)",
+          "estamos (de )?f[eé]rias",
+          "retornaremos (o )?(seu )?contato"
+        ]
+      }
+    },
+    {
+      "ordem": 3,
+      "categoria": "SEM_INTERESSE",
+      "intent": "RECUSA",
+      "sentiment": "NEGATIVO",
+      "confianca": 0.8,
+      "descricao": "recusa explicita sem pedido de descadastro",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["texto"],
+        "padroes": [
+          "n[aã]o (temos|tenho|h[aá]) interesse",
+          "sem interesse",
+          "sem (interesse|necessidade)",
+          "n[aã]o quero (saber|entender|conhecer|nada|isso)",
+          "n[aã]o [eé] o momento",
+          "n[aã]o vai dar",
+          "declin",
+          "no,? thanks",
+          "obrigado,? mas (no momento )?n[aã]o",
+          "n[aã]o precisamos"
+        ]
+      }
+    },
+    {
+      "ordem": 4,
+      "categoria": "INTERESSE",
+      "intent": "PEDIDO_DE_CONVERSA",
+      "sentiment": "POSITIVO",
+      "confianca": 0.75,
+      "descricao": "sinal comercial explicito: pedido de conversa, proposta, mais informacao ou agendamento",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["texto"],
+        "padroes": [
+          "podemos (conversar|falar|marcar|agendar|avaliar)",
+          "tenho interesse",
+          "temos interesse",
+          "quero (saber|entender|conhecer|avan[cç]ar|ver|marcar)",
+          "gostaria de (saber|entender|conhecer|marcar|conversar|receber)",
+          "vamos (conversar|avan[cç]ar|marcar)",
+          "manda(r)? (mais )?(informa[cç][oõ]es|detalhes|proposta|apresenta[cç][aã]o)",
+          "me (manda|mande|envie) (a |uma )?(proposta|apresenta[cç][aã]o|mais (informa[cç][oõ]es|detalhes))",
+          "qual (o )?(melhor|seu) hor[aá]rio",
+          "faz sentido (conversarmos|conversar|uma conversa|avan[cç]ar)",
+          "agendar (uma )?(call|reuni[aã]o|conversa)"
+        ]
+      }
+    },
+    {
+      "ordem": 5,
+      "categoria": "RUIDO",
+      "intent": "RUIDO_COMERCIAL",
+      "sentiment": "NEUTRO",
+      "confianca": 0.6,
+      "descricao": "oferta comercial nao solicitada no numero da empresa — nao e' o lead respondendo",
+      "deteccao": {
+        "minimo": 1,
+        "campos": ["texto"],
+        "padroes": [
+          "promo[cç][aã]o",
+          "oferta especial",
+          "webinar",
+          "aumente suas vendas",
+          "somos especializados em",
+          "or[cç]amento para sua empresa",
+          "newsletter",
+          "convite para (o )?evento"
+        ]
+      }
+    },
+    {
+      "ordem": 6,
+      "categoria": "INDEFINIDO",
+      "intent": "INDEFINIDO",
+      "sentiment": "NEUTRO",
+      "confianca": 0.0,
+      "fallback": true,
+      "descricao": "nenhuma regra declarada casou (ou a mensagem nao tem texto): fail-closed em INDEFINIDO com confianca 0 — a fila humana decide"
+    }
+  ],
+  "janela_de_atendimento": {
+    "minutos": 1440,
+    "regra": "janela do provedor contada da ULTIMA entrada do contato neste canal: sem entrada anterior, esta mensagem ABRE a janela (resposta livre); dentro do limite, `RESPOSTA_LIVRE_SUGERIDA`; fora do limite, `REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA` — sempre proposta, nunca envio",
+    "observacao": "o valor 1440 (24 h) e' a regra do provedor declarada como PARAMETRO desta versao; nao e' medida de aceitacao do provedor real (lacuna L6)"
+  },
+  "escrita": {
+    "tabelas": ["interactions", "sync_events"],
+    "operacao": "INSERT apenas. Nao existe UPDATE/DELETE/TRUNCATE/DDL neste componente — a auditoria da propria fonte RECUSA antes de conectar.",
+    "uuid": "gen_random_uuid() no proprio INSERT: o ID nasce no sistema que testemunhou o fato (Data Contract V1 §3)",
+    "idempotencia": {
+      "chave": "whatsapp:<message_id>",
+      "tabela": "sales_intelligence.sync_events (idempotency_key e' UNIQUE no contrato)",
+      "regra": "mensagem ja' recebida devolve JA_RECEBIDO, NAO grava de novo e nao cria linha nova de trilha"
+    },
+    "vinculo_da_interacao": "interactions.organization_id (NOT NULL) e interactions.contact_id vem do contato resolvido pelo telefone nesta mesma mensagem; channel=WHATSAPP, direction=INBOUND, interaction_type=WHATSAPP_MENSAGEM, content_reference=message_id, occurred_at=recebido_em"
+  },
+  "guardas_de_ambiente": {
+    "dev": "porta de banco LOCAL obrigatoria (`docker exec -i pg-<dev|aceite> psql ...`, via --porta-banco/TRE_WHATSAPP_PORTA_BANCO); prefixo remoto RECUSA (BANCO_NAO_E_DEV, exit 3)",
+    "homolog": "exige TRE_WHATSAPP_APROVACAO_HUMANA registrada (HOMOLOG_SEM_APROVACAO, exit 3)",
+    "prod": "RECUSA por desenho (exit 4): nada nasce em producao e a promocao e' ato humano registrado (ADR-005)",
+    "escrita": "--confirmo e' obrigatorio para escrever; sem ele a rodada e' DRY_RUN e nada toca o banco"
+  },
+  "privacidade": {
+    "regra": "a saida (relatorio/trilha) MASCARA o telefone do lead e o numero de destino; o valor cru nunca aparece na evidencia",
+    "bloqueio_nao_preferencia": "do_not_contact / opt_out_whatsapp da base e categoria OPT_OUT viram BLOQUEIO (fila humana, nenhum proximo passo) — a mensagem continua registrada porque o fato aconteceu",
+    "segredo": "se o valor de TRE_WHATSAPP_TOKEN aparecer na evidencia, a gravacao e' recusada (SENHA_VAZADA, exit 5)"
+  },
+  "lacunas": [
+    {
+      "id": "L1",
+      "lacuna": "nao existe envio de WhatsApp neste componente nem no repositorio: outbound de canal e acao L1 (primeiro contato/reengajamento) que exige aprovacao humana registrada, e as duas pontas reais (provedor + numero) exigem credencial do Sales AI. A saida do card e' a PROPOSTA de proximo passo.",
+      "encaminhamento": "card de envio/aprovacao (W6-E03/E04) quando a credencial do provedor existir"
+    },
+    {
+      "id": "L2",
+      "lacuna": "nao existe webhook HTTP do provedor versionado no repositorio: a mensagem entra ja' normalizada (o callback e' do n8n/operador).",
+      "encaminhamento": "card de integracao do webhook (n8n) quando o numero entrar no ar"
+    },
+    {
+      "id": "L3",
+      "lacuna": "o descadastro classificado (OPT_OUT) NAO e' propagado a contacts nem ao Odoo aqui: dono operacional do contato e' o Odoo (doc 05 §4) e a propagacao e' do W6-E06.",
+      "encaminhamento": "W6-E06 (mesmo caminho ja' declarado no card W6-E05)"
+    },
+    {
+      "id": "L4",
+      "lacuna": "a mensagem de canal nao chega ao CRM: o vocabulario fechado de eventos PG -> Odoo do Data Contract V1 (§6) nao tem evento de mensagem de canal e o consumidor de outbox e' fail-closed (evento fora do contrato vira DEAD_LETTER). Criar `event_type` novo exige nova versao do contrato + aprovacao humana registrada (doc 12 / ADR-0004).",
+      "encaminhamento": "card de contrato/aprovacao antes de qualquer escrita no Odoo a partir do WhatsApp"
+    },
+    {
+      "id": "L5",
+      "lacuna": "midia (imagem/audio/video/documento) nao e' baixada nem transcrita: a interacao guarda metadados e categoria INDEFINIDO.",
+      "encaminhamento": "card de midia/transcricao se o volume justificar (decisao do dono)"
+    },
+    {
+      "id": "L6",
+      "lacuna": "a janela de 24 h e' a regra declarada do provedor como PARAMETRO desta versao; o card nao mede a janela contra o provedor real (nao ha credencial) nem guarda o historico de janelas.",
+      "encaminhamento": "homologacao com credencial do provedor (ato humano)"
+    },
+    {
+      "id": "L7",
+      "lacuna": "`collected_at`/`retention_until` continuam ausentes do schema (lacuna ja' declarada no Data Contract V1 §9) — a mensagem registra `occurred_at` e nao finge reter por prazo que o contrato nao tem.",
+      "encaminhamento": "W1/contrato"
+    }
+  ]
+}

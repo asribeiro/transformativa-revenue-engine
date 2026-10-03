@@ -2544,3 +2544,46 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   `sha256-artefatos.out`).
 - Segredos: nenhum valor nesta entrada. A senha do sink SMTP e a chave da API do stub sao valores de
   teste gerados na hora pelo proprio aceite; ha item medindo 0 ocorrencias delas na saida.
+
+## TRE-W7-E05-T01 — WhatsApp engaged-lead workflow (03/10/2026)
+
+- **Executado na VPS do ambiente** (vmi3619453), branch `feature/TRE-W7-E05-T01` sobre o merge da onda
+  W6 (`20e8ea6`). Nada em produção (ADR-005): o aceite roda em trio local — container descartável
+  `pg-whatsapp-acc` (`postgres:16`, 127.0.0.1) + migration 0001 + o componente. Os containers do
+  ambiente (`pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`, `proxy-dev`) não foram tocados.
+- **Medido por execucao real (verde, exit 0):** `bash scripts/agentes/teste_whatsapp_lead_aceite.sh` ->
+  **ACEITE_WHATSAPP_LEAD_001_OK (68 itens, 0 falhas)** e
+  `python3 scripts/agentes/verificar_whatsapp_lead.py --autoteste` ->
+  **VERIFICADOR_WHATSAPP_LEAD_PASS (70 itens = 60 de suite + 10 dentes, 0 falhas)**. Itens de destaque:
+  contato engajado resolvido pelo **núcleo nacional do telefone** (`11 96666-2222` casa
+  `+55 11 96666-2222`), `occurred_at` vindo do `recebido_em` do provedor (não de `NOW()`), interação
+  ligada a contato+organização, janela de 24 h aberta (`RESPOSTA_LIVRE_SUGERIDA`) e fechada
+  (`REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA`) com `outbox_events` vazia, `do_not_contact` e `PARAR`
+  em `BLOQUEADO_POR_BLOQUEIO` com a linha de `contacts` **intocada**, desconhecido em `SEM_VINCULO` e
+  ambíguo em `REVIEW_REQUIRED` sem inventar cadastro, `prod` recusado (exit 4), prefixo de banco remoto
+  recusado em dev (exit 3), snapshot das 12 tabelas provando que só `interactions` e `sync_events`
+  mudam e telefone do lead ausente da evidência.
+- **Rodada 1 do aceite: 50 itens, 18 falhas — e as falhas eram dois DEFEITOS REAIS, nao do teste**
+  (registrados no `CHANGELOG` com dente proprio, `D9`/`D10`):
+  1. **trilha duplicada por mensagem** — `gravar_interacao` gravava a trilha e o núcleo gravava de novo;
+     a chave `whatsapp:<message_id>` é UNIQUE e o segundo INSERT estourava
+     (`duplicate key value violates unique constraint "sync_events_idempotency_key_key"`), deixando a
+     mensagem em `RECUSA` **com a interação já gravada**. Correção: a trilha é gravada só pelo núcleo,
+     com o status do veredito.
+  2. **porta de banco lendo só a última linha do JSON** — o `psql` quebra o valor agregado em várias
+     linhas (medido: `json_agg` com 2 linhas sai como `[{…}, \n {…}]`), então **toda** leitura com 2+
+     resultados caía em `BANCO_RESPOSTA_INVALIDA`; foi exatamente o caso do telefone ambíguo, que existe
+     para ir a `REVIEW_REQUIRED`. Correção: a porta lê o DOCUMENTO JSON, reunindo as linhas.
+- **Dente de ponta medido no BANCO (não só no código):** o descadastro por WhatsApp (`PARAR`) vira
+  `response_category=OPT_OUT`/`intent=DESCADASTRO` na interação, com trilha `BLOQUEADO_POR_BLOQUEIO` e
+  `proximo_passo=NENHUM_FILA_HUMANA` no `request_payload` — nada de reengajamento é proposto.
+- **Lacunas declaradas (não escondidas):** sem envio (outbound de canal é ação L1 com aprovação humana),
+  sem webhook HTTP (callback é do n8n), sem propagação do descadastro para `contacts`/CRM (dono
+  operacional é o Odoo; propagação é `W6-E06`), sem escrita no Odoo (o vocabulário de eventos PG -> Odoo
+  do Data Contract V1 §6 não tem evento de mensagem de canal), sem mídia (não baixa nem transcreve) e
+  janela de 24 h como parâmetro declarado, não medida contra o provedor real. Detalhes no runbook §6.
+- **Logs brutos:** `aceite-whatsapp-lead-68ok.out` (rodada 2, verde) e
+  `aceite-whatsapp-lead-rodada1-18falhas.out` (rodada 1, com os defeitos medidos), anexados ao card com
+  `sha256` das evidências.
+- Segredos: nenhum valor nesta entrada. Nenhuma credencial real foi usada; as pontas são 100% locais e o
+  container de aceite é descartável.

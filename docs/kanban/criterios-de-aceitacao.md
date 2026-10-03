@@ -588,3 +588,51 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
   — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
   caminho outbound provado ponta a ponta.
+
+## TRE-W7-E05-T01 — WhatsApp engaged-lead workflow
+
+- **ACCEPTANCE:** o lead **que já está na base** que escreve por WhatsApp é registrado e classificado sem
+  que nada seja inventado nem enviado: (1) mensagem inbound válida grava 1 `interactions`
+  (`WHATSAPP`/`INBOUND`/`WHATSAPP_MENSAGEM`, `content_reference = message_id`, `occurred_at =
+  recebido_em`) ligada ao contato/organização resolvidos e 1 trilha `whatsapp:<message_id>` em
+  `sync_events`; (2) identidade pelo **núcleo nacional do telefone** — `+55 …`, `55…` e sem país dão o
+  mesmo núcleo; telefone desconhecido → `SEM_VINCULO` e ambíguo (2+ contatos) → `REVIEW_REQUIRED`, nos
+  dois casos **zero** organização/contato inventado e zero interação; (3) classificação por regra
+  declarada com `OPT_OUT` na ordem 1 — mensagem mista termina em descadastro, não em interesse;
+  (4) `do_not_contact`/`opt_out_whatsapp` na base e `PARAR` classificam `BLOQUEADO_POR_BLOQUEIO`
+  (`NENHUM_FILA_HUMANA`), com a mensagem registrada e a linha de `contacts` **intocada**; (5) janela de
+  atendimento de 24 h: primeira entrada → `RESPOSTA_LIVRE_SUGERIDA`, última entrada 3 dias atrás →
+  `REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA`, sempre proposta e nunca envio (`outbox_events` vazia);
+  (6) idempotência: reentrega da MESMA mensagem → `JA_RECEBIDO`, zero linha nova; (7) escrita restrita a
+  `interactions` + `sync_events` (INSERT apenas, sem DDL/UPDATE/DELETE) e `contacts`/`recommendations`/
+  `outbox_events` inalteradas; (8) telefone do lead ausente da evidência (mascarado); (9) guardas por
+  medição: `prod` exit 4, prefixo de banco remoto em dev → `BANCO_NAO_E_DEV` (exit 3), sem `--confirmo`
+  → `DRY_RUN`; (10) evento inválido (tipo fora do vocabulário, telefone sem DDD, `recebido_em` inválida)
+  RECUSA e não gera interação.
+- **TEST:** suite offline do componente (60 itens) + `--autoteste` com **10 dentes** — cada mutação em
+  cópia do componente tem de reprovar o item que nomeia (`--autoteste`, exit 0) — e aceite
+  `scripts/agentes/teste_whatsapp_lead_aceite.sh` em **PostgreSQL 16 descartável** (`pg-whatsapp-acc`,
+  127.0.0.1) com a migration 0001, 9 eventos de fixture e o cenário de 6 contatos/jornadas: 68 itens,
+  0 falhas, com snapshot das 12 tabelas antes/depois provando o escopo de escrita. Evidência = saída
+  completa com exit code, anexada ao card (`ACEITE_WHATSAPP_LEAD_001_OK`).
+- **ROLLBACK:** o aceite **não deixa nada** (container removido no fim; `--manter` existe só para
+  investigar) e não há DDL nem migration: reverter é `git revert` do commit do card — 5 arquivos novos
+  (`whatsapp_lead.py`, `whatsapp-lead-v1.json`, `verificar_whatsapp_lead.py`,
+  `teste_whatsapp_lead_aceite.sh`, `docs/runbooks/whatsapp-engaged-lead.md`) + apêndices em
+  `criterios-de-aceitacao.md`, `registro-de-execucoes.md`, `CHANGELOG.md` e `scripts/verificar_estrutura.sh`.
+  Nenhum dado de dev a limpar afeta o ambiente em uso.
+- **RISK:** **médio** — o componente fala do canal por onde o lead fala com a empresa e escreve na base
+  canônica. Mitigado por: nada de envio (proposta, nunca mensagem), barreira de descadastro na ordem 1
+  do contrato, bloqueio de contato medido no banco, identidade sem invenção (`SEM_VINCULO`/
+  `REVIEW_REQUIRED`), INSERT apenas e escopo de escrita conferido por snapshot, `prod` recusado, guarda
+  de porta local, `--confirmo` explícito e PII mascarada na evidência. O que **não** está medido
+  (provedor real, janela contra o provedor, envio, mídia, propagação de descadastro para o CRM) está
+  declarado nas lacunas do contrato e no runbook §6.
+- **Components afetados:** `hermes/agentes/inbound/whatsapp_lead.py` (novo),
+  `hermes/agentes/inbound/whatsapp-lead-v1.json` (novo),
+  `scripts/agentes/verificar_whatsapp_lead.py` (novo), `scripts/agentes/teste_whatsapp_lead_aceite.sh` (novo),
+  `docs/runbooks/whatsapp-engaged-lead.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+- **Depends on:** `TRE-W6-E07-T01` (E2E Outbound #002, fechado e medido) — o lead engajado é o que a onda
+  W6 abordou; **Destrava:** `TRE-W8-*` (o canal passa a produzir interação classificada para o funil) e a
+  lacuna de propagação de descadastro já apontada para o `W6-E06`.

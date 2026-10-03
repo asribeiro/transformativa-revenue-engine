@@ -621,5 +621,68 @@ if [ -f "$ACEITE_E2E" ]; then
   fi
 fi
 
+# --- card TRE-W7-E05-T01 (WhatsApp engaged-lead workflow) -------------------------------------------
+# O componente existe E esta' versionado, com o contrato fechado (vocabulario, regras e janela), a
+# barreira de descadastro declarada, a guarda de producao e o portao do entregavel (suite + aceite).
+for arquivo in hermes/agentes/inbound/whatsapp_lead.py hermes/agentes/inbound/whatsapp-lead-v1.json \
+               scripts/agentes/verificar_whatsapp_lead.py scripts/agentes/teste_whatsapp_lead_aceite.sh \
+               docs/runbooks/whatsapp-engaged-lead.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f hermes/agentes/inbound/whatsapp_lead.py ]; then
+  if grep -q 'auditar_fonte()' hermes/agentes/inbound/whatsapp_lead.py \
+     && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/inbound/whatsapp_lead.py \
+     && grep -q 'PRODUCAO_RECUSADA' hermes/agentes/inbound/whatsapp_lead.py \
+     && grep -q 'BANCO_NAO_E_DEV' hermes/agentes/inbound/whatsapp_lead.py \
+     && ! grep -qE 'INSERT INTO[^"]*contacts|INSERT INTO[^"]*outbox_events' hermes/agentes/inbound/whatsapp_lead.py; then
+    echo "OK    whatsapp_lead.py: auditoria de fonte, sem DDL, guardas de prod/dev e escrita so' nas 2 tabelas"
+  else
+    echo "FALHOU card TRE-W7-E05-T01: componente sem auditoria de fonte / com DDL / sem guardas / fora do escopo"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agentes/inbound/whatsapp-lead-v1.json ]; then
+  python3 - <<'PY' || { echo "FALHOU card TRE-W7-E05-T01: contrato sem a barreira de descadastro/janela"; FALHAS=$((FALHAS+1)); }
+import json, sys
+c = json.load(open("hermes/agentes/inbound/whatsapp-lead-v1.json", encoding="utf-8"))
+vocab = c["vocabulario"]
+regras = c["regras"]
+opt_out = [r for r in regras if str(r.get("categoria")).upper() == "OPT_OUT"]
+ok = (
+    "recebido_em" in c["evento"]["campos_obrigatorios"]
+    and sorted(c["escrita"]["tabelas"]) == ["interactions", "sync_events"]
+    and int(c["janela_de_atendimento"]["minutos"]) > 0
+    and len(opt_out) == 1 and int(opt_out[0]["ordem"]) == 1
+    and "BLOQUEADO_POR_BLOQUEIO" in vocab["status_trilha"]
+    and "REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA" in vocab["proximo_passo"]
+    and c["lacunas"]
+)
+sys.exit(0 if ok else 1)
+PY
+fi
+if [ -f scripts/agentes/teste_whatsapp_lead_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_whatsapp_lead_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q '127.0.0.1\|loopback' scripts/agentes/teste_whatsapp_lead_aceite.sh \
+     || ! grep -q 'TRE_AMBIENTE=dev' scripts/agentes/teste_whatsapp_lead_aceite.sh \
+     || ! grep -q 'PARAR' scripts/agentes/teste_whatsapp_lead_aceite.sh; then
+    echo "FALHOU card TRE-W7-E05-T01: aceite sem as pontas locais/guarda de ambiente/dente de descadastro"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+python3 scripts/agentes/verificar_whatsapp_lead.py >/dev/null 2>&1 \
+  && echo "OK    suite do componente verde (verificar_whatsapp_lead.py)" \
+  || { echo "FALHOU card TRE-W7-E05-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
