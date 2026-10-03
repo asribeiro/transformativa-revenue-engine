@@ -2631,7 +2631,7 @@ Transf: `tar` por ssh (sem `scp`) para `/opt/tre/w8e01t01-r3` (r1 e r2 foram as 
   (recorte x funil x contrato de dados) sem banco; `--planejar` declara os dois eixos, o vocabulario de
   cada um e as sentinelas.
 - Artefatos identicos entre local e VPS (sha256 medidos nos dois lados):
-  `conversao_segmento.py` `9c68b5b3...`, `conversao-segmento-v1.json` `a7022f30...`,
+  `conversao_segmento.py` `9c68b5b3...`, `conversao-segmento-v1.json` `81f1da55...`,
   `verificar_conversao_segmento.py` `c74a7475...`, `teste_conversao_segmento_aceite.sh` `5d4dcd44...`.
 
 **Ambiente:** nada em producao (ADR-005). O container descartavel do aceite e' removido no fim; os

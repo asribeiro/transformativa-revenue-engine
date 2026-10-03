@@ -108,7 +108,7 @@
   ],
   "guardas": {
     "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<dev|aceite> psql ...`, mecanismo do funil); prefixo remoto e' RECUSA (BANCO_NAO_E_DEV). homolog exige --confirmo. prod e' RECUSA por desenho (exit 4)",
-    "leitura_pura": "toda consulta roda com `default_transaction_read_only = on` em DOIS `-c` (SET e depois a consulta — com um unico `-c` o SET nao vale, defeito medido no card W8-E01-T01) e a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "leitura_pura": "toda consulta roda dentro de transacao READ ONLY: `default_transaction_read_only = on` em DOIS `-c` (SET e depois a consulta — com um unico `-c` o SET nao vale, defeito medido no card W8-E01-T01) e a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
     "contrato": "o contrato do recorte e' validado contra o contrato de dados (vocabulario de CADA eixo) e contra o contrato do funil (estagios, ordem, niveis, lateral e fontes): divergir e' RECUSA, nao aviso",
     "segredo": "nenhum valor de segredo entra na linha de comando; se o valor de TRE_CONVERSAO_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
     "pii": "o componente le `employee_band` e a pontuacao; nao le nem projeta nome, e-mail, telefone, WhatsApp, CNPJ ou dominio — a saida carrega contagem e taxa por segmento"
