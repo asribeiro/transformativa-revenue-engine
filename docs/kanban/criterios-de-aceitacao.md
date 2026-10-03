@@ -588,3 +588,55 @@ de resposta), que passa a ter envio registrado para casar.
 - **Depends on:** todos os W6 anteriores (E01-T01, E01-T02, E02, E03, E04, E05, E06) + W5-E07/E08 (NBA)
   — todos fechados e medidos. **Destrava:** W7 (inbound/multicanal) e W8 (analytics), que dependem do
   caminho outbound provado ponta a ponta.
+
+
+---
+
+## TRE-W7-E04-T01 — LinkedIn AI-assisted workflow
+
+> Cards do doc 11 §W7 trazem só Priority/Depends on; os quatro campos abaixo foram definidos no
+> **início da execução** deste card e registrados aqui (exigência da seção 2 do doc 11).
+
+- **ACCEPTANCE:**
+  - o componente declara o canal `LINKEDIN` e exatamente **três** ações que a máquina pode executar:
+    `PREPARAR_RASCUNHO`, `PEDIR_APROVACAO`, `REGISTRAR_ENGAJAMENTO`;
+  - as **11 ações humanas exclusivas** (`PUBLICAR`, `AGENDAR_PUBLICACAO`, `COMENTAR`, `REAGIR`, `SEGUIR`,
+    `ENVIAR_CONVITE`, `ENVIAR_DM`, `MENCIONAR`, `RESPONDER_COMENTARIO`, `AUTOMACAO_DE_NAVEGADOR`,
+    `USAR_API_DO_LINKEDIN`) **recusam com exit 5** e motivo nomeado, sem nenhuma escrita de efeito;
+  - o rascunho nasce de uma recomendação `PREPARE_LINKEDIN` do NBA (ação do vocabulário do Data
+    Contract) **com evidência lida do banco**: 0 evidência = `SEM_EVIDENCIA` e **nada escrito**;
+  - contato com `do_not_contact` (ou organização com `deleted_at`) = `BLOQUEADO`, nada escrito;
+  - todo texto vira **pedido de aprovação** em `human_approvals` (`action_type` `LINKEDIN_RASCUNHO`),
+    nasce `PENDING`, carrega `recommendation_id`, `texto_hash` e a declaração
+    `publicacao = EXCLUSIVA_DO_HUMANO`; sem `APPROVED` **nada** é entregável ao humano;
+  - a rodada repetida é idempotente (`JA_PEDIDO` / `JA_REGISTRADO`), sem pedido nem interação duplicada;
+  - engajamento recebido entra em `interactions` com `channel='LINKEDIN'`, `direction='INBOUND'` e tipo
+    do vocabulário declarado; inferência só entra **marcada com `ai_confidence`**;
+  - escrita restrita a `human_approvals`, `interactions`, `agent_runs` e `sync_events` (DDL/UPDATE/DELETE
+    recusam) e `prod` **recusa com exit 4** (ADR-005).
+
+- **TEST:** `bash scripts/linkedin/verificar-linkedin-assistido.sh` (o aceite; ~1 min na VPS do
+  ambiente, banco descartável `pg-lk-e04`) + `--prova-de-dente` (**3 mutações** em cópia do módulo,
+  cada uma reprovando o item que nomeia: `publica` → 9.1, `sem-aprovacao` → 7.2, `evidencia` → 5.1) com
+  o controle verde. Medido em 03/10/2026: **70 itens OK / 0 FALHOU** (exit 0) e **3/3 dentes**.
+  Evidência = saída completa com exit code, anexada ao card.
+- **ROLLBACK:** o aceite **não deixa nada** (container `pg-lk-e04` removido no fim; nenhum DDL, nenhuma
+  migration, nenhuma credencial). Reverter = `git revert` do commit do card. O componente **não tem
+  caminho de escrita no LinkedIn**: não há token, nem API, nem navegador para desfazer.
+- **RISK:** **médio** — o canal é de pessoa real e a rede social tem regra própria (o dono nunca é
+  representado por máquina). Mitigado por desenho: a máquina **só prepara e registra**; publicar,
+  comentar, reagir, seguir, convidar, DM, mencionar e responder **recusam por código** (exit 5,
+  auditado), a publicação é declarada `EXCLUSIVA_DO_HUMANO` no próprio pedido, a aprovação humana é
+  obrigatória no meio (ADR-0004) e a saída não carrega segredo. O que **não** está medido (o ato de
+  publicar do humano, o rascunho por LLM) está declarado no runbook §5 — e o que não está medido não
+  vira "OK".
+- **Componentes afetados:** `hermes/agents/linkedin/linkedin_assistido.py` (novo),
+  `hermes/agents/linkedin/linkedin-assistido-v1.json` (novo, contrato/política do componente),
+  `scripts/linkedin/verificar-linkedin-assistido.sh` (novo, o aceite),
+  `docs/runbooks/linkedin-assistido.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+  Tabelas: `human_approvals`, `interactions`, `agent_runs`, `sync_events` — **nenhuma coluna/tabela nova**
+  (mudaria o contrato e exigiria aprovação).
+- **Depends on:** `TRE-W6-E07-T01` (caminho outbound provado ponta a ponta; a aprovação humana e o
+  vocabulário de `human_approvals` vêm do W6-E03). **Destrava:** W8 (analytics do funil multicanal) e a
+  operação assistida do LinkedIn pelo dono.

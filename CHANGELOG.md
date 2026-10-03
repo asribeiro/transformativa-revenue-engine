@@ -3,6 +3,46 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [W7 — Multicanal · LinkedIn assistido] — 03/10/2026
+
+### Added
+
+- **LinkedIn AI-assisted workflow v1** (`TRE-W7-E04-T01`, W7/E04) — componente
+  `hermes/agents/linkedin/linkedin_assistido.py` (`linkedin-assistido-v1`) + contrato/política
+  `hermes/agents/linkedin/linkedin-assistido-v1.json`: workflow **assistido** do canal LinkedIn (Motor 2,
+  doc 03 §1) em que a máquina **só prepara e registra** — `PREPARAR_RASCUNHO` a partir da recomendação
+  `PREPARE_LINKEDIN` do NBA **com evidência lida do banco** (0 evidência = `SEM_EVIDENCIA`, nada escrito),
+  `PEDIR_APROVACAO` em `human_approvals` (`action_type` `LINKEDIN_RASCUNHO`, `PENDING`, com
+  `recommendation_id`, `texto_hash` e `publicacao = EXCLUSIVA_DO_HUMANO`) e `REGISTRAR_ENGAJAMENTO` em
+  `interactions` (`channel='LINKEDIN'`, `direction='INBOUND'`, inferência **marcada** com `ai_confidence`).
+  **Quem publica é o humano, fora do sistema.** Escrita restrita a `human_approvals`, `interactions`,
+  `agent_runs` e `sync_events` (DDL/UPDATE/DELETE recusam; `prod` recusa exit 4 — ADR-005); idempotência
+  por id determinístico (`JA_PEDIDO`) e por chave de `sync_events` (`JA_REGISTRADO`); guardas de contato
+  (`do_not_contact`/`deleted_at` → `BLOQUEADO`) e `--desfazer` que **marca**, não apaga.
+- `scripts/linkedin/verificar-linkedin-assistido.sh` — o aceite do card: banco descartável `pg-lk-e04`,
+  massa de 3 organizações (com/sem evidência/contato bloqueado) e **70 itens** cobrindo preparo,
+  aprovação, entrega ao humano, idempotência, guardas e **a recusa das 11 ações humanas exclusivas**
+  (exit 5), com `--prova-de-dente` de 3 mutações.
+- `docs/runbooks/linkedin-assistido.md` — runbook com as **lacunas declaradas** (o ato de publicar do
+  humano, o rascunho por LLM, a leitura do LinkedIn e o vínculo com o Odoo não são medidos aqui).
+
+### Fixed
+
+- **`psql` sem `-q` mascarava `INSERT ... ON CONFLICT DO NOTHING`**: o tag `INSERT 0 0` no stdout fazia
+  a reclamação de idempotência ser lida como escrita e o mesmo engajamento entrava duas vezes
+  (defeito medido na rodada 1 do aceite). Correção: `-q` + guarda fail-closed que só aceita id UUID.
+- **Chave achatada do contrato de dados**: `vocabularies` usa chaves literais
+  (`"human_approvals.status"`), não aninhadas — a leitura aninhada devolvia lista vazia e todos os
+  status pareciam fora do vocabulário (defeito medido no item 1.7).
+- **Foto da guarda de escrita tirada antes da massa** do aceite acusava o próprio insumo (item 11.3).
+
+### Security
+
+- Nenhuma credencial, token ou API do LinkedIn no repositório: o componente **não tem caminho de rede**
+  (medido por `grep`: 0 referência a `linkedin.com`/`requests`/`urllib`/`selenium`/`playwright`).
+- Regra do dono preservada por código: **não publica, não comenta, não reage, não segue, não convida,
+  não manda DM, não menciona e não responde** em nome dele — 11 ações recusadas por desenho (exit 5).
+
 ## [W6 — Outbound] — 02/10/2026
 
 ### Added

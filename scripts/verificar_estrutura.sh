@@ -621,5 +621,44 @@ if [ -f "$ACEITE_E2E" ]; then
   fi
 fi
 
+# --- card TRE-W7-E04-T01 (LinkedIn AI-assisted workflow) ---------------------------------------------
+# O aceite do canal LinkedIn assistido: versionado, bash valido, banco descartavel e as guardas que
+# fazem o card ter sentido (a maquina NAO publica, NAO comenta, NAO reage, NAO manda DM).
+ACEITE_LK="scripts/linkedin/verificar-linkedin-assistido.sh"
+CONTRATO_LK="hermes/agents/linkedin/linkedin-assistido-v1.json"
+MODULO_LK="hermes/agents/linkedin/linkedin_assistido.py"
+for arquivo in "$ACEITE_LK" "$CONTRATO_LK" "$MODULO_LK" docs/runbooks/linkedin-assistido.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_LK" ]; then
+  if ! bash -n "$ACEITE_LK" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E04-T01: $ACEITE_LK nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de medir as acoes humanas exclusivas e a guarda de prod, e nao pode ter ponta de rede.
+  for marca in "tentar-publicar" "tentar-acao" "--ambiente prod" "pg-lk-e04" "SEM_EVIDENCIA" "CONTATO_BLOQUEADO"; do
+    if ! grep -q -- "$marca" "$ACEITE_LK"; then
+      echo "FALHOU card TRE-W7-E04-T01: aceite sem a marca obrigatoria ($marca)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  if grep -qE "linkedin\.com|[[:space:]]curl[[:space:]]" "$MODULO_LK"; then
+    echo "FALHOU card TRE-W7-E04-T01: modulo com caminho de rede para o LinkedIn"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f "$CONTRATO_LK" ] && ! grep -q '"maquina_proibidas"' "$CONTRATO_LK"; then
+  echo "FALHOU card TRE-W7-E04-T01: contrato sem as acoes humanas exclusivas declaradas"
+  FALHAS=$((FALHAS+1))
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

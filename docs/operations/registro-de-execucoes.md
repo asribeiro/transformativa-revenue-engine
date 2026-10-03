@@ -2544,3 +2544,25 @@ perfil `tester` e a homologacao (estagio 7) e do Anderson. Segredos: nenhum. A r
   `sha256-artefatos.out`).
 - Segredos: nenhum valor nesta entrada. A senha do sink SMTP e a chave da API do stub sao valores de
   teste gerados na hora pelo proprio aceite; ha item medindo 0 ocorrencias delas na saida.
+
+## 2026-10-03 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — card TRE-W7-E04-T01
+
+- **Aceite do LinkedIn assistido (agente), rodada 1:** `bash scripts/linkedin/verificar-linkedin-assistido.sh`
+  a partir de `/tmp/lk-e04-<pid>` (checkout do card enviado por stdin, container `pg-lk-e04` novo) →
+  `-- itens OK=47 FALHOU=12` / `ACEITE_LINKEDIN_ASSISTIDO_FALHOU` (exit 1). **Doze falhas reais** —
+  nenhuma delas foi "aceita": os defeitos D1/D2/D3 do runbook §6 e mais 5 comparações do próprio aceite
+  (contrato lido em chave achatada, `entregaveis` vs `entregaveis_ao_humano`, motivo de
+  `AGENDAR_PUBLICACAO` e a foto da guarda de escrita tirada antes da massa) foram corrigidos.
+- **Diagnóstico na máquina (agente, `--manter`):** `psql` devolvendo o tag de comando em vez de linha
+  vazia no `INSERT ... DO NOTHING` (medido com `od -c`: `INSERT 0 0\n` = 11 bytes) e as duas interações
+  do mesmo engajamento em `interactions`; índice `sync_events_idempotency_key_key` presente (a chave não
+  era o problema — o stdout era).
+- **Aceite (agente), rodada final:** `bash scripts/linkedin/verificar-linkedin-assistido.sh` →
+  `-- itens OK=70 FALHOU=0` / `ACEITE_LINKEDIN_ASSISTIDO_OK` (exit 0).
+- **Prova de dente (agente):** `bash scripts/linkedin/verificar-linkedin-assistido.sh --prova-de-dente` →
+  `DENTE_OK publica → 9.1`, `DENTE_OK sem-aprovacao → 7.2`, `DENTE_OK evidencia → 5.1`,
+  `-- dentes OK=3 de 3` / `PROVA_DE_DENTE_OK` (exit 0): mutar o módulo reprova o item que nomeia.
+- **Estado deixado na máquina:** container `pg-lk-e04` **removido** pelo próprio aceite (nenhum container
+  novo ficou de pé); os containers do ambiente (`pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`, `proxy-dev`)
+  não foram tocados; nenhuma credencial ou segredo em uso (o aceite não tem ponta externa).
+- **Nada em produção:** `--ambiente prod` recusa com exit 4 (medido nos itens 11.1/11.2), ADR-005.
