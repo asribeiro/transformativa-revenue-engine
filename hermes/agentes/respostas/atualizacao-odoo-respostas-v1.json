@@ -1,0 +1,133 @@
+{
+  "versao": "atualizacao-odoo-respostas-v1",
+  "componente": {
+    "nome": "atualizacao_odoo",
+    "card": "TRE-W6-E06-T01",
+    "arquivo": "hermes/agentes/respostas/atualizacao_odoo.py",
+    "papel": "propagar as respostas JA classificadas (card TRE-W6-E05-T01, tabela interactions) para o CRM operacional (Odoo) pela API CONTROLADA do modulo transformativa_sales_ai (card TRE-W3-E01-T01), com trilha de idempotencia em sync_events. Nao le a caixa, nao classifica, nao envia e-mail e nao decide nada humano."
+  },
+  "fonte": {
+    "tabela": "sales_intelligence.interactions",
+    "dono_da_classificacao": "TRE-W6-E05-T01",
+    "coluna_de_categoria": "response_category",
+    "vinculos_usados": [
+      "interactions.odoo_lead_id",
+      "contacts.odoo_partner_id",
+      "organizations.odoo_partner_id"
+    ],
+    "observacao": "Le SO o que o card anterior gravou. Categoria fora do vocabulario fechado deste contrato RECUSA a rodada (CONTRATO_INVALIDO), nunca cai em ato generico."
+  },
+  "api_controlada": {
+    "rota": "/tf/api/v1/{operacao}",
+    "metodo": "POST",
+    "parametro_ambiente": "tf.api.ambiente",
+    "parametro_aprovacao": "tf.api.aprovacao",
+    "versao_politica_minima": "1.3.0",
+    "operacoes": {
+      "sistema_capacidades": "leitura",
+      "crm_registros_ler": "leitura",
+      "contato_upsert": "escrita",
+      "oportunidade_upsert": "escrita",
+      "atividade_criar": "escrita"
+    },
+    "envelope_pedido": ["parametros", "idempotency_key", "correlation_id", "dry_run"],
+    "envelope_resposta_ok": ["ok", "operacao", "acao", "ambiente", "politica_versao", "correlation_id", "idempotency_key", "dry_run", "dados"],
+    "observacao": "Todo campo escrito tem de estar declarado na politica da API (v1.3.0). Campo que a politica NAO declara nao existe para este componente: vira lacuna declarada, nunca escrita por fora."
+  },
+  "atos_por_categoria": [
+    {
+      "ordem": 1,
+      "categoria": "INTERESSE",
+      "evento": "RESPOSTA_INTERESSE",
+      "proxima_acao": "RESPONDER_AGORA",
+      "atividade": "REGISTRAR_INTERESSE",
+      "prazo_dias": 1,
+      "exige_contato": true,
+      "descricao": "pedido de conversa/proposta: registra o evento no lead e abre atividade de resposta no contato"
+    },
+    {
+      "ordem": 2,
+      "categoria": "SEM_INTERESSE",
+      "evento": "RESPOSTA_SEM_INTERESSE",
+      "proxima_acao": "ENCERRAR_COM_CORTESIA",
+      "atividade": "REGISTRAR_RECUSA",
+      "prazo_dias": 5,
+      "exige_contato": true,
+      "descricao": "recusa explicita sem descadastro: registra o evento e a cortesia de encerramento"
+    },
+    {
+      "ordem": 3,
+      "categoria": "OPT_OUT",
+      "evento": "RESPOSTA_OPT_OUT",
+      "proxima_acao": "NAO_CONTATAR",
+      "atividade": "REGISTRAR_OPT_OUT",
+      "prazo_dias": 1,
+      "exige_contato": true,
+      "descricao": "descadastro pedido pelo lead: registra o evento e a atividade de nao-contato. A SUPENSAO em si vive em campo proprio do contato, que a politica da API controlada v1.3.0 NAO declara (ver lacunas) — este card nao escreve campo nao declarado.",
+      "lacuna_de_supressao": "campo_de_supressao_no_odoo"
+    }
+  ],
+  "categorias_sem_ato": [
+    "BOUNCE",
+    "AUTO_RESPOSTA",
+    "RUIDO",
+    "INDEFINIDO",
+    "NAO_RESPOSTA"
+  ],
+  "vocabulario_fechado": [
+    "INTERESSE",
+    "SEM_INTERESSE",
+    "OPT_OUT",
+    "BOUNCE",
+    "AUTO_RESPOSTA",
+    "RUIDO",
+    "INDEFINIDO",
+    "NAO_RESPOSTA"
+  ],
+  "campos_por_operacao": {
+    "crm_registros_ler": {
+      "modelo": "crm.lead",
+      "campos": ["id", "name", "tf_opportunity_id", "tf_next_best_action"],
+      "campo_de_filtro": "id"
+    },
+    "oportunidade_upsert": {
+      "modelo": "crm.lead",
+      "campos": ["name", "tf_opportunity_id", "tf_last_event_type", "tf_next_best_action",
+                 "tf_correlation_id", "tf_idempotency_key", "tf_last_sync_at"],
+      "campos_de_identidade": ["tf_opportunity_id"],
+      "campos_escritos": ["tf_opportunity_id", "name", "tf_last_event_type", "tf_next_best_action",
+                          "tf_last_sync_at", "tf_correlation_id", "tf_idempotency_key"]
+    },
+    "atividade_criar": {
+      "modelo": "mail.activity",
+      "campos": ["res_model", "res_id", "activity_type_id", "summary", "date_deadline",
+                 "user_id", "tf_idempotency_key", "tf_correlation_id"],
+      "campos_obrigatorios": ["res_id"],
+      "campos_escritos": ["res_id", "activity_type_id", "summary", "date_deadline",
+                          "tf_correlation_id", "tf_idempotency_key", "user_id"]
+    }
+  },
+  "textos": {
+    "resumo_atividade": "Resposta do lead ({categoria}): {assunto}",
+    "prefixo_correlacao": "w6-e06"
+  },
+  "limites": {
+    "interacoes_por_rodada": 50,
+    "timeout_http_s": 15,
+    "tamanho_maximo_assunto": 120
+  },
+  "lacunas": [
+    {
+      "id": "campo_de_supressao_no_odoo",
+      "descricao": "A supressao (OPT_OUT) exige um campo proprio no contato/lead do Odoo (`res.partner`/`crm.lead`). A politica da API controlada v1.3.0 declara, em `res.partner`, apenas name/email/is_company/function/phone e, em `crm.lead`, name/type/partner_id e os campos tf_*. Nao existe campo de supressao declarado.",
+      "efeito": "O card registra o evento RESPOSTA_OPT_OUT no lead e a atividade REGISTRAR_OPT_OUT no contato; a marcacao do campo de supressao NAO e escrita por fora da declaracao (nem por SQL, nem por XML-RPC direto).",
+      "encaminhamento": "Nova versao da politica da API controlada (campo declarado + operacao de supressao) ou decisao do dono sobre onde a supressao e' autoritativa. Ate la, a autoridade do descadastro e' a linha OPT_OUT em `interactions`."
+    },
+    {
+      "id": "resposta_shape_do_controlador",
+      "descricao": "O componente valida o envelope de resposta `ok/operacao/correlation_id/dados` e o `dados.ids`/`dados.registros` do controlador. O aceite de dev prova contra o stub loopback com o MESMO envelope; a prova contra o Odoo real do dev e' do card TRE-W6-E07-T01 (E2E), por depender de chave de API do usuario de integracao.",
+      "efeito": "Envelope divergente RECUSA a rodada (RESPOSTA_FORA_DO_ENVELOPE) em vez de seguir com dado suposto.",
+      "encaminhamento": "O aceite E2E de W6-E07 roda contra `odoo-dev` e confirma o envelope ponta a ponta."
+    }
+  ]
+}
