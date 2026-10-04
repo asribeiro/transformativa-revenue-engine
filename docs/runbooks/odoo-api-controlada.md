@@ -82,11 +82,13 @@ bash scripts/odoo/verificar-api-controlada.sh --prova-de-dente
 | `--apenas-motor` | só o passo 0 (sem Docker): a decisão inteira em segundos |
 | `--apenas-suites` | passos 1 e 2 |
 | `--apenas-http` | passos 1 e 3 (usado pelos dentes) |
-| `--prova-de-dente` | 3 mutações em **cópias** do módulo; cada uma **tem** de reprovar o aceite, e o artefato real tem de sair intacto (guarda externa por sha256) |
+| `--prova-de-dente` | 3 mutações em **cópias** do módulo; cada uma **tem** de reprovar o aceite, **medindo** (piso de itens do modo + logs de passo) e **pelo item que o dente prova** (assinatura nomeada), e o artefato real tem de sair intacto (guarda externa por sha256 dos arquivos versionados). Um dente que aborta na guarda de ambiente reprova o harness: `DENTE_FALHOU`, exit 1 (defeito `TRE-W3-E01-T01-D01`) |
 
 Variáveis: `TRE_MODULO_DIR` (padrão: o módulo do próprio checkout), `TRE_BANCO` (padrão
 `tre_e01_t01_api`, exige o formato `^tre_[a-z0-9_]+$` e recusa nome do ambiente),
-`TRE_IMAGEM`/`TRE_IMAGEM_PG`, `TRE_LOG_DIR`, `TRE_PISO_DE_TESTES`, `TRE_MANTER_BANCO=1`.
+`TRE_IMAGEM`/`TRE_IMAGEM_PG`, `TRE_LOG_DIR`, `TRE_PISO_DE_TESTES`, `TRE_PISO_ITENS_HTTP` (61),
+`TRE_PISO_ITENS_MOTOR` (53) — os dois últimos são os **pisos de itens medidos** por modo, usados só
+por `--prova-de-dente` —, `TRE_MANTER_BANCO=1`.
 
 **A chave de API da fase HTTP não passa por stdout nem por argumento**: `scripts/odoo/preparar_api_teste.py`
 roda por `odoo shell` com o diretório descartável montado em `/preparo` (modo 700) e grava a chave em
@@ -302,3 +304,83 @@ E02-T02 (aqui a escrita só é exercitada com política de teste); a âncora do 
 sha256 registrado acima, não uma comparação com o `.git` (a cópia na VPS é um `git archive`, sem
 repositório); e quem entrega não homologa — a revisão independente (estágio 6, perfil `tester`) e a
 ratificação da versão 19.0/homologação (estágio 7, Anderson) seguem abertas.
+
+---
+
+## §12 Defeito do próprio instrumento: `--prova-de-dente` era fail-open — consertado e remedido
+
+**Card do defeito:** `TRE-W3-E01-T01-D01` (`t_fa9db205`), retroativo, aberto pela revisão independente
+(estágio 6, perfil `tester`, 01-02/10/2026) do card `t_e0489efc` — a evidência **daquele** card foi
+aprovada; o defeito é **do instrumento**.
+
+**Sintoma medido (na VPS, com as imagens sabotadas):**
+
+```bash
+TRE_IMAGEM=odoo:nao-existe-9999 TRE_IMAGEM_PG=postgres:nao-existe-9999 \
+    bash scripts/odoo/verificar-api-controlada.sh --prova-de-dente
+# dente 1 e dente 2: "FALHOU imagem odoo:nao-existe-9999 ausente (nada a medir)"
+# RESULTADO: API_CONTROLADA_FALHOU (2 itens, 1 falha(s))     <-- aborto de guarda, 2 itens
+# RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)    <-- e mesmo assim: verde, exit 0
+```
+
+Os dentes 1 e 2 abortavam na guarda de ambiente depois de **2 itens** — nenhuma chamada HTTP, nenhuma
+instalação, nenhuma medição — e o harness imprimia `DENTE_OK` com exit 0.
+
+**Causa raiz.** Cada dente decidia "mordeu" por uma condição só: `grep -q 'RESULTADO: …_FALHOU'` no
+sub-run. O predicado aceitava **qualquer** falha — aborto de guarda (`imagem ausente`, `docker nao
+responde`, `curl ausente`, `modulo ausente`, …) valia o mesmo que a falha do item que o dente quer
+provar. O script conferia que a **mutação** foi aplicada (esse lado estava certo); não conferia que a
+**medição** aconteceu nem que o **item esperado** está entre os reprovados.
+
+**Conserto (em `scripts/odoo/verificar-api-controlada.sh`).** Um dente só é declarado provado quando
+as três condições valem:
+
+1. o sub-run terminou no `RESULTADO` esperado (`FALHOU`);
+2. o sub-run **mediu**: nº de itens ≥ **piso do modo** (`TRE_PISO_ITENS_HTTP=61` em `--apenas-http`,
+   `TRE_PISO_ITENS_MOTOR=53` na suíte pura — o medido em ambiente saudável) **e** os logs de passo
+   existem no diretório da prova (`1-instalacao.log`, `3-preparo.log`, `3b-servidor.log`; para o
+   dente 3, `0-motor-puro.out`);
+3. o **item esperado** está entre os reprovados, por **assinatura nomeada** (não "alguma falha"):
+   dente 1 `operacao declarada (sistema_capacidades) -> HTTP 404`; dente 2
+   `campo nao declarado -> HTTP 200` (o campo vazado no corpo); dente 3
+   `producao permitida mas sem aprovacao -> NAO recusou`.
+
+Faltando qualquer uma: `RESULTADO: API_CONTROLADA_DENTE_FALHOU …`, exit 1. O sub-run é **rotulado**
+(`TRE_ORIGEM_DENTE=N`) e imprime `ORIGEM_DENTE=<n> modo=… itens=… falhas=…`, exigida na conferência —
+é o que separa "o próprio script mediu" de "qualquer coisa imprimiu um `FALHOU`".
+
+**Junto (mesma família do `TRE-W2-E03-T01-D02` e do achado 4 do próprio card):**
+
+- cada prova mede em `$TRE_LOG_DIR/dente/prova-N` e transcreve em `$TRE_LOG_DIR/dente/` — **nada do
+  dente escreve no diretório de logs do aceite** (antes, o dente 3 sobrescrevia o
+  `0-motor-puro.out` do aceite, justo o log que o passo 0 do aceite produz);
+- guarda **nominal** dos 5 logs de passo do aceite (sha256 antes/depois): reprova o dente se um deles
+  mudar, e **não** reprova por arquivo alheio no diretório (o redirecionamento da própria saída do
+  dente, por exemplo);
+- a âncora do artefato passou a cobrir **só os arquivos versionados** do módulo (`git ls-files`; sem
+  `.git`, `find` excluindo `__pycache__`) e o passo 0 roda com `PYTHONDONTWRITEBYTECODE=1` — o
+  sha256 virou **reprodutível**: `85e6cbc9…`, 28 arquivos, **idêntico** no worktree, numa cópia solta
+  e no `git archive` publicado (antes: 29 arquivos — `api/__pycache__` gerado pela própria execução —
+  e cada publish dava um valor diferente: `800763cd…` no autor, `96ae5938…` na revisão, `bdd4f6ae…`
+  no `git archive` limpo).
+
+**Medição do conserto (VPS do dev, 02/10/2026, `/opt/tre/rev-t_fa9db205-d01`, `git archive` de
+`fix/TRE-W3-E01-T01-D01`; script `bfed5e1f…`):**
+
+| Cenário | Antes (`5b0b677f…`) | Depois (`bfed5e1f…`) |
+|---|---|---|
+| **Ambiente sabotado** (`TRE_IMAGEM=odoo:nao-existe-9999`) | `DENTE_OK (3 provas, 0 falhas)`, exit 0 — dentes 1 e 2 abortados com **2 itens**, sem medir | **`DENTE_FALHOU (2 prova(s) sem dente…)`, exit 1** — `o sub-run mediu 2 itens (piso do modo: 61) — aborto na guarda de ambiente nao e' medicao` |
+| **Ambiente saudável** | `DENTE_OK (3 provas, 0 falhas)`, exit 0 | `DENTE_OK (3 provas, 0 falhas)`, exit 0 — dente 1 `API_CONTROLADA_FALHOU (61 itens, 5 falhas)` com o item `operacao declarada (sistema_capacidades) -> HTTP 404`; dente 2 `(61 itens, 3 falhas)` com `campo nao declarado -> HTTP 200` (campo `email` no corpo); dente 3 `MOTOR_API_FALHOU (53 itens, 1 falha)` com `producao permitida mas sem aprovacao -> NAO recusou` |
+| **Aceite completo (regressão)** | `API_CONTROLADA_OK (75 itens, 0 falhas)` | `API_CONTROLADA_OK (75 itens, 0 falhas)`, exit 0 (`0 failed, 0 error(s) of 82 tests`) |
+| **Aceite → dente na mesma sessão** | dente 3 sobrescrevia `0-motor-puro.out` do aceite | `DENTE_OK (3 provas, 0 falhas)` e os **5** logs de passo do aceite com sha256 idêntico antes/depois |
+
+**Controle do predicado, versionado:** `scripts/odoo/teste-dente-confere.sh` extrai a função
+`dente_confere` **do próprio verificador** e a exercita com entradas fabricadas: medição completa com o
+item certo passa; **aborto (2 itens) reprova**; log de passo ausente reprova; falha por **outro** item
+reprova; sub-run sem rótulo reprova; sub-run que não reprovou nada reprova
+(`DENTE_CONFERE_OK (7 itens, 0 falhas)`, exit 0). Roda sem Docker, em segundos — é o controle a rodar
+junto com o aceite nos cards que herdarem este script (`E02/E03/E04`).
+
+**Lição (para a abertura da onda):** predicado de dente tem de ser **por item medido**, não por
+"houve alguma falha" — é a mesma lição dos cards `D01`/`D02` do E03 e `D01` do E07, agora travada por
+teste. Herdar o verificador como molde é herdar também o conserto **e** o controle.

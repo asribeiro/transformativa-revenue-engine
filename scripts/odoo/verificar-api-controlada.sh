@@ -41,8 +41,16 @@
 #   bash verificar-api-controlada.sh --prova-de-dente      (3 mutacoes; cada uma TEM de reprovar)
 #   bash verificar-api-controlada.sh --banco tre_outro --modulo-dir /caminho/do/modulo
 #
+# --prova-de-dente (defeito TRE-W3-E01-T01-D01, conserto): cada dente so' conta como provado quando o
+# sub-run MEDIU de verdade — piso de itens do modo + logs de passo no diretorio da prova — E o ITEM
+# ESPERADO esta' entre os reprovados, por assinatura nomeada. "Houve alguma falha no sub-run" nao
+# basta: um aborto na guarda de ambiente (imagem ausente, docker fora do ar, curl ausente, ...) nao
+# mede nada e nao pode valer como dente. As provas medem em "$TRE_LOG_DIR/dente/prova-N" (nada do
+# dente escreve no diretorio de logs do aceite) e rotulam o sub-run com TRE_ORIGEM_DENTE=N.
+#
 # Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_BANCO, TRE_IMAGEM, TRE_IMAGEM_PG, TRE_PG_USER,
-# TRE_LOG_DIR, TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim).
+# TRE_LOG_DIR, TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim),
+# TRE_PISO_ITENS_HTTP=61 / TRE_PISO_ITENS_MOTOR=53 (pisos de itens medidos por modo, do dente).
 #
 # Saida: um item por linha (`OK`/`FALHOU`), resumo final em uma linha e exit code:
 #   0 = aceite cumprido (todos os itens OK)   1 = falhou / nao deu para medir   2 = uso errado
@@ -66,6 +74,12 @@ MANTER_BANCO="${TRE_MANTER_BANCO:-0}"
 # Piso de testes do modulo medido em 01/10/2026: 82 testes
 # (50 dos cards W2 + 32 da suite da API deste card). Piso = o medido: menos que isso e regressao.
 PISO_DE_TESTES="${TRE_PISO_DE_TESTES:-82}"
+# Pisos de ITENS MEDIDOS por modo, medidos em ambiente saudavel na VPS (01-02/10/2026). O
+# --prova-de-dente usa os dois para separar MEDICAO de ABORTO de guarda: um sub-run que aborta depois
+# de 2 itens nao mediu nada (defeito TRE-W3-E01-T01-D01). --apenas-http mede 61 itens; a suite pura do
+# motor, 53. Piso = o medido: menos que isso so' acontece quando o sub-run nao chegou ao fim.
+PISO_ITENS_HTTP="${TRE_PISO_ITENS_HTTP:-61}"
+PISO_ITENS_MOTOR="${TRE_PISO_ITENS_MOTOR:-53}"
 
 MODO=completo
 while [ $# -gt 0 ]; do
@@ -97,6 +111,13 @@ falhou()   { ITENS=$((ITENS + 1)); FALHAS=$((FALHAS + 1)); printf 'FALHOU %s\n' 
 info()     { printf 'INFO  %s\n' "$*"; }
 cabecalho(){ printf '\n=== %s ===\n' "$*"; }
 resumo() {
+    # Sub-run sob prova (--prova-de-dente): o harness de dente exige esta linha do proprio sub-run
+    # rotulado (TRE_ORIGEM_DENTE=N) — e' ela que prova que o modo e o numero de itens vem de uma
+    # execucao medida do script, e nao de um aborto (defeito TRE-W3-E01-T01-D01, item 3 do conserto).
+    if [ -n "${TRE_ORIGEM_DENTE:-}" ]; then
+        printf 'ORIGEM_DENTE=%s modo=%s itens=%s falhas=%s\n' \
+            "$TRE_ORIGEM_DENTE" "$MODO" "$ITENS" "$FALHAS"
+    fi
     if [ "$FALHAS" -eq 0 ]; then
         echo "RESULTADO: API_CONTROLADA_OK ($ITENS itens, 0 falhas) modulo=$MODULO banco=$BANCO imagens=$IMAGEM+$IMAGEM_PG"
         exit 0
@@ -110,22 +131,124 @@ resumo() {
 #   dente 1: politica SEM a operacao declarada      -> o item "operacao declarada atende" reprova;
 #   dente 2: motor SEM a checagem de campo declarado -> o item "campo nao declarado recusa" reprova;
 #   dente 3: motor SEM a checagem de aprovacao       -> a suite pura reprova a aprovacao ausente.
+#
+# PREDICADO POR ITEM MEDIDO (defeito TRE-W3-E01-T01-D01, conserto). "Mordeu" NAO e' "houve alguma
+# falha no sub-run": cada dente so' conta como provado quando as TRES condicoes valem —
+#   (a) o sub-run terminou no RESULTADO esperado (FALHOU);
+#   (b) o sub-run MEDIU: numero de itens >= piso do modo (TRE_PISO_ITENS_HTTP/MOTOR, o medido em
+#       ambiente saudavel) E logs de passo no diretorio da prova. Um sub-run que aborta na guarda de
+#       ambiente (imagem ausente, docker fora do ar, curl ausente, modulo ausente, ...) mede ~2 itens e
+#       nao deixa log de passo nenhum: e' aborto, nao medicao;
+#   (c) o ITEM ESPERADO esta' entre os reprovados, por assinatura nomeada (o item que o dente prova),
+#       e nao qualquer falha do sub-run.
+# Sem (a)+(b)+(c) esta' provado que o dente NAO mediu: o harness imprime DENTE_FALHOU e sai 1. Antes
+# deste conserto o unico predicado era `grep -q 'RESULTADO: ..._FALHOU'` no sub-run — com
+# TRE_IMAGEM/TRE_IMAGEM_PG inexistentes os dentes 1 e 2 "passavam" abortando depois de 2 itens na
+# guarda de imagem, sem uma chamada HTTP sequer, e o harness imprimia DENTE_OK verde com exit 0.
+#
+# LOG PROPRIO (mesma familia do defeito TRE-W2-E03-T01-D02): nada do dente escreve no diretorio de logs
+# do aceite. Cada prova mede em "$TRE_LOG_DIR/dente/prova-N" e transcreve a saida em "$TRE_LOG_DIR/dente/".
+# O sub-run e' rotulado com TRE_ORIGEM_DENTE=N e imprime a linha `ORIGEM_DENTE=...`, exigida na conferencia.
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e01t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
+    DENTE_LOG_DIR="$LOG_DIR/dente"
+    mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2" "$DENTE_LOG_DIR/prova-3"
     DENTE_FALHAS=0
+
+    # ------------------------------------------------------------------
+    # Conferencia fail-closed de CADA dente (defeito TRE-W3-E01-T01-D01, itens 1 e 2 do conserto):
+    # rotulo do sub-run, RESULTADO esperado, piso de itens medidos, logs de passo e o item esperado
+    # entre os reprovados. Qualquer condicao que falte = dente SEM dente (nao mediu).
+    # ------------------------------------------------------------------
+    dente_confere() {
+        # $1=n  $2=rotulo  $3=transcricao do sub-run  $4=dir de log do sub-run
+        # $5=arquivo com a linha de RESULTADO a exigir  $6=padrao do resultado (grep -F)
+        # $7=piso de itens do modo  $8=assinatura do item esperado (grep -E)
+        # $9..=logs de passo que TEM de existir (nao vazios) no dir de log do sub-run
+        local n="$1" rotulo="$2" transcricao="$3" sublog="$4" arquivo_medicao="$5"
+        local resultado="$6" piso="$7" assinatura="$8"
+        shift 8
+        local linha_resultado itens faltando=0
+        if ! grep -qE "^ORIGEM_DENTE=${n} " "$transcricao" 2>/dev/null; then
+            echo "FALHOU $rotulo: o sub-run nao se identificou com TRE_ORIGEM_DENTE=$n — nao ha' prova de que foi ele quem mediu"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1)); return
+        fi
+        linha_resultado="$(grep -E '^RESULTADO: ' "$arquivo_medicao" 2>/dev/null | tail -1)"
+        if ! printf '%s\n' "$linha_resultado" | grep -q -F "$resultado"; then
+            echo "FALHOU $rotulo: o sub-run NAO mediu — terminou em '${linha_resultado:-sem linha de resultado}' (esperado '$resultado')"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1)); return
+        fi
+        itens="$(printf '%s\n' "$linha_resultado" | sed -nE 's/.*\(([0-9]+) itens.*/\1/p')"
+        if [ -z "$itens" ] || [ "$itens" -lt "$piso" ]; then
+            echo "FALHOU $rotulo: o sub-run mediu ${itens:-0} itens (piso do modo: $piso) — aborto na guarda de ambiente nao e' medicao"
+            DENTE_FALHAS=$((DENTE_FALHAS + 1)); return
+        fi
+        for arquivo_log in "$@"; do
+            if [ ! -s "$sublog/$arquivo_log" ]; then
+                echo "FALHOU $rotulo: log de passo ausente ou vazio ($sublog/$arquivo_log) — sem log nao ha' prova de que a medicao rodou"
+                faltando=$((faltando + 1))
+            fi
+        done
+        if [ "$faltando" -gt 0 ]; then
+            DENTE_FALHAS=$((DENTE_FALHAS + 1)); return
+        fi
+        if ! grep -qE "$assinatura" "$arquivo_medicao" 2>/dev/null; then
+            echo "FALHOU $rotulo: o sub-run reprovou $itens itens, mas NENHUM e' o item que o dente prova ('$assinatura') — a falha veio de outro lugar"
+            grep -E '^FALHOU ' "$arquivo_medicao" 2>/dev/null | sed 's/^/      /'
+            DENTE_FALHAS=$((DENTE_FALHAS + 1)); return
+        fi
+        echo "OK    $rotulo: sub-run rotulado mediu $itens itens (piso $piso), logs de passo no lugar e o item esperado entre os reprovados ('$assinatura')"
+    }
 
     # Ancora do alvo: o dente TEM de rodar contra uma copia do artefato REAL, e o artefato real
     # nao pode mudar por causa da prova (a licao do E06: prova negativa que nao ancora o alvo nao
-    # prova nada, porque pode estar medindo outra coisa).
-    manifesto_modulo() {
-        find "$MODULO_DIR" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1
+    # prova nada, porque pode estar medindo outra coisa). O manifesto cobre SO' os arquivos
+    # VERSIONADOS do modulo: o `api/__pycache__` que o proprio passo 0 criava nao entrava no git e
+    # fazia a lista oscilar (29 arquivos contra os 28 do git archive), tornando a ancora publicada
+    # irreprodutivel (achado 4 do defeito TRE-W3-E01-T01-D01).
+    lista_modulo() {
+        local rel
+        rel="$(realpath --relative-to="$RAIZ_REPO" "$MODULO_DIR" 2>/dev/null || true)"
+        case "$rel" in
+            ""|/*|..*) : ;;  # modulo fora do repositorio: cai no find do else
+            *)          if [ -e "$RAIZ_REPO/.git" ]; then
+                            (cd "$RAIZ_REPO" && git ls-files -- "$rel" | sed "s|^$rel/||" | LC_ALL=C sort)
+                            return
+                        fi ;;
+        esac
+        (cd "$MODULO_DIR" && find . -type f ! -path './__pycache__/*' ! -path '*/__pycache__/*' \
+            | sed 's|^\./||' | LC_ALL=C sort)
     }
-    arquivos_modulo() { find "$MODULO_DIR" -type f | wc -l | tr -d ' '; }
+    arquivos_modulo() { lista_modulo | grep -c . || true; }
+    manifesto_modulo() {
+        local lista
+        lista="$(lista_modulo)"
+        if [ -z "$lista" ]; then echo "sem_arquivos_versionados"; return; fi
+        (cd "$MODULO_DIR" && printf '%s\n' "$lista" | tr '\n' '\0' | xargs -0 -r sha256sum) \
+            | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+    }
+    # Guarda dos logs do ACEITE (familia do defeito TRE-W2-E03-T01-D02): o modo dente nao escreve no
+    # diretorio do aceite, e esta guarda reprova o dente se um log de PASSO do aceite mudar (ou nascer).
+    # A lista e' nominal de proposito: um arquivo alheio no mesmo diretorio (o redirecionamento da
+    # propria saida do dente, por exemplo) nao pode reprovar a prova.
+    LOGS_ACEITE_NOMES="0-motor-puro.out 1-instalacao.log 2-teste.log 3-preparo.log 3b-servidor.log"
+    logs_aceite_sha() {
+        local nome
+        (cd "$LOG_DIR" 2>/dev/null && for nome in $LOGS_ACEITE_NOMES; do
+            [ -f "$nome" ] && sha256sum "$nome"
+        done) | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+    }
+    LOGS_ACEITE_QTD=0
+    for _nome in $LOGS_ACEITE_NOMES; do
+        [ -f "$LOG_DIR/$_nome" ] && LOGS_ACEITE_QTD=$((LOGS_ACEITE_QTD + 1))
+    done
+    LOGS_ACEITE_ANTES="$(logs_aceite_sha)"
     MANIFESTO_ANTES="$(manifesto_modulo)"
     ARQUIVOS_MODULO="$(arquivos_modulo)"
-    echo "OK    ancora: alvo do dente = $MODULO_DIR ($ARQUIVOS_MODULO arquivos, sha256 $MANIFESTO_ANTES)"
+    echo "OK    ancora: alvo do dente = $MODULO_DIR ($ARQUIVOS_MODULO arquivos versionados, sha256 $MANIFESTO_ANTES)"
+    info "sub-runs das provas medem em $DENTE_LOG_DIR/prova-N (o diretorio do aceite, $LOG_DIR, fica intacto)"
 
     cabecalho "prova de dente 1: politica sem a operacao declarada (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
@@ -146,16 +269,15 @@ PY
         echo 'FALHOU dente 1: mutacao NAO foi aplicada na copia — o dente mediria o artefato intacto'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
-    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$LOG_DIR/dente1" \
+    D1="$(TRE_ORIGEM_DENTE=1 TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" \
           "$0" --apenas-http 2>&1)"
-    printf '%s\n' "$D1" >"$LOG_DIR/dente-1-politica-mutada.out"
+    printf '%s\n' "$D1" >"$DENTE_LOG_DIR/dente-1-politica-mutada.out"
     printf '%s\n' "$D1" | tail -3
-    if printf '%s\n' "$D1" | grep -q 'RESULTADO: API_CONTROLADA_FALHOU'; then
-        echo 'OK    dente 1: politica sem a operacao reprova o aceite (a politica e load-bearing)'
-    else
-        echo 'FALHOU dente 1: politica mutada NAO reprovou — o item de operacao declarada nao tem dente'
-        DENTE_FALHAS=$((DENTE_FALHAS + 1))
-    fi
+    # O dente prova que a POLITICA e' load-bearing: o item esperado e' o proprio "operacao declarada".
+    dente_confere 1 'dente 1' "$DENTE_LOG_DIR/dente-1-politica-mutada.out" "$DENTE_LOG_DIR/prova-1" \
+        "$DENTE_LOG_DIR/dente-1-politica-mutada.out" 'RESULTADO: API_CONTROLADA_FALHOU' "$PISO_ITENS_HTTP" \
+        'operacao declarada \(sistema_capacidades\) -> HTTP 404' \
+        1-instalacao.log 3-preparo.log 3b-servidor.log
 
     cabecalho "prova de dente 2: motor sem a checagem de campo declarado (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
@@ -187,16 +309,16 @@ PY
         echo "FALHOU dente 2: mutacao NAO foi aplicada na copia do motor ($MUT2) — o dente mediria o motor intacto"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
-    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$LOG_DIR/dente2" \
+    D2="$(TRE_ORIGEM_DENTE=2 TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-2" \
           "$0" --apenas-http 2>&1)"
-    printf '%s\n' "$D2" >"$LOG_DIR/dente-2-motor-mutado.out"
+    printf '%s\n' "$D2" >"$DENTE_LOG_DIR/dente-2-motor-mutado.out"
     printf '%s\n' "$D2" | tail -3
-    if printf '%s\n' "$D2" | grep -q 'RESULTADO: API_CONTROLADA_FALHOU'; then
-        echo 'OK    dente 2: motor sem a checagem de campo reprova o aceite'
-    else
-        echo 'FALHOU dente 2: motor mutado NAO reprovou — o item de campo nao declarado nao tem dente'
-        DENTE_FALHAS=$((DENTE_FALHAS + 1))
-    fi
+    # O dente prova o VAZAMENTO: sem a checagem de campo declarado, o pedido de campo fora da
+    # declaracao responde 200 (com o campo no corpo) em vez de recusar 422.
+    dente_confere 2 'dente 2' "$DENTE_LOG_DIR/dente-2-motor-mutado.out" "$DENTE_LOG_DIR/prova-2" \
+        "$DENTE_LOG_DIR/dente-2-motor-mutado.out" 'RESULTADO: API_CONTROLADA_FALHOU' "$PISO_ITENS_HTTP" \
+        'campo nao declarado -> HTTP 200|"email":' \
+        1-instalacao.log 3-preparo.log 3b-servidor.log
 
     cabecalho "prova de dente 3: motor sem a checagem de aprovacao (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
@@ -225,19 +347,31 @@ PY
         echo "FALHOU dente 3: mutacao NAO foi aplicada na copia do motor ($MUT3)"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
-    D3="$(TRE_MODULO_DIR="$DENTE_DIR/m3" "$0" --apenas-motor 2>&1)"
-    printf '%s\n' "$D3" >"$LOG_DIR/dente-3-aprovacao-mutada.out"
+    D3="$(TRE_ORIGEM_DENTE=3 TRE_MODULO_DIR="$DENTE_DIR/m3" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-3" \
+          "$0" --apenas-motor 2>&1)"
+    printf '%s\n' "$D3" >"$DENTE_LOG_DIR/dente-3-aprovacao-mutada.out"
     printf '%s\n' "$D3" | tail -3
-    if printf '%s\n' "$D3" | grep -q 'RESULTADO: MOTOR_API_FALHOU'; then
-        echo 'OK    dente 3: motor sem a checagem de aprovacao reprova a suite pura'
-    else
-        echo 'FALHOU dente 3: motor mutado NAO reprovou — o item de aprovacao nao tem dente'
+    # Medicao do dente 3 e' a linha da SUITE PURA (o sub-run --apenas-motor resume num item unico):
+    # ela tem de reclamar do item certo, a aprovacao ausente.
+    dente_confere 3 'dente 3' "$DENTE_LOG_DIR/dente-3-aprovacao-mutada.out" "$DENTE_LOG_DIR/prova-3" \
+        "$DENTE_LOG_DIR/prova-3/0-motor-puro.out" 'RESULTADO: MOTOR_API_FALHOU' "$PISO_ITENS_MOTOR" \
+        'producao permitida mas sem aprovacao -> NAO recusou' \
+        0-motor-puro.out
+
+    # Guarda do defeito TRE-W2-E03-T01-D02: as provas nao podem ter tocado os logs de passo do aceite.
+    LOGS_ACEITE_DEPOIS="$(logs_aceite_sha)"
+    if [ "$LOGS_ACEITE_ANTES" != "$LOGS_ACEITE_DEPOIS" ]; then
+        echo 'FALHOU o modo dente mexeu num log de passo do aceite — a evidencia do aceite foi alterada'
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
+    elif [ "$LOGS_ACEITE_QTD" = "0" ]; then
+        echo "OK    guarda dos logs do aceite: $LOG_DIR nao tinha log de passo do aceite nesta rodada (guarda sem o que proteger; as provas mediram em $DENTE_LOG_DIR)"
+    else
+        echo "OK    guarda dos logs do aceite: $LOGS_ACEITE_QTD log(s) de passo do aceite em $LOG_DIR com sha256 identico depois das provas (as provas mediram em $DENTE_LOG_DIR)"
     fi
 
     MANIFESTO_DEPOIS="$(manifesto_modulo)"
     if [ "$MANIFESTO_DEPOIS" = "$MANIFESTO_ANTES" ]; then
-        echo "OK    guarda externa: o artefato real nao foi tocado pelos dentes ($ARQUIVOS_MODULO arquivos, sha256 $MANIFESTO_DEPOIS)"
+        echo "OK    guarda externa: o artefato real nao foi tocado pelos dentes ($ARQUIVOS_MODULO arquivos versionados, sha256 $MANIFESTO_DEPOIS)"
     else
         echo "FALHOU guarda externa: o artefato real MUDOU durante as provas ($MANIFESTO_ANTES -> $MANIFESTO_DEPOIS)"
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
@@ -248,7 +382,7 @@ PY
         echo "RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas) modulo=$MODULO"
         exit 0
     fi
-    echo "RESULTADO: API_CONTROLADA_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente) modulo=$MODULO"
+    echo "RESULTADO: API_CONTROLADA_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente: nao mediram ou nao reprovaram pelo item esperado) modulo=$MODULO"
     exit 1
 fi
 
@@ -261,7 +395,10 @@ if [ "$MODO" = "motor" ] || [ "$MODO" = "completo" ]; then
         falhou "python3 ausente na VPS (sem ele nao ha' medicao do motor)"; resumo
     fi
     if [ -f "$MOTOR_TESTE" ] && [ -f "$MODULO_DIR/api/motor.py" ]; then
-        SAIDA_MOTOR="$(TRE_MODULO_DIR="$MODULO_DIR" python3 "$MOTOR_TESTE" 2>&1)"
+        # PYTHONDONTWRITEBYTECODE=1: o `import` do motor grava `api/__pycache__` ao lado do arquivo
+        # versionado. Isso sujava o alvo medido (e a ancora do dente contava 29 arquivos contra os 28
+        # do git archive — achado 4 do defeito TRE-W3-E01-T01-D01). O motor e' puro: nada se perde.
+        SAIDA_MOTOR="$(TRE_MODULO_DIR="$MODULO_DIR" PYTHONDONTWRITEBYTECODE=1 python3 "$MOTOR_TESTE" 2>&1)"
         printf '%s\n' "$SAIDA_MOTOR" >"$LOG_DIR/0-motor-puro.out"
         printf '%s\n' "$SAIDA_MOTOR" | grep -E '^(OK|FALHOU) ' | sed 's/^/      /'
         RESULTADO_MOTOR="$(printf '%s\n' "$SAIDA_MOTOR" | grep -E '^RESULTADO: ' | tail -1)"

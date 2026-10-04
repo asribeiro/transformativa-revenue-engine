@@ -214,6 +214,7 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          scripts/odoo/preparar_api_teste.py docs/runbooks/odoo-api-controlada.md \
          docs/runbooks/odoo-oportunidade-upsert.md \
          docs/runbooks/odoo-atividade-criar.md \
+         scripts/odoo/teste-dente-confere.sh \
          docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
          docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
          docs/runbooks/odoo-crm-lead-sales-ai.md docs/runbooks/odoo-views-sales-ai.md; do
@@ -229,7 +230,7 @@ for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo
          scripts/odoo/verificar-res-partner.sh scripts/odoo/verificar-views-sales-ai.sh \
          scripts/odoo/verificar-api-controlada.sh scripts/odoo/testar_motor_api.py \
          scripts/odoo/verificar-empresa-upsert.sh scripts/odoo/verificar-contato-upsert.sh \
-         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh; do
+         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh scripts/odoo/teste-dente-confere.sh; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
