@@ -329,11 +329,21 @@ passo_codigo() {
 # ---------------------------------------------------------------------------
 # --prova-de-dente (fail-closed: baseline verde + juiz conferido + todo dente cumprido)
 # ---------------------------------------------------------------------------
+# Ambiente quebrado NAO e' "ancora quebrada": quando o sub-run nao mede o cenario (guardas do
+# ambiente, subida do trio/postgres/odoo/n8n), o veredito nomeia o ambiente — o irmao E05 faz o
+# mesmo (`a58c0a7`). Sem isto, uma imagem ausente sairia rotulada como erro de redacao do item,
+# apontando o suspeito errado.
+ambiente_quebrado() { # $1 = saida do sub-run ; imprime a 1a falha de ambiente, se houver
+    grep -m1 -E '^FALHOU +(docker nao responde|imagem .* ausente|ferramenta .* ausente|artefato ausente|nao consegui fixar o sha256|banco .* do ambiente|nome de banco fora do padrao|nao consegui criar a rede|nao consegui subir o postgres|postgres descartavel nao ficou pronto|nao criei |migration nao aplicou|esperava 12 tabelas|instalacao do modulo terminou|modulo nao ficou installed|nao subi o servidor Odoo|servidor Odoo nao abriu|chave da API ausente|sonda da chave nao devolveu 200|import das credenciais falhou|import do workflow .* falhou|workflow .* nao esta no cofre|nao consegui ativar o workflow|servidor n8n nao ficou pronto)' "$1"
+}
 juizo_do_dente() { # $1=saida do sub-run  $2=trecho do item esperado
+    local quebrado
     if grep -q "^FALHOU .*$2" "$1"; then
         printf 'DENTE_CUMPRIDO'
     elif grep -q "^OK .*$2" "$1"; then
         printf 'MUTACAO_SEM_DENTE'
+    elif quebrado="$(ambiente_quebrado "$1")" && [ -n "$quebrado" ]; then
+        printf 'NAO_CONTA (ambiente quebrado: %s)' "$(printf '%s' "$quebrado" | sed 's/^FALHOU[[:space:]]*//' | cut -c1-90)"
     elif grep -qE '^(FALHOU|OK) ' "$1"; then
         printf 'NAO_CONTA (ancora quebrada: o item esperado nao aparece na saida)'
     else
@@ -345,17 +355,20 @@ controle_do_juiz() {
     # Saidas sinteticas: o juiz tem de julgar cada uma pelo que ela E', nao pelo que seria
     # confortavel. c1 = o item caiu (dente morde) · c2 = o item passou (mutacao sem dente) ·
     # c3 = a saida nao tem item nenhum (nao chegou a medir) · c4 = a saida tem itens, mas nao a
-    # ancora declarada (ancora quebrada).
+    # ancora declarada (ancora quebrada) · c5 = a saida reprova o AMBIENTE (imagem ausente), nao a
+    # ancora — o veredito nomeia o ambiente.
     printf 'FALHOU    organizacao da ACME na fonte da verdade\n' >"$dir/c1.out"
     printf 'OK        repetir o evento NAO duplica: 0 chamada nova\n' >"$dir/c2.out"
     printf 'INFO      guardas do ambiente\ndocker responde\n' >"$dir/c3.out"
     printf 'OK        outro item qualquer\nFALHOU    terceiro item\n' >"$dir/c4.out"
+    printf 'FALHOU    imagem odoo:nao-existe-9.9 ausente (nada a medir)\n' >"$dir/c5.out"
     [ "$(juizo_do_dente "$dir/c1.out" 'organizacao da ACME')" = "DENTE_CUMPRIDO" ] && certos=$((certos + 1))
     [ "$(juizo_do_dente "$dir/c2.out" 'repetir o evento NAO duplica')" = "MUTACAO_SEM_DENTE" ] && certos=$((certos + 1))
     case "$(juizo_do_dente "$dir/c3.out" 'organizacao da ACME')" in NAO_CONTA*) certos=$((certos + 1));; esac
-    case "$(juizo_do_dente "$dir/c4.out" 'organizacao da ACME')" in NAO_CONTA*) certos=$((certos + 1));; esac
-    if [ "$certos" -eq 4 ]; then ok "controle do juiz do dente (4 saidas sinteticas julgadas certo)"
-    else falhou "controle do juiz do dente ($certos de 4 saidas julgadas certo)"; fi
+    case "$(juizo_do_dente "$dir/c4.out" 'organizacao da ACME')" in "NAO_CONTA (ancora quebrada"*) certos=$((certos + 1));; esac
+    case "$(juizo_do_dente "$dir/c5.out" 'organizacao da ACME')" in "NAO_CONTA (ambiente quebrado"*) certos=$((certos + 1));; esac
+    if [ "$certos" -eq 5 ]; then ok "controle do juiz do dente (5 saidas sinteticas: sem dente, dente, ambiente, ancora, ambiente quebrado nomeado)"
+    else falhou "controle do juiz do dente ($certos de 5 saidas julgadas certo)"; fi
 }
 
 if [ "$MODO" = "dente" ]; then
@@ -504,8 +517,23 @@ info "arquivos em homolog/prod antes: $HOMOLOG_PROD_ANTES"
 # ---------------------------------------------------------------------------
 FALHAS_ANTES_DO_TRIO="$FALHAS"
 cabecalho "trio descartavel proprio (postgres + odoo + n8n)"
+# Sobras de rodadas INTERROMPIDAS: o diretorio do descartavel guarda senha/chave/token (modo 700) e
+# o `trap limpeza EXIT` so' roda em saida normal — Ctrl-C/deploy no meio deixava o diretorio para
+# tras (medido: `/tmp/e2e-foundation-pJJmzw` de 02/10, com `odoo.conf` 600 + `pg.env` + `token.txt`).
+# Antes de criar o meu, removo os `/tmp/e2e-foundation-*` que NAO sao de rodada viva: o padrao de
+# nome e' unico por rodada e cada rodada grava o proprio PID em `.pid`, entao dois aceites
+# simultaneos nao se apagam (concorrencia segue fora do escopo, mas aqui nao piora).
+for _sobra in /tmp/e2e-foundation-*; do
+    [ -d "$_sobra" ] || continue
+    if [ -f "$_sobra/.pid" ] && kill -0 "$(cat "$_sobra/.pid" 2>/dev/null)" 2>/dev/null; then
+        info "rodada viva, sobra preservada: $_sobra"
+        continue
+    fi
+    rm -rf "$_sobra" && info "sobra de rodada interrompida removida: $_sobra"
+done
 DESC_DIR="$(mktemp -d /tmp/e2e-foundation-XXXXXX)"
 chmod 700 "$DESC_DIR"
+printf '%s' "$$" >"$DESC_DIR/.pid"
 N8N_HOME="$DESC_DIR/n8n-home"
 mkdir -p "$N8N_HOME"
 chmod 700 "$N8N_HOME"
@@ -822,14 +850,17 @@ fi
 # Doc 08 §3 passo 17 (PG registra sync): a ponta do vinculo no lado PostgreSQL. Nenhuma porta da
 # fundacao escreve esta coluna (o consumidor escreve a FILA e a TRILHA; `organizations` e' da
 # esteira de negocio, W4/W5) — o aceite registra a ponta com o ID que veio na trilha e MEDE a
-# ida-e-volta depois. Lacuna declarada no runbook.
+# ida-e-volta depois. Por isso o item abaixo diz "registrada PELO HARNESS": quem escreve a coluna
+# aqui e' o proprio aceite (as linhas acima), nao uma porta da fundacao — o texto nao pode fazer o
+# leitor crer que uma porta mediu a escrita. Lacuna declarada no runbook §6.5.
 if [ -n "$ID_PARCEIRO" ]; then
     si "update sales_intelligence.organizations set odoo_partner_id=$ID_PARCEIRO, updated_at=now() where id='$ORG'" >/dev/null 2>&1
 fi
-if [ -n "$ID_PARCEIRO" ] && [ "$(limpar "$(si "select odoo_partner_id from sales_intelligence.organizations where id='$ORG'")")" = "$ID_PARCEIRO" ]; then
-    ok "a ponta no PG registra o MESMO id que o Odoo devolveu (ida-e-volta fechada)"
+MEDIDO_PONTA="$(limpar "$(si "select coalesce(odoo_partner_id::text, chr(45)) from sales_intelligence.organizations where id='$ORG'")")"
+if [ -n "$ID_PARCEIRO" ] && [ "$MEDIDO_PONTA" = "$ID_PARCEIRO" ]; then
+    ok "ponta do vinculo no PG registrada PELO HARNESS com o id lido da trilha (a coluna nao e' escrita por porta da fundacao; ida-e-volta fechada)"
 else
-    falhou "a ponta no PG nao registra o id devolvido pelo Odoo (medido: '$(limpar "$(si "select coalesce(odoo_partner_id::text,'-') from sales_intelligence.organizations where id='$ORG'")")')"
+    falhou "a ponta do vinculo no PG (registrada pelo harness) nao bate com o id que o Odoo devolveu na trilha (medido: '$MEDIDO_PONTA')"
 fi
 if [ "$(limpar "$(auditoria_total)")" -gt "$BASE_AUDITORIA" ]; then
     ok "houve chamada autenticada real na porta unica (auditoria: $(limpar "$(auditoria_total)") linhas)"
@@ -944,14 +975,25 @@ sonda_webhook() {
         -v "$DESC_DIR":/prep:ro -e TRE_HOST="$N8N_CT" \
         --entrypoint node "$IMAGEM_N8N" /prep/sonda-webhook.js 2>&1
 }
+# "Registrada" = a sonda recebeu uma RESPOSTA HTTP de verdade (2xx/4xx) que NAO e' o 404 de rota
+# inexistente. `HTTP_ERRO ...` (falha de conexao do fetch, impresso pelo proprio sonda-webhook.js)
+# NAO registra: aceitar "qualquer coisa diferente de 404" fazia uma porta que nem responde passar
+# como "deixou de responder 404" — era o furo deste item.
+webhook_esta_registrado() { # $1 = saida da sonda_webhook
+    case "$1" in
+        "HTTP 404"*) return 1 ;;
+        "HTTP "[24][0-9][0-9]*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 WEBHOOK_OK=0
 for _ in $(seq 1 30); do
     SAIDA_WEBHOOK="$(sonda_webhook)"
-    if ! printf '%s' "$SAIDA_WEBHOOK" | grep -q 'HTTP 404'; then WEBHOOK_OK=1; break; fi
+    if webhook_esta_registrado "$SAIDA_WEBHOOK"; then WEBHOOK_OK=1; break; fi
     sleep 2
 done
-[ "$WEBHOOK_OK" = "1" ] && ok "porta de ingestao registrada no n8n (deixou de responder 404)" \
-    || falhou "a porta de ingestao nao ficou registrada (ver o log do n8n)"
+[ "$WEBHOOK_OK" = "1" ] && ok "porta de ingestao registrada no n8n (respondeu HTTP real; deixou de responder 404)" \
+    || falhou "a porta de ingestao nao ficou registrada (sem resposta HTTP real: '$(printf '%s' "${SAIDA_WEBHOOK:-vazio}" | head -c 80)')"
 
 odoo_shell_arquivo "$PREPARO_REMETENTE" "$LOG_DIR/G-remetente.log" \
     -e "TRE_INGEST_URL=http://$N8N_CT:5678" -e "TRE_INGEST_TOKEN_FILE=/preparo/token.txt"
