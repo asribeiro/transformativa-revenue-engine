@@ -315,6 +315,35 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `event_type` novo exige nova versão do contrato + aprovação humana — doc 12/ADR-0004) e as 12 tabelas core
   **não têm entidade de evento**: o vínculo do evento vive no resumo/referência da interação e no payload da
   trilha — nada é inventado como coluna.
+- **Análise de desempenho de mensagens v1** (`TRE-W8-E04-T01`) — componente
+  `hermes/analytics/desempenho_mensagens.py` (`desempenho-mensagens-v1`) + contrato
+  `hermes/analytics/desempenho-mensagens-v1.json`: lê `sales_intelligence.interactions` por **um SELECT**
+  (somente leitura) e devolve, por **variante de texto** (`texto_hash` de
+  `envio:<approval_id>:<texto_hash>`) e por **canal normalizado**: enviadas, respondidas, positivas,
+  negativas, opt-outs, indefinidas, respostas comerciais/descartadas, `taxa_de_resposta`,
+  `taxa_de_interesse`, `taxa_de_opt_out`, tempo médio e mediano de resposta (horas) e a **melhor variante**
+  — somente entre as com amostra ≥ `--limite-amostra` (default 5). O crédito é do **envio mais próximo
+  anterior**, em duas faixas de especificidade (mesmo contato > escopo da organização), para que a resposta
+  não seja contada duas vezes nem medida em cima de um envio ofuscado. As classes de resposta **particionam**
+  o vocabulário do card irmão (`ingestao-respostas-v1.json`): `AUTO_RESPOSTA`/`BOUNCE`/`RUIDO` são medidas
+  como **descarte**, nunca somadas como resposta de lead; `OPT_OUT` tem taxa própria. Guardas: `prod` RECUSA
+  exit 4 (ADR-005), nenhum verbo de escrita no SQL, saída **agregada** (sem
+  `organization_id`/`contact_id`/`approval_id`) e `CONTRATO_INCOERENTE` exit 3 quando o vocabulário do irmão
+  diverge (fail-closed).
+- **Duble de porta de banco para medição offline** (`scripts/agentes/duble_psql_desempenho.py`) — responde a
+  consulta de leitura com o mesmo `WHERE` e **recusa** qualquer statement de escrita (exit 42), registrando
+  cada chamada.
+- **Runbook** `docs/runbooks/desempenho-de-mensagens.md` — uso, regras declaradas, medição e as lacunas.
+
+### Changed
+
+- **`interactions.channel` normalizado na leitura** (`TRE-W8-E04-T01`) — o card irmão de envio grava
+  `EMAIL` e o de ingestão grava `email`; a análise normaliza (trim + caixa alta) e registra a divergência de
+  FORMA do dado gravado como lacuna (o contrato não fixa vocabulário para essa coluna).
+
+### Fixed
+
+- (nada nesta onda até aqui)
 
 ## [W6 — Outbound] — 02/10/2026
 
