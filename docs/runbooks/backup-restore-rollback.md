@@ -208,7 +208,7 @@ e `stat` dos arquivos:
 | 20:03:36–37 | `install -m 755` deste card (§7c) | `755`, `test -x` exit 0, `systemctl start` = `success` |
 | 20:03:59 / 20:06:19 | publicação de teste do card `t_091cfea9` com `commit=16c31f0…` (**anterior à correção**) | volta a `644` (ctime 20:04:15 UTC), `instalar-timers.sh` sem a guarda |
 | 20:10:21 / 20:11:59 | medição da **revisão** (§ comentário 110): `test -x` exit 1, `start` → `ExecMainStatus=203/EXEC` | `644` |
-| 20:12:35 | publicação **versionada** do card `t_091cfea9` (`commit=f1f1cb6b…`, `/opt/tre/repo/.publicado`, `execstart_sem_bit: 0`) | `755` de novo |
+| 20:12:35 | publicação **versionada** do card `t_091cfea9` (`commit=f1f1cb6b…` — fora de ref hoje, nota de rastreabilidade no fim deste § —, `/opt/tre/repo/.publicado`, `execstart_sem_bit: 0`) | `755` de novo |
 | **20:13:36–37** | **remedição deste card (rodada 2)** | `755` |
 
 Remedição de 20:13:36Z, na VPS `vmi3619453`:
@@ -220,7 +220,8 @@ Remedição de 20:13:36Z, na VPS `vmi3619453`:
   `Deactivated successfully`. As linhas `203/EXEC` de 20:10:21Z e 20:11:59Z que ainda aparecem no journal
   **são da medição da revisão**, não desta;
 - `sha256` da cópia operacional × repositório (`origin/develop`, `d2a2640`): **8/8 idênticos** (`diff` vazio);
-  as árvores de `scripts/backup/` em `origin/develop` e no commit publicado `f1f1cb6b` são **os mesmos
+  as árvores de `scripts/backup/` em `origin/develop` e no commit publicado `f1f1cb6b` (fora de ref hoje —
+  nota de rastreabilidade no fim deste §) são **os mesmos
   blobs** (`git ls-tree` idêntico), ou seja, o conteúdo publicado é o da correção.
 
 **Não fiz uma nova instalação ad-hoc nesta rodada** — de propósito: a cópia foi restaurada pela publicação
@@ -229,10 +230,25 @@ seria exatamente o padrão que causou o revert. O que se prova aqui é conteúdo
 repositório + os dois critérios do card medidos com horário.
 
 **Republicação idempotente medida às 20:13:40Z:** o mesmo card `t_091cfea9` publicou de novo o mesmo commit
-`f1f1cb6b…` com `digest_antes = digest = e4e1f05d…` (nada mudou) e os modos **continuaram `755`** — a
-publicação versionada não só preserva o modo como é idempotente. Conferido depois dela: `test -x` exit 0,
-`sha256` de `backup-tre.sh` = `1a430637…` (idêntico ao repositório) e `Result=success ExecMainStatus=0`
-como **última** execução do serviço.
+`f1f1cb6b…` (fora de ref hoje — nota de rastreabilidade abaixo) com `digest_antes = digest = e4e1f05d…` (nada
+mudou) e os modos **continuaram `755`** — a publicação versionada não só preserva o modo como é idempotente.
+Conferido depois dela: `test -x` exit 0, `sha256` de `backup-tre.sh` = `1a430637…` (idêntico ao repositório) e
+`Result=success ExecMainStatus=0` como **última** execução do serviço.
+
+**Nota de rastreabilidade do commit publicado (01/10/2026, card de defeito `t_26be11c7`).** As cinco menções a
+`f1f1cb6b` nesta seção e no §8 são o commit que a publicação **versionada** de 20:12:35Z registrou **de fato**,
+mas o objeto hoje **não se alcança por ref nenhuma**: `git cat-file -t f1f1cb6b` → `commit`;
+`git merge-base --is-ancestor f1f1cb6b develop` → rc 1; `git for-each-ref --contains f1f1cb6b` → vazio (69
+refs, medido em 01/10/2026); num clone limpo do `origin`, `git fetch origin f1f1cb6b…` → `remote error:
+upload-pack: not our ref` (mesma resposta de um sha inexistente — não é servido pelo `origin`, então não se
+confere o objeto a partir do remoto). O valor fica **como está** — é o registro do
+evento, não um alias — porque o parente alcançável de mesma mensagem/autoria/data (`e1eacd2`) tem conteúdo
+**diferente** (`306` arquivos / digest `e4e1f05d…` em `f1f1cb6b` contra `308` / `69b954b0…` em `e1eacd2`).
+**Âncora que sobrevive, sem depender de ref:** o digest da árvore publicada `e4e1f05d…` com `306` arquivos,
+gravado em `/opt/tre/.publicacoes.log` nas duas publicações (20:12:35Z e 20:13:40Z) e reconferível pelo próprio
+objeto onde ele existe — `git archive f1f1cb6b` + manifesto `<modo> <sha256> <caminho>` (o algoritmo do
+`deploy/publicar.sh`) → `e4e1f05d…`, `306` arquivos. O conteúdo afirmado aqui continua conferível por caminho
+alcançável: `git ls-tree -r f1f1cb6b -- scripts/backup/` é idêntico ao de `e1eacd2` e ao de `origin/develop`.
 
 **Nota de atribuição (medida pelo card `t_091cfea9`):** as publicações de ensaio de 20:03:59Z e 20:06:19Z que
 aparecem em `/opt/tre/.publicacoes.log` (card `t_091cfea9-TESTE`, `commit=16c31f0`) foram para o destino
@@ -370,7 +386,8 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   (prova: `/opt/tre/.publicacoes.log`; as medições `203/EXEC` de 20:10:21Z e 20:11:59Z são da revisão), e
   **voltará a `203/EXEC` a cada publicação de árvore anterior à correção enquanto o caminho versionado de
   publicação não for o único usado** (ACHADO ABERTO 3). A partir de 20:12:35Z a cópia voltou a ficar
-  executável por uma publicação **versionada** (`/opt/tre/repo/.publicado` = `f1f1cb6b`, `execstart_sem_bit: 0`)
+  executável por uma publicação **versionada** (`/opt/tre/repo/.publicado` = `f1f1cb6b` — fora de ref hoje, nota
+  de rastreabilidade no §7d —, `execstart_sem_bit: 0`)
   e os dois critérios da cópia operacional foram **remedidos com horário** às 20:13:36Z (`test -x` exit 0;
   `systemctl start` → `Result=success`, `ExecMainStatus=0`), com conteúdo provado por `sha256` 8/8 idêntico
   ao repositório — §7d. O que fica **resolvido de forma durável** é o bit no git e a guarda; o que fica
@@ -398,7 +415,8 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   a rodada do `TRE-W1-E06-T01`, um `tar` de outro worker reverteu o driver recém-instalado (sha
   `d29c9c97…` → `9f24572a…`). Quem sincroniza por último manda: a cópia operacional não é reproduzível.
   **Atualização 30/09/2026 20:12:35Z (medida):** o card `t_091cfea9` passou a publicar por caminho
-  versionado — `/opt/tre/repo/.publicado` registra `commit: f1f1cb6b…`, `execstart_sem_bit: 0` e
+  versionado — `/opt/tre/repo/.publicado` registra `commit: f1f1cb6b…` (fora de ref hoje, nota de rastreabilidade
+  no §7d), `execstart_sem_bit: 0` e
   `concorrencia: (nenhuma)` — e essa publicação preservou o modo (`755`) e restaurou a cópia executável
   (§7d).
   **Fechamento (30/09/2026 20:27–20:29Z):** o caminho versionado passou a ser o **único** de escrita —
