@@ -222,7 +222,7 @@
           "current_gate": "DONE",
           "validation_result": "PASS",
           "eixo_de_risco": "INTEGRACAO",
-          "evidence": "Aceite E2E da INGESTAO/CLASSIFICACAO DE RESPOSTAS por EXECUCAO REAL contra pontas reais descartaveis (ADR-005): SINK IMAP local (127.0.0.1, TLS proprio, corpus de 10 respostas) + PostgreSQL DESCARTALVEL proprio (pg-resp-acc) + o componente ingestao_respostas.py gravando em sales_intelligence. Mede: config/guardas (prod RECUSA exit 4, prefixo remoto RECUSA em dev, --ingerir sem --confirmo = DRY_RUN); leitura (uidvalidity/EXAMINE, 0 busca sem PEEK, 0 escrita, nenhuma \\Seen); classificacao de cada resposta em UMA interaction com a categoria esperada; remetente fora de contacts NAO inventa organizacao (sync_events SEM_VINCULO); escopo de escrita (so' interactions+sync_events mudam); idempotencia (replay JA_INGERIDO); e o DENTE INTERNO de citacao (descadastro que existe SO na citacao historica NAO vira OPT_OUT). Este aceite NAO expoe modo --prova-de-dente (o script so' aceita --manter); a prova de dente e' o item 12 interno, executado de verdade nas duas passadas. DUAS passadas identicas (exit 0 em ambas; 43 itens, 0 falhas cada; saida normalizada BYTE-IDENTICA).",
+          "evidence": "Aceite E2E da INGESTAO/CLASSIFICACAO DE RESPOSTAS por EXECUCAO REAL contra pontas reais descartaveis (ADR-005): SINK IMAP local (127.0.0.1, TLS proprio, corpus de 10 respostas) + PostgreSQL DESCARTALVEL proprio (pg-resp-acc) + o componente ingestao_respostas.py gravando em sales_intelligence. Mede: config/guardas (prod RECUSA exit 4, prefixo remoto RECUSA em dev, --ingerir sem --confirmo = DRY_RUN); leitura (uidvalidity/EXAMINE, 0 busca sem PEEK, 0 escrita, nenhuma \\Seen); classificacao de cada resposta em UMA interaction com a categoria esperada; remetente fora de contacts NAO inventa organizacao (sync_events SEM_VINCULO); escopo de escrita (so' interactions+sync_events mudam); idempotencia (replay JA_INGERIDO); e o DENTE INTERNO de citacao (descadastro que existe SO na citacao historica NAO vira OPT_OUT). Este aceite NAO expoe modo --prova-de-dente (o script so' aceita --manter); a prova de dente e' o item 12 interno, executado de verdade nas duas passadas. DUAS passadas identicas (exit 0 em ambas; 43 itens, 0 falhas cada; saida normalizada BYTE-IDENTICA). [LOTE 7 — append de consistencia] O texto acima ('NAO expoe modo --prova-de-dente; o script so' aceita --manter') descreve o estado verificado no lote 6 e fica preservado como historico. O lote 7 ACRESCENTOU ao aceite um --prova-de-dente de verdade (commit 6db2f06): muta uma COPIA de hermes/agentes/respostas/ingestao_respostas.py e exige que o aceite REPROVE o item 12 nomeado. Medido no commit: a rodada normal fica INALTERADA (ACEITE_INGESTAO_RESPOSTAS_001_OK, 43 itens, 0 falhas; duas passadas byte-identicas) e --prova-de-dente emite 'DENTE_OK citacao — o aceite REPROVOU o item esperado (exit=1): dente: descadastro so na citacao NAO vira OPT_OUT' e 'PROVA_DE_DENTE_OK' (exit 0).",
           "validated_at": "2026-10-03",
           "validated_by": "Hermes — validacao integrada (lote 6 — E2E Foundation #001 + outbound W6)",
           "verification": {
@@ -244,6 +244,11 @@
                 "gate": "dente INTERNO do aceite (script nao expoe --prova-de-dente; item 12)",
                 "exit": 0,
                 "resultado": "OK 'dente: descadastro so na citacao NAO vira OPT_OUT (obtido INDEFINIDO)' — o remetente cujo descadastro so' aparece na citacao historica classifica INDEFINIDO, nao OPT_OUT"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_ingestao_respostas_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "PROVA_DE_DENTE_OK (1/1): mutacao da limpeza de citacao em COPIA do componente -> a linha nomeada 'FALHOU dente: descadastro so na citacao NAO vira OPT_OUT' aparece e o aceite sai exit 1 (rota normal inalterada: 43 itens, 0 falhas, duas passadas byte-identicas)"
               }
             ]
           }
@@ -388,6 +393,16 @@
       "cards": [
         "t_fa1f31bf"
       ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_EVIDENCE_APPENDED",
+      "at": "2026-10-04T00:38:54+00:00",
+      "by": "Hermes — validacao integrada (lote 7)",
+      "scope": "lote 7 — W6-E05 ganha --prova-de-dente (append de consistencia, sem reclassificar)",
+      "cards": [
+        "t_cbb01999"
+      ],
+      "production_promotion_authorized": false
     }
   ]
 }
