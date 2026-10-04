@@ -90,8 +90,11 @@ AMB_W7 = (
     "sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), "
     "nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em "
     "sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA "
-    "(diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; "
-    "volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe."
+    "(diff cru = 0 linhas em todos). HIGIENE MEDIDA (nao presumida): 3 dos 5 aceites da W7 "
+    "(E03/E05/E06, nas branches) removem o container com 'docker rm -f' SEM '-v' — o mesmo defeito "
+    "de volume anonimo ja' corrigido em develop no commit b1cb7f7 e que SEGUE ABERTO nessas "
+    "branches; a rodada deixou 5 volumes dangling (todos criados dentro da janela do lote), "
+    "REMOVIDOS apos a medicao — crescimento liquido ZERO do lote. Nenhum container ficou de pe."
 )
 
 # --------------------------------------------------------------------------- #
