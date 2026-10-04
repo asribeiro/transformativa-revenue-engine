@@ -2,6 +2,11 @@
 # Aceite TRE-W0-E01-T01: confere a estrutura obrigatória do repositorio.
 set -u
 FALHAS=0
+# Opcao C (ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md`): COBERTOS acumula os
+# arquivos que este verificador COBRE — isto e', aqueles sobre os quais ele afirma "existe E esta
+# versionado". A descoberta automatica do fim do script compara esta lista com a arvore versionada
+# das AREAS_DE_ARTEFATO: o que nao estiver aqui nem no arquivo de isencoes REPROVA (fail-closed).
+COBERTOS=""
 DIRS="docs/architecture docs/data docs/integrations docs/business docs/testing docs/operations docs/adr \
 docs/runbooks docs/releases docs/kanban db/migrations db/tests odoo/addons/transformativa_sales_ai \
 n8n/workflows n8n/contracts hermes/agents hermes/prompts hermes/policies hermes/jev/routing \
@@ -19,6 +24,7 @@ if [ "$ADR" -ge 6 ]; then echo "OK    ADRs iniciais ($ADR)"; else echo "FALHOU A
 # e o Data Contract V1 foi commitado sem os proprios documentos — este check teria pego.
 for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
          db/migrations/0001_sales_intelligence_v1.sql CHANGELOG.md; do
+  COBERTOS="$COBERTOS $f"
   if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
     echo "OK    versionado  $f"
   else
@@ -89,6 +95,7 @@ done
 for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
          scripts/backup/restore-tre.sh scripts/backup/teste-backup-restore.sh \
          docs/runbooks/backup-restore-rollback.md deploy/systemd/tre-backup.timer; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -96,6 +103,7 @@ done
 
 # Artefatos da JEV Decision Policy V1 (E04-T01) existem E estao versionados
 for f in hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md scripts/verificar_jev_policy.py; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -104,6 +112,7 @@ done
 # Artefatos da deduplicacao strong identifiers (TRE-W1-E04-T01) existem E estao versionados
 for f in scripts/dedup/deduplicar_organizacoes.py scripts/dedup/teste_dedup_sintetico.sh \
          scripts/dedup/teste_dedup_ambiente.sh docs/runbooks/deduplicacao-strong-identifiers.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -111,6 +120,7 @@ done
 
 # Artefatos do campo entity_match_confidence (TRE-W1-E04-T02) existem E estao versionados
 for f in scripts/dedup/teste_entity_match_confidence.sh docs/data/entity-match-confidence.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -123,6 +133,7 @@ done
 # Artefatos da suite de teste do banco (TRE-W1-E05-T01) existem E estao versionados
 for f in scripts/db/suite_banco.sh scripts/db/teste_isolamento_clientes.sh \
          scripts/db/teste_tenant_rls.sh docs/runbooks/suite-de-teste-do-banco.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -135,6 +146,7 @@ done
 # Processo de defeitos (card -> defeito -> correcao -> liberacao) versionado
 for f in docs/kanban/processo-de-defeitos.md scripts/kanban/abrir-defeito.sh \
          scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -161,6 +173,7 @@ done
 for f in deploy/compose/dev/odoo.yml deploy/environments/dev-odoo.env \
          scripts/provision/instalar-odoo-dev.sh scripts/provision/verificar-odoo-dev.sh \
          scripts/provision/remover-odoo-dev.sh docs/runbooks/odoo-dev.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -231,6 +244,7 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
          docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
          docs/runbooks/odoo-crm-lead-sales-ai.md docs/runbooks/odoo-views-sales-ai.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -243,7 +257,7 @@ for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo
          scripts/odoo/verificar-res-partner.sh scripts/odoo/verificar-views-sales-ai.sh \
          scripts/odoo/verificar-api-controlada.sh scripts/odoo/testar_motor_api.py \
          scripts/odoo/verificar-empresa-upsert.sh scripts/odoo/verificar-contato-upsert.sh \
-         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh scripts/odoo/teste-dente-confere.sh; do
+         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh scripts/odoo/teste-dente-confere.sh scripts/n8n/conferir_ingest_estrutural.py scripts/n8n/montar_workflow_ingest.py scripts/n8n/mutar_workflow_ingest.py scripts/n8n/verificar-odoo-eventos.sh scripts/odoo/conferir_eventos_no_contrato.py scripts/odoo/gerar_fatos_e_enviar.py scripts/odoo/preparar_remetente_eventos.py; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
@@ -272,6 +286,33 @@ for f in n8n/contracts/outbox-consumer.v1.json n8n/codigo/nucleo-outbox-consumer
          scripts/n8n/conferir_contrato_e_workflow.py scripts/n8n/testar_nucleo_consumidor.js \
          scripts/n8n/mutar_workflow.py scripts/n8n/preparar_massa_ambigua.py \
          scripts/n8n/verificar-outbox-consumer.sh docs/runbooks/n8n-outbox-consumer.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+# Artefatos do fluxo de eventos Odoo -> PG (TRE-W3-E03-T01) existem E estao versionados: o workflow
+# do n8n e' artefato DERIVADO (contrato + nucleo + SQL + construtor) e o modulo Odoo ganhou
+# models/data/tests de evento. Sem estes arquivos o aceite do card pode passar na VPS por arquivo
+# que nunca entrou no repo. Lista levantada por MEDICAO da cobertura — opcao C, ADR
+# `docs/architecture/cobertura-do-verificador-de-estrutura.md` (card t_c77ca273): antes deste
+# conserto o verificador imprimia PASS mesmo com qualquer um destes 20 fora da arvore versionada
+# (dos quais 17 sao os citados no card; a medicao achou tambem os dois SQL e o workflow de n8n).
+for f in odoo/addons/transformativa_sales_ai/data/ir_cron_tf_eventos.xml \
+         odoo/addons/transformativa_sales_ai/models/eventos_calendar_event.py \
+         odoo/addons/transformativa_sales_ai/models/eventos_crm_lead.py \
+         odoo/addons/transformativa_sales_ai/models/eventos_mail_activity.py \
+         odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py \
+         odoo/addons/transformativa_sales_ai/tests/test_eventos_odoo_pg.py \
+         n8n/codigo/nucleo-ingest-eventos.js n8n/contracts/odoo-events-ingest.v1.json \
+         n8n/sql/ingerir-evento.sql n8n/sql/registrar-recusa.sql \
+         n8n/workflows/TRE-odoo-events-ingest.json \
+         scripts/n8n/conferir_ingest_estrutural.py scripts/n8n/montar_workflow_ingest.py \
+         scripts/n8n/mutar_workflow_ingest.py scripts/n8n/testar_nucleo_ingest.js \
+         scripts/n8n/verificar-odoo-eventos.sh \
+         scripts/odoo/conferir_eventos_no_contrato.py scripts/odoo/gerar_fatos_e_enviar.py \
+         scripts/odoo/preparar_remetente_eventos.py \
+         docs/runbooks/odoo-eventos-para-pg.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -307,6 +348,18 @@ for f in n8n/contracts/reconciliation-job.v1.json n8n/codigo/nucleo-reconciliaca
          scripts/n8n/massa-observabilidade.sql scripts/n8n/ler_resultado_n8n.py \
          scripts/n8n/normalizar_medicao.py scripts/n8n/verificar-observabilidade-sync.sh \
          docs/runbooks/observabilidade-sync.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+
+# Achados da PROPRIA descoberta automatica (opcao C): artefatos de ondas ANTERIORES que tambem
+# estavam fora da rede — o mesmo furo de cobertura, achado por medicao, nao por sorte. Entram na
+# cobertura (nao sao isencao): sao artefatos de card de verdade e a ausencia deles tem de reprovar.
+for f in odoo/addons/transformativa_sales_ai/models/mail_activity.py \
+         docs/runbooks/aplicar-migracoes.md docs/runbooks/gate-jev-do-dispatch.md \
+         docs/runbooks/massa-de-smoke-dev.md docs/runbooks/provisionamento-contabo.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -1717,6 +1770,212 @@ else
   echo "FALHOU scripts/backup/verificar-odoo.sh sem veredito (verificador sem resposta binaria e carimbo)"
   FALHAS=$((FALHAS+1))
 fi
+
+# ============================================================================
+# OPCAO C — ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md` (decisao do dono,
+# Anderson Ribeiro, 02/10/2026, registrada em `docs/operations/registro-de-aprovacoes.md`):
+#   1. DESCOBERTA AUTOMATICA — os artefatos sao enumerados da arvore versionada
+#      (`git ls-files` nas AREAS_DE_ARTEFATO), nao de lista fixa;
+#   2. ISENCOES DECLARADAS — arquivo versionado `$ARQ_ISENCOES`, uma linha por isencao com
+#      `padrao | justificativa | responsavel | data`; isencao SEM justificativa e' INVALIDA;
+#   3. FAIL-CLOSED — arquivo versionado na area que nao esta nem coberto (listas acima) nem isento
+#      REPROVA, nomeando o arquivo e dizendo como cobrir ou como isentar.
+# Limite declarado: a descoberta vale para as AREAS_DE_ARTEFATO abaixo. Area nova entra por edicao
+# explicita aqui, na mesma revisao de onda das isencoes (Risco 2 do ADR).
+AREAS_DE_ARTEFATO="odoo/addons/transformativa_sales_ai n8n scripts/n8n scripts/odoo docs/runbooks scripts/estrutura"
+ARQ_ISENCOES="scripts/estrutura/isencoes.txt"
+PADROES=(); JUSTIFICATIVAS=(); RESPONSAVEIS=(); DATAS=()
+COBERTOS="$COBERTOS $ARQ_ISENCOES"
+if git ls-files --error-unmatch "$ARQ_ISENCOES" >/dev/null 2>&1; then
+  echo "OK    versionado $ARQ_ISENCOES"
+else
+  echo "FALHOU nao versionado $ARQ_ISENCOES (a opcao C exige o arquivo de isencoes NO git)"
+  FALHAS=$((FALHAS+1))
+fi
+if [ -f "$ARQ_ISENCOES" ]; then
+  while IFS= read -r linha || [ -n "$linha" ]; do
+    case "$linha" in
+      ''|'#'*) continue ;;
+    esac
+    padrao="${linha%%|*}"; resto="${linha#*|}"
+    justificativa="${resto%%|*}"; resto="${resto#*|}"
+    responsavel="${resto%%|*}"; data="${resto#*|}"
+    padrao="$(printf '%s' "$padrao" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    justificativa="$(printf '%s' "$justificativa" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    responsavel="$(printf '%s' "$responsavel" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    data="$(printf '%s' "$data" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    invalida=""
+    [ "$(printf '%s' "$linha" | tr -cd '|' | wc -c)" -ne 3 ] \
+      && invalida="exige 3 separadores '|' (padrao | justificativa | responsavel | data)"
+    [ -z "$invalida" ] && [ -z "$padrao" ] && invalida="padrao vazio"
+    [ -z "$invalida" ] && [ -z "$justificativa" ] && invalida="sem justificativa"
+    [ -z "$invalida" ] && [ -z "$responsavel" ] && invalida="sem responsavel"
+    [ -z "$invalida" ] && [ -z "$data" ] && invalida="sem data"
+    [ -z "$invalida" ] && case "$padrao" in *')'*|*'('*|*'!'*|*';'*|*'&'*|*'$'*|*'`'*) invalida="padrao com caractere reservado do shell" ;; esac
+    if [ -n "$invalida" ]; then
+      echo "FALHOU isencao invalida em $ARQ_ISENCOES ($invalida): $linha"
+      FALHAS=$((FALHAS+1)); continue
+    fi
+    PADROES+=("$padrao"); JUSTIFICATIVAS+=("$justificativa")
+    RESPONSAVEIS+=("$responsavel"); DATAS+=("$data")
+  done < "$ARQ_ISENCOES"
+fi
+# ---------------------------------------------------------------------------
+# Cobertura declarada — artefatos de ondas POSTERIORES a 02/10/2026.
+# Decisao do dono (Anderson Ribeiro, 04/10/2026, Telegram): COBRIR (existe + versionado),
+# nao isentar. Sao artefatos de card de verdade; a ausencia deles tem de reprovar. Agrupados
+# por area so' para o bloco ficar legivel — a checagem e' a mesma das outras listas.
+# ---------------------------------------------------------------------------
+# docs/runbooks (46)
+for f in docs/runbooks/agente-automation-fit.md \
+         docs/runbooks/agente-contact-research.md \
+         docs/runbooks/agente-icp-score.md \
+         docs/runbooks/agente-pain-hypothesis.md \
+         docs/runbooks/agente-research.md \
+         docs/runbooks/agente-scout.md \
+         docs/runbooks/agente-signal.md \
+         docs/runbooks/aprovacao-humana.md \
+         docs/runbooks/atribuicao-google-lead.md \
+         docs/runbooks/atualizacao-odoo-respostas.md \
+         docs/runbooks/buying-signal-score.md \
+         docs/runbooks/calibracao-do-score.md \
+         docs/runbooks/captura-de-lead-de-evento.md \
+         docs/runbooks/captura-de-lead-do-site.md \
+         docs/runbooks/conversao-por-segmento.md \
+         docs/runbooks/custo-de-agentes.md \
+         docs/runbooks/desempenho-de-mensagens.md \
+         docs/runbooks/e2e-foundation-001.md \
+         docs/runbooks/e2e-outbound-002.md \
+         docs/runbooks/e2e-sales-intelligence.md \
+         docs/runbooks/e2e-scoring-nba.md \
+         docs/runbooks/efetividade-do-score.md \
+         docs/runbooks/envio-outbound.md \
+         docs/runbooks/funil.md \
+         docs/runbooks/gerador-abordagem.md \
+         docs/runbooks/ingestao-leads-meta.md \
+         docs/runbooks/linkedin-assistido.md \
+         docs/runbooks/melhor-horario.md \
+         docs/runbooks/memoria-comercial.md \
+         docs/runbooks/n8n-outbox-consumer.md \
+         docs/runbooks/n8n-reconciliacao.md \
+         docs/runbooks/next-best-action.md \
+         docs/runbooks/nutricao-automatica.md \
+         docs/runbooks/observabilidade-sync.md \
+         docs/runbooks/odoo-crm-dev.md \
+         docs/runbooks/odoo-dev-tls.md \
+         docs/runbooks/pontuacao-preditiva.md \
+         docs/runbooks/previsao-de-canal.md \
+         docs/runbooks/publicacao-da-copia-operacional.md \
+         docs/runbooks/respostas-ingestao.md \
+         docs/runbooks/score-data-quality.md \
+         docs/runbooks/score-priority.md \
+         docs/runbooks/score-tiering.md \
+         docs/runbooks/titan-imap.md \
+         docs/runbooks/titan-smtp.md \
+         docs/runbooks/whatsapp-engaged-lead.md; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/codigo (3)
+for f in n8n/codigo/nucleo-outbox-consumer.js \
+         n8n/codigo/nucleo-reconciliacao.js \
+         n8n/codigo/observabilidade-sync.js; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/contracts (3)
+for f in n8n/contracts/observabilidade-sync.v1.json \
+         n8n/contracts/outbox-consumer.v1.json \
+         n8n/contracts/reconciliation-job.v1.json; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/sql (8)
+for f in n8n/sql/ler-pendentes.sql \
+         n8n/sql/ler-trilha.sql \
+         n8n/sql/observabilidade-sync-dead-letters.sql \
+         n8n/sql/observabilidade-sync.sql \
+         n8n/sql/reconciliacao-origem.sql \
+         n8n/sql/reconciliacao-pendentes.sql \
+         n8n/sql/registrar-replay.sql \
+         n8n/sql/registrar-resultado.sql; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/workflows (3)
+for f in n8n/workflows/TRE-observabilidade-sync.json \
+         n8n/workflows/TRE-outbox-consumer.json \
+         n8n/workflows/TRE-reconciliation.json; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# scripts/n8n (21)
+for f in scripts/n8n/conferir_contrato_e_workflow.py \
+         scripts/n8n/conferir_observabilidade.py \
+         scripts/n8n/conferir_reconciliacao.py \
+         scripts/n8n/ler_resultado_n8n.py \
+         scripts/n8n/ler_resultado_reconciliacao.py \
+         scripts/n8n/massa-observabilidade.sql \
+         scripts/n8n/massa-reconciliacao.sql \
+         scripts/n8n/montar_workflow.py \
+         scripts/n8n/montar_workflow_observabilidade.py \
+         scripts/n8n/montar_workflow_reconciliacao.py \
+         scripts/n8n/mutar_reconciliacao.py \
+         scripts/n8n/mutar_workflow.py \
+         scripts/n8n/mutar_workflow_observabilidade.py \
+         scripts/n8n/normalizar_medicao.py \
+         scripts/n8n/preparar_massa_ambigua.py \
+         scripts/n8n/testar_nucleo_consumidor.js \
+         scripts/n8n/testar_nucleo_reconciliacao.js \
+         scripts/n8n/testar_observabilidade_sync.js \
+         scripts/n8n/verificar-observabilidade-sync.sh \
+         scripts/n8n/verificar-outbox-consumer.sh \
+         scripts/n8n/verificar-reconciliacao.sh; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# scripts/odoo (1)
+for f in scripts/odoo/massa_reconciliacao.py; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+TOTAL_AREA=0; TOTAL_ISENTO=0; TOTAL_NAO_COBERTO=0
+while IFS= read -r -d '' f; do
+  TOTAL_AREA=$((TOTAL_AREA+1))
+  case " $COBERTOS " in *" $f "*) continue ;; esac
+  isento=""
+  i=0; NP=${#PADROES[@]}
+  while [ "$i" -lt "$NP" ]; do
+    case "$f" in ${PADROES[$i]}) isento="$i"; break ;; esac
+    i=$((i+1))
+  done
+  if [ -n "$isento" ]; then
+    TOTAL_ISENTO=$((TOTAL_ISENTO+1))
+    echo "OK    isento $f (isencao '${PADROES[$isento]}', ${RESPONSAVEIS[$isento]}, ${DATAS[$isento]}: ${JUSTIFICATIVAS[$isento]})"
+  else
+    TOTAL_NAO_COBERTO=$((TOTAL_NAO_COBERTO+1))
+    echo "FALHOU nao coberto $f — artefato versionado nas AREAS_DE_ARTEFATO sem cobertura no verificador e sem isencao."
+    echo "      COBRIR: acrescente '$f' a lista do bloco correspondente deste script;"
+    echo "      ISENTAR: acrescente em $ARQ_ISENCOES a linha '$f | <justificativa> | <responsavel> | <DD/MM/AAAA>'."
+    FALHAS=$((FALHAS+1))
+  fi
+done < <(git ls-files -z -- $AREAS_DE_ARTEFATO)
+echo "OK    descoberta de artefatos (opcao C): $TOTAL_AREA versionados nas areas, $TOTAL_ISENTO isentos, $TOTAL_NAO_COBERTO nao cobertos"
+echo "OK    isencoes declaradas: ${#PADROES[@]} (revisao obrigatoria na abertura de onda)"
 
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
