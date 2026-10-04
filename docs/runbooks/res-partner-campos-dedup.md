@@ -197,3 +197,29 @@ docker run --rm -i --network <rede> -v <conf>:/etc/odoo/odoo.conf:ro \
 - **Verificação independente** (estágio 6) é do perfil `tester`; **ratificação da versão do Odoo
   (19.0)** e **homologação** (estágio 7) seguem com o Anderson. Este runbook entrega evidência, não
   aprovação.
+
+## 9. Cobertura de gate deste card — defeito `t_5cad1689` (fechado)
+
+A revisão independente (estágio 6, perfil `tester`) achou que este card registrou os 6 arquivos novos
+no runbook (`AFFECTED COMPONENTS`) mas **não** em `scripts/verificar_estrutura.sh`: no commit `3b0eac3`
+o `grep` pelos caminhos do card dava **0**, porque o bloco que existia ali cobria só os 8 arquivos do
+`TRE-W2-E03-T01`. Era **deriva de cobertura de gate** (risco de aceite falso futuro), **não** falha
+viva: os 6 arquivos estavam versionados e os 3 scripts `100755` no git.
+
+Conserto na branch `fix/TRE-W2-E04-T01-D01` (commit `80b64a8`, nascida de `3b0eac3`): o verificador
+passa a cobrir **por diretório** — todo `*.py/*.sh/*.md/*.xml/*.csv` de
+`odoo/addons/transformativa_sales_ai` + `scripts/odoo` tem de estar versionado (14 arquivos hoje); todo
+`*.sh` de `scripts/odoo` tem de estar executável **no disco e `100755` no índice do git**; todo
+`docs/runbooks/*.md` versionado; e três guardas do próprio gate (lista vazia/curta reprova). Cobertura
+por diretório, e não arquivo a arquivo, é deliberada: `E04-T02` e `E05-T01` acrescentam arquivo ao
+**mesmo** módulo e editam o **mesmo** arquivo de verificador. O bloco do `TRE-W2-E03-T01` não foi
+reescrito.
+
+Medido: verificador verde (`PASS (0 falhas)`, exit 0) e cada dente reprovando de verdade — `git rm
+--cached` de `models/res_partner.py`, arquivo novo fora do git, `chmod -x`, `100644` no índice do git,
+`git rm --cached` deste runbook e árvore sem o módulo (`FALHOU (83)`, exit 1). Conferência de
+integração com os dois cards paralelos: `scripts/verificar_estrutura.sh` **nunca conflita** (o merge
+aplica o arquivo automaticamente, nos dois) e o gate fica `PASS (0 falhas)` na árvore integrada; o
+controle com a ponta do card de origem **sem** o conserto tem exatamente os mesmos conflitos — o
+conserto não acrescenta conflito nenhum. Detalhe bruto na entrada `TRE-W2-E04-T01-D01` de
+`docs/operations/registro-de-execucoes.md` (01/10/2026).

@@ -26,6 +26,59 @@ for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
     FALHAS=$((FALHAS+1))
   fi
 done
+# Artefatos do modulo Odoo do Sales AI (TRE-W2-E03-T01, E04-T01, E04-T02 e E05-T01) existem E estao
+# versionados. A cobertura e' por DIRETORIO (o que existe na arvore tem de estar no `git ls-files`),
+# nao arquivo a arquivo, de proposito: os cards paralelos acrescentam arquivo ao MESMO modulo e a lista
+# reescrita a cada card ja' colidiu na integracao (o `__init__.py` do modulo). Sem isto o aceite do card
+# pode passar na VPS por arquivo que nunca entrou no repo.
+# DEFEITO CORRIGIDO (card t_5cad1689, revisao independente do TRE-W2-E04-T01): o card registrou os
+# artefatos no runbook mas nao aqui, e os 6 arquivos novos ficaram fora do gate (grep = 0 em 3b0eac3).
+# NOTA DE INTEGRACAO: este bloco fica aqui, longe do bloco do E05-T01 no fim do arquivo, para que a
+# integracao dos cards paralelos junte linhas em vez de conflitar (hotspot declarado no card).
+MODULO_ODOO="odoo/addons/transformativa_sales_ai"
+FERRAMENTAS_ODOO="scripts/odoo"
+ARTEFATOS_ODOO=$(find "$MODULO_ODOO" "$FERRAMENTAS_ODOO" -type f \
+                     \( -name '*.py' -o -name '*.sh' -o -name '*.md' -o -name '*.xml' -o -name '*.csv' \) \
+                     ! -path '*__pycache__*' 2>/dev/null | sort)
+N_ARTEFATOS_ODOO=$(printf '%s\n' "$ARTEFATOS_ODOO" | grep -c .)
+# Guarda do proprio gate (licao do D04): lista vazia/curta faz o laco abaixo nao olhar nada e ainda
+# imprimir PASS. Medido: 14 arquivos no TRE-W2-E04-T01 (11 no E05-T01, 8 no modulo base E03-T01).
+if [ "$N_ARTEFATOS_ODOO" -lt 5 ]; then
+  echo "FALHOU artefatos do modulo Odoo: apenas $N_ARTEFATOS_ODOO arquivo(s) em $MODULO_ODOO + $FERRAMENTAS_ODOO (diretorio ausente, find quebrado ou arvore incompleta) — o gate nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $ARTEFATOS_ODOO; do
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+# Script de ferramenta tem de estar executavel nos DOIS lados: no disco (e' o que a VPS executa) e no
+# indice do git (e' o que um checkout novo restaura) — a classe do defeito t_22c27625 (203/EXEC).
+N_SH_ODOO=$(printf '%s\n' "$ARTEFATOS_ODOO" | grep -c '\.sh$')
+if [ "$N_SH_ODOO" -lt 1 ]; then
+  echo "FALHOU nenhum script .sh em $FERRAMENTAS_ODOO — o check de bit de execucao nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $(printf '%s\n' "$ARTEFATOS_ODOO" | grep '\.sh$'); do
+  MODO_GIT=$(git ls-files -s -- "$f" 2>/dev/null | awk '{print $1}')
+  if [ -x "$f" ] && [ "$MODO_GIT" = "100755" ]; then echo "OK    executavel $f (disco + git $MODO_GIT)"
+  else echo "FALHOU sem bit de execucao $f (disco: $([ -x "$f" ] && echo x || echo -) ; git: ${MODO_GIT:-ausente})"; FALHAS=$((FALHAS+1)); fi
+done
+# O runbook do card e' artefato como os outros (a cobertura por diretorio do modulo nao alcanca docs/).
+# Tambem por DIRETORIO, e nao por arquivo: cada card do modulo tem o SEU runbook, e exigir o arquivo de
+# um card reprovaria a arvore do outro — medido: exigir `res-partner-campos-dedup.md` fazia o fix
+# aplicado sozinho sobre o TRE-W2-E05-T01 reprovar (`FALHOU ausente ...`), que e' a colisao que este
+# bloco existe para nao repetir.
+RUNBOOKS=$(find docs/runbooks -type f -name '*.md' 2>/dev/null | sort)
+N_RUNBOOKS=$(printf '%s\n' "$RUNBOOKS" | grep -c .)
+if [ "$N_RUNBOOKS" -lt 5 ]; then
+  echo "FALHOU runbooks: apenas $N_RUNBOOKS arquivo(s) em docs/runbooks (diretorio ausente ou find quebrado) — o gate nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $RUNBOOKS; do
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+
 # DEFEITO CORRIGIDO (TRE-W1-E04-T01, achado por leitura do proprio verificador): aqui existia
 # `echo "---" ; if FALHAS==0 -> PASS e exit`. Esse `exit` no MEIO do script matava todo o resto
 # do arquivo: os blocos de artefato versionado (backup/T03, JEV policy, dedup, processo de
