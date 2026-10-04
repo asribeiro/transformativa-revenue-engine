@@ -1041,3 +1041,75 @@ tabelas — o vínculo vive no resumo/referência da interação e no payload da
 - **Lacuna medida (declarada, não escondida):** a análise mede **efeito** (resposta creditada ao envio mais
   próximo anterior em duas faixas de especificidade), não entrega.
 
+## TRE-W8-E05-T01 — Custo de agentes — W8 / E05 / P2 — Depends on: W8-E01-T01
+
+- **Entrega:** analise de **custo e eficiencia dos agentes** a partir da auditoria de execucao
+  (`sales_intelligence.agent_runs`, dono PostgreSQL — contrato de dados §9), por **agente**, por **modelo**
+  e por **workflow**: execucoes, concluidas/falhas/recusadas/revisao, taxa de falha, tokens, custo total e
+  **custo por execucao concluida** (a metrica de eficiencia: quanto custou cada sucesso), latencia
+  (media/mediana/p95) e organizacoes distintas. Saida em **JSON** + **CSV** + **HTML auto-contido** (painel).
+  Componente `hermes/agentes/analytics/custo_agentes.py` + contrato
+  `hermes/agentes/analytics/custo-agentes-v1.json`; desenho `docs/architecture/custo-agentes-v1.md`;
+  runbook `docs/runbooks/custo-de-agentes.md`. **Leitura pura:** so' `SELECT` sobre UMA tabela, transacao
+  em `READ ONLY` (`-c` separado do `SET` — defeito medido no irmao W8-E01-T01) e auditoria da propria fonte
+  que reprova verbo de escrita antes de conectar. **Coloca-se no mesmo diretorio do card pai**
+  (`hermes/agentes/analytics/`); o irmao W8-E04 ficou em `hermes/analytics/` — divergencia de caminho
+  registrada no desenho, decisao de unificacao e' do dono da estrutura.
+- **NULO NAO E' ZERO (invariante central):** execucao sem `estimated_cost` **nao** entra na soma e **nao**
+  vira `0` — vai para `runs_sem_custo`, a media fica `null` e o grupo sai do ranking. Sem isso, quem menos
+  declara custo seria coroado o mais barato (a metrica mediria a ausencia de dado, nao o custo).
+- **NAO se calcula preco:** o componente nao multiplica token por tarifa e nao tem tabela de precos (a
+  politica de lane PROIBE fixar preco — `hermes/jev/policy_v1_2.yaml`). Ele reporta o `estimated_cost`
+  **gravado** pelo produtor, como **string decimal de 6 casas** (float perderia o valor). Execucao com custo
+  **negativo** e' lacuna e nao entra na soma; custo **zero declarado** conta como declarado.
+- **Vocabulario do dono, nao inventado:** classes `CONCLUIDA`/`FALHA`/`RECUSADA`/`REVISAO` particionam
+  exatamente os status medidos nos 13 irmaos que escrevem a auditoria (`COMPLETED`, `FAILED`, `REJECTED`,
+  `REVIEW_REQUIRED`). **Recusa declarada nao e' falha** e revisao nao e' sucesso: as duas sao medidas
+  separadas. Status fora do vocabulario (ex.: `TIMEOUT`) **nao** vira desfecho — vai para lacuna.
+- **A coluna que nao existe nao se inventa (fail-closed):** o card LE a DDL congelada
+  (`db/migrations/0001_sales_intelligence_v1.sql`, apontada por `artifacts.schema_sql` do contrato de dados)
+  e RECUSA (exit 3) se qualquer coluna da metrica faltar, se `estimated_cost`/`tokens_*` nao existirem ou
+  se o vocabulario estiver incoerente. Latencia invertida (`fim < inicio`) e carimbo incompleto ficam FORA
+  e em lacuna.
+- **Ranking com regra de comparabilidade:** so' entra quem tem amostra suficiente (`concluidas >=
+  limite_amostra`, default 3) **e** declara custo em TODAS as execucoes — grupo com custo parcial tem total
+  subdeclarado e e' nomeado em `agentes_fora_do_ranking` (motivos `SEM_EXECUCOES`, `SEM_CUSTO_DECLARADO`,
+  `CUSTO_NAO_DECLARADO_EM_PARTE`, `AMOSTRA_INSUFICIENTE`).
+- **ACCEPTANCE:** `ACEITE_CUSTO_AGENTES_OK` — **40 itens, 0 falhas**, exit 0. Cobre: guardas de ambiente
+  (`prod` RECUSA exit 4 **antes** de qualquer leitura; dev com porta remota RECUSA; container de dev fora da
+  lista RECUSA); suite offline verde; as metricas **conferidas a mao** sobre base semeada (16 execucoes, 5
+  agentes + 1 orfa: 11 concluidas, 1 falha, 1 recusa, 1 revisao, 2 sem status; custo 0.022400, 0.002036 por
+  execucao com custo, media por sucesso **nula** porque nem todos declaram; tokens 1640/877/2517; latencia
+  57.93/30.0/300.0); **cinco dentes medidos no proprio banco** (custo nulo nao vira zero; status fora do
+  vocabulario nao vira falha; custo negativo nao entra na soma; latencia invertida fica fora; o ranking nao
+  coroa quem nao declara custo — e o mais caro por execucao, `icp_score` 0.004500, fica fora por amostra);
+  **janela por `started_at`** recortando 9 de 16 execucoes; **leitura pura provada por dois caminhos**
+  (snapshot md5 das 12 tabelas antes/depois **e** a transacao `READ ONLY` recusando a escrita de prova, sem
+  deixar linha); **determinismo byte a byte** (sem `--com-carimbo`); saida **sem PII** (nenhum UUID de
+  organizacao, nenhum e-mail) e painel **auto-contido**.
+- **TEST:** `python3 scripts/agentes/verificar_custo_agentes.py --autoteste` (**30 itens + 8 mutacoes**,
+  cada mutacao reprovando um item que o **alvo limpo nao reprova**) e
+  `bash scripts/agentes/teste_custo_agentes_aceite.sh` (PostgreSQL descartavel `pg-custo-acc` na VPS de dev,
+  container removido no fim). Evidencia = saida completa com exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (5 arquivos novos + os docs do card, **sem DDL** e sem migration) e remover
+  o container descartavel do aceite. Nada em homolog/producao; nenhum servico, cron ou credencial tocada.
+- **RISK:** **baixo** — leitura pura sobre base de dev, saida agregada (sem PII), nenhum ato externo. Riscos
+  **declarados** (do dado, nao da operacao): L1 nem todo irmao grava tokens/custo (o custo medido e' o
+  declarado, nunca o do sistema inteiro); L2 nao ha tabela de precos e o produtor aplica a tarifa dele;
+  L3 a unidade (moeda) do `estimated_cost` nao esta declarada no contrato de dados; L4 o vocabulario de
+  `agent_runs.status` vive nos mapas dos irmaos (sem CHECK na DDL); L5 a janela e' por `started_at` e o
+  custo nao se atribui a card do board nem a receita.
+- **Defeito MEDIDO e corrigido no proprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o
+  componente removia `gerado_em` quando `--com-carimbo` nao era passado (para o relatorio ser reproduzivel) e
+  o `emitir_html` lia `relatorio["gerado_em"]` **sem** `.get()` — a rodada real no banco morria com
+  `KeyError: 'gerado_em'` (exit 1) e nenhuma saida era gravada. A suite offline nao pegava porque ali o
+  carimbo sempre existia. Conserto: o HTML tolera a ausencia (`(sem carimbo)`) — e o aceite ganhou o item que
+  exige a saida **byte a byte identica** entre duas rodadas, alem do item 30 da suite, que mede o relatorio
+  **sem** carimbo de ponta a ponta.
+- **Components afetados:** `hermes/agentes/analytics/` (novo: `custo_agentes.py`, `custo-agentes-v1.json`),
+  `scripts/agentes/` (novo: `verificar_custo_agentes.py`, `teste_custo_agentes_aceite.sh`),
+  `docs/architecture/custo-agentes-v1.md` (novo), `docs/runbooks/custo-de-agentes.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** W8-E01-T01 (funil — base da branch, fechado e medido). **Nao destrava card nenhum** por si:
+  e' entrega terminal do epico E05 (W8).

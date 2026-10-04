@@ -3028,3 +3028,63 @@ funcionarios fora do vocabulario congela em lacuna ate' o contrato de dados fech
   (`email`) — normalizado na leitura e registrado como defeito de FORMA do dado gravado; `campaign_id` e
   vinculo logico sem FK/entidade; a cadeia real SMTP/IMAP ja foi medida no W6-E07 e no aceite do W6-E05 —
   aqui o que roda de ponta a ponta e a ANALISE.
+## TRE-W8-E05-T01 — Custo de agentes — 03/10/2026
+
+**Card:** `TRE-W8-E05-T01` (W8 / Analytics) · **Base:** `feature/TRE-W8-E01-T01` @ `a5d9af3` ·
+**Branch:** `feature/TRE-W8-E05-T01` (`eb632fc` + `fa97da1`) · **Máquina:** VPS Contabo `vmi3619453`
+(169.58.24.102), ambiente **dev** Transf: `tar` por ssh (sem `scp`) para `/opt/tre/w8e05t01-r4`
+(r1 a r3 foram as rodadas de conserto).
+
+**O que foi medido (por execução real, não por leitura do código):**
+
+- `python3 scripts/agentes/verificar_custo_agentes.py --autoteste` → **30 itens, 0 falhas + 8/8 mutações**
+  detectadas (`d1` status em duas classes no contrato → item 3; `d2` coluna declarada que não existe na DDL
+  → item 2; `d3` verbo de escrita injetado no SQL → item 5; `d4` guarda de `prod` desligada → item 29;
+  `d5` guarda de container de dev desligada → item 29; `d6` nulo virando zero no custo → item 7;
+  `d7` ranking aceitando quem não declara custo → item 19; `d8` status fora do vocabulário virando falha →
+  item 6). Duas mutações de guarda só ficaram detectáveis depois de a suíte ganhar o item **29**, que
+  exercita a função de guarda em si (o CLI já recusava `prod` antes dela, então mutar a função passava
+  batido) — dente que não mede a função não mede a guarda.
+- `bash scripts/agentes/teste_custo_agentes_aceite.sh` → **`ACEITE_CUSTO_AGENTES_OK` (40 itens, 0 falhas,
+  exit 0)**, PostgreSQL descartável `pg-custo-acc` + migration 0001 + base semeada (16 execuções: 5 agentes
+  + 1 órfã, cobrindo os 4 desfechos do vocabulário, status fora dele, 3 jeitos de não ter custo e 2 bordas
+  de latência). Itens de destaque: resumo **conferido à mão** (11 concluídas / 1 falha / 1 recusa /
+  1 revisão / 2 sem status; taxas 0,0714), tokens 1640/877/2517, custo 0,022400 com **0,002036 por
+  execução com custo** e média por sucesso **nula** (nem todo agente declara), latência 57,93 / 30,0 /
+  300,0; **cinco dentes medidos no próprio banco** (banco conta 4 execuções sem custo → `research` fecha em
+  `0.000000` com média `null`; 1 status fora do vocabulário → `TIMEOUT` não vira falha; 1 custo negativo →
+  não entra na soma; 1 latência invertida → fica fora; 0 execuções do `research` com custo → o ranking não
+  coroa quem não declara); **janela por `started_at`** recortando 9 de 16 execuções (as 7 de 01/10 saem);
+  **leitura pura** por snapshot md5 das 12 tabelas antes/depois **e** pela transação `READ ONLY` recusando
+  a escrita de prova (sem deixar linha); **determinismo byte a byte** (sem `--com-carimbo`, dois arquivos
+  idênticos); saída sem PII (nenhum UUID de organização) e painel auto-contido.
+- **Defeito medido pelo próprio aceite (DETECTADO POR: aceite, antes de qualquer entrega — rodada r1):**
+  o componente removia `gerado_em` quando `--com-carimbo` não era passado (para a saída ser reproduzível) e
+  o `emitir_html` lia `relatorio["gerado_em"]` **sem** `.get()`: a rodada real no banco morria com
+  `KeyError: 'gerado_em'` (exit 1) e **nenhuma** saída era gravada. A suíte offline não pegava porque ali o
+  carimbo sempre existia — 2 dos 40 itens do aceite falharam por causa disso. Conserto: o HTML tolera a
+  ausência (`(sem carimbo)`), o aceite ganhou o item que exige a saída **byte a byte idêntica** entre duas
+  rodadas e a suíte o item 30, que mede o relatório **sem** carimbo de ponta a ponta.
+- `bash scripts/verificar_estrutura.sh` → **PASS (0 falhas, 374 OK)**, com o bloco novo do card (arquivos
+  versionados, `py_compile`, `--conferir` contra a DDL congelada e o contrato de dados, marcas de guarda e
+  validade do aceite). Na rodada r2 o portão reprovou **2 itens meus** (o contrato não carregava as marcas
+  literais `RECUSA por desenho (exit 4)` e `READ ONLY` que o portão exige) — alinhado o texto à convenção
+  dos irmãos; o portão roda dentro do repo git (a cópia por `tar` não tem `.git`, e ali todo arquivo
+  apareceria como "não versionado").
+- **`sha256` dos artefatos igual no local e na VPS:** `custo_agentes.py`
+  `89b349ba7bb3399c89b48c482e999c262bb42d9290b067710afa4aab1e7f49a2`, `custo-agentes-v1.json`
+  `822df7500ee06725e98f087e46ff75f111dba8e6d39d2f36d9ef5464f2d8cd7f`, `verificar_custo_agentes.py`
+  `92757ee3391166cd6ddc7519e150505a25ce5276197b7799888e4f34857cb83f`,
+  `teste_custo_agentes_aceite.sh` `b9be84332181b8fb812631ce09345c35cc10f934f747840cff434358430e2720`.
+- **Ambiente:** nada em produção (ADR-005). O container descartável do aceite é removido no fim; os
+  containers do ambiente não foram tocados; nenhuma credencial real, nenhuma ponta externa (só `docker exec`
+  no container local + `127.0.0.1`).
+- **Lacunas declaradas:** as cinco do desenho (`docs/architecture/custo-agentes-v1.md` §7) viajam no
+  relatório (`lacunas_declaradas`). A que mais pesa na operação: **nem todo irmão grava tokens/custo**
+  (`research` grava `NULL`; `outreach` grava do provedor) — o custo medido é o **declarado**, nunca o custo
+  do sistema inteiro; o conserto é do produtor (gravar tokens/`estimated_cost` na auditoria), nunca do
+  analista (que não pode inventar tarifa).
+- **Evidência anexada ao card:** `aceite-custo-40ok.out`, `suite-custo-30ok-8dentes.out`,
+  `portao-estrutura.out` e `sha256-artefatos.out`.
+- Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+  `TRE_CUSTO_AGENTES_TOKEN` aparecer na evidência — caminho medido na suíte (mesmo padrão do irmão do funil).

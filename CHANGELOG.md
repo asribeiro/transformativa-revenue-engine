@@ -122,8 +122,36 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (`pg-analytics-seg-acc`), com os números conferidos à mão e o dente de faixa quase idêntica ao
   vocabulário (`150_299X` não entra em `150_299`); portão de estrutura PASS. Docs:
   `docs/architecture/conversao-por-segmento-v1.md`, `docs/runbooks/conversao-por-segmento.md`.
+- **Custo de agentes v1** (`TRE-W8-E05-T01`) — componente `hermes/agentes/analytics/custo_agentes.py`
+  (`custo-agentes-v1`) + contrato declarativo `hermes/agentes/analytics/custo-agentes-v1.json`: lê a
+  auditoria de execução de agente (`sales_intelligence.agent_runs`, dono PostgreSQL, contrato §9) e deriva,
+  por **agente**, por **modelo** e por **workflow**, execuções, concluídas/falhas/recusadas/revisão, taxa de
+  falha, tokens, custo total e **custo por execução concluída** (quanto custou cada sucesso), latência
+  (média/mediana/p95) e organizações distintas; sai em **JSON** + **CSV** + **HTML auto-contido**.
+  **Invariante central — nulo não é zero:** execução sem `estimated_cost` não entra na soma e não vira `0`
+  (vai para `runs_sem_custo`, a média fica `null` e o grupo sai do ranking); sem isso quem menos declara
+  custo seria coroado o mais barato. O componente **não calcula preço** (a política de lane proíbe fixar
+  preço): reporta o `estimated_cost` gravado, como string decimal de 6 casas, e trata custo negativo como
+  lacuna. O vocabulário de status é o dos 13 irmãos que escrevem a auditoria
+  (`COMPLETED`/`FAILED`/`REJECTED`/`REVIEW_REQUIRED`) — **recusa declarada não é falha** e status fora do
+  vocabulário não vira desfecho. A coluna que não existe **não se inventa**: o card lê a DDL congelada e
+  RECUSA (exit 3) se a coluna da métrica faltar. Leitura pura (`SELECT` único, `READ ONLY` em `-c` separado,
+  auditoria da fonte antes de conectar); `prod` recusado por desenho (exit 4). Medição: suíte offline
+  (`scripts/agentes/verificar_custo_agentes.py --autoteste`) **30 itens, 0 falhas + 8/8 mutações**; aceite
+  `ACEITE_CUSTO_AGENTES_OK` **40 itens, 0 falhas** em PostgreSQL descartável na VPS de dev (métricas
+  conferidas à mão, 5 dentes medidos no banco, janela por `started_at`, leitura pura por snapshot das 12
+  tabelas **e** pela transação `READ ONLY`, determinismo byte a byte); portão de estrutura PASS. Docs:
+  `docs/architecture/custo-agentes-v1.md`, `docs/runbooks/custo-de-agentes.md`.
 
 ### Fixed
+
+- **Relatório sem carimbo de tempo quebrava o HTML** (defeito medido pelo aceite do `TRE-W8-E05-T01`,
+  **DETECTADO POR:** aceite, antes de qualquer entrega): o componente removia `gerado_em` quando
+  `--com-carimbo` não era passado (para a saída ser reproduzível) e o `emitir_html` lia
+  `relatorio["gerado_em"]` **sem** `.get()` — a rodada real no banco morria com `KeyError: 'gerado_em'`
+  (exit 1) e nenhuma saída era gravada. A suíte offline não pegava porque ali o carimbo sempre existia. O
+  HTML passou a tolerar a ausência (`(sem carimbo)`), o aceite ganhou o item que exige a saída **byte a byte
+  idêntica** entre duas rodadas e a suíte o item 30, que mede o relatório **sem** carimbo de ponta a ponta.
 
 - **`SET default_transaction_read_only` num único `-c` NÃO vale** (defeito medido pelo aceite do
   `TRE-W8-E01-T01`, **DETECTADO POR:** aceite, antes de qualquer entrega): com
