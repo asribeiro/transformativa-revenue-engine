@@ -1162,6 +1162,40 @@ por organização; quem envia é o caminho de outbound (W6), com a própria pol�
   L2 associação ≠ causa; L3 `LINKEDIN` sem coluna de opt-out própria; L4 prior de coorte, não personalização;
   L5 coorte acumulada; L6 canal ≠ mensagem (`response_category` diz que houve resposta classificada, não a
   qualidade); L7 previsão não é ato.
+## TRE-W8-E04-T01 — Message performance (W8 · Analytics)
+
+- **ACCEPTANCE:** `desempenho-mensagens-v1` lê `sales_intelligence.interactions` por **um SELECT** e devolve,
+  por **variante de texto** (`texto_hash` da referência `envio:<approval_id>:<texto_hash>`) e por **canal
+  normalizado**: enviadas, organizações, respondidas, positivas, negativas, opt-outs, indefinidas, respostas
+  comerciais/descartadas, `taxa_de_resposta`, `taxa_de_interesse`, `taxa_de_opt_out`, tempo médio/mediano de
+  resposta (horas) e a **melhor variante** — só entre as com amostra ≥ `--limite-amostra`. Guardas: `prod`
+  RECUSA exit 4; **somente leitura** (nenhum verbo de escrita no SQL, conferido no componente e no duble);
+  saída **agregada** (sem `organization_id`/`contact_id`/`approval_id`); vocabulário do irmão divergente =
+  `CONTRATO_INCOERENTE` exit 3 (fail-closed).
+- **TEST:** offline `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (48 itens, 0 falhas)` + **7/7 dentes**; E2E `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh`
+  (VPS, PostgreSQL descartável `pg-desemp-acc` + migration 0001) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK`
+  (19 itens, 0 falhas), com contagem das 12 tabelas idêntica antes/depois (prova de somente-leitura) e
+  saída reproduzível (duas rodadas iguais).
+- **ROLLBACK:** remover os artefatos do card (`hermes/analytics/`, `verificar_desempenho_mensagens.py`,
+  `duble_psql_desempenho.py`, `teste_desempenho_mensagens_aceite.sh`). Não há migration nova nem escrita em
+  nenhuma tabela; o container de aceite é descartável e sai no `trap`.
+- **RISK:** (a) canal divergente entre os irmãos (`EMAIL` × `email`) — normalizado na leitura e registrado
+  como defeito de FORMA do dado gravado; (b) sem `delivered`/`opened`/`bounced` no contrato: a taxa é de
+  **resposta**, não de entrega; (c) `campaign_id` é vínculo lógico sem FK/entidade — não se agrupa por
+  campanha; (d) só `EMAIL` é produzido hoje pelo irmão de envio.
+- **Components afetados:** `hermes/analytics/desempenho-mensagens-v1.json` (novo),
+  `hermes/analytics/desempenho_mensagens.py` (novo), `scripts/agentes/duble_psql_desempenho.py` (novo),
+  `scripts/agentes/verificar_desempenho_mensagens.py` (novo),
+  `scripts/agentes/teste_desempenho_mensagens_aceite.sh` (novo), `docs/runbooks/desempenho-de-mensagens.md`
+  (novo), `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** `TRE-W6-E07-T01` (caminho outbound medido ponta a ponta) — fechado. **Destrava:** E02
+  (conversão por segmento), E03 (eficácia dos scores) e E05 (custo de agentes) reusam o mesmo recorte de
+  `interactions`; a análise por variante alimenta o aprendizado de texto do W9.
+- **Lacuna medida (declarada, não escondida):** a análise mede **efeito** (resposta creditada ao envio mais
+  próximo anterior em duas faixas de especificidade), não entrega.
+
 
 
 ## TRE-W9-E04-T01 — Best timing (melhor horário de contato)
@@ -1204,3 +1238,51 @@ por organização; quem envia é o caminho de outbound (W6), com a própria pol�
   **Destrava:** `TRE-W9-E05-T01` (Automated nurture) na decisão de *quando* nutrir.
 - **Lacuna medida (declarada, não escondida):** o card mede o **horário observado** de desfecho, não uma
   previsão por lead; "best timing" aqui é melhor janela **com amostra**, e base pequena abstém.
+
+
+## TRE-W9-E05-T01 — Automated nurture (W9 · Inteligencia Avancada)
+
+- **ACCEPTANCE:** `hermes/agentes/analytics/nutricao_automatica.py` + contrato
+  `hermes/agentes/analytics/nutricao-automatica-v1.json` entregam a FILA de proximos toques de nurture por
+  organizacao, derivada dos DOIS relatorios dos pais: canal = `canal_previsto` do `previsao-canal-v1`
+  (W9-E03-T01), janela = `melhor_janela` (dia x faixa) e fuso do `melhor-horario-v1` (W9-E04-T01) — canal e
+  horario NAO sao remedidos. Cadencia declarada de 4 passos (0/4/11/25 dias) com `due_at_utc` calculado
+  (ancora = primeira ocorrencia do dia da janela a partir da referencia; cada passo avanca o intervalo e
+  volta ao dia-alvo, nunca no passado e monotonico por organizacao) e fila ordenada por
+  (due_at, canal, organizacao). Fail-closed: sem `previsao_emitida` do pai OU sem `melhor_janela` o plano
+  ABSTEM por inteiro (`PLANO_ABSTIDO`, `fila=[]`, lista `faltando`). **NADA ENVIA**: todo toque carrega
+  `exige_aprovacao_humana: true` + as condicoes de parada (opt-out/do_not_contact, resposta positiva com
+  handoff humano, resposta negativa, avanco no funil, `max_toques`). Guardas: `prod` RECUSA exit 4 (ADR-005)
+  antes de ler entrada; `homolog` exige `--confirmo`; o componente **nao tem porta de banco** (nenhum SQL,
+  nenhuma escrita) e a auditoria de codigo reprova statement de escrita; PII ausente (so' UUID, canal,
+  janela e datas).
+- **TEST:** offline `python3 scripts/agentes/verificar_nutricao_automatica.py --autoteste` →
+  `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` + **AUTOTESTE OK (5/5 mutacoes)**; E2E
+  `bash scripts/agentes/teste_nutricao_automatica_aceite.sh` (VPS, PostgreSQL descartavel
+  `pg-analytics-nurture-acc` + migration 0001) → `ACEITE_NUTRICAO_AUTOMATICA_001_OK` (36 itens, 0 falhas),
+  com regressao das duas suites offline dos pais, 7 organizacoes previstas → 28 toques, abstencao medida,
+  reproducibilidade (mesmo `hash_do_plano`) e contagem das 12 tabelas identica antes/depois; portao de
+  estrutura `PASS (0 falhas)`.
+- **ROLLBACK:** reverter o commit — arquivos novos (`nutricao_automatica.py`,
+  `nutricao-automatica-v1.json`, `verificar_nutricao_automatica.py`,
+  `teste_nutricao_automatica_aceite.sh`, `docs/architecture/nutricao-automatica-v1.md`,
+  `docs/runbooks/nutricao-automatica.md`), uma secao em criterios/registro/CHANGELOG e o bloco do portao.
+  ZERO migration, ZERO escrita, ZERO cron, ZERO credencial; container descartavel sai no `trap`.
+- **RISK:** BAIXO-MEDIO — o componente nao abre banco e nao escreve; o risco real e' de POLITICA (cadencia e
+  condicoes de parada DECLARADAS, nao medidas) e de INTERPRETACAO (o plano e' pedido, nao ato: por isso
+  `exige_aprovacao_humana` e' obrigatorio e o prod recusa). Limites declarados: janela global e canal de
+  coorte (sem segmentacao), sem avaliacao do estagio do funil na derivacao, sem materializacao/agendamento e
+  sem deduplicacao entre rodadas.
+- **Components afetados:** `hermes/agentes/analytics/nutricao-automatica-v1.json` (novo),
+  `hermes/agentes/analytics/nutricao_automatica.py` (novo),
+  `scripts/agentes/verificar_nutricao_automatica.py` (novo),
+  `scripts/agentes/teste_nutricao_automatica_aceite.sh` (novo),
+  `docs/architecture/nutricao-automatica-v1.md` (novo), `docs/runbooks/nutricao-automatica.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`. Reuso (nao alterado): `previsao_canal.py`/`previsao-canal-v1.json`
+  (W9-E03-T01) e `melhor_horario.py`/`melhor-horario-v1.json` (W9-E04-T01).
+- **Depends on:** `TRE-W9-E03-T01` (melhor canal previsto) e `TRE-W9-E04-T01` (melhor janela) — ambos
+  medidos e fechados. **Destrava:** nada nesta onda (P3, ultima peca do E05); a execucao dos toques e' do
+  caminho de outbound com aprovacao humana (W6).
+- **Lacuna medida (declarada, nao escondida):** o card entrega o PLANO do nurture, nao o nurture em execucao
+  — materializar/agendar exige contrato novo + aprovacao (doc 12 §10).

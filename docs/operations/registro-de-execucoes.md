@@ -3147,6 +3147,32 @@ funcionarios fora do vocabulario congela em lacuna ate' o contrato de dados fech
   `recommendations` exige versão nova do contrato + approval).
 - Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de `TRE_CANAL_TOKEN`,
   `TRE_PREVISAO_CANAL_TOKEN` ou `TRE_FUNIL_TOKEN` aparecer na evidência.
+## 03/10/2026 — TRE-W8-E04-T01 (Message performance / `desempenho-mensagens-v1`)
+
+- **Comando (offline):** `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (desempenho de mensagens v1: 48 itens, 0 falhas)`, exit 0, com **7/7 dentes** (cada mutacao aplicada
+  numa copia temporaria reprova o item que nomeia: sem normalizacao de canal, janela exclusiva no limite,
+  credito a todos os envios, auto-resposta contada como resposta, amostra desligada, sem guarda de prod e
+  referencia malformada aceita).
+- **Comando (E2E, VPS do ambiente):** `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh` em
+  `/tmp/tre-w8e04c-*` na VPS `vmi3619453` (usuario `tre-deploy`) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK
+  (19 itens, 0 falhas)`, exit 0. O aceite subiu PostgreSQL descartavel `pg-desemp-acc` (`postgres:16`),
+  aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 15 envios + 5 respostas **na forma declarada
+  pelos contratos irmaos** (canal/direcao/tipo lidos de `politica-envio-v1.json`; categorias de
+  `ingestao-respostas-v1.json`) e mediu a analise contra o banco real. Container removido no `trap`.
+- **O que ficou provado no E2E:** totais (15 enviadas / 4 respondidas / 3 positivas / 1 opt-out / 1
+  auto-resposta descartada), `taxa_de_interesse` da variante H1 = 0,4, tempo medio da H1 = 2,25h, taxa de
+  opt-out da H8 = 0,2, melhor variante = H1 (so entre as de amostra suficiente); **contagem das 12 tabelas
+  identica antes/depois** (`12|21|3|1`) — prova de que a analise e somente leitura; saida **reproduzivel**
+  (duas rodadas iguais, sem carimbo); saida sem `organization_id`/`contact_id`/`approval_id`; `--ambiente
+  prod` → exit 4.
+- **Segredos:** nenhum valor nesta entrada. Uso exclusivo de loopback/container descartavel; a senha do
+  Postgres descartavel e literal de teste do proprio aceite.
+- **Lacunas declaradas (medidas, nao escondidas):** `interactions` nao tem `delivered`/`opened`/`bounced`
+  (a taxa e de RESPOSTA, nao de entrega); o `channel` do envio (`EMAIL`) diverge do `channel` da ingestao
+  (`email`) — normalizado na leitura e registrado como defeito de FORMA do dado gravado; `campaign_id` e
+  vinculo logico sem FK/entidade; a cadeia real SMTP/IMAP ja foi medida no W6-E07 e no aceite do W6-E05 —
+  aqui o que roda de ponta a ponta e a ANALISE.
 
 ### 2026-10-03 — TRE-W9-E04-T01 (Best timing / `melhor-horario-v1`) — entrega medida
 
@@ -3186,3 +3212,31 @@ funcionarios fora do vocabulario congela em lacuna ate' o contrato de dados fech
   nova); a análise é histórica, não previsão por lead; a grade cobre 24 h porque o contrato de dados não
   declara expediente; `contacts` sem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido pelo irmão
   de envio, então não há corte por canal nesta versão.
+
+
+## 2026-10-03 — TRE-W9-E05-T01 (Automated nurture / `nutricao-automatica-v1`) — entrega medida
+
+- **Comando (offline):** `python3 scripts/agentes/verificar_nutricao_automatica.py --autoteste` →
+  `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` + `AUTOTESTE OK (5/5 mutacoes detectadas)`,
+  exit 0. As fixtures sao montadas NA FORMA dos contratos dos pais (dias, faixas e fuso LIDOS de
+  `melhor-horario-v1.json`), e o dente da guarda de escrita planta um statement numa copia do componente
+  para provar que ela REPROVA (nao apenas documenta).
+- **Comando (E2E, VPS do ambiente):** `bash scripts/agentes/teste_nutricao_automatica_aceite.sh` em
+  `/tmp/tre-e05t01b` na VPS `vmi3619453` (usuario `tre-deploy`) → `ACEITE_NUTRICAO_AUTOMATICA_001_OK`
+  (36 itens, 0 falhas), exit 0. O aceite subiu PostgreSQL descartavel `pg-analytics-nurture-acc`
+  (`postgres:16`), aplicou `db/migrations/0001_sales_intelligence_v1.sql`, semeou 8 organizacoes / 3 canais
+  / bloqueios de opt-out / desfecho no funil e, na FORMA declarada pelos contratos, 5 envios com
+  `content_reference` (`envio:...`) e 2 respostas (`EMAIL_RESPOSTA`/`INTERESSE`) na MESMA celula de janela.
+- **O que ficou provado no E2E (cadeia real, nao fixture de leitura):** o pai do canal mediu a base com
+  pre-condicao ATENDIDA e 7 previsoes; o pai do horario escolheu a melhor janela com amostra; o nurture
+  derivou 28 toques (4 por organizacao) com canal = o previsto pelo pai, janela = a do pai, `due_at`
+  alinhado ao dia x faixa e nunca no passado, fila deterministica e todo toque com aprovacao humana
+  obrigatoria; abstencao medida quando a janela do pai vem sem amostra; duas rodadas com a mesma referencia
+  → mesmo `hash_do_plano`; contagem das 12 tabelas identica antes/depois (12|28|8); `--ambiente prod` →
+  exit 4.
+- **Segredos:** nenhum valor nesta entrada. O componente nao abre banco; o aceite usa container descartavel
+  em loopback e a senha do Postgres descartavel e' literal de teste do proprio aceite.
+- **Lacunas declaradas (medidas, nao escondidas):** o plano nao materializa nem agenda toques; nao avalia o
+  estagio do funil na derivacao (a parada por avanco/resposta e' condicao carregada em cada toque); janela
+  global e canal de coorte (sem segmentacao); cadencia declarada, nao medida; sem feriados/fuso do
+  destinatario; sem deduplicacao entre rodadas.

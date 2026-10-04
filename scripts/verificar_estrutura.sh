@@ -1485,5 +1485,226 @@ if [ -f "hermes/analytics/melhor_horario.py" ]; then
   fi
 fi
 
+
+# --- card TRE-W9-E03-T01 (Previsao do melhor canal — efetividade por canal + opt-out como bloqueio) --------
+CONTRATO_CANAL="hermes/agentes/analytics/previsao-canal-v1.json"
+COMPONENTE_CANAL="hermes/agentes/analytics/previsao_canal.py"
+for arquivo in "$COMPONENTE_CANAL" "$CONTRATO_CANAL" scripts/agentes/verificar_previsao_canal.py \
+               scripts/agentes/teste_previsao_canal_aceite.sh docs/architecture/previsao-de-canal-v1.md \
+               docs/runbooks/previsao-de-canal.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CANAL" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CANAL" \
+       scripts/agentes/verificar_previsao_canal.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Vocabulario de canal e minimos da pre-condicao sao LIDOS do contrato e a dependencia (funil) e' conferida:
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CANAL" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: --conferir recusou (contrato de dados ou dependencia do funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O desfecho NAO pode ser reimplementado: o componente tem de consumir o alcance do funil (W8-E01-T01).
+  if ! grep -q "alcance_por_organizacao" "$COMPONENTE_CANAL"; then
+    echo "FALHOU card TRE-W9-E03-T01: componente nao consome o alcance por organizacao do funil"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'base_suficiente' 'dados_multicanal' 'opt_out'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CANAL"; then
+      echo "FALHOU card TRE-W9-E03-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_previsao_canal_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_previsao_canal_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_PREVISAO_CANAL_OK' scripts/agentes/teste_previsao_canal_aceite.sh; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite sem o marcador ACEITE_PREVISAO_CANAL_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A prova do aceite nao pode fechar sem rodar: todo bloco Python tem de ter o item de exit code.
+  for bloco in RC_ASSERT RC_INTEG RC_PRIV; do
+    if ! grep -q "$bloco" scripts/agentes/teste_previsao_canal_aceite.sh; then
+      echo "FALHOU card TRE-W9-E03-T01: aceite sem a guarda de bloco $bloco (prova que morre em silencio)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
+# --- card TRE-W8-E04-T01 (analise de desempenho de mensagens) ---------------------------------------
+# Contrato + componente + duble + verificador + aceite existem E estao versionados; o aceite e' bash
+# valido, usa container DESCARTavel e cobre as guardas de ambiente (prod recusado) e de leitura.
+ACEITE_DESEMP="scripts/agentes/teste_desempenho_mensagens_aceite.sh"
+for arquivo in \
+  hermes/analytics/desempenho-mensagens-v1.json \
+  hermes/analytics/desempenho_mensagens.py \
+  scripts/agentes/duble_psql_desempenho.py \
+  scripts/agentes/verificar_desempenho_mensagens.py \
+  "$ACEITE_DESEMP" \
+  docs/runbooks/desempenho-de-mensagens.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_DESEMP" ]; then
+  if ! bash -n "$ACEITE_DESEMP" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E04-T01: $ACEITE_DESEMP nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Container descartavel do aceite (nada nasce em ambiente existente) e guarda de prod medida.
+  if ! grep -q 'pg-desemp-acc' "$ACEITE_DESEMP" || ! grep -q 'ambiente prod' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Somente leitura e' medida: contagem das tabelas antes/depois tem de estar no aceite.
+  if ! grep -q 'ANTES' "$ACEITE_DESEMP" || ! grep -q 'DEPOIS' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode carregar verbo de escrita no caminho de leitura.
+if [ -f "hermes/analytics/desempenho_mensagens.py" ]; then
+  if ! grep -q 'afirmar_somente_leitura' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de somente-leitura"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+# --- card TRE-W9-E04-T01 (melhor horario de contato) --------------------------------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o aceite e' bash valido, usa
+# container DESCARTavel, cobre as guardas de ambiente (prod recusado) e de leitura, e o componente tem de
+# MANTER os guardrails herdados do irmao (somente leitura + prod recusado) em vez de reimplementa-los.
+ACEITE_TIMING="scripts/agentes/teste_melhor_horario_aceite.sh"
+for arquivo in \
+  hermes/analytics/melhor-horario-v1.json \
+  hermes/analytics/melhor_horario.py \
+  scripts/agentes/verificar_melhor_horario.py \
+  "$ACEITE_TIMING" \
+  docs/runbooks/melhor-horario.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_TIMING" ]; then
+  if ! bash -n "$ACEITE_TIMING" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E04-T01: $ACEITE_TIMING nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'pg-timing-acc' "$ACEITE_TIMING" || ! grep -q 'ambiente prod' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ANTES' "$ACEITE_TIMING" || ! grep -q 'DEPOIS' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de medir a coerencia com o irmao de desempenho (atribuicao unica), nao apenas roda-lo.
+  if ! grep -q 'desempenho_mensagens.py' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a coerencia medida com o irmao de desempenho"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode reimplementar a regra do irmao: a atribuicao e a guarda de leitura vem dele.
+if [ -f "hermes/analytics/melhor_horario.py" ]; then
+  if ! grep -q 'import desempenho_mensagens as irmao' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente nao reusa o irmao (atribuicao seria uma segunda regra)"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+# --- card TRE-W9-E05-T01 (Nurture automatizado — plano de toques, nunca envio) -------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o componente compila, o
+# contrato e' conferido pelo PROPRIO componente (`--conferir`) e o aceite e' bash valido com container
+# DESCARTavel. O nurture NAO tem porta de banco: a guarda de escrita (auditoria de codigo) tem de existir.
+CONTRATO_NURTURE="hermes/agentes/analytics/nutricao-automatica-v1.json"
+COMPONENTE_NURTURE="hermes/agentes/analytics/nutricao_automatica.py"
+ACEITE_NURTURE="scripts/agentes/teste_nutricao_automatica_aceite.sh"
+for arquivo in "$COMPONENTE_NURTURE" "$CONTRATO_NURTURE" scripts/agentes/verificar_nutricao_automatica.py \
+               "$ACEITE_NURTURE" docs/architecture/nutricao-automatica-v1.md docs/runbooks/nutricao-automatica.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_NURTURE" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_NURTURE" \
+       scripts/agentes/verificar_nutricao_automatica.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Quem decide se contrato e dependencia estao coerentes e' o proprio componente, nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_NURTURE" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: --conferir recusou (contrato, pais ou guarda de escrita)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O plano CONSOME os dois pais (canal e janela) em vez de remedir; e' pedido, nunca envio; e recusa prod.
+  for marca in 'previsao-canal-v1' 'melhor-horario-v1' 'exige_aprovacao_humana' 'NAO_ENVIA' \
+               'PROD_RECUSADO' 'auditar_proprio_codigo' 'porta de banco'; do
+    if ! grep -q -F "$marca" "$COMPONENTE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: componente sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in 'RECUSA por desenho (exit 4' 'NUNCA envia' 'exige_aprovacao_humana' 'lacunas_declaradas' \
+               'pre_condicao' 'porta de banco' 'condicoes_de_parada'; do
+    if ! grep -q -F "$marca" "$CONTRATO_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f "$ACEITE_NURTURE" ]; then
+  if ! bash -n "$ACEITE_NURTURE" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite mede a CADEIA: regressao dos dois pais, container descartavel e leitura pura antes/depois.
+  for marca in 'ACEITE_NUTRICAO_AUTOMATICA_001_OK' 'VERIFICADOR_PREVISAO_CANAL_PASS' 'VERIFICADOR_MELHOR_HORARIO_PASS' \
+               'pg-analytics-nurture-acc' 'PLANO_ABSTIDO' 'ANTES' 'DEPOIS'; do
+    if ! grep -q -F "$marca" "$ACEITE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
