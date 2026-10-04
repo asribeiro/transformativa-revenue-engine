@@ -179,9 +179,14 @@ Rodada de referência: **`RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas)`**, e
   `INDETERMINADO` com a regra nomeada e **nenhuma** divergência de entidade;
 * **somente-leitura** medido em cada rodada: digest das três tabelas do PostgreSQL e dos parceiros
   do Odoo, antes e depois;
+* **instância do dev** medida antes e depois com o **usuário do próprio dev** (`TRE_DEV_PG_USER`,
+  default `odoo` — é o dono do `pg-odoo-dev`; medir o dev com o usuário do banco descartável **não lê
+  nada**, que foi o defeito `D01`): o item de fecho compara as **duas** medições e só fecha `OK` com as
+  duas **presentes e iguais** — qualquer ponta sem medição **falha fechado**, nomeada (medição vazia
+  nunca vira `OK`);
 * `sha256` dos **12 artefatos sob teste** fixado nas guardas e **reconferido no fecho** (idêntico);
-  instância do dev medida antes e depois (**intocada**); o **VALOR** da chave da rodada não aparece no
-  cofre do n8n, no workflow nem no log (nem `Bearer <valor>`); nenhum valor de segredo no versionado.
+  o **VALOR** da chave da rodada não aparece no cofre do n8n, no workflow nem no log (nem
+  `Bearer <valor>`); nenhum valor de segredo no versionado.
 
 ## 6. Limites conhecidos (o que este card não resolve)
 
