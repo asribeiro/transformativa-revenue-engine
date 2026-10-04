@@ -23,6 +23,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (`aplicado: false`, `exige_versao_nova: true`, `aprovacao_humana: pendente`), determinismo por
   `hash_do_relatorio`, saida sem PII e HTML auto-contido. Suite offline **66 itens + 8 dentes**;
   aceite de ponta **34 itens** em PostgreSQL descartavel na VPS de dev.
+- **Memória comercial em Qdrant** (`TRE-W9-E06-T01`) — componente `hermes/memoria/memoria_comercial.py`
+  (`memoria-comercial-v1`) + contrato declarativo `hermes/memoria/memoria-comercial-v1.json`: MEDE a
+  estabilidade do corpus comercial na base canônica `sales_intelligence` em **leitura pura** e, só quando a
+  pré-condição do card ("corpus comercial estável") é atendida, **DERIVA** a memória semântica (documentos
+  do corpus com vetor) para uma coleção do Qdrant e responde à **busca por semelhança** com filtro
+  declarado. O Qdrant é memória **derivada** — a fonte de verdade continua sendo o PostgreSQL e a coleção é
+  reconstruível (`--recriar --confirmo`). Receitas do corpus (mensagem outbound, objeção/resposta inbound,
+  dor/hipótese, contexto/playbook) são **lidas do contrato**, nunca literais no código; documento sem
+  texto, sem origem ou com padrão de PII (e-mail/telefone/CNPJ/CPF) vira **lacuna nomeada** e fica fora da
+  coleção. Idempotência por id determinístico (UUIDv5 de coleção+tabela+origem): reindexar não duplica e
+  conteúdo alterado **atualiza o mesmo ponto**. Payload **fechado** (9 campos, nenhum de contato) e
+  `contacts` nunca lida. Provedor de embedding **local declarado** (`local-deterministico-v1`, 256
+  posições, L2, sem rede) — nome de modelo externo e preço **não** moram no contrato. Guardas ADR-005:
+  `prod` recusa (exit 4), Qdrant remoto recusado em dev, `homolog` exige `--confirmo`, dimensão divergente
+  recusada sem escrever. Evidência: suíte **26 itens + 11 mutações** e aceite na VPS de dev com Qdrant
+  descartável (`qdrant/qdrant:v1.12.4`) e PostgreSQL descartável → **`ACEITE_MEMORIA_COMERCIAL_OK`, 66
+  itens, 0 falhas**. Defeitos medidos e corrigidos no card: leitura do array JSON multi-linha do `psql`
+  (parse por linha pegava fragmento) e ruído de colisão do hash a 64 posições (0,19 em consulta sem
+  correspondência) → dimensão 256 com piso 0,20 (ruído 0,00; sobreposição real 0,42/0,49).
 
 - **Calibração do score** (`TRE-W9-E01-T01`) — componente `hermes/agentes/analytics/calibracao_score.py`
   (`calibracao-score-v1`) + contrato declarativo `hermes/agentes/analytics/calibracao-score-v1.json`:

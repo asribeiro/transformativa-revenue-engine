@@ -3240,3 +3240,54 @@ funcionarios fora do vocabulario congela em lacuna ate' o contrato de dados fech
   estagio do funil na derivacao (a parada por avanco/resposta e' condicao carregada em cada toque); janela
   global e canal de coorte (sem segmentacao); cadencia declarada, nao medida; sem feriados/fuso do
   destinatario; sem deduplicacao entre rodadas.
+
+## 2026-10-03 — TRE-W9-E06-T01: memória comercial (`memoria-comercial-v1`) medida na VPS de dev
+
+- **Sincronização da cópia do aceite (agente):** `tar -cz hermes/memoria scripts/agentes/… db | ssh
+  tre-deploy@… 'tar -xz -C /opt/tre/dev/e06-w9e06t01'` → `SYNC_OK`. Observação medida: `/opt/tre/repo` está
+  com o atributo **imutável** (`lsattr` → `----i---------e-------`) e recusa criação de arquivo
+  (`Permission denied` mesmo sendo dono); por isso o aceite roda numa pasta própria em `/opt/tre/dev/` e a
+  cópia operacional protegida **não** foi tocada.
+- **Suíte offline (agente):** `python3 scripts/agentes/verificar_memoria_comercial.py --autoteste` →
+  `VERIFICADOR_MEMORIA_COMERCIAL_PASS (26 itens, 0 falhas)` + `AUTOTESTE 11/11 mutacoes detectadas`, exit 0.
+- **Aceite de ponta (`scripts/agentes/teste_memoria_comercial_aceite.sh`, na VPS vmi3619453):** Qdrant
+  descartável `qd-memoria-comercial` (`qdrant/qdrant:v1.12.4`, `127.0.0.1:6339`) + PostgreSQL descartável
+  `pg-memoria-comercial` (imagem `postgres:16`, migration 0001, base semeada com 4 organizações, 13 linhas
+  de corpus) → **`ACEITE_MEMORIA_COMERCIAL_OK`, 66 itens, 0 falhas**. Containers removidos no fim; nenhum
+  container do ambiente foi tocado (`pg-sales-dev` no ar, nenhum container de produção).
+- **Números conferidos no banco e no Qdrant:** pré-condição "corpus comercial estável" **ATENDIDA** (12
+  documentos indexáveis; MENSAGEM 4, OBJECAO 3, DOR 3, CONTEXTO 2; 4 tipos com base) e **RECUSADA** na base
+  magra (1 documento → `faltando` com 6 itens e **0 coleções** criadas); **12 pontos** na coleção
+  `memoria_comercial_v1` com a dimensão do contrato (256) e payload de exatamente 9 campos; **1 lacuna
+  `PII_SUSPEITA`** (a linha com `maria.silva@cliente.test` **não** foi indexada e nenhum e-mail da base
+  aparece no relatório, no HTML ou nos payloads).
+- **Idempotência e atualização no lugar:** 2ª rodada **12 → 12 pontos** com o **mesmo** `hash_do_relatorio`;
+  `UPDATE` no `content_summary` de uma origem → o ponto daquela origem (mesmo id) passa a carregar o
+  `conteudo_sha256` novo, a contagem segue 12 e o hash do relatório muda.
+- **Busca:** `objecao preco orcamento do projeto` → topo **OBJECAO**, score **0,416** (4 descartados pelo
+  piso); `conciliacao manual do time financeiro` com filtro `--filtro-tipo DOR` → **1 resultado, só DOR**,
+  score **0,485**; `zzz qqq` → **lista vazia** (com 64 posições o ruído de colisão chegava a 0,19, motivo
+  medido da dimensão 256); mesma consulta duas vezes → mesmo hash e mesma ordem; consultas diferentes →
+  hashes diferentes.
+- **Fonte canônica e guardas:** snapshot das tabelas (`interactions/pain_hypotheses/recommendations/
+  organizations` = `8/3/2/4`) **igual** antes/depois; `SET default_transaction_read_only = on` +
+  `CREATE TABLE` → `cannot execute CREATE TABLE in a read-only transaction`; `prod` → exit 4; Qdrant remoto
+  → `QDRANT_NAO_E_DEV` (exit 3); sem `--porta-banco` → exit 2; coleção com 32 dimensões → recusa sem
+  escrever e `--recriar --confirmo` devolvendo os **12 pontos**; `--recriar` sem `--confirmo` → exit 3.
+- **Defeito MEDIDO e corrigido no próprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o
+  `psql` devolve o array JSON **em várias linhas** (quebra depois da vírgula, com indentação) e o
+  componente parseava **por linha**, pegando um fragmento — o relatório morria com `Extra data`
+  (`JSONDecodeError`) e a indexação saía com traceback (exit 1). Conserto: a leitura passa a ser do texto
+  **inteiro** (`extrair_json`), com varredura por linha apenas como último recurso — `-q` silencia o
+  rótulo do `SET`. O defeito virou **item de suíte** (array multi-linha, linha única, lista vazia e lixo) e
+  **mutação M11** (leitura por linha) que o prova.
+- **Defeito MEDIDO e corrigido no próprio card (DETECTADO POR: aceite):** com 64 posições de hash o ruído
+  de colisão chegava a **0,19** numa consulta sem correspondência (acima do piso 0,05 de então) — a
+  separação entre sobreposição real e ruído não se sustentava. Conserto medido: dimensão **256** (ruído
+  0,00) com piso **0,20**, declarado no contrato junto da troca recall × precisão.
+- **Lacunas declaradas (6, viajam no relatório):** L1 caso/playbook em `recommendations`/`pain_hypotheses`
+  (sem tabela dedicada); L2 busca lexical com colisão de hash e piso que troca recall por precisão;
+  L3 nenhum agente consome a memória ainda; L4 janela do funil não aplicada; L5 volume do Qdrant fora do
+  backup do produto (reconstruível); L6 `organization_id` nulo viaja como `null`.
+- Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+  `TRE_MEMORIA_COMERCIAL_TOKEN`, `TRE_MEMORIA_TOKEN` ou `TRE_QDRANT_API_KEY` aparecer na evidência.

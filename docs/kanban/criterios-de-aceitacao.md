@@ -1286,3 +1286,49 @@ por organização; quem envia é o caminho de outbound (W6), com a própria pol�
   caminho de outbound com aprovacao humana (W6).
 - **Lacuna medida (declarada, nao escondida):** o card entrega o PLANO do nurture, nao o nurture em execucao
   — materializar/agendar exige contrato novo + aprovacao (doc 12 §10).
+
+## TRE-W9-E06-T01 — Qdrant commercial memory
+
+- A pré-condição do card ("corpus comercial estável") é MEDIDA na base canônica, não presumida: piso
+  declarado no contrato (10 documentos, 3 tipos com base, mínimo por tipo) e `faltando` nomeado quando não
+  atende. Abaixo do piso a memória NÃO é publicada e **nada** é escrito no Qdrant (nem a coleção nasce).
+- A indexação é idempotente por id determinístico (UUIDv5 de coleção+tabela+id de origem): duas rodadas
+  mantêm contagem e `hash_do_relatorio`; conteúdo alterado na origem ATUALIZA o mesmo ponto.
+- A busca é determinística (score desc, desempate por id), com filtro declarado (`tipo`,
+  `organization_id`) e piso de score; consulta sem correspondência devolve lista vazia.
+- Privacidade: payload FECHADO (nove campos declarados, nenhum de contato), `contacts` nunca lida e
+  documento com padrão de PII (e-mail/telefone/CNPJ/CPF) vira lacuna `PII_SUSPEITA`, fora da coleção.
+- Fonte de verdade é o PostgreSQL: leitura pura provada por snapshot das tabelas e pelo mecanismo
+  `READ ONLY`; o Qdrant é memória derivada e reconstruível (`--recriar --confirmo`).
+- Guardas ADR-005: `prod` RECUSA (exit 4), Qdrant remoto RECUSA em dev, `homolog` exige `--confirmo` e
+  dimensão divergente RECUSA sem escrever.
+- Determinismo do relatório (relógio e estado do Qdrant fora do hash) e HTML auto-contido.
+- Suíte offline verde com prova de dente (autoteste por mutação).
+
+**ACCEPTANCE:** `ACEITE_MEMORIA_COMERCIAL_OK` (66 itens, 0 falhas) — pré-condição atendida medida na base
+(12 documentos, 4 tipos com base) e recusada na base magra (1 documento → `faltando` com 6 itens, 0
+coleções criadas); 12 pontos indexados numa coleção com a dimensão do contrato; payload fechado (9 campos)
+e **nenhum** e-mail/padrão de PII nos pontos (a linha com e-mail virou lacuna `PII_SUSPEITA`); idempotência
+(12 → 12, mesmo hash) e `UPDATE` na origem mudando o `conteudo_sha256` do MESMO ponto; busca com piso
+(0,42 na `OBJECAO` de preço e 0,49 na `DOR`, ruído 0,00), filtro por tipo, determinismo e hashes
+diferentes por consulta; snapshot das tabelas igual antes/depois e escrita recusada pelo `READ ONLY`;
+`DIMENSAO_DIVERGENTE` recusando sem escrever e `--recriar --confirmo` reconstruindo os 12 pontos.
+
+**TEST:** `python3 scripts/agentes/verificar_memoria_comercial.py --autoteste` (**26 itens + 11 mutações**)
+e `bash scripts/agentes/teste_memoria_comercial_aceite.sh` na VPS de dev, com **Qdrant descartável**
+(`qdrant/qdrant:v1.12.4` em 127.0.0.1:6339) e **PostgreSQL descartável** (`pg-memoria-comercial` +
+migration 0001 + base semeada). Evidência = saída completa com exit code, anexada ao card; containers
+removidos no fim.
+
+**ROLLBACK:** `--recriar --confirmo` reindexa a memória do zero a partir da fonte canônica; rollback total
+= remover a coleção (`DELETE /collections/memoria_comercial_v1`), remover o container descartável e
+reverter o commit (arquivos novos, sem DDL e sem migration). O PostgreSQL canônico não é tocado — leitura
+pura — e nada em homolog/produção depende da coleção.
+
+**RISK:** **médio** — primeiro armazenamento vetorial do projeto (infra nova, só em dev) e provedor de
+embedding local declarado. Riscos **declarados**: (a) a busca é **lexical** e sofre **colisão de hash**
+(L2) — o piso de score troca recall por precisão e consulta com um único token em comum pode não voltar;
+(b) nenhum agente consome a memória ainda (L3); (c) a janela temporal do funil não é aplicada (L4);
+(d) o volume do Qdrant **não** entra no backup do produto (L5) — perder a coleção custa reindexação;
+(e) caso/playbook vive em `recommendations`/`pain_hypotheses` (L1), não há tabela dedicada de playbook.
+Risco de dado: **baixo** (leitura pura na fonte, payload fechado, PII descartada).

@@ -1706,5 +1706,64 @@ if [ -f "$ACEITE_NURTURE" ]; then
   done
 fi
 
+
+# --- card TRE-W9-E06-T01 (Memoria comercial em Qdrant — memoria derivada, reconstruivel) ----------------
+CONTRATO_MEMORIA="hermes/memoria/memoria-comercial-v1.json"
+COMPONENTE_MEMORIA="hermes/memoria/memoria_comercial.py"
+for arquivo in "$COMPONENTE_MEMORIA" "$CONTRATO_MEMORIA" scripts/agentes/verificar_memoria_comercial.py \
+               scripts/agentes/teste_memoria_comercial_aceite.sh docs/architecture/memoria-comercial-v1.md \
+               docs/runbooks/memoria-comercial.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E06-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E06-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_MEMORIA" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_MEMORIA" \
+       scripts/agentes/verificar_memoria_comercial.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E06-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A fonte canonica e' leitura pura e a memoria e' derivada: o mecanismo tem de estar no codigo.
+  for marca in "default_transaction_read_only" "auditar_fonte" "uuid5" "DIMENSAO_DIVERGENTE" \
+               "QDRANT_NAO_E_DEV" "PII_SUSPEITA" "extrair_json"; do
+    if ! grep -q -F "$marca" "$COMPONENTE_MEMORIA"; then
+      echo "FALHOU card TRE-W9-E06-T01: componente sem $marca (mecanismo da leitura pura / guarda)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  # Nome de tabela vive no CONTRATO, nao no codigo (o prefixo do schema aparece uma vez, como guarda).
+  if [ "$(grep -c -E 'interactions|pain_hypotheses|recommendations' "$COMPONENTE_MEMORIA")" != "0" ]; then
+    echo "FALHOU card TRE-W9-E06-T01: nome de tabela literal no componente (tem de vir do contrato)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Pre-condicao e guardas declaradas no contrato (fail-closed e ADR-005).
+  for marca in 'corpus comercial estavel' 'payload_fechado' 'local-deterministico-v1' \
+               'RECUSA por desenho (exit 4' 'READ ONLY' 'PII_SUSPEITA'; do
+    if ! grep -q -F "$marca" "$CONTRATO_MEMORIA"; then
+      echo "FALHOU card TRE-W9-E06-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_memoria_comercial_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_memoria_comercial_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E06-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'ACEITE_MEMORIA_COMERCIAL_OK' 'VERIFICADOR_MEMORIA_COMERCIAL_PASS' \
+               'qdrant/qdrant:v1.12.4' 'READ ONLY'; do
+    if ! grep -q -F "$marca" scripts/agentes/teste_memoria_comercial_aceite.sh; then
+      echo "FALHOU card TRE-W9-E06-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
