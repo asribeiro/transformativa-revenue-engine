@@ -1223,6 +1223,62 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   dente `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)` exit 0 com os 4 logs do aceite em **sha256
   idêntico** e ainda citando o banco do aceite; controle negativo (cópia do script com o caminho
   compartilhado de volta) → a guarda reprova, exit 1.
+- **`TRE-W2-E03-T01-D04` (severidade média, `fix/TRE-W2-E03-T01-D04`) — o `--prova-de-dente`
+  mentia sobre os dentes quando chamado pela forma documentada.** O cabeçalho do script documenta
+  `bash verificar-modulo-odoo.sh --prova-de-dente` (nome simples, cwd = diretório do script), mas o
+  modo de dente era o **único** que re-invocava o próprio arquivo — e fazia isso com `"$0"`: por
+  nome simples `$0` não tem diretório e não está no `PATH`, então a re-invocação morria em
+  `verificar-modulo-odoo.sh: line 103/121: verificar-modulo-odoo.sh: command not found` e as duas
+  provas eram acusadas de **não ter dente** (`MODULO_ODOO_DENTE_FALHOU (2 prova(s) sem dente)`,
+  exit 1) — fail-closed, mas com diagnóstico **falso** ("o aceite é oco"), justamente para quem
+  foi ler os dentes. A bateria do E03 nunca pegou porque chama por caminho absoluto. Conserto:
+  `EU="$(readlink -f "$0")"` e `bash "$EU" --…` em **toda** re-invocação; sub-run **sem** linha
+  `RESULTADO:` passa a ser reportado como **falha de invocação** (contador próprio), nunca como
+  "item sem dente". Medido na VPS: blob antigo (`72d00aa1…`) na forma documentada → `command not
+  found` nas duas provas + `FALHOU … nao tem dente`, exit 1; conserto nas **duas formas**
+  (`bash verificar-modulo-odoo.sh --prova-de-dente` de dentro do diretório e `bash /caminho/absoluto/…
+  --prova-de-dente`) → `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0 nas duas**; aceite
+  completo remedido com o mesmo blob → `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0; controle
+  negativo (re-invocação apontada para caminho inexistente) → `2 falha(s) de invocacao` e **0**
+  "prova(s) sem dente", exit 1. Detalhe no runbook §5.2.
+- **Defeito do verificador do módulo — a régua do resquício media pelo nome do pacote
+  (`TRE-W2-E03-T01-D03`)** — os dois itens de resquício do passo 3 (o rollback declarado do card)
+  mediam `ir_ui_view`/`ir_model_fields` por `like '<módulo>%'` e "tabela com prefixo do módulo"; com o
+  módulo **instalado** os três termos davam **0** (código morto), enquanto a superfície real era
+  **1 tabela** (`tf_process_opportunity`, 14 colunas), **1 modelo**, **15 campos** e 17 registros de
+  `ir_model_data`. Provado com o banco sujo de propósito (desinstalação real + plantio de modelo,
+  tabela, campo e view, nada com `ir_model_data` do módulo): o verificador antigo (`72d00aa1…`) deu
+  **`MODULO_ODOO_OK (51 itens, 0 falhas)`** e o corrigido (`fa1f69f2…`) deu
+  **`MODULO_ODOO_FALHOU (51 itens, 2 falhas)`**, só nos dois itens de resquício. Conserto: a régua passou
+  a ser **derivada do que o módulo registra** (`ir_model_data` → modelos próprios, sem os compartilhados
+  com outro módulo; tabelas medidas em `information_schema`; campos/views por `model`), capturada
+  **antes** de desinstalar (depois o `ir_model_data` do módulo já não existe e a régua ficaria vazia de
+  novo) e impressa em `INFO`; e `--prova-de-dente` ganhou o **dente 3** (resquício plantado) →
+  `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`. O aceite segue **51 itens** nos dois módulos medidos (E05
+  com modelo e E03 base sem modelo — neste, com a superfície 0 **impressa**, não silenciosa). Detalhe no
+  runbook §10.
+
+- **`TRE-W2-E03-T01-D05` (card `t_de461d14`, branch `fix/TRE-W2-E03-T01-D05`) — os quatro consertos do
+  verificador do módulo (D01+D02+D03+D04) consolidados em **um** commit e publicados **uma vez** na cópia
+  operacional do dev.** Os três cards irmãos declararam de propósito que **não** republicariam (três
+  consertos parciais da mesma base, em paralelo, fazem cada um reverter o outro), e
+  `/opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` seguia no **blob do defeito** `72d00aa1…`: quem
+  rodasse o aceite pela forma documentada continuava avaliando o item morto do D01. Merge com base
+  `f773d3c` (D04, que já contém o D02) + `ebd90fd` (D01) + `9054c61` (D03); o conflito (um bloco no
+  mesmo arquivo) foi resolvido mantendo os **três contadores** (`DENTE_FALHAS`, `GUARDA_FALHAS`,
+  `INVOCACAO_FALHAS`) e o `DENTE_PROVAS`. O **dente 3** do D03 re-invocava por `"$0"` — terceira
+  ocorrência do defeito do D04 — e passou a `bash "$EU"`, com log próprio em
+  `$TRE_LOG_DIR/dente/prova-3` (a disciplina do D02). Publicação pelo caminho versionado
+  (`deploy/publicar.sh --commit 3da9f2f`, destino isolado, `digest 9e1bedc2…`, 322 arquivos) e o arquivo
+  instalado a partir do **artefato publicado**, com registro em `/opt/tre/dev/scripts/odoo/.publicado`
+  (`commit 3da9f2f`, blob `44913fd8…`, sha256 `bf63fdf4…`, modo 755). Remedido **da cópia
+  operacional**, não da branch: aceite `MODULO_ODOO_OK (51 itens, 0 falhas)` exit 0; `--prova-de-dente`
+  na forma documentada (nome simples, cwd = diretório do script) e por caminho absoluto →
+  `MODULO_ODOO_DENTE_OK` exit 0 nas duas, com os 4 logs do aceite em **sha256 idêntico** depois das
+  provas; módulo que declara `models/` → `(3 provas, 0 falhas)`; controle negativo (cópia do módulo com
+  teste que falha) → o item do D01 **FALHOU** (1 linha casada, exit 1) enquanto o padrão morto do defeito
+  dá 0 no mesmo log. `verificar_estrutura.sh`, `secret_scan.sh` e `verificar_papeis.sh` → `PASS` no
+  commit consolidado. Detalhe no runbook §11.
 
 ### Notas de estado
 
