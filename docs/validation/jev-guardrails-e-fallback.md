@@ -208,8 +208,11 @@ Sem prova: segredo em anexo binário/mídia (o scan é sobre o JSON da tarefa, n
 | Lado | Item (estado) | Saída bruta |
 |---|---|---|
 | REPROVA | `guardrail do_not_contact — REPROVA: empresa marcada + acao outbound bloqueia` (OK) | `decidido=bloquear outcome=BLOCK lane=high guardrails=['do_not_contact']` |
-| APROVA | `guardrail do_not_contact — APROVA: sem marcacao ou sem outbound executa` (OK) | outbound (`enviar e-mail pelo Titan`) sem marcação executa; empresa marcada em ação interna executa |
+| APROVA | `guardrail do_not_contact — APROVA: sem marcacao ou sem outbound executa` (OK) | outbound (`enviar e-mail pelo Titan`) sem marcação executa; empresa marcada em ação interna **não aciona o guardrail de VOCABULÁRIO** (a execução automática é proibida pelo `registro_marcado` — ver §9) |
+| REPROVA | `guardrail registro_marcado — REPROVA: registro anotado nao executa automaticamente (acao interna ou de abordagem)` (OK) | `decidido=bloquear outcome=BLOCK guardrails=['registro_marcado']`, `exige_aprovacao_humana=true`, 13 campos com o motivo em `override.registro_marcado.motivo` |
+| APROVA | `guardrail registro_marcado — APROVA: registro limpo segue o fluxo e executa` (OK) | `decidido=executar outcome=PASS guardrails=[]` (o encaixe não virou bloqueio geral) |
 | Mutação | `guardrail do_not_contact removido (empresa marcada e contatada)` | **detectada** — 1 item reprova o mutante |
+| Mutação | `guardrail de registro marcado removido (registro anotado volta a executar sozinho)` | **detectada** — 2 itens reprovam o mutante (ver §9) |
 
 Sem prova: consulta real à base cadastral (o roteador lê o sinal `empresa_do_not_contact` da tarefa; quem preenche o
 sinal a partir da base não faz parte deste card).
@@ -1193,3 +1196,106 @@ e commitou a árvore inteira em `842d62e` — arrastando junto `hermes/jev/routi
 `scripts/validar_jev_guardrails.py`, `scripts/verificar_jev_router.py` e este documento; `hermes/jev/policy_v1.yaml`
 (política congelada) e `hermes/policies/*.yaml` **não foram alterados**. As suítes continuam rodando contra cópias
 temporárias e não mutam o repo.
+
+## 9. Registro anotado como não-perturbe/opt-out não tem execução automática (card `t_60fac84b`, 02/10/2026)
+
+**O que o dono decidiu.** O defeito [encaixe] residual do conserto `TRE-W3-E04-T03-D02` (card `t_fa344342`) — as
+3 linhas do corpus anotado do dono que continuavam acionando o guardrail `do_not_contact` **por casamento de
+tokens** (`api`+`odoo`, `nome`+`transformativa`, `producao`+`rollback`) — não se resolve afinando vocabulário:
+resolve-se implementando o que a política **já decidia**: **ação sobre registro anotado como não-perturbe/opt-out
+é PROIBIDA para execução automática**. A máquina nunca executa; o recibo sai `BLOCK` com aprovação humana
+exigida. O texto bruto original daquele card está no anexo
+`/opt/data/kanban/boards/transformativa-revenue-engine/attachments/t_60fac84b/caso-bruto-original.txt`
+(o corpo do card foi reescrito pelo operador para esta decisão).
+
+### 9.1 O que mudou no roteador (e o que NÃO mudou)
+
+- guardrail novo `registro_marcado` (`IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO`) que aciona pela
+  **anotação** (`sinais.empresa_do_not_contact`), nunca pelo casamento de prosa — ele vive na camada de
+  **guardrails de CÓDIGO** (`_guardrails_de_codigo`), junto de `segredo_sem_payload` e
+  `fail_closed_sinal_desconhecido`, porque o sinal é do chamador e não depende do YAML (ver §9.6, D2);
+- quando ele está entre os guardrails acionados, a decisão é marcada como **proibida para execução
+  automática**: `decisao.exige_aprovacao_humana = true` e o rastro no campo `override` do recibo
+  (`registro_marcado`: `sinal`, `motivo`, `guardrails`) — **os 13 campos do contrato não crescem**;
+- o guardrail `do_not_contact` (vocabulário) continua existindo, com o mesmo gatilho: os dois convivem, e uma
+  ação de abordagem sobre registro anotado aciona os dois;
+- **nenhuma política foi alterada** (`hermes/jev/policy_v1_3.yaml` e `hermes/policies/*.yaml` intactos): a regra
+  já estava declarada em `guardrails` ("empresa com do_not_contact ou opt_out não é contatada") e na fonte da
+  camada Human Approval (`hermes/policies/human-approval.yaml`, `nunca_automatico`: "contatar empresa com
+  do_not_contact / opt_out marcado");
+- **o que NÃO mudou:** registro LIMPO segue o fluxo normal (nenhum bloqueio geral) e o conserto do D02 (a entrada
+  de PERMISSÃO do dev-harness fora da lista do guardrail de vocabulário) continua valendo.
+
+### 9.2 Suíte própria (nova)
+
+`scripts/verificar_registro_marcado_sem_execucao_automatica.py` — **53 itens, 7 mutações**, autoteste por mutação
+(49 itens + 5 mutações no commit `461a257`; os 4 itens e as 2 mutações da cobertura dos achados D1/D2 entraram no
+conserto do card `t_145eeaef`, ver §9.6).
+Ela prova os dois lados: marcado → `BLOCK` com recibo de 13 campos, motivo **dentro** do recibo e aprovação
+humana exigida; limpo → fluxo normal (ação interna executa). E o encaixe ponta a ponta: card na tabela `tasks` +
+declaração em `acoes-declaradas.yaml`, pelo gate real — o card limpo é liberado (PASS, exit 0) **com a aprovação
+de onda em vigor**, e o card marcado **não** é liberado (BLOCK, exit 3) nem com essa mesma aprovação. Desde o
+§9.6 ela também trava: (a) o rastro no **topo** do campo `override` quando o piso por ambiente age no mesmo card
+(anotação + DDL declarada) e (b) a anotação decidindo em **modo degradado** (política ausente), onde a aprovação
+de onda não libera o card anotado.
+
+### 9.3 Saída bruta (evidência)
+
+```bash
+cd <worktree>
+/opt/hermes/.venv/bin/python scripts/verificar_registro_marcado_sem_execucao_automatica.py --autoteste
+# RESULTADO: PASS (53 itens, 0 falha(s))
+# AUTOTESTE: 7/7 mutacoes reprovadas
+# RESULTADO FINAL: PASS (autoteste OK)   [exit=0]
+```
+
+### 9.4 Itens de suíte HOMOLOGADA que precisaram mudar (e por quê)
+
+| Suíte | Item | Antes | Depois |
+|---|---|---|---|
+| `scripts/verificar_outbound_sem_prosa_de_papel.py` (D02) | `lado 1c` (6 itens) | "o sinal não muda a decisão de um card que não aborda" | "o guardrail de VOCABULÁRIO não aciona; quem aciona é o de registro marcado" — o falso positivo do D02 segue provado morto |
+| `scripts/verificar_outbound_sem_prosa_de_papel.py` (D02) | `acao interna com o sinal ligado continua executando` | executava | "não executa automaticamente (registro marcado), com aprovação humana exigida" + item novo do lado limpo |
+| `scripts/validar_jev_guardrails.py` | `guardrail do_not_contact — APROVA` | "empresa marcada em ação interna executa" | "não aciona o guardrail de VOCABULÁRIO (a execução automática é proibida pelo `registro_marcado`)" |
+| `scripts/validar_jev_guardrails.py` | — | — | +2 itens (`REPROVA`/`APROVA` do `registro_marcado`) e +1 mutação (`registro_marcado removido`) |
+| `scripts/verificar_jev_policy_v1_1.py` (§9.6) | mutação `piso fora do recibo` | âncora `plano["override"] = {"piso_por_ambiente": registro}` | âncora na chamada nova (`_compor_override_do_recibo`) — a mutação continua com o mesmo dente: tira o piso do recibo e a suíte reprova |
+
+### 9.5 Limitações honestas
+
+- a anotação é um **sinal declarado pelo chamador** (`sinais.empresa_do_not_contact`): quem consulta a base e
+  preenche o sinal (encaixe/board) não faz parte deste card — o roteador julga o que recebe;
+- pelo mesmo motivo, o "não executa automaticamente" vale para a decisão do roteador e para o gate: **não há
+  prova de que um executor externo** (cron, ETL, pipeline de mídia) consulte o roteador antes de agir;
+- a **aprovação humana registrada** continua podendo liberar o card (é o canal previsto na política) — o que a
+  marca nova garante é que a liberação **não é automática**: exige decisão humana registrada;
+- a precisão do **casamento de vocabulário** (`_e_acao_outbound`, resíduo do D02) não foi melhorada: para
+  registro anotado ela deixou de decidir sozinha (o `registro_marcado` bloqueia antes e independentemente), que é
+  o que o dono pediu. Precisão do vocabulário por si é card próprio.
+- as duas limitações de **cobertura/rastro** medidas na verificação independente do card `t_2c8c5a22` (D2: em
+  modo degradado a anotação não decidia, e o piso por ambiente engolia o caminho `override.registro_marcado`)
+  estão **fechadas** no conserto do card `t_145eeaef` — ver §9.6. O que segue fora da garantia: política
+  carregável mas **incompleta** para outro guardrail de política segue sendo coberta por eles — a anotação não
+  depende do YAML, os demais guardrails de política continuam dependendo.
+
+### 9.6 Achados de cobertura D1/D2 da verificação independente (card `t_145eeaef`, 02/10/2026)
+
+A verificação independente do conserto (card `t_2c8c5a22`, perfil `tester`) aprovou o caminho normal e abriu dois
+achados **não bloqueantes** de cobertura/rastro — nenhum dos dois invalidava o guardrail, mas a garantia declarada
+não valia nesses caminhos. Os dois foram fechados na raiz:
+
+- **D1 [rastro] — o piso por ambiente engolia o caminho `override.registro_marcado`.** Com card anotado **e**
+  DDL/migration declarada no próprio texto, o piso por ambiente também age; ele embrulhava *tudo* o que já estava
+  em `override` sob a chave `humano`, e o rastro do guardrail saía em `override.humano.registro_marcado` — o
+  caminho que o item 1 do card, este §9 e a suíte leem. **Correção:** a composição do campo `override` passou a ter
+  uma regra única (`_compor_override_do_recibo`): `humano` nomeia **só** o override que a própria tarefa declarou
+  (`plano["override_do_chamador"]`) e é recomposto desse slot; os rastros de regra (`piso_por_ambiente`,
+  `registro_marcado`) são **irmãos** de `humano`, no topo — nenhuma chave já gravada é descartada. Comportamento
+  intacto (BLOCK, exit 3, `exige_aprovacao_humana`, 13 campos) e o piso continua registrado em
+  `override.piso_por_ambiente`.
+- **D2 [fail-open] — em modo degradado a anotação não decidia.** O guardrail `registro_marcado` vivia em
+  `_guardrails_de_politica`, que só roda com política carregada (`if politica is not None`): sem política
+  (ausente/corrompida/versão desconhecida) a decisão virava `ESCALATE` e o gate consulta a aprovação humana
+  exatamente nesse desfecho — o card ANOTADO era liberado (`allow=True`, exit 0, `guardrails=[]`), **idêntico a um
+  card limpo**. **Correção:** o guardrail passou para `_guardrails_de_codigo` (sempre roda, inclusive no
+  degradado). Em modo degradado o card anotado agora sai `BLOCK`/exit 3 com `exige_aprovacao_humana: true` e o
+  motivo no recibo; a aprovação de onda não o libera. O card **limpo** em modo degradado segue no fluxo
+  degradado (escada conservadora + aprovação registrada) — não virou bloqueio geral.
