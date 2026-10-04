@@ -1174,5 +1174,57 @@ python3 scripts/agentes/verificar_captura_evento.py >/dev/null 2>&1 \
   && echo "OK    suite do componente verde (verificar_captura_evento.py)" \
   || { echo "FALHOU card TRE-W7-E06-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
 
+
+# --- card TRE-W8-E02-T01 (Conversao por segmento) -----------------------------------------------------
+CONTRATO_SEG="hermes/agentes/analytics/conversao-segmento-v1.json"
+COMPONENTE_SEG="hermes/agentes/analytics/conversao_segmento.py"
+for arquivo in "$COMPONENTE_SEG" "$CONTRATO_SEG" scripts/agentes/verificar_conversao_segmento.py \
+               scripts/agentes/teste_conversao_segmento_aceite.sh \
+               docs/architecture/conversao-por-segmento-v1.md docs/runbooks/conversao-por-segmento.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E02-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E02-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_SEG" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_SEG" \
+       scripts/agentes/verificar_conversao_segmento.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Os eixos tem de bater com o vocabulario do contrato de dados E os estagios com os do funil: quem
+  # decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_SEG" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: --conferir recusou (eixo x contrato de dados x funil)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O recorte NAO pode reimplementar o funil: a derivacao e' importada.
+  if ! grep -q '^import funil' "$COMPONENTE_SEG"; then
+    echo "FALHOU card TRE-W8-E02-T01: componente nao importa o funil (segunda regra de funil?)"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'SEM_DADO' 'FORA_DO_VOCABULARIO'; do
+    if ! grep -q -F "$marca" "$CONTRATO_SEG"; then
+      echo "FALHOU card TRE-W8-E02-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_conversao_segmento_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_conversao_segmento_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_CONVERSAO_SEGMENTO_OK' scripts/agentes/teste_conversao_segmento_aceite.sh; then
+    echo "FALHOU card TRE-W8-E02-T01: aceite sem o marcador ACEITE_CONVERSAO_SEGMENTO_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

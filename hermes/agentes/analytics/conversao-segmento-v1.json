@@ -1,0 +1,121 @@
+{
+  "versao": "conversao-segmento-v1",
+  "card": "TRE-W8-E02-T01",
+  "wave": "W8 (Analytics)",
+  "titulo": "Conversao por segmento — recorte do funil (funil-v1) por eixo declarado",
+  "componente": {
+    "nome": "conversao_segmento",
+    "arquivo": "hermes/agentes/analytics/conversao_segmento.py",
+    "papel": "RECORTAR o funil ja' derivado pelo card TRE-W8-E01-T01 (`funil-v1`) por EIXO de segmentacao declarado, com vocabulario fechado vindo do Data Contract V1 (faixa de funcionarios, doc 03 §5; faixa de prioridade/tier, doc 03 §4), medir a conversao de cada segmento e compara-la com a conversao da base inteira (indice vs base)",
+    "reuso_declarado": "importa `funil.py` e usa as MESMAS funcoes de contrato, guarda de ambiente, leitura pura, resolucao de evidencia, alcance cumulativo, terminal Won/Lost e ramo Nurture: a derivacao do funil e' UMA so'. Este componente nao reimplementa estagio, ordem, nivel, alcance nem atribuicao — recorta o resultado.",
+    "nao_faz": [
+      "NAO reimplementa funil: a ordem dos estagios, o alcance cumulativo, o terminal Won/Lost e o ramo lateral Nurture vem do `funil.py` (funil-v1); duas copias da regra divergiriam em silencio",
+      "NAO escreve: leitura pura, SO' SELECT, com `default_transaction_read_only = on` (mecanismo do funil) e auditoria da fonte reprovando verbo de escrita ANTES de qualquer conexao",
+      "NAO inventa segmento: valor fora do vocabulario do Data Contract V1 NAO vira segmento — vai para a lacuna FORA_DO_VOCABULARIO; organizacao sem o dado vai para SEM_DADO",
+      "NAO materializa o eixo: nada e' gravado em tabela nem em coluna nova (segmento e' recorte de leitura, nao dado persistido)",
+      "NAO calcula score nem tier como fato: a faixa de prioridade e' DERIVADA da pontuacao vigente (score PRIORITY com versao) aplicada as faixas congeladas do contrato; score sem versao nao qualifica",
+      "NAO serve HTTP, nao autentica usuario nem hospeda pagina: entrega JSON + HTML auto-contido (artefato de dev, ADR-005)",
+      "NAO expoe dado pessoal: usa faixa de funcionarios e pontuacao; nunca le nome, e-mail, telefone, WhatsApp, CNPJ ou dominio — a saida carrega contagem e taxa",
+      "NAO atribui causalidade: mede conversao por segmento; 'por que' converte melhor e' leitura humana, nao inferencia do componente"
+    ]
+  },
+  "autoridade": {
+    "fonte": [
+      "doc 03 §2 (funil conceitual), §4 (tiering A+/A/B/C/Nurture) e §5 (faixas de funcionarios)",
+      "docs/data/DATA_CONTRACT_V1.md §7 (vocabularios fechados) e §7.1 (funil, dono Odoo)",
+      "docs/data/data_contract_v1.json: `vocabularies.employee_band`, `scores.tiers`, `funnel_stages`, `scores.requires_version_column`",
+      "hermes/agentes/analytics/funil-v1.json (contrato do funil — a derivacao recortada)",
+      "ADR-005 (nada nasce em producao)"
+    ],
+    "fora_do_escopo": [
+      "materializar estagio ou segmento em coluna do PostgreSQL: o contrato §2 da' o estagio ao Odoo e o V1 nao persiste segmento; este componente deriva em leitura",
+      "receita/valor por segmento: o valor da oportunidade e' dado do Odoo e fica para W8-E04 (performance de mensagem) e para o dono do dado",
+      "significancia estatistica e intervalo de confianca: o V1 nao define teste; este card DIZ o tamanho da amostra (amostra_pequena) e nao vende conclusao",
+      "custo de agente por segmento: W8-E05",
+      "calibracao de score, previsao de canal/timing e nurture automatizado: W9"
+    ]
+  },
+  "unidade": {
+    "contagem": "organization (UUID canonico do contrato §3) — a MESMA unidade do funil recortado",
+    "regra": "toda organizacao da base cai em exatamente UM bucket por eixo: ou um valor declarado do vocabulario, ou SEM_DADO, ou FORA_DO_VOCABULARIO; a soma dos buckets tem de fechar com o total da base (RECORTE_NAO_FECHA_COM_A_BASE)"
+  },
+  "contrato_de_funil": "funil-v1",
+  "amostra_minima": 5,
+  "estagios_esperados": [
+    "Descoberto", "Pesquisado", "Qualificado", "Contato identificado", "Abordagem iniciada",
+    "Engajamento", "Reunião", "Diagnóstico", "Proposta", "Negociação", "Won", "Lost", "Nurture"
+  ],
+  "eixos": [
+    {
+      "nome": "faixa_funcionarios",
+      "titulo": "Faixa de funcionarios",
+      "fonte": "FAIXA_FUNCIONARIOS",
+      "vocabulario": "employee_band",
+      "derivacao": "igualdade",
+      "regra": "`organizations.employee_band` da organizacao comparada por IGUALDADE EXATA (mesma normalizacao de rotulo do funil) contra o vocabulario congelado do contrato de dados; valor fora do vocabulario NAO vira segmento (FORA_DO_VOCABULARIO) e valor ausente vira SEM_DADO",
+      "valores": ["LT_70", "70_149", "150_299", "300_499", "500_699", "700_1000", "GT_1000", "UNKNOWN"]
+    },
+    {
+      "nome": "tier_prioridade",
+      "titulo": "Faixa de prioridade (tier)",
+      "fonte": "PONTUACAO_PRIORITY",
+      "vocabulario": "tiers",
+      "derivacao": "faixa_de_pontuacao",
+      "regra": "tier DERIVADO da PONTUACAO VIGENTE: score `PRIORITY` com `score_version` preenchida (contrato §8 — score sem versao nao e' reprodutivel), vigente = maior `calculated_at` com empate resolvido pelo maior `score_value`; aplicada as faixas congeladas do contrato de dados. Sem pontuacao vigente a organizacao fica em SEM_DADO",
+      "valores": ["A+", "A", "B", "C", "Nurture"]
+    }
+  ],
+  "fontes": {
+    "FAIXA_FUNCIONARIOS": {
+      "tabela": "organizations",
+      "coluna_tempo": "created_at",
+      "papel": "atributo de segmentacao por faixa de funcionarios (doc 03 §5); a linha viva da organizacao (deleted_at IS NULL) e' a unica fonte deste eixo"
+    },
+    "PONTUACAO_PRIORITY": {
+      "tabela": "scores",
+      "coluna_tempo": "calculated_at",
+      "papel": "pontuacao de prioridade versionada (score_type = 'PRIORITY' e score_version preenchida): insumo do tier DERIVADO. O componente le a PONTUACAO, nunca o nome da organizacao"
+    }
+  },
+  "derivacao_do_recorte": {
+    "regra": "para cada bucket do eixo, o mesmo `funil.calcular_funil` roda sobre as organizacoes do bucket, com a evidencia recortada (`evidencia[estagio] & bucket`) e as MESMAS lacunas da base",
+    "por_que": "o segmento e' um RECORTE do funil, nao um funil paralelo: reimplementar alcance/terminal aqui seria a segunda regra, e a segunda regra diverge",
+    "lacunas": "as lacunas do funil sao da BASE (rotulo de estagio fora do vocabulario, evento sem atribuicao): viajam inteiras em cada recorte, nunca recalculadas por segmento",
+    "conversoes": "as conversoes por estagio sao as do funil recortado (da anterior e do topo); o `conversao_do_topo_pct` do estagio Won e' a taxa de conversao do segmento"
+  },
+  "comparacao_com_a_base": {
+    "taxa_conversao_pct": "100 * Won(segmento) / organizacoes(segmento) — Won e' evidencia propria (nao acumulada), como no funil",
+    "taxa_conversao_da_base_pct": "100 * Won(base) / organizacoes(base)",
+    "indice_vs_base_pct": "100 * taxa(segmento) / taxa(base) — acima de 100 converte melhor que a base; denominador zero devolve null (base vazia nao e' taxa zero)",
+    "amostra_pequena": "organizacoes(segmento) < amostra_minima => `amostra_pequena: true`: o segmento aparece (a lacuna e' declarada), mas nao e' leitura de vencedor",
+    "nao_ranqueia": "o componente nao elege 'melhor segmento': publica a taxa, o indice e o tamanho da amostra de cada segmento, em ordem declarada pelo contrato"
+  },
+  "cobertura": {
+    "regra": "por eixo o relatorio publica `classificadas`, `cobertura_pct`, `sem_dado` e `fora_do_vocabulario`; classificadas / total = cobertura",
+    "por_que": "segmentacao sem cobertura declarada vende conclusao sobre base que nao foi classificada; a soma dos buckets tem de fechar com a base"
+  },
+  "lacunas_declaradas": [
+    "L1: o estagio de funil e' do Odoo (contrato §2) e a derivacao vem do `funil-v1` (card W8-E01-T01). Nada materializa estagio em coluna do PostgreSQL: o recorte herda essa condicao — o que existe e' a trilha (sync_events)",
+    "L2: evento da trilha cujo entity_id nao casa organizacao conhecida (tipicamente OPPORTUNITY_WON/LOST, que carregam o UUID da OPORTUNIDADE) fica em `lacunas.eventos_sem_atribuicao` da BASE e NAO entra em estagio nenhum — vale igual para todo segmento",
+    "L3: o vocabulario literal dos estagios do Odoo (crm.stage) nao esta' congelado no Data Contract V1 (so' a ordem conceitual): rotulo que nao for exatamente declarado cai em lacuna",
+    "L4: Lost e' terminal sem registro do estagio de origem (doc 03 nao define o ponto de perda no V1): organizacao perdida conta como tendo alcancado todos os niveis lineares anteriores, em qualquer segmento",
+    "L5: sem janela declarada (--desde/--ate) o relatorio e' o ACUMULADO da base; a janela filtra pela coluna de tempo de cada fonte e a comparacao de periodos nao esta' no V1",
+    "L6: o eixo e' lido como o atributo VIGENTE (foto de hoje), nao como historia: o contrato nao guarda a faixa de funcionarios nem o tier ao longo do tempo, entao nao ha como reconstruir 'o segmento da organizacao na epoca da conversao'. Mudanca de faixa/tier move a organizacao de bucket retroativamente no relatorio",
+    "L7: `employee_band` com valor fora do vocabulario congela em FORA_DO_VOCABULARIO (ex.: base de smoke com faixa em outro formato) — e' lacuna, nunca segmento por semelhanca; fechar isso exige versao nova do contrato de dados (decisao do dono)",
+    "L8: tier so' existe para organizacao com pontuacao PRIORITY versionada vigente; sem ela a organizacao fica em SEM_DADO e a cobertura do eixo cai — score sem versao nao qualifica (contrato §8)",
+    "L9: o contrato nao persiste tier: a faixa e' derivada da pontuacao na leitura. Mudanca nas faixas (contrato de dados) muda o relatorio — por isso a versao e o sha256 do contrato viajam no relatorio",
+    "L10: `UNKNOWN` e' valor DECLARADO do vocabulario de faixa de funcionarios (doc 03 §5): quem esta' em UNKNOWN aparece como segmento, nao como SEM_DADO — a diferenca entre 'declaradamente desconhecido' e 'sem dado' e' preservada de proposito"
+  ],
+  "guardas": {
+    "ambiente": "dev exige porta de banco LOCAL (`docker exec -i pg-<dev|aceite> psql ...`, mecanismo do funil); prefixo remoto e' RECUSA (BANCO_NAO_E_DEV). homolog exige --confirmo. prod e' RECUSA por desenho (exit 4)",
+    "leitura_pura": "toda consulta roda dentro de transacao READ ONLY: `default_transaction_read_only = on` em DOIS `-c` (SET e depois a consulta — com um unico `-c` o SET nao vale, defeito medido no card W8-E01-T01) e a auditoria da fonte reprova verbo de escrita antes de qualquer conexao (ESCRITA_NO_CODIGO, exit 3)",
+    "contrato": "o contrato do recorte e' validado contra o contrato de dados (vocabulario de CADA eixo) e contra o contrato do funil (estagios, ordem, niveis, lateral e fontes): divergir e' RECUSA, nao aviso",
+    "segredo": "nenhum valor de segredo entra na linha de comando; se o valor de TRE_CONVERSAO_TOKEN aparecer na evidencia, a rodada e' recusada (SENHA_VAZADA, exit 5)",
+    "pii": "o componente le `employee_band` e a pontuacao; nao le nem projeta nome, e-mail, telefone, WhatsApp, CNPJ ou dominio — a saida carrega contagem e taxa por segmento"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, janela, base (organizacoes, digest, amostra_minima), global (funil da base inteira + taxa global), eixos (nome, titulo, regra, valores, cobertura, sem_dado, fora_do_vocabulario e os SEGMENTOS com organizacoes, won, lost, nurture, em_aberto, taxa, taxa da base, indice vs base, amostra_pequena e os estagios do recorte), lacunas, fontes, lacunas_declaradas, contrato (versao + sha256 + versao/sha do funil) e hash_do_relatorio",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com uma tabela por eixo (segmento x organizacoes x won x lost x taxa x indice vs base), a marca de amostra pequena, a cobertura do eixo e as lacunas declaradas",
+    "determinismo": "a mesma base com o mesmo contrato produz o MESMO relatorio; `gerado_em` e' a unica diferenca e NAO entra no hash_do_relatorio"
+  }
+}

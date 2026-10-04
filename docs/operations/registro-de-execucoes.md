@@ -2946,3 +2946,59 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   do container descartavel na hora; ha item medindo a ausencia de PII na evidencia).
 - **Destrava:** o canal `eventos` (Motor 3 — Relationship, doc 03) passa a entrar na base canonica com o
   vinculo do evento; a escrita no Odoo a partir de evento fica atras do card de contrato/aprovacao (lacuna L1).
+  `TRE_FUNIL_TOKEN` aparecer na evidência — item medido na suíte offline.
+
+## TRE-W8-E02-T01 — Conversao por segmento — 03/10/2026
+
+**Card:** `TRE-W8-E02-T01` (W8 / Analytics) · **Base:** `origin/feature/TRE-W8-E01-T01` @ `a5d9af3` ·
+**Branch:** `feature/TRE-W8-E02-T01` · **Maquina:** VPS Contabo `vmi3619453` (169.58.24.102), ambiente
+**dev** — codigo para `/opt/tre/w8e02t01-r1` por `tar` em pipe ssh (sem `scp`).
+
+**O que foi medido (por execucao real, nao por leitura do codigo):**
+
+- `python3 scripts/agentes/verificar_conversao_segmento.py --autoteste` -> **34 itens, 0 falhas + 12/12
+  mutacoes** cada uma reprovando item que o alvo limpo nao reprova. As 4 mutacoes que passaram na primeira
+  rodada eram **buraco da suite**, nao do codigo, e foram fechadas: (a) dente de semelhanca nao existia na
+  fixture — passou a ter faixa quase identica (`150_299X`); (b) a guarda de `prod` e' redundante (existe no
+  recorte e no funil reusado) — a mutacao agora desliga as duas, senao nao muda comportamento e nao prova
+  nada; (c) neutralizar so' a checagem de container da guarda nao muda comportamento porque o prefixo
+  remoto ja' e' recusado antes — a mutacao passou a neutralizar o casamento do prefixo; (d) o item de
+  determinismo usava `gerado_em` FIXO nas duas rodadas, entao nao media a invariante — agora roda com
+  `gerado_em` diferente e exige o mesmo hash. Alem disso, os itens de guarda passaram a medir o **motivo**
+  da recusa (`BANCO_NAO_E_DEV`, `PRODUCAO_RECUSADA`, `HOMOLOG_SEM_CONFIRMO`, `JANELA_INVALIDA`), nao so' o
+  exit code: codigo igual por acidente nao prova guarda.
+- `bash scripts/agentes/teste_conversao_segmento_aceite.sh` -> **`ACEITE_CONVERSAO_SEGMENTO_OK` (43 itens,
+  0 falhas, exit 0)** em PostgreSQL descartavel `pg-analytics-seg-acc` + migration 0001 + 12 organizacoes
+  semeadas (2 eixos, sentinelas e bordas). Destaques: recorte por faixa conferido a mao (150_299=6,
+  LT_70=3, GT_1000=1, SEM_DADO=1, FORA_DO_VOCABULARIO=1, soma 12); tier a mao (A+=2, A=2, B=1, C=2,
+  Nurture=2, SEM_DADO=3); conversao/indice vs base (16,67%/66,68 e 33,33%/133,32; global 3/12 = 25,0%);
+  cobertura (faixa 10/12 = 83,33% · tier 9/12 = 75,0%); **coerencia com o funil do W8-E01-T01 na mesma
+  base** (estagios+alcance+conversoes, won/lost/nurture/em_aberto e lacunas identicos); leitura pura
+  (snapshot das 12 tabelas igual antes/depois + transacao READ ONLY recusando escrita, sem deixar linha);
+  determinismo; saida sem PII/organizacao nominal; HTML auto-contido.
+- **Defeito medido pelo aceite (DETECTADO POR: aceite, antes da entrega):** a primeira rodada reprovou a
+  **semente** e o sintoma apareceu **adiante** (global sem won, segmentos com taxa `null`) — um id de
+  `sync_events` com 10 caracteres no primeiro grupo (`0000009991-…`) e' UUID invalido, o `psql` com
+  `ON_ERROR_STOP` parou naquela tabela e os eventos nem entraram. Conserto: UUID valido
+  (`00000099-…`) **e** item novo que confere a semente por CONTAGEM (12 organizacoes, 7 eventos, 11
+  scores) — semente parcial nao passa mais em silencio.
+- `python3 hermes/agentes/analytics/conversao_segmento.py --conferir` -> valida os tres contratos
+  (recorte x funil x contrato de dados) sem banco; `--planejar` declara os dois eixos, o vocabulario de
+  cada um e as sentinelas.
+- Artefatos identicos entre local e VPS (sha256 medidos nos dois lados):
+  `conversao_segmento.py` `9c68b5b3...`, `conversao-segmento-v1.json` `81f1da55...`,
+  `verificar_conversao_segmento.py` `c74a7475...`, `teste_conversao_segmento_aceite.sh` `5d4dcd44...`.
+
+**Ambiente:** nada em producao (ADR-005). O container descartavel do aceite e' removido no fim; os
+containers do ambiente nao foram tocados; nenhuma credencial real, nenhuma ponta externa.
+
+**Lacunas declaradas:** as 10 do desenho (`docs/architecture/conversao-por-segmento-v1.md` §5) viajam no
+relatorio (`lacunas_declaradas`). As que mais pesam na operacao: **L6** o eixo e' a foto de hoje (nao ha
+historia de segmento: nao da' para reconstruir o segmento na data da conversao) e **L7** faixa de
+funcionarios fora do vocabulario congela em lacuna ate' o contrato de dados fechar o vocabulario.
+
+**Evidencia anexada ao card:** `aceite-conversao-segmento-43ok.out`,
+`suite-conversao-segmento-34ok-12dentes.out` e `sha256-artefatos.out`.
+
+**Segredos:** nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o valor de
+`TRE_CONVERSAO_TOKEN` aparecer na evidencia.
