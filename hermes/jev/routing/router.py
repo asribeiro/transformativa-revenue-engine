@@ -600,6 +600,44 @@ def _singular(t: str) -> str:
 #
 # Nada disso vale fora do vocabulario de papel: `CONCEITOS_DE_ACAO`,
 # `REGRAS_DE_ACAO_HUMANA` e o casamento de credencial seguem em `_token_casa`.
+#
+# ---------------------------------------------------------------------------
+# LIMITACAO DECLARADA — o recall de flexao NAO esta fechado (achado A1 da verificacao
+# independente `t_b8adfe6c`; defeito TRE-W3-E04-T03-D01-D01-D01, card `t_79156ab2`)
+#
+# As formas abaixo sao o MESMO termo do vocabulario, flexionado, e NAO acionam este
+# encaixe. Ficam de fora por DECISAO MEDIDA, nao por esquecimento: a terminacao e cega a
+# classe da palavra — acrescentar `-o`/`-as`/`-em` corta QUALQUER token terminado nelas —
+# e entre as 10 formas 4 sao tambem substantivo/adjetivo em portugues (`contato`, `envio`,
+# `publico`, `publicas`) e 1 cai na regra de radical minimo de 5 (`envia`, radical `envi`).
+# A mesma familia de falso positivo que o D01 removeu volta pela porta da terminacao:
+#   * 1a pessoa do presente (`-o`): contato, envio, publico, aplico
+#       (`contato` e o substantivo da ficha de CRM; `envio` e `publico` sao substantivo/
+#        adjetivo; com `-o` em TERMINACOES_DE_UMA_LETRA, `contrato` -> `contrat` casaria
+#        `contratar`, que e tolerancia de prefixo pela porta dos fundos);
+#   * 2a pessoa (`-s`/`-as`): contatas, envias, publicas, aplicas
+#       (`-as` e plural de substantivo; `es`/`as` ja foram MEDIDOS afrouxando no D01-D01);
+#   * 3a pessoa plural do subjuntivo (`-em`): contatem
+#       (`-em` ja foi MEDIDO afrouxando no D01-D01);
+#   * 3a pessoa singular de radical curto: envia (radical `envi`, 4 caracteres)
+#       (terminacao de UMA letra exige radical de 5 — e a mesma regra que sustenta
+#        `conta` !~ `contar`; baixar o minimo para 4 quebra essa precisao medida).
+#
+# MEDICAO (corpus de 7710 textos do proprio board, mesma fonte da verificacao
+# independente; saida bruta em `logs-medicao-A1.txt` do card `t_79156ab2`): os DOIS
+# candidatos que restaurariam estas formas pelo caminho da terminacao/forma declarada
+# PIORAM a decisao —
+#   * terminacao ampliada (`-o`, `-as`, `-em`; radical minimo de uma letra = 4):
+#     41 desfechos mudam nos 4540 textos afetados, 28 viram BLOCK — inclusive prosa real
+#     do board sem nada de abordagem (uma linha so com "ENTREGA EXIGIDA:" passa a BLOCK
+#     por "alteracao estrutural de arquitetura") — e 1 caso AFROUXA (BLOCK -> ESCALATE);
+#   * tabela de formas por termo declarado: 14 desfechos mudam, 5 viram BLOCK (ex.:
+#     "resumo do contato com o cliente") e a frase canonica "contatar lead, cliente ou
+#     decisor" AFROUXA de BLOCK para ESCALATE — quebraria o lado 2d desta suite.
+# Recall completo exige um SEGUNDO MECANISMO decidido item a item (paradigma verbal por
+# termo declarado). Ate a decisao, a limitacao fica DECLARADA — aqui, no registro de
+# aprovacoes e no docstring da suite `scripts/verificar_papel_sem_prefixo.py` — para
+# nunca ser lida como recall fechado.
 # ---------------------------------------------------------------------------
 TERMINACOES_VERBAIS = tuple(sorted((
     # formas nominais
