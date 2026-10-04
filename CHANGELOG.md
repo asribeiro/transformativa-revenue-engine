@@ -1063,6 +1063,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   fail-closed confere o sha256 dos `[1-4]-*.log` do aceite antes/depois; o dente 2 ainda exige que o
   item do log de teste dispare — guarda e dente do item chegaram no retrabalho da revisão rodada 1
   (ver `Fixed`, `TRE-W2-E07-T01`).
+- **Verificador da CLASSE do `D04-D01` — ponteiro de commit em doc de registro (`t_37db9564`)** —
+  `scripts/verificar_ponteiros_de_registro.py` resolve todo identificador hex (7..40) de
+  `docs/operations/*.md` e `docs/runbooks/*.md` contra o repositório (`rev-parse --disambiguate`,
+  `cat-file -t`, `for-each-ref --contains`) e **reprova** o *ponteiro morto* — commit que não se
+  alcança por ref nenhuma — citado sem marca na **mesma unidade** do doc (`fora de ref`,
+  `nao se alcanca por ref`, `ERRATA DE PONTEIRO`). Não reprova falso positivo: `sha256` de conteúdo
+  (64 hex), fragmento truncado com `…`, prefixo ambíguo e identificador sem objeto no repositório
+  saem **classificados**. Dente antes/depois em um comando: árvore congelada `3f104ac` →
+  `PONTEIROS_FALHOU (9 ponteiros mortos, 9 sem marca)`, exit 1, listando `f1f1cb6b`
+  (registro L190/L192; runbook L192/L203/L212/L220/L248) e `c41822e` **sem marca**; árvore corrigida
+  `4ea3d36` (que já contém o conserto do `D04-D01` em `8827c37`) → `PONTEIROS_OK (11 ponteiros
+  mortos, 0 sem marca)`, exit 0. Prova de mutação (`--autoteste`): ponteiro morto **novo** plantado
+  sem marca → reprova; com a marca → passa; marca em outra unidade → reprova; `sha256` de conteúdo e
+  ponteiro vivo → passam — **6/6** mutações com o veredito esperado. Classificação (regra 3) medida
+  em repo descartável, porque o repositório canônico não tem colisão de prefixo de 7 chars
+  (**0 em 2305 objetos**): prefixo ambíguo `59b7` (dois blobs) → `ambiguo`, e um sha inexistente →
+  `ausente` — ambos **classificados, não reprovados**. Teste num comando:
+  `bash scripts/teste_ponteiros_de_registro.sh` → `PONTEIROS_TESTE_OK (17 itens, 0 falhas)`, exit 0.
+  Os dois artefatos entram na cobertura de `scripts/verificar_estrutura.sh`.
 
 ### Security
 
