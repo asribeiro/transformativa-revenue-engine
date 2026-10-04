@@ -706,6 +706,7 @@ declaracoes:
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_a5afde31
+  - card_id: t_eb323dd7
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
@@ -790,61 +791,127 @@ declaracoes:
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_2821c15b
+  - card_id: t_33bc1765
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_90b83807
+  - card_id: t_ba40919b
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_7722449b
+  - card_id: t_6c170b51
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_632a199f
+  - card_id: t_e5e497fd
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
   - card_id: t_b2c848da
+  - card_id: t_578d88a4
     acao_codigo: execucao_de_card
     declarado_por: Anderson Ribeiro
     declarado_em: '2026-10-01'
     motivo: >-
       Card da onda W9 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      Card da onda W7 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_6cc75a1d
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W8 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_0248a568
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W8 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_8ba150bc
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W8 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_f5751cd2
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W8 no ciclo automatico (autorizacao do dono em 2026-10-01: a
+      sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
+      deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
+      sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
+  - card_id: t_3b43227a
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-01'
+    motivo: >-
+      Card da onda W8 no ciclo automatico (autorizacao do dono em 2026-10-01: a
       sequencia das ondas segue sozinha). Execucao em desenvolvimento, sem credencial de
       deploy e sem ato em producao; credencial/producao/dado de cliente seguem exigindo o dono.
       sem producao e sem credencial de deploy (onda W1-dev cobre a regra).
