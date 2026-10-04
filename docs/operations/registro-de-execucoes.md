@@ -3775,3 +3775,99 @@ divergencia contrato x codigo (nao alcancavel pelo SQL) e robustez da propria le
 - **Logs brutos (agente, scratch do perfil `desenvolvedor`):** `probe-odoo-crm.out`, `probe-crm-estado.out`, `configurar-1.out`, `configurar-4.out` (idempotencia), `verificar-1.out`, `prova-negativa-a.out`, `prova-negativa-b2.out` (intrusa: reprova e e' removida), `prova-c-rollback.out`/`prova-c-rollback-2.out`, `prova-d-rollback-total-2.out`, `diag-nome-jsonb.out`/`diag-nulo.out` (defeito 4). Anexos do card `t_adea8e6b`; evidencias na VPS em `/opt/tre/dev/evidencias/t_adea8e6b/`.
 - **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao/teste (estagio 6) e a **validacao do funil pelo Anderson** e o criterio 1 homologado do card (estagio 7), com a representacao da runbook §3 em maos.
 - Segredos: nenhum valor nesta entrada.
+
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — `t_0f74266d`: staging único por publicação e falha que nomeia a fase
+
+Defeito registrado pelo card `t_1b2ab418` e reproduzido de forma independente pelo `tester` (`t_c9a44f85`):
+a publicação versionada falhava de forma **intermitente** no manifesto do **staging** (exit 6, ~280 linhas
+`sha256sum: … No such file or directory`) e a mensagem final culpava "a cópia transferida". Fato medido: o
+staging era o caminho **fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda publicação de todo card
+— duas execuções simultâneas se misturavam (cada uma via o `tar` da outra). Conserto no commit `44e0d13`
+(`fix/t_0f74266d-staging`) + teste local; nada foi publicado no destino compartilhado.
+
+- **Publicação no VPS em destino ISOLADO** (`TRE_PUBLICAR_DESTINO=/opt/tre/.teste-t_0f74266d`,
+  `TRE_PUBLICAR_ARTEFATO=…-artefato`, `TRE_PUBLICAR_LOG=/opt/tre/.teste-t_0f74266d.log`, lock padrão,
+  `--sem-trava`): `PUBLICACAO_OK commit=44e0d131fa4c9a6d0baaf834abfa713dc2a63eb9
+  digest=5d61ef32634fdb9b10b4759c8430f1f5ae54892301618096edf6ff66bf93d133 arquivos=316` **exit 0**, com
+  `staging:  root@169.58.24.102:/opt/tre/.publicacao-staging.iYZ1Zy (unico desta publicacao)`; em seguida
+  `--conferir` com as mesmas variáveis → `PUBLICACAO_OK commit=44e0d13… digest=5d61ef32… arquivos=316
+  conferido_em=root@169.58.24.102:/opt/tre/.teste-t_0f74266d trava=ausente` **exit 0**.
+- **Negativos medidos (nada escrito em nenhum dos dois):** destino isolado deixando o artefato **padrão** →
+  `PUBLICACAO_FALHOU destino isolado (/opt/tre/.teste-t_0f74266d) com o artefato PADRAO do watchdog …`,
+  **exit 2**; lock **isolado** (`TRE_PUBLICAR_LOCK=/opt/tre/.teste-lock-t_0f74266d`) com o destino
+  **compartilhado** → `PUBLICACAO_FALHOU lock isolado (…) com o destino COMPARTILHADO (/opt/tre/repo) …`,
+  **exit 2** — é exatamente o movimento que produziu a colisão do `tester`.
+- **A produção não mudou (medido antes e depois, no destino real):** `/opt/tre/repo/.publicado` no commit
+  `373ff42f8202c542dd32b9b8449b717a542dad93` (`digest 1421673b3ba12e1a410a3c96d5d845e162723617ea3d13e940470ab7ec4c0cd5`,
+  `publicado_por t_daca4bda`, `publicado_em 2026-09-30T23:31:47Z`); `sha256 scripts/verificar_estrutura.sh` =
+  `7ecaade3e3a783361fe8fa2672253517f6b3313e56e3a735c006599778d24e65`; digest do artefato padrão do watchdog =
+  `1421673b…` (o **mesmo**). Nenhum `/opt/tre/.publicacao-staging*` nem `.publicacao-modos*` sobrou; o
+  destino e o artefato de teste foram removidos depois e o log ficou como evidência
+  (`/opt/tre/.teste-t_0f74266d.log`).
+- **Teste local, sem VPS:** `bash deploy/teste-staging-unico.sh` → `PASS=39 FALHAS=0` em **duas** execuções
+  consecutivas. O `ssh` é substituído por um shim que executa o comando num sandbox (`/opt/tre` → sandbox) e
+  roda o `publicar.sh` **real**: reproduz o defeito na versão de `3bf5e07` (exit 6 culpando "a cópia
+  transferida"; duas publicações simultâneas falhando no staging fixo) e prova o conserto (as mesmas duas
+  passam, com stagings **diferentes** e sem sobra), além das guardas, do `--destino` por CLI e do caminho bom
+  com `--conferir`. O digest que o código novo calcula para o commit `719a628` (`d2215645…`, 315 arquivos) é
+  **idêntico** ao que a versão antiga publicou — a semântica do manifesto não mudou.
+- **Limites declarados (não disfarçados):** (i) a colisão do staging exigia concorrência, e o teste a torna
+  determinística **alargando a janela de propósito** (o shim atrasa o manifesto do staging); (ii) o teste é um
+  sandbox local — a prova de ponta a ponta é a publicação isolada na VPS acima; (iii) a validação no destino
+  **compartilhado** não foi feita aqui de propósito: ele é produção e está com o card `t_daca4bda` em voo;
+  (iv) a guarda do artefato nasceu de um achado desta rodada (o artefato é a referência do watchdog da cópia
+  compartilhada) e **muda comportamento** para quem publica em destino isolado sem isolar o artefato: agora é
+  recusado com mensagem que diz o que fazer.
+- Segredos: nenhum valor nesta entrada; a conexão usa a chave do agente (`~/.ssh/id_ed25519_ops`).
+
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — `t_daca4bda`: enforcement do caminho unico da copia operacional
+
+Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** ressincronizou `/opt/tre/repo` por fora do caminho unico (`tar` ad-hoc, mtime preservado) e a copia voltou a uma arvore PRE-correcao, com o `.publicado` continuando a dizer o commit consertado — o `tre-backup.service` voltou a imprimir `BACKUP_OK` cobrindo **zero** ambientes. Causa raiz medida: o caminho unico **detectava** (`deploy/publicar.sh --conferir`, exit 5) mas nao impedia nem vigiava. Correcao em quatro camadas, todas medidas no destino REAL.
+
+- **Medicao de partida (22:10:12Z):** `bash deploy/publicar.sh --conferir` -> `PUBLICACAO_OK commit=c7972ca90bf7af2ba534b1c83956240652efe288 digest=89729f5dd988be04f588e349e579b584a3145560f9b2c18d3e79cf1079e99f57 arquivos=310`, exit 0 (a copia estava integra antes de eu tocar nela; a divergencia do defeito nasceu em 21:35:45Z–21:49:27Z, pelos mtime do worktree do `t_c7281fce`).
+- **Publicacao com enforcement (22:21:03Z / 22:27:39Z / 22:35:5xZ):** `deploy/publicar.sh --commit <sha> --producao --exigir-modos` -> `PUBLICACAO_OK commit=53dffbb648cb9a1878084298ea2937cc333d4597 digest=eb1ec31bb52e3065f06cd816556e1277416f26fceba4da204b9c19e571e3ce85 arquivos=314 digest_antes=163f1215dd67cba283e41d72626c0bbad59bd16214453c36cc87c5f5d256518a trava=travada` (as tres publicacoes foram `97607cd`, `0ed8f6b`, `53dffbb`; em todas: `antes: a copia estava IDENTICA ao commit que .publicado registrava`, `divergencia_antes=0`). O `.publicado` passou a registrar tambem `producao_declarado`.
+- **Trava de imutabilidade (impede) — medida NA COPIA REAL, com a trava armada:** os quatro caminhos ad-hoc do defeito falham com `Operation not permitted` — (1) `echo >> /opt/tre/repo/scripts/backup/backup-tre.sh`; (2) `sed -i` no mesmo arquivo (`sed: couldn't open temporary file .../sed3qdCsF: Operation not permitted`); (3) `tar -xzf` da arvore de outro card (`tar: ./backup-tre.sh: Cannot open: File exists` / `Cannot utime: Operation not permitted`); (4) arquivo novo plantado (`/opt/tre/repo/scripts/db/plantado-adhoc.sh: Operation not permitted`). Depois dos quatro, a copia seguia intacta: `lsattr -d /opt/tre/repo` -> `----i---------e-------` e `sha256sum .../backup-tre.sh` -> `3f0bebd9…` (a correcao F2).
+- **Watchdog (detecta/atribui/repara) — medido com a divergencia injetada de verdade:** apos `chattr -R -i` explicito (o que o defeito faz na pratica) plantei a arvore pre-correcao com **mtime preservado** (`scripts/backup/backup-tre.sh` `3f0bebd9…` -> `9aaf5c44…`) e o arquivo do defeito original (`scripts/db/teste_isolamento_clientes.sh`, mtime `2026-09-30T21:36:50Z`). `bash /usr/local/lib/tre/watchdog-publicacao.sh --conferir` (22:29:45Z) -> `PUBLICACAO_DIVERGENTE a copia operacional NAO e o commit registrado (0ed8f6b…)`, **exit 5**, com atribuicao: `ALTERADO (22:29:44Z, depois da publicacao) scripts/backup/backup-tre.sh 755 3f0bebd9… -> 755 9aaf5c44…` e `PLANTADO (21:36:50Z, nao existe no commit) scripts/db/teste_isolamento_clientes.sh`; alerta em `/opt/tre/.publicacao-ALERTA` e `/opt/tre/.publicacao-divergencias.log`. A referencia por git (`deploy/publicar.sh --conferir`) deu **exit 5** na mesma copia. **Reparo pelo timer** (`systemctl start tre-publicacao-watchdog.service`, 22:32:21–26Z): `PUBLICACAO_REPARO_OK commit=0ed8f6b… digest=163f1215…`, registrado em `/opt/tre/.publicacoes.log` como `card=watchdog-reparo … divergencia_antes=<restaurado do artefato>`, alerta limpo e **trava rearmada**.
+- **Restauracao sem git, pelo artefato:** `/opt/tre/.publicacao-artefato` (`commit.tar`, `modos.txt`, `manifesto`, `commit`, `digest`; `root:root` 700, **fora** da copia) e reescrito a cada publicacao e conferido no fim (manifesto do artefato == digest do commit; fail-closed). Foi dele que o watchdog restaurou, sem git e sem checkout.
+- **Guarda de producao (a publicacao que SUBSTITUI o que roda):** `bash deploy/publicar.sh --commit 53dffbb` (commit diferente do registrado, sem declaracao) -> `PUBLICACAO_FALHOU root@169.58.24.102:/opt/tre/repo e o destino COMPARTILHADO de producao e ja executa 0ed8f6b… (card t_daca4bda); a publicacao pediria 53dffbb…`, **exit 2**, nada escrito; com `--producao` declarado passou (`PUBLICACAO_OK`, `producao_declarado: 1`). Publicar o MESMO commit registrado e publicar em destino isolado seguem passando direto.
+- **Instalacao do watchdog fora da copia:** `deploy/instalar-watchdog-publicacao.sh` le os **bytes da copia publicada** e confere o sha256 dos dois lados — `watchdog-publicacao.sh e5628fda…`, units `9ab66772…`/`6b3c67e9…` instalados em `/usr/local/lib/tre` e `/etc/systemd/system`; `timer enabled`; `PUBLICACAO_ESTADO commit=53dffbb… arquivos=314 trava=armada alerta=ausente`.
+- **Aceite (duas medicoes pelo caminho de referencia, com o timer rodando no intervalo):** `PUBLICACAO_OK commit=53dffbb… digest=eb1ec31b… arquivos=314 conferido_em=root@169.58.24.102:/opt/tre/repo trava=travada` em **22:37:26Z** e em **22:42:10Z** (exit 0 nas duas); no intervalo o watchdog conferiu sozinho em 22:38:23Z, 22:40:27Z e 22:42:29Z, todos `PUBLICACAO_OK` com o mesmo digest, **enquanto o card `t_c7281fce` trabalhava** (ele publicou as 22:30:56Z em **destino isolado**, `/opt/tre/.teste-publicacao-t_c7281fce`; no ciclo de 22:30:18Z o watchdog reportou `PUBLICACAO_EM_ANDAMENTO` e **nao interferiu**). A par de aceite do commit final (o que contem esta entrada) esta no anexo do card `t_daca4bda`.
+- **Pos-deploy com dado real (caminho do timer, apos a publicacao):** `systemctl start tre-backup.service` -> `START_EXIT=0`, `Result=success`, `ExecMainStatus=0`, `User=tre-deploy`, artefato NOVO `tre_dev_20260930T223906Z` e `RESULTADO: BACKUP_OK (todos; 1 ambiente(s) coberto(s), 2 pulado(s))`; `systemctl start tre-backup-verify.service` -> `VERIFY_EXIT=0`, `RESULTADO: VERIFICACAO_OK (2 itens)`; `sha256sum /opt/tre/repo/scripts/backup/backup-tre.sh` -> `3f0bebd9…` (a correcao F2, intacta).
+- **Instrumento corrigido por medicao (nao escondido):** o manifesto do watchdog custava **15,4s** no VPS (um processo por arquivo); reescrito em dois passes (`find -printf %m` + **um** `sha256sum` para todos) -> **0,09s**, com a saida comprovada **byte a byte** igual a do `publicar.sh --manifesto` (`cmp` identico; digest `7571f9ee…` igual ao publicado). O ciclo de 2 min deixou de gastar ~15s de CPU.
+- **Limites declarados (nao disfarcados):** (i) a trava e obstaculo contra o erro, nao barreira contra `root` — quem tem `root` pode `chattr -i` e escrever (foi o que eu fiz para injetar a prova), mas deixa de ser silencioso e o watchdog pega no ciclo seguinte; (ii) o watchdog compara conteudo/modo com o manifesto do artefato, nao assina nada; (iii) o reparo usa o artefato da ultima publicacao; (iv) um card que publica em destino isolado **usa o lock padrao**, e o watchdog trata isso como `PUBLICACAO_EM_ANDAMENTO` (conservador: nao confere naquele ciclo); (v) `--producao` e uma declaracao do dono da publicacao, nao uma aprovacao — a aprovacao humana do card e o que a sustenta.
+- **Duas correções que nasceram de medicao de terceiros (ambas no destino real/isolado):** (i) **lock:**
+  o calculo antigo fazia `AGORA - stat -c %Y`; com o `stat` ilegivel a idade virava **~56 anos** e a
+  publicacao **derrubava o lock vivo** de outra (`t_c7281fce` mediu `idade 1790808317s`). Agora a idade
+  sai do mtime e, se ele nao for medivel, do `inicio` do proprio lock; **sem idade confiavel nao derruba**
+  (`PUBLICACAO_FALHOU`, exit 3). Medido na VPS em destino isolado, os 3 casos: lock vivo com mtime
+  ilegivel -> `idade 4s`, recusa (exit 3, nada escrito); lock obsoleto de 45 min -> `idade 2580s`, derruba
+  e publica (`PUBLICACAO_OK`); lock sem `inicio` -> `idade NAO MEDIVEL`, recusa (exit 3). (ii) **SSH:**
+  a publicacao abria **uma conexao TCP por chamada remota** (~25 por publicacao) e a rodada de
+  22:2x-22:4xZ fez a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro**
+  (todos os cards) por **~12 min** (22:48Z -> 23:00:03Z), com o host de pe (ping 0% de perda) e **sem
+  reboot** (`up 6:10`) — penalidade por fonte (`PerSourcePenalties`)/`fail2ban`, agravada pelas
+  retentativas. Mitigado: `R()` agora usa **ControlMaster** (`ControlPersist=30`) — uma conexao por
+  publicacao; nao insistir em laco quando o SSH recusar (a penalidade se renova).
+- **Verificador com dente (novo: `deploy/verificar-enforcement.sh`):** 13 itens que **tentam** o caminho
+  ad-hoc em destino isolado e exigem que ele FALHE — publicacao pelo caminho unico + trava armada; 4
+  tentativas ad-hoc (`>>`, `sed -i`, arquivo novo, `tar -xz` de arvore alheia) **recusadas**; conteudo
+  intacto; sabotagem com `chattr -i` (o defeito real) **reprovada** pelo detector (exit 5, com atribuicao
+  do arquivo plantado); reparo restaurando do artefato e rearmando a trava. Medido: bateria normal ->
+  `VERIFICADOR_ENFORCEMENT_OK itens=13` (exit 0); **com o guard desligado** (`TRE_ENF_SEM_TRAVA=1`,
+  publicando com `--sem-trava`) -> `VERIFICADOR_ENFORCEMENT_FALHOU itens=13 falhas=7` (**exit 1**: trava
+  ausente, as 4 escritas aceitas, `backup-tre.sh` mudou, conferencia divergente). Verificador que passa
+  por construcao nao vale (defeito D04 do TRE-W0-E04-T01) — este reprova exatamente quando o enforcement
+  nao esta la.
+- **Resposta a pergunta do card — como a ressincronizacao ad-hoc conseguiu reverter um commit publicado:**
+  (a) a copia era escrita por `root` sem nenhuma barreira: `tar -xpf` como root sobrescreve o arquivo e
+  **preserva o mtime** (por isso a copia parecia "antiga" e nada gritava); (b) o `.publicado` e escrito
+  **so** pelo `publicar.sh`, entao a "fonte da verdade" registrada continuou apontando o commit consertado
+  enquanto o disco mudava — o registro **nao era conferido por ninguem**; (c) o `--conferir` so rodava
+  quando alguem lembrava (medido no defeito: publicacao 21:34:32Z -> primeira deteccao 21:43:17Z, com o
+  `tre-backup.service` ja tendo executado a arvore pre-correcao e impresso `BACKUP_OK` cobrindo zero
+  ambientes). **O que impede a terceira recorrencia:** (i) a trava faz a escrita ad-hoc **FALHAR** (EPERM)
+  — medido 4 vezes na copia real e 4 no isolado; (ii) se alguem escapar com `chattr -i`, o watchdog de
+  2 min compara disco x manifesto do **artefato** (referencia independente, `root:root` 700, fora da
+  copia) e **restaura** — medido (deteccao exit 5 com atribuicao; `PUBLICACAO_REPARO_OK`, alerta limpo,
+  trava rearmada); (iii) o verificador com dente impede o enforcement de virar decoracao.
+- Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.

@@ -700,6 +700,47 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `docs/runbooks/publicacao-da-copia-operacional.md` é o runbook (comando, guardas, rollback do código
   publicado e o que o caminho não faz).
 
+- **Enforcement do caminho único da cópia operacional — trava de imutabilidade, artefato do commit e
+  watchdog de 2 min** (`t_daca4bda`, recorrência do defeito do `t_091cfea9`) — o `deploy/publicar.sh`
+  **detectava** a escrita ad-hoc (`--conferir`, exit 5), mas ninguém o rodava: bastou um card em execução
+  ressincronizar a cópia por `tar` ad-hoc para o `.publicado` continuar dizendo o commit consertado
+  enquanto a árvore em disco voltava ao estado **pré-correção**. Agora:
+  (i) **`chattr +i`** na cópia publicada — escrita ad-hoc falha com `Operation not permitted` em vez de
+  sobrescrever em silêncio (`--travar`/`--destravar`; `--sem-trava` só para ensaio; `deploy/publicar.sh` é
+  o único que desarma, e só durante a troca);
+  (ii) **artefato do commit** em `/opt/tre/.publicacao-artefato` (`commit.tar` com o modo do git +
+  `modos.txt` + `manifesto` + `commit`/`digest`, `root:root` 700 **fora** da cópia) — fail-closed: se o
+  artefato gravado não conferir com o commit, a publicação para antes de trocar qualquer coisa;
+  (iii) **`deploy/watchdog-publicacao.sh`** (novo; roda na VPS, sem git e sem o checkout) confere a cópia
+  contra o manifesto do commit registrado a cada 2 min
+  (`deploy/systemd/tre-publicacao-watchdog.{service,timer}`), **atribui** a divergência (alterado /
+  plantado / removido, com mtime e se é posterior à publicação), grava `/opt/tre/.publicacao-ALERTA` e
+  `/opt/tre/.publicacao-divergencias.log` e, com `--reparar`, **restaura a cópia a partir do artefato** e
+  rearma a trava (registrado em `.publicacoes.log` como `card=watchdog-reparo`);
+  (iv) `deploy/instalar-watchdog-publicacao.sh` instala os **bytes da cópia publicada** em
+  `/usr/local/lib/tre` (sha256 conferido dos dois lados) — o watchdog sobrevive à cópia quebrada;
+  (v) **guarda de produção:** o destino compartilhado é produção (alvo do `ExecStart=` dos timers), então
+  **substituir** o commit que está no ar exige `--producao` declarado (`TRE_PUBLICAR_PRODUCAO=1`) — sem
+  isso a publicação para com `PUBLICACAO_FALHOU` (exit 2) **antes de escrever qualquer coisa**; publicar o
+  mesmo commit (reparo) ou em destino de ensaio passa direto, e a declaração fica em `.publicado`
+  (`producao_declarado`);
+  (vi) **publicação com UMA conexão SSH** (`ControlMaster`, `ControlPersist=30` em `R()`): a publicação
+  faz ~25 chamadas remotas e, com uma conexão TCP por chamada, a rodada de publicações de 22:2x–22:4xZ
+  fez a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro** (todos os cards)
+  por ~12 min, com o host de pé e **sem reboot** — assinatura de penalidade por fonte
+  (`PerSourcePenalties`)/`fail2ban`, agravada pelas retentativas;
+  (vii) **idade do lock deixou de ser inventada:** com o `stat -c %Y` ilegível, `AGORA - 0` virava
+  "~56 anos" (`idade 1790808317s`, medido pelo card `t_c7281fce`) e a publicação **derrubava o lock vivo**
+  de outra (fail-open). Agora a idade sai do mtime e, se não for medível, do `inicio` que o próprio lock
+  grava; **sem idade confiável não derruba o lock** (`PUBLICACAO_FALHOU`, exit 3, nada escrito);
+  (viii) **`deploy/verificar-enforcement.sh`** — verificador com dente: tenta o caminho ad-hoc em
+  destino isolado e **exige que falhe** (4 caminhos recusados, conteúdo intacto, sabotagem reprovada pelo
+  detector com exit 5, reparo restaurando e rearmando) e **reprova quando o guard está desligado**
+  (`TRE_ENF_SEM_TRAVA=1` -> `VERIFICADOR_ENFORCEMENT_FALHOU … falhas=7`, exit 1) — verificador que passa
+  por construção não vale (D04 do TRE-W0-E04-T01).
+  Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
+  isolado).
+
 ### Fixed
 
 - **A rotina de backup cobria zero ambientes e saía `BACKUP_OK`; o verificador aprovava sem backup nenhum**
@@ -798,6 +839,22 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   publicação** (`deploy/publicar.sh`, ver o `Added` acima): commit explícito, modo do índice do git,
   `.publicado` com o commit em uso, `--conferir` que reprova a cópia divergente e histórico em
   `/opt/tre/.publicacoes.log`. Evidência medida em `docs/runbooks/backup-restore-rollback.md` §7e.
+- **Recorrência: a cópia operacional foi reescrita por fora do caminho único e reverteu o commit
+  publicado** (`t_daca4bda`; mesmo defeito do `t_091cfea9`, um dia depois) — o card `t_c7281fce`, **em
+  execução**, ressincronizou `/opt/tre/repo` da própria árvore de trabalho por `tar` ad-hoc (os `mtime`
+  gravados na cópia batem ao segundo com os arquivos do worktree dele, com `mtime` preservado; o
+  `.publicacoes.log` não tem entrada dele e o `.publicado` continuou apontando para `c7972ca`, o commit
+  consertado) e o `tre-backup.service` voltou a executar a rotina **pré-correção**, imprimindo
+  `BACKUP_OK` cobrindo **zero** ambientes. Causa raiz medida, não inferida: o caminho único existia mas
+  **não tinha enforcement** — o `--conferir` só reprovava quando alguém lembrava de rodar, e nada impedia
+  a escrita. Corrigido com trava de imutabilidade, artefato do commit e watchdog (detalhes no `Added`
+  acima), tudo medido no destino real: com a trava armada, os quatro caminhos ad-hoc do defeito (append,
+  `sed -i`, `tar -xz` de outra árvore, arquivo novo plantado) são **bloqueados** com `Operation not
+  permitted`; removida a trava na mão, a divergência injetada (conteúdo pré-correção com `mtime`
+  preservado + `scripts/db/teste_isolamento_clientes.sh` plantado) foi **detectada, atribuída pelos
+  `mtime` e restaurada** pelo watchdog, e a cópia voltou a bater com o commit registrado. Decisão de
+  processo registrada no runbook: `/opt/tre/repo` é **produção**, bancada de teste é destino isolado
+  (`TRE_PUBLICAR_DESTINO`).
 
 ### Notas de estado
 
@@ -2916,3 +2973,23 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   é **trocar uma linha** + ter o DNS apontando.
 - **Portas e exposição decididas pelo executor em dev** (padrão do T01): `22/80/443` públicas, `8069`
   e `5432/5433` só em loopback, `fail2ban` mantido — **pendentes de ratificação do Anderson**.
+- **A publicação versionada falhava de forma intermitente no manifesto do staging e culpava o lado errado**
+  (`t_0f74266d`, defeito registrado pelo card `t_1b2ab418` e reproduzido pelo `tester` no `t_c9a44f85`): o
+  staging era o **caminho fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda publicação de todo
+  card — duas publicações simultâneas se misturavam (o `find` de uma listava o que o `rm -rf`/`tar -x` da
+  outra apagava, ~280 linhas de `sha256sum: … No such file or directory`), a falha era intermitente e a
+  mensagem culpava "a cópia transferida" quando o manifesto incompleto era o do **staging** (o diff ainda
+  saía truncado em `head -30` e a falha não deixava linha no log). Corrigido em `deploy/publicar.sh`
+  (`44e0d13`): staging **único por publicação** (`mktemp -d` no diretório pai do destino, removido no fim e
+  no trap), mapa de modos irmão do staging (era o fixo `/opt/tre/.publicacao-modos`, que ficava para trás no
+  `exit 6`), manifesto **reprovado como INCOMPLETO antes de comparar** (exit 7 — contar linhas não bastava:
+  o defeito real mantinha a contagem e zerava o campo do hash), cada falha nomeando a **fase** e o
+  **arquivo** (staging/local/antes/depois/conferência) com `PUBLICACAO_INDETERMINADA` para o caso em que não
+  dá para afirmar divergência, diff **sem truncar** (arquivo completo em `TRE_PUBLICAR_DIFF_DIR` + `head
+  -200`), `PUBLICACAO_ABORTADA` no log append-only e duas guardas fail-closed da mesma família ("artefato
+  compartilhado em caminho fixo"): lock isolado com destino compartilhado é **recusado** (exit 2) e destino
+  isolado com o artefato padrão do watchdog é **recusado** (o watchdog repararia a produção para o commit do
+  ensaio). `PRODUCAO` passou a ser recalculado **depois** do parse dos argumentos (com `--destino` para um
+  ensaio, o cálculo antigo fazia o destino isolado passar por produção e pedia `--producao`). Teste local sem
+  VPS: `deploy/teste-staging-unico.sh` (39 verificações, 0 falhas em duas execuções — roda o `publicar.sh`
+  real contra um `ssh` de mentira e reproduz o defeito na versão de `3bf5e07` antes de provar o conserto).
