@@ -219,6 +219,46 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W7-E01-T01",
+      "title": "Website lead capture",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_eb323dd7",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E da CAPTURA DE LEAD DO SITE por EXECUCAO REAL contra pontas reais e descartaveis (ADR-005): container PostgreSQL DESCARTALVEL pg-site-acc + migration 0001 + o componente hermes/agentes/inbound/captura_site.py gravando em sales_intelligence; nenhuma ponta externa. Mede: guardas (prod RECUSA exit 4, --submissao sem porta local RECUSA, prefixo de banco remoto RECUSA em dev, --planejar/--conferir sem banco); sem --confirmo e' DRY_RUN (snapshot das 12 tabelas antes/depois igual); submissao valida com consentimento cria 1 organization (source WEBSITE_FORMULARIO, status DISCOVERED) + 1 contact + 1 interaction (WEBSITE/INBOUND/FORMULARIO_SITE) com UUID canonico e trilha CAPTURADO; identificador FORTE (CNPJ) casa a organizacao existente (REUSO, zero nova); identificador FRACO nao faz merge (REVIEW_REQUIRED, zero cadastro); consentimento e' barreira (sem opt-in nada e' cadastrado); idempotencia por submissao (JA_CAPTURADO, zero linha nova); escopo de escrita (so organizations/contacts/interactions/sync_events mudam); privacidade (e-mail/telefone do lead ausentes da evidencia); e o DENTE DE PONTA medido no BANCO (base legal fora do vocabulario nao vira cadastro). DUAS passadas byte-identicas (exit 0 em ambas; 46 itens, 0 falhas cada) e prova de dente pela suite offline com 5 mutacoes (5/5, cada uma reprova o item declarado).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "9ce9cf8920bc3a56dcbc0de7cd19ea2640b3590f",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone isolado /tmp/tre_lote8/repo (bundle git somente da branch) NO TOPO da branch feature/TRE-W7-E01-T01 (commit 9ce9cf89), NAO mergeada em develop (merge-base 20e8ea67) — OVERRIDE DECLARADO: o card da W7 e' verificado no topo de branch. Aceite sobe UM container PostgreSQL DESCARTALVEL (pg-site-acc, postgres:16) + migration 0001; nenhuma credencial real, nenhum destino externo (pontas em 127.0.0.1), nada de producao. Containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas com saida CRUA BYTE-IDENTICA (diff = 0 linhas). DENTE: o proprio aceite chama `verificar_captura_site.py --autoteste` (5 dentes D1..D5, cada um reprova o item declarado) e mede o 'dente de ponta' (base legal inventada RECUSA, medido no banco). Higiene MEDIDA: volumes 7 -> 7 (dangling 0 -> 0); containers 5 -> 5. Os volumes anonimos que o aceite deixa (usa 'docker rm -f' sem '-v') foram removidos por fora apos cada passada; crescimento liquido ZERO.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/agentes/teste_captura_site_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_CAPTURA_SITE_001_OK (46 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_captura_site_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_CAPTURA_SITE_001_OK (46 itens, 0 falhas)"
+              },
+              {
+                "gate": "dente INTERNO: python3 scripts/agentes/verificar_captura_site.py --autoteste",
+                "exit": 0,
+                "resultado": "VERIFICADOR_CAPTURA_SITE_PASS (37 itens, 0 falhas, 5 dentes); D1..D5 cada 'item declarado REPROVOU sob mutacao' (o aceite nao expoe --prova-de-dente; o dente e' o autoteste do verificador) + dente de ponta do aceite (item 13): base legal fora do vocabulario RECUSA, nenhum contato novo"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -235,6 +275,16 @@
         "t_6c170b51",
         "t_ba40919b",
         "t_e5e497fd"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+      "scope": "lote 8 — W7-E01 (Website lead capture)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T00:55:08+00:00",
+      "cards": [
+        "t_eb323dd7"
       ]
     }
   ]

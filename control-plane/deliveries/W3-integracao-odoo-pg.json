@@ -23,12 +23,12 @@
     {
       "id": "TRE-W3-E04-T01",
       "title": "Criar reconciliation job (n8n)",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_2ee17829",
-          "stage": "VALIDATION",
+          "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
           "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-reconciliacao.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas) nas 2 passadas. Cobre passo 0/0b/0c/0d (lente estrutural, suite do nucleo, montador e prova de dente) e estados A-G (espelho saudavel OK, E1/E2/E4/I1/P1-P4 e porta unica fora do ar -> INDETERMINADO fail-closed). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
@@ -57,12 +57,12 @@
     {
       "id": "TRE-W3-E03-T01",
       "title": "Implementar Odoo→PG events",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_85cb2838",
-          "stage": "VALIDATION",
+          "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
           "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-odoo-eventos.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: EVENTOS_ODOO_PG_OK (85 itens, 0 falhas) nas 2 passadas. Cobre passos A-F (7 eventos Odoo->PG na fila do Odoo, entrega pela porta unica, idempotencia/replay sem duplicata, recusas 422+REFUSED, retry com a porta fora do ar). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
@@ -91,12 +91,12 @@
     {
       "id": "TRE-W3-E02-T01",
       "title": "Implementar outbox consumer n8n",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_ba84b412",
-          "stage": "VALIDATION",
+          "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
           "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Cobre ciclos 1-4: entrega ponta a ponta (E1/E2 PROCESSED + parceiro no CRM + trilha COMPLETED), recusas nomeadas (E3-E7 DEAD_LETTER/REFUSED), retry transitorio (E8) e teto de tentativas (E9), com contagem das chamadas autenticadas e prova de serializacao do lote. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
@@ -125,12 +125,12 @@
     {
       "id": "TRE-W3-E02-T02",
       "title": "Implementar idempotency (dedup por idempotency_key)",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_3bde06ab",
-          "stage": "VALIDATION",
+          "stage": "DONE",
           "current_gate": "DONE",
           "validation_result": "PASS",
           "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Mesmo harness do T01; cobre o AC9 (dedup por idempotency_key) no ciclo 5: E1 com chave COMPLETED volta a fila -> REPLAY sem nova chamada/linha/escrita no CRM; E7 com chave REFUSED volta a ser entregue. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",

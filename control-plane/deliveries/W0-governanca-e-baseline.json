@@ -6,7 +6,7 @@
   "release_status": "DELIVERED",
   "current_gate": "DONE",
   "production_promotion_authorized": false,
-  "updated_at": "2026-10-03",
+  "updated_at": "2026-10-04",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -281,6 +281,206 @@
           "evidence": "plugins/gantt-timeline/dashboard/plugin_api.py le hermes/plan/cronograma.yaml (fonte versionada, nao o board) e desenha a barra PLANEJADA; verificado pelo Hermes em 29/09/2026"
         }
       ]
+    },
+    {
+      "id": "TRE-W0-E04-T12",
+      "title": "Revisao independente: inferencia de dominio sensivel com casamento exato",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_0a236da5",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "REVISAO INDEPENDENTE (perfil tester) do commit e085ffc, reproduzida por execucao real no develop 307068b: a suite scripts/verificar_dominios_sensiveis.py PASSA (32 itens, 0 falhas) e o autoteste reprova 4/4 mutacoes, incluindo 'tira os PLURAIS do vocabulario (achado da revisao T12)'. A causa original (casamento por PREFIXO de 4 caracteres em CONCEITOS_DE_ACAO: implementador~implantacao, versionado~versao, entrar~entrega, registro~dado de cliente) esta travada: nao houve afrouxamento (CONCEITOS_DE_ACAO e REGRAS_DE_ACAO_HUMANA intocadas; 'exclusao de registro de auditoria' segue resolvendo para exclusao_de_dado_de_cliente). NOTA DATADA: no commit e085ffc a suite tinha 28 itens e autoteste 3/3; no develop 307068b cresceu para 32 itens e 4/4 (o item de plurais e' o 4o dente) — a contagem citada no card e' leitura daquele commit, nao a de hoje.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "307068b4cb0428d16c08e7636d71d3cc92df8dbf",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 307068b (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA (sem banco, rede, credencial, runtime vivo ou producao): suites do JEV lidas do proprio repo. DUAS passadas byte-identicas com exit 0 (a suite do roteador emite tmpdir/decision_id volateis — normalizacao DECLARADA: 'jev-suite-<rand>' -> TMP e 'dec-<hex>' -> ID; apos a normalizacao o diff cru = 0). Dente por MUTACAO em COPIA (nunca no arquivo versionado): cada dente REPROVA o ITEM NOMEADO do card.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_dominios_sensiveis.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (32 itens, 0 falhas) + AUTOTESTE 4/4 mutacoes reprovadas"
+              },
+              {
+                "gate": "python3 scripts/verificar_dominios_sensiveis.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (32 itens, 0 falhas) + autoteste 4/4"
+              },
+              {
+                "gate": "dente INTERNO: mutacao 'tira os PLURAIS do vocabulario (achado da revisao T12)'",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA a suite: 'mutacao reprovada: tira os PLURAIS do vocabulario (achado da revisao T12)' — o item que a revisao T12 exige morde a regressao"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T02-D03",
+      "title": "DEFEITO: camada de Human Approval ignorava human-approval.yaml",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_263416c5",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da suite do roteador do JEV no develop 307068b: o item D03 PASSA — a fonte hermes/policies/human-approval.yaml (que NAO declara chave role:) entra na camada Human Approval por NOME de arquivo, e as 9 declaracoes dela terminam em BLOCK. Corrige o defeito em que a camada nunca lia o arquivo (filtro por 'role:' nunca satisfeito) e uma acao exigente de aprovacao humana decidia EXECUTAR. Dente: com a precedencia humana ignorada em COPIA do roteador, o item nomeado falha.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "307068b4cb0428d16c08e7636d71d3cc92df8dbf",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 307068b (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA (sem banco, rede, credencial, runtime vivo ou producao): suites do JEV lidas do proprio repo. DUAS passadas byte-identicas com exit 0 (a suite do roteador emite tmpdir/decision_id volateis — normalizacao DECLARADA: 'jev-suite-<rand>' -> TMP e 'dec-<hex>' -> ID; apos a normalizacao o diff cru = 0). Dente por MUTACAO em COPIA (nunca no arquivo versionado): cada dente REPROVA o ITEM NOMEADO do card.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (63 itens, 0 falhas) + autoteste OK (21/21); item 'D03: a fonte human-approval.yaml entra na camada Human Approval sem depender de role: (9 declaracoes nao executam)' OK [9 declaracoes da fonte bloqueiam com BLOCK, sem chave role:]"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA apos normalizacao declarada (diff cru = 0); PASS + autoteste 21/21"
+              },
+              {
+                "gate": "dente MANUAL: mutacao 'inverter a precedencia: sem Human Approval' (if humano: -> if False and humano:) em COPIA do roteador",
+                "exit": 0,
+                "resultado": "o item nomeado REPROVA: 'D03: a fonte human-approval.yaml entra na camada Human Approval sem depender de role:' (11 itens reprovados no total) — removida a camada, as 9 declaracoes da fonte deixam de bloquear"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T02-D02",
+      "title": "DEFEITO: matriz de papel inconsistente era aceita em silencio (fail-open)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_285e6dfb",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da suite do roteador do JEV (TRE-W0-E04-T02) no develop 307068b: item T02/harness 'politica de papel que da deploy ao Sales AI e recusada' PASSA — a matriz Dev x Sales inconsistente (mesma credencial permitida e proibida) passa a REPROVAR o carregamento da politica (PoliticaInvalida), e nao mais ser aceita em silencio. Dente: removendo a recusa em COPIA do roteador o item nomeado falha ('ACEITOU politica com Sales AI recebendo GITHUB_TOKEN'), provando que o item morde a causa.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "307068b4cb0428d16c08e7636d71d3cc92df8dbf",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 307068b (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA (sem banco, rede, credencial, runtime vivo ou producao): suites do JEV lidas do proprio repo. DUAS passadas byte-identicas com exit 0 (a suite do roteador emite tmpdir/decision_id volateis — normalizacao DECLARADA: 'jev-suite-<rand>' -> TMP e 'dec-<hex>' -> ID; apos a normalizacao o diff cru = 0). Dente por MUTACAO em COPIA (nunca no arquivo versionado): cada dente REPROVA o ITEM NOMEADO do card.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (63 itens, 0 falhas) + autoteste OK (21/21 mutacoes detectadas)"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA apos normalizacao declarada de tmpdir/decision_id (diff cru = 0); PASS (63 itens, 0 falhas) + autoteste 21/21"
+              },
+              {
+                "gate": "dente MANUAL: recusa da matriz removida em COPIA do roteador ('problemas_papeis = _inconsistencias_dos_papeis(papeis)' -> '[]')",
+                "exit": 0,
+                "resultado": "o item nomeado REPROVA: 'T02/harness: politica de papel que da deploy ao Sales AI e recusada' (4 itens reprovados no total) — a recusa fail-closed do PoliticaInvalida e' o que o item mede"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T01-D01",
+      "title": "DEFEITO: documento da politica nao listava os oito itens proibidos",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_2d1ea557",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador da politica JEV no develop 307068b: o item 'documento cobre os oito temas proibidos' PASSA — o documento docs/architecture/jev-decision-policy-v1.md lista os OITO itens proibidos (producao, primeiro contato, proposta, arquitetura, rollback, exclusao de dado, credencial, publicacao), sem resumir a lista em prosa. Corrige o defeito em que a prosa do documento dizia seis dos oito (divergencia documento x maquina invisivel a olho nu). Dente: retirando 'rollback' de uma COPIA do documento, o item nomeado falha.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "307068b4cb0428d16c08e7636d71d3cc92df8dbf",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 307068b (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA (sem banco, rede, credencial, runtime vivo ou producao): suites do JEV lidas do proprio repo. DUAS passadas byte-identicas com exit 0 (a suite do roteador emite tmpdir/decision_id volateis — normalizacao DECLARADA: 'jev-suite-<rand>' -> TMP e 'dec-<hex>' -> ID; apos a normalizacao o diff cru = 0). Dente por MUTACAO em COPIA (nunca no arquivo versionado): cada dente REPROVA o ITEM NOMEADO do card.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_policy.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (42 itens, 0 falhas) + autoteste OK (12/12 mutacoes detectadas); item 'documento cobre os oito temas proibidos' OK"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_policy.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (42 itens, 0 falhas) + autoteste 12/12"
+              },
+              {
+                "gate": "dente MANUAL: documento sem o tema 'rollback' (doc.replace('rollback','retrocesso') em memoria, mesmo verificador)",
+                "exit": 0,
+                "resultado": "o item nomeado REPROVA: 'documento cobre os oito temas proibidos' FALHOU [faltando=['rollback']]; no documento real o item PASSA"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T02-D05",
+      "title": "DEFEITO fail-closed quebrado: entrada de tipo invalido estourava excecao",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_35c74a4c",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da suite de guardrails do JEV no develop 307068b: o item de cobertura D05 PASSA — payload que nao e' mapa ('texto solto', ['lista']) e 'sinais' em lista terminam em BLOCK com recibo de 13 campos e o guardrail payload_valido registrado, NUNCA em excecao nao tratada. Corrige o defeito em que entrada de tipo invalido estourava ValueError/AttributeError (sem recibo, sem lane, sem rastro). Dente: a mutacao que remove a checagem de tipo da borda faz o item nomeado falhar.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+          "verification": {
+            "commit": "307068b4cb0428d16c08e7636d71d3cc92df8dbf",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 307068b (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA (sem banco, rede, credencial, runtime vivo ou producao): suites do JEV lidas do proprio repo. DUAS passadas byte-identicas com exit 0 (a suite do roteador emite tmpdir/decision_id volateis — normalizacao DECLARADA: 'jev-suite-<rand>' -> TMP e 'dec-<hex>' -> ID; apos a normalizacao o diff cru = 0). Dente por MUTACAO em COPIA (nunca no arquivo versionado): cada dente REPROVA o ITEM NOMEADO do card.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/validar_jev_guardrails.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (74 itens, 0 falhas) + autoteste OK (20/20 mutacoes detectadas); item 'cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo de 13 campos, sem excecao' OK"
+              },
+              {
+                "gate": "python3 scripts/validar_jev_guardrails.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (74 itens, 0 falhas) + autoteste 20/20"
+              },
+              {
+                "gate": "dente INTERNO: mutacao 'fail-closed removido na entrada de tipo invalido'",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA os itens 'cobertura D05 — entrada de tipo invalido termina em BLOCK com recibo de 13 campos, sem excecao' e 'guardrail fail-closed — REPROVA: sinal desconhecido e entrada invalida nao liberam'"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
@@ -304,6 +504,20 @@
         "t_722b6cbd"
       ],
       "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 8 — 6 cards da fila + conserto W3)",
+      "scope": "lote 8 — 5 cards de W0 (JEV: T12/defeitos D01-D05)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T00:55:08+00:00",
+      "cards": [
+        "t_0a236da5",
+        "t_263416c5",
+        "t_285e6dfb",
+        "t_2d1ea557",
+        "t_35c74a4c"
+      ]
     }
   ]
 }
