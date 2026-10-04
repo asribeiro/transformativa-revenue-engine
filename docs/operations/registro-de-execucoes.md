@@ -2777,3 +2777,38 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   `scripts/agentes/teste_captura_site_aceite.sh`, `docs/runbooks/captura-de-lead-do-site.md`.
 - **Destrava:** W7-E02 (Meta), W7-E03 (Google), W7-E06 (eventos) — a captura canônica de lead inbound passa
   a existir; a escrita no Odoo a partir do site fica atrás do card de contrato/aprovação (lacuna L1).
+## 2026-10-03 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) + container do Hermes — TRE-W7-E02-T01: ingesta de leads Meta medida por execucao real
+
+- **Onde rodou:** checkout publicado na VPS do TRE (`/opt/tre/w7e02-<HHMMSS>`), executado por `tre-deploy`
+  (docker sem sudo). O container do Hermes nao tem daemon Docker; o aceite e' do host, como manda o ADR-0008.
+- **Suíte offline** (container do Hermes E VPS, python3.14): `python3 scripts/agentes/verificar_ingestao_leads_meta.py`
+  -> **PASS (51 itens, 0 falhas)**; `--autoteste` -> **7/7 mutações detectadas** (assinatura, dados
+  insuficientes, PII no resumo, chave fixa, campo desconhecido ignorado, INSERT fora das 2 tabelas, teto de
+  retry) — cada mutação reprova o item que a nomeia.
+- **Aceite E2E** (medido, exit 0): `bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh` ->
+  **ACEITE_META_LEADS_001_OK (53 itens, 0 FALHOU)**. `--prova-de-dente` -> o mutante do resumo reprova
+  **exatamente** o item 5.8 e nada mais.
+- **O que o aceite mediu de fato:** webhook assinado de verdade (HMAC do corpo cru calculado pelo proprio
+  aceite) — inclusive assinatura ERRADA (recusada antes de qualquer chamada) e a MESMA entrega invalida
+  repetida (`JA_INGERIDO`, rodada nao cai); vinculo por e-mail (caixa diferente) e por telefone formatado
+  (`+55 (11) 97777-6655` -> `5511977776655`) casando em `contacts`; contato desconhecido em `SEM_VINCULO`
+  sem inventar organizacao; lead sem e-mail/telefone em `DADOS_INSUFICIENTES`; 404 em `LEAD_INDISPONIVEL`
+  (1 chamada, sem retry) e 500 persistente em `ERRO_GRAPH` (exatamente 2 chamadas = teto do contrato);
+  replay do lote inteiro sem linha nova e **sem re-chamar a Graph**; snapshot das 12 tabelas antes/depois
+  mostrando que **so'** `interactions` e `sync_events` mudam; token e app secret ausentes de stdout,
+  relatorio e registro; `prod` recusado (exit 4), porta de banco remota recusada (`BANCO_NAO_E_DEV`, 3) e
+  Graph fora de loopback recusada (`GRAPH_NAO_E_DEV`, 3).
+- **Defeito medido e corrigido NA MESMA RODADA** (rodada 1 do aceite): a trilha de entrega sem lead
+  (assinatura invalida) era INSERT cru; no replay o UNIQUE de `sync_events.idempotency_key` abortava a
+  rodada (`BANCO_RECUSOU`, exit 3). Correcao: `ja_ingerido` nesses caminhos + `ON CONFLICT
+  (idempotency_key) DO NOTHING` em `gravar_trilha(..., sem_conflito=True)`. Detectado pelo item 4.7b, que
+  passou a exigir o replay da entrega invalida. Detalhe no runbook §4.
+- **Ambiente e seguranca:** nada em producao (ADR-005). Toda ponta e' local (`127.0.0.1`) e descartavel
+  (container `pg-meta-acc` + stub da Graph). Os containers do ambiente (`pg-sales-dev`, `pg-odoo-dev`,
+  `odoo-dev`, `proxy-dev`) **nao** foram tocados: o aceite ABORTA se o container ou a porta dele ja'
+  existirem. Nenhuma credencial real: app secret e token sao gerados na hora pelo proprio aceite.
+- **Logs brutos:** anexados ao card — `aceite-meta-leads-53ok.out`, `aceite-meta-leads-dente.out`,
+  `suite-offline-51ok-autoteste.out` (+ `sha256-artefatos.out`).
+- **Portao de estrutura:** `bash scripts/verificar_estrutura.sh` -> **PASS (0 falhas)**, com o bloco do card
+  TRE-W7-E02-T01 (8 artefatos versionados, `bash -n` do aceite e `dev-meta.env` sem segredo).
+- Segredos: nenhum valor nesta entrada.

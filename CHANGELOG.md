@@ -131,6 +131,34 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **Lacuna declarada:** o lead não é escrito no Odoo por este card — o vocabulário de eventos PG → Odoo do
   contrato V1 não tem evento de lead capturado e o consumidor de outbox é fail-closed; criar `event_type`
   novo exige nova versão do contrato + aprovação humana (doc 12/ADR-0004).
+- **Ingestão de leads Meta/Instagram v1** (`TRE-W7-E02-T01`) — componente
+  `hermes/agentes/inbound/ingestao_leads_meta.py` (`meta-lead-ingestion-v1`) + contrato
+  `hermes/agentes/inbound/meta-lead-ingestion-v1.json`: recebe as entregas CRUAS do webhook de Lead Ads do
+  Meta (objeto `page`, campo `leadgen`), **valida a assinatura HMAC-SHA256** (`X-Hub-Signature-256`,
+  `compare_digest`) ANTES de qualquer chamada externa, busca o lead pelo primitivo de LEITURA da Graph API
+  (`GET /<versao>/{leadgen_id}`, token no cabeçalho, retry limitado a 2 tentativas e sem retry em erro
+  definitivo), normaliza o `field_data` pelo mapa declarado do contrato e grava a interação em
+  `sales_intelligence.interactions` (+ trilha de idempotência em `sync_events`), que é a evidência que a
+  onda W7/W8 consome. Guardas medidas: `prod` recusa (exit 4), dev exige Graph em loopback e banco em
+  container local, homolog exige aprovação humana registrada + lista de páginas, `--confirmo` obrigatório
+  para escrever, escrita restrita a `interactions`/`sync_events` (só INSERT) e segredo conferido na
+  gravação (`SENHA_VAZADA`, exit 5); PII fora do texto livre (`content_summary` mascara e-mail/telefone) e
+  campo fora do mapa registrado apenas pelo nome em `campos_desconhecidos`. Medição: suite offline 51 itens
+  0 falhas + 7 mutações cada uma reprovando o item que nomeia; aceite E2E `ACEITE_META_LEADS_001_OK`
+  **53 itens 0 falhas** em Postgres descartável (`pg-meta-acc`) com **webhooks assinados de verdade**
+  (incluindo assinatura errada e entrega inválida repetida) e stub local da Graph API; prova de dente
+  reprovando exatamente o item 5.8; portão de estrutura PASS. Stub de dev:
+  `scripts/agentes/stub-meta-graph-dev.py`. Docs: `docs/integrations/meta-leads-v1.md`,
+  `docs/runbooks/ingestao-leads-meta.md`.
+
+### Fixed
+
+- **`TRE-W7-E02-T01`** — defeito MEDIDO na rodada 1 do aceite: a trilha de "entrega sem lead" (assinatura
+  inválida/entrega vazia) era escrita com INSERT cru e o replay esbarrava no UNIQUE de
+  `sync_events.idempotency_key`, abortando a rodada inteira (`BANCO_RECUSOU`, exit 3). Correção: esses dois
+  caminhos passam por `ja_ingerido` (replay ⇒ `JA_INGERIDO`) e o `gravar_trilha(..., sem_conflito=True)`
+  usa `ON CONFLICT (idempotency_key) DO NOTHING`. Detectado pelo próprio aceite (item 4.7b, criado para a
+  entrega inválida repetida).
 
 ## [W6 — Outbound] — 02/10/2026
 

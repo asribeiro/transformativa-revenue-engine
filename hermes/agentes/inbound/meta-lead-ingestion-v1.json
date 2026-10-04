@@ -1,0 +1,125 @@
+{
+  "versao": "meta-lead-ingestion-v1",
+  "componente": {
+    "nome": "ingestao_leads_meta",
+    "card": "TRE-W7-E02-T01",
+    "onda": "W7 - Inbound / Multicanal",
+    "arquivo": "hermes/agentes/inbound/ingestao_leads_meta.py",
+    "papel": "ingerir leads de formulario Meta/Instagram (Lead Ads): validar a assinatura do webhook, buscar o lead pelo primitivo de leitura da Graph API, normalizar os campos DECLARADOS pelo lead e gravar a interacao em sales_intelligence.interactions (+ trilha de idempotencia em sync_events)"
+  },
+  "origem": {
+    "canal": "meta",
+    "objeto_webhook": "page",
+    "campo_webhook": "leadgen",
+    "produto": "Meta Lead Ads / Instagram Lead Ads",
+    "documentacao": "webhook do objeto 'page' (campo 'leadgen') entrega apenas o ID; os DADOS do lead sao buscados na Graph API pelo leadgen_id com o token da pagina"
+  },
+  "graph": {
+    "versao_api": "v21.0",
+    "caminho": "/{leadgen_id}",
+    "campos_pedidos": ["id", "created_time", "ad_id", "form_id", "field_data"],
+    "tentativas": 2,
+    "timeout_s": 10,
+    "retry": "no maximo 2 tentativas no TOTAL por lead (1 retentativa). Nunca retenta 401/403/404 (resposta definitiva): retry nao pode virar enxurrada de chamada paga nem mascarar credencial invalida"
+  },
+  "assinatura": {
+    "cabecalho": "X-Hub-Signature-256",
+    "algoritmo": "hmac-sha256",
+    "prefixo": "sha256=",
+    "segredo": "TRE_META_APP_SECRET",
+    "regra": "HMAC-SHA256 do CORPO CRU do webhook, comparado em tempo constante (compare_digest). Assinatura ausente, malformada ou que nao casa RECUSA antes de qualquer chamada a Graph API (fail-closed)."
+  },
+  "campos": {
+    "mapa": {
+      "email": "email",
+      "phone_number": "phone",
+      "full_name": "full_name",
+      "first_name": "first_name",
+      "last_name": "last_name",
+      "company_name": "company_name",
+      "job_title": "job_title",
+      "city": "city",
+      "state": "state",
+      "message": "message"
+    },
+    "obrigatorio_alternativo": ["email", "phone"],
+    "formato": {
+      "email": "contem exatamente um '@' com rotulo e dominio nao vazios (validacao declarada, nao regex de RFC: regex de e-mail reprova endereco valido)",
+      "phone": "apenas digitos apos remover espaco, parentese, ponto, hifen e '+' — minimo 10 e maximo 15 digitos (E.164)"
+    },
+    "observacao": "campo do formulario fora deste mapa NAO vira coluna nem e' descartado em silencio: entra em campos_desconhecidos (nome do campo apenas, sem valor) na trilha de idempotencia e no relatorio da rodada"
+  },
+  "vocabulario": {
+    "channel": ["meta"],
+    "direction": ["INBOUND"],
+    "interaction_type": ["LEAD_META"],
+    "response_category": ["LEAD_META"],
+    "intent": ["PEDIDO_DE_CONTATO"],
+    "sentiment": ["POSITIVO"],
+    "observacao": "O Data Contract V1 define as COLUNAS de interactions (channel/direction/interaction_type/response_category/intent/sentiment) mas nao fecha o vocabulario delas: o vocabulario desta versao vive aqui. Um lead de formulario e' declaracao explicita de interesse do proprio interessado (ele preencheu o formulario), por isso intent PEDIDO_DE_CONTATO e sentiment POSITIVO; nao ha inferencia por LLM nem leitura de texto livre."
+  },
+  "regra": {
+    "response_category": "LEAD_META",
+    "intent": "PEDIDO_DE_CONTATO",
+    "sentiment": "POSITIVO",
+    "confianca": 0.9,
+    "descricao": "O lead preencheu um formulario Meta/Instagram da Transformativa: a categoria e' declarada pelo proprio ato de preencher. A confianca e' declarada no contrato (forca da declaracao, nao score de modelo) — sem LLM, sem interpretacao de texto livre."
+  },
+  "persistencia": {
+    "tabela": "sales_intelligence.interactions",
+    "colunas": {
+      "organization_id": "vinculo real por contacts (nunca inventado)",
+      "contact_id": "contato que casou por e-mail ou telefone",
+      "channel": "meta",
+      "direction": "INBOUND",
+      "interaction_type": "LEAD_META",
+      "occurred_at": "created_time do formulario (quando o LEAD declarou, nao quando ingerimos)",
+      "subject": "identidade do formulario/anuncio (form_id/ad_id) — referencia operacional, sem PII",
+      "content_summary": "resumo dos campos DECLARADOS com e-mail/telefone MASCARADOS e demais campos PII reduzidos a presenca (ex.: 'email: presente (mascarado)'), ate 400 caracteres",
+      "content_reference": "meta:<page_id>:<leadgen_id>",
+      "sentiment": "contrato.regra.sentiment",
+      "intent": "contrato.regra.intent",
+      "response_category": "contrato.regra.response_category",
+      "ai_confidence": "contrato.regra.confianca",
+      "odoo_lead_id": null,
+      "campaign_id": null
+    },
+    "nao_preenchidas": {
+      "odoo_lead_id": "o vinculo com o CRM e' do fluxo de sync/atualizacao (W6-E06); aqui o lead ainda nao existe no Odoo",
+      "campaign_id": "ad_id do Meta e' identificador numerico do anuncio, NAO um UUID do canônico (interactions.campaign_id e' UUID sem FK, Data Contract V1 §4): inventar UUID a partir de ad_id seria identidade falsa. O ad_id fica em subject/content_reference e na trilha"
+    },
+    "idempotencia": {
+      "tabela": "sales_intelligence.sync_events",
+      "chave": "meta-lead:<page_id>:<leadgen_id>",
+      "replay": "JA_INGERIDO — nao grava de novo e nao re-chama a Graph API",
+      "sem_vinculo": "contato nao encontrado em contacts: status SEM_VINCULO (organizacao nao e' inventada)",
+      "dados_insuficientes": "sem e-mail e sem telefone (ou fora de formato): status DADOS_INSUFICIENTES",
+      "assinatura_invalida": "status ASSINATURA_INVALIDA (antes de qualquer chamada externa)",
+      "erro_graph": "status ERRO_GRAPH (dead-letter com motivo; token/segredo nunca no payload)",
+      "lead_indisponivel": "status LEAD_INDISPONIVEL (404 na Graph API: lead apagado/anuncio removido)",
+      "desfeito": "INSERT append com status DESFEITO (rollback executavel; trilha imutavel por contrato §9)"
+    },
+    "limite": "somente INSERT em interactions e sync_events. UPDATE, DELETE, TRUNCATE e DDL nao existem no modulo (auditoria da propria fonte recusa antes de conectar)"
+  },
+  "guardas_de_ambiente": {
+    "prod": "recusa por desenho (exit 4) — ADR-005: a promocao e' ato humano registrado",
+    "dev": "Graph API so' em LOOPBACK (127.0.0.1) e porta de banco so' em container local pg-(sales|odoo|resp|respostas|meta)... via docker exec; app secret e token declarados",
+    "homolog": "exige aprovacao humana registrada (TRE_META_APROVACAO_HUMANA) e pagina/lista explicita de formularios autorizados"
+  },
+  "segredo": {
+    "app_secret": "TRE_META_APP_SECRET (obrigatorio; mascarado no relatorio)",
+    "access_token": "TRE_META_ACCESS_TOKEN (mascarado no relatorio; nunca aparece no request_payload da trilha nem na linha de comando)",
+    "conferencia": "toda gravacao (JSONL local e relatorio) e' conferida contra os valores dos dois segredos; se aparecerem, RECUSA SENHA_VAZADA (exit 5)"
+  },
+  "lacunas": [
+    "NAO e' o receptor do webhook em producao: recebe as entregas CRUAS ja' coletadas (JSONL), como o n8n entrega. HTTPS, fila, verificacao de app id/object ficam na borda (n8n), declarado no runbook",
+    "NAO cria organizacao nem contato: lead de remetente desconhecido fica SEM_VINCULO ate existir vinculo real em contacts (mesmo invariante do W6-E05)",
+    "NAO escreve no Odoo (dono do contato/oportunidade e' o Odoo, Data Contract V1 §2): a promocao a lead no CRM e' do fluxo de sync da onda W6",
+    "NAO responde nada ao lead e NAO usa WhatsApp/e-mail: abordagem e' W6 (aprovacao humana) — este card so' entrega a INGESTAO",
+    "NAO pontua nem classifica o ICP do lead (W5/W8): aqui a interacao e' registrada, nao avaliada",
+    "NAO inventa campaign_id a partir de ad_id (ad_id nao e' UUID canônico) — ficaria identidade falsa; o anuncio fica em subject/content_reference",
+    "NAO consome o `field_data` de campos fora do mapa: sao registrados APENAS pelo nome em campos_desconhecidos, sem valor (nao se persiste dado pessoal nao mapeado nem coluna inventada)",
+    "NAO retenta erro definitivo (401/403/404) e limita o total a 2 tentativas por lead",
+    "NAO grava PII em claro no content_summary: e-mail/telefone entram mascarados (LGPD — o dado pessoal do lead fica no vinculo por contacts e na referencia, nao em resumo texto livre)"
+  ]
+}
