@@ -1640,5 +1640,28 @@ done
 if [ -x scripts/teste_ponteiros_de_registro.sh ]; then echo "OK    executavel scripts/teste_ponteiros_de_registro.sh"
 else echo "FALHOU sem permissao de execucao scripts/teste_ponteiros_de_registro.sh"; FALHAS=$((FALHAS+1)); fi
 
+# Artefatos do TLS/reverse proxy em dev (TRE-W2-E01-T02) existem E estao versionados
+for f in deploy/compose/dev/Caddyfile deploy/compose/dev/proxy.yml deploy/environments/dev-proxy.env \
+         scripts/provision/instalar-proxy-dev.sh scripts/provision/verificar-tls-dev.sh \
+         scripts/provision/remover-proxy-dev.sh scripts/provision/prova-de-dente-tls-dev.sh \
+         docs/runbooks/odoo-dev-tls.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/provision/instalar-proxy-dev.sh scripts/provision/verificar-tls-dev.sh \
+         scripts/provision/remover-proxy-dev.sh scripts/provision/prova-de-dente-tls-dev.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+# Mesma regra do par do Odoo: o par do proxy nao carrega segredo. O hash do basic auth e
+# credencial-adjacente: se ele aparecer aqui, o basic auth do dev esta versionado.
+if grep -qiE '(passwd|password|senha|hash)[[:space:]]*=[[:space:]]*[^[:space:]#]' deploy/environments/dev-proxy.env 2>/dev/null; then
+  echo "FALHOU deploy/environments/dev-proxy.env carrega valor de senha/hash (segredo nao vai para o artefato)"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    par do proxy sem valor de senha/hash"
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

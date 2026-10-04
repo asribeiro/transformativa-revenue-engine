@@ -2798,3 +2798,86 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   (UUID, canal, janela e datas); fail-closed para contrato/dependencia incoerentes, fuso ilegivel e janela
   fora da grade; nada e' materializado (sem tabela, sem cron, sem evento) — executar o toque e' do caminho
   de outbound com aprovacao humana registrada.
+
+### Added — `TRE-W2-E01-T02` (TLS / reverse proxy / hardening no dev) — 01/10/2026
+
+- **Proxy TLS reverso com Caddy no ambiente dev** — `deploy/compose/dev/{Caddyfile,proxy.yml}` +
+  par não-secreto `deploy/environments/dev-proxy.env` + `scripts/provision/{instalar,verificar,remover}-proxy-dev.sh`
+  + `scripts/provision/prova-de-dente-tls-dev.sh` + runbook `docs/runbooks/odoo-dev-tls.md`.
+  Medido na VPS Contabo `vmi3619453`, 01/10/2026: container `proxy-dev` (id `2f3b62f8fb44…`),
+  imagem `caddy:2-alpine` no digest `sha256:6aeddd44…` (binário `v2.11.4`), **rede host** (precisa
+  escutar 80/443 na interface pública **e** alcançar o Odoo em `127.0.0.1:8069`) com
+  `restart=unless-stopped`; volumes `proxy-data-dev`/`proxy-config-dev`/`proxy-log-dev`.
+  O Odoo ganhou `proxy_mode = True` no `odoo.conf` (executado pelo instalador, com restart só quando
+  a linha muda) e **continua** só em loopback.
+- **Aceite item a item**: `bash verificar-tls-dev.sh` → `RESULTADO: TLS_DEV_OK (28 itens, 0 falhas)`,
+  exit 0 — HTTPS 200 com a **cadeia validada contra a âncora da CA** (e **falha sem a âncora**, o que
+  prova que a validação não é decorativa), HTTP 80 → HTTPS, hardening (HSTS + `X-Frame-Options` +
+  `X-Content-Type-Options` + `Referrer-Policy`, `Server` removido), `/web/database/manager` → **403**,
+  challenge ACME fora do `basic_auth` (404, não 401), **sem a credencial do proxy o Odoo não é
+  servido**, Host desconhecido não recebe o Odoo, 8069 só loopback **sem regra na UFW**, UFW
+  exatamente `22/80/443` com `fail2ban` ativo, e `proxy_mode` **com efeito medido**.
+- **Dentes do aceite** (provas negativas medidas): `bash prova-de-dente-tls-dev.sh` →
+  `TLS_DENTE_OK (6 itens, 0 falhas)`, exit 0 — D1 `docker port` publicando o Odoo → reprova;
+  D2 `ufw status` com a 8069 liberada → reprova; D3 proxy mutante **sem `basic_auth`** → reprova;
+  D4 `proxy_mode` removido de verdade (com restart) → reprova; D5 verificador **depois do rollback**
+  → `TLS_DEV_FALHOU (24 itens, 15 falhas)`. Cada mutação reprova pelo item certo e o alvo real não
+  fica mutado.
+- **Evidência externa** (medida de fora da VPS): varredura → **3 portas abertas** (`22`, `80`, `443`)
+  e `8069`/`8071`/`8072`/`5432`/`5433`/`8443`/`2019` fechadas; chamada HTTPS sem `-k` e sem
+  credencial → `401` com a cadeia validada; HTTP 80 externo → `308`; Host desconhecido de fora →
+  handshake recusado; o log do próprio Caddy registra a origem externa `187.127.56.17` com `401`.
+
+### Security — `TRE-W2-E01-T02`
+
+- **UFW deixa de ser só 22/tcp**: passam a ser `22/80/443` (portas decididas e registradas, §1.1 do
+  runbook). O estado anterior é guardado em `/opt/tre/dev/proxy/ufw-antes.txt` e o rollback devolve a
+  UFW exatamente a ele — não reabre nada às cegas.
+- **`basic_auth` protege o dev exposto** — e não é decorativo: medido neste ambiente, a credencial
+  **padrão `admin`/`admin` do Odoo APROVA** (`303` → `/odoo` com sessão). Virar `odoo-dev` para a
+  internet sem essa correção seria *admin takeover* a um login de distância. A senha do proxy nasce
+  na VPS (`/etc/tre/proxy-dev/basicauth.env`, 600) e o hash é gerado **pelo próprio `caddy`**, com a
+  senha por **stdin** — nunca em argumento de comando, nunca no artefato, nunca em log.
+- **Correção da credencial do Odoo e flag `Secure` do cookie são achados abertos**, não deste card:
+  corrigir a credencial muda o banco do Odoo (card próprio) e precisa estar feito **antes de
+  homologação/produção**; o cookie de sessão do Odoo **não leva `Secure`** (medido com e sem
+  `proxy_mode`) num serviço que só é acessível por HTTPS.
+
+### Fixed — `TRE-W2-E01-T02`
+
+- **Seis defeitos encontrados nesta execução** (todos medidos, todos consertados):
+  (1) `caddy hash-password` lê **uma linha** do stdin e morre com `Error: EOF` sem o `\n` final, e a
+  primeira versão mandava o `stderr` para `/dev/null` — o instalador **morria sem dizer por quê**;
+  (2) o item 7 do **próprio verificador** estava **invertido**: tratava "curl falhou sem a âncora" (o
+  resultado bom) como reprovação;
+  (3) `source` no arquivo de segredos **quebra o script na reexecução** — o hash bcrypt tem
+  `$2a$14$…` e o shell, sob `set -u`, tenta expandir `$2` e morre com `unbound variable` (leitura
+  passou a ser por `sed`, como o T01 já faz);
+  (4) **`docker compose` interpola `$` também nos valores de `env_file`**: o sal do bcrypt é lido
+  como nome de variável e vira string vazia, o container recebia um hash **truncado**
+  (`hashedSecret too short to be a bcrypted password`) e o `basic_auth` recusava **tudo** — e o
+  defeito é **intermitente, porque depende do primeiro caractere do sal sorteado** (passou na
+  primeira instalação e quebrou na reinstalação limpa). Conserto: valores entre **aspas simples** no
+  `env_file` (reprodução mínima medida no alvo), com as aspas removidas na leitura; hash conferido
+  com **60 caracteres** no container depois do conserto (era 46);
+  (5) o rollback acusava `regra do estado anterior nao esta mais presente: To / --` porque o estado
+  guardado é a saída crua do `ufw status`, **com o cabeçalho** — passou a filtrar por `ALLOW`;
+  (6) **colisão com outro card `devops`** (`t_a5afde31`, backup/restore) rodando ao mesmo tempo
+  contra os **mesmos** containers dev — o `odoo-dev` apareceu `Exited (0)` no meio da rodada, por um
+  `compose run` de fora; o instalador ganhou guarda com espera curta e explícita e o caso foi
+  registrado como **hotspot** no board.
+
+### Notas de estado — `TRE-W2-E01-T02`
+
+- **Rollback testado de verdade** (não só escrito): recusa sem `TRE_PROXY_CONFIRMAR_REMOCAO=1`;
+  executado, devolveu a UFW a `[22/tcp]` e preservou Odoo/Postgres; o verificador então **reprovou**
+  o ambiente ausente (15 falhas); a **reinstalação limpa** voltou a `TLS_DEV_OK (28 itens)` e o
+  aceite do card anterior continua verde (`ODOO_DEV_OK (19 itens, 0 falhas)`).
+- **Certificado público pendente da decisão do dono**: medido que `odoo-dev.transformativa.com.br`
+  **não resolve**, a VPS **não tem PTR**, a zona `transformativa.com.br` está em NS1 e **não tem CAA**
+  (Let's Encrypt livre); criar o registro A exige credencial de DNS, fora da declaração deste card.
+  Proposta registrada: `odoo-dev.transformativa.com.br → 169.58.24.102`. Até lá o dev usa a **CA
+  interna do proxy** (`tls internal`), validada de verdade (nunca `-k`); ligar o certificado público
+  é **trocar uma linha** + ter o DNS apontando.
+- **Portas e exposição decididas pelo executor em dev** (padrão do T01): `22/80/443` públicas, `8069`
+  e `5432/5433` só em loopback, `fail2ban` mantido — **pendentes de ratificação do Anderson**.

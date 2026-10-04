@@ -190,6 +190,21 @@ com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D
 - UFW com regras mínimas documentadas; teste de acesso externo nega o que não deve ser exposto.
 - **Decisão do Anderson:** domínio, portas e exposição.
 
+> **Notas de verificação em dev (card `t_1acf11f2`, executado em 01/10/2026; o critério acima não foi
+> alterado).** Portas e exposição foram **decididas e registradas** pelo executor em dev — `22/80/443`
+> públicas, `8069` e `5432/5433` só em loopback, `fail2ban` mantido (runbook `odoo-dev-tls.md` §1.1) —
+> e ficam **pendentes de ratificação**, como no T01. **HTTPS com certificado válido** foi medido com
+> validação real de cadeia (e com a prova negativa de que sem a âncora o pedido **falha**): em dev a
+> âncora é a **CA interna do proxy**, porque o **domínio ainda não é decidido pelo dono** — medido que
+> `odoo-dev.transformativa.com.br` não resolve, a VPS não tem PTR e a zona está em NS1; criar o
+> registro A exige credencial de DNS, fora da declaração do card. Ligar o certificado público é
+> trocar uma linha do `Caddyfile` + ter o DNS. **Porta administrativa**: o Odoo segue só em loopback e
+> o `/web/database/manager` responde **403** pelo proxy. **Acesso externo**: varredura de fora mostra
+> **3 portas abertas** e nega todo o resto. Aceite `TLS_DEV_OK (28 itens, 0 falhas)` e dente
+> `TLS_DENTE_OK (6 itens, 0 falhas)`. **Achados abertos** (não deste card): a credencial **padrão
+> `admin`/`admin` do Odoo dev aprova** e o cookie de sessão **não leva `Secure`** — ambos a corrigir
+> antes de homologação/produção.
+
 **Test plan:** Chamada externa HTTPS + varredura de portas abertas + `ufw status`; evidência = saída dos três.
 **Rollback:** Reverter regras de proxy/UFW para o estado anterior.
 **Risco:** Alto — exposição de serviço.

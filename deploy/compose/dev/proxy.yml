@@ -1,0 +1,53 @@
+# Proxy TLS do ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+#
+# Card: TRE-W2-E01-T02 (`t_1acf11f2`). Runbook: docs/runbooks/odoo-dev-tls.md.
+#
+# Regras que este arquivo carrega (e que o verificador cobra item a item):
+#   * `network_mode: host` e DELIBERADO: o proxy precisa (a) escutar 80/443 na interface
+#     publica — e so ele publica porta neste ambiente — e (b) falar com o Odoo em
+#     127.0.0.1:8069, que continua sendo loopback e NAO ganha regra nenhuma na UFW.
+#     Sem host networking, o container nao alcancaria o loopback do host.
+#   * nenhum segredo no artefato: usuario/hash do basic auth vem de
+#     /etc/tre/proxy-dev/basicauth.env (600, NA VPS — politica de secrets V1). Este arquivo
+#     e versionado e nao carrega valor de credencial.
+#   * imagem por tag + digest conferido contra `deploy/environments/dev-proxy.env`
+#     (`PROXY_DIGEST_ESPERADO`): a identidade do que esta no ar e o digest, nao a tag.
+#   * volumes proprios (`proxy-*-dev`) para a CA local, a configuracao e o log de acesso.
+#
+# Uso na VPS (a partir da copia do ambiente em /opt/tre/dev/compose/):
+#   docker compose --env-file /opt/tre/dev/compose/proxy.env -f /opt/tre/dev/compose/proxy.yml up -d
+name: tre-proxy-dev
+
+services:
+  proxy-dev:
+    image: ${PROXY_IMAGEM:?defina PROXY_IMAGEM em deploy/environments/dev-proxy.env}
+    container_name: proxy-dev
+    restart: unless-stopped
+    network_mode: host
+    # Segredo: o arquivo vive na VPS, 600, fora do artefato publicado.
+    env_file:
+      - /etc/tre/proxy-dev/basicauth.env
+    environment:
+      TRE_DEV_HOSTNAME: ${PROXY_HOSTNAME:?defina PROXY_HOSTNAME em deploy/environments/dev-proxy.env}
+      TRE_PROXY_USUARIO: ${PROXY_USUARIO:-tre-dev}
+    volumes:
+      - /opt/tre/dev/compose/Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy-data-dev:/data
+      - proxy-config-dev:/config
+      - proxy-log-dev:/var/log/caddy
+    healthcheck:
+      # O 401 e RESPOSTA ESPERADA (o basic auth esta no lugar); o que reprova e nao
+      # responder nada — ou seja, o TLS nao estar de pe.
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null --no-check-certificate --header=\"Host: $$TRE_DEV_HOSTNAME\" https://127.0.0.1/ 2>&1 | grep -qE 'HTTP/1\\.[01] (200|401|403)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  proxy-data-dev:
+    name: proxy-data-dev
+  proxy-config-dev:
+    name: proxy-config-dev
+  proxy-log-dev:
+    name: proxy-log-dev
