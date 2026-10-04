@@ -276,9 +276,11 @@ Destino isolado (300 arquivos, `digest 692c244a…`):
    `PUBLICACAO_OK`: o `rsync --delete` espelha o commit, não sobra arquivo de fora nem modo errado;
 5. destino isolado removido ao fim (`/opt/tre` ficou sem cópia de teste).
 
-Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `digest 502d4381…`):
+Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (**hoje fora de ref nenhuma** — nota de
+rastreabilidade; 306 arquivos, `digest 502d4381…`):
 
-6. **a cópia estava reescrita por fora do caminho único:** `.publicado` dizia `f1f1cb6b…`, mas o manifesto da
+6. **a cópia estava reescrita por fora do caminho único:** `.publicado` dizia `f1f1cb6b…` (**hoje fora de ref
+   nenhuma** — nota de rastreabilidade), mas o manifesto da
    cópia tinha **307 arquivos** e **611 linhas diferentes** do commit registrado — leitura (não medida linha a
    linha, o manifesto anterior não é guardado): sincronização por `tar -cz scripts docs db | ssh …` de outro
    card, que reescreve centenas de arquivos com o modo do *checkout* e acrescenta arquivos ainda não
@@ -286,7 +288,8 @@ Cópia operacional real (`/opt/tre/repo`), commit `3586d08…` (306 arquivos, `d
    **`divergencia_antes = 0`** e o **mesmo `digest`** (`502d4381…`, idempotente);
 7. `--conferir` → `PUBLICACAO_OK commit=3586d08… digest=502d4381… arquivos=306`, exit 0; `.publicado` grava
    `commit`, `arvore`, `ref`, `digest`, `arquivos`, `publicado_em`, `publicado_por: t_091cfea9`,
-   `arvore_suja: 0`, `execstart_sem_bit: 0`, `divergencia_antes: 0`, `concorrencia: (nenhuma)`;
+   `arvore_suja: 0`, `execstart_sem_bit: 0`, `divergencia_antes: 0`, `concorrencia: (nenhuma)`; o `3586d08`
+   desta seção está **hoje fora de ref nenhuma** — nota de rastreabilidade;
 8. **modo e dono na cópia:** `deploy/publicar.sh`, `scripts/backup/backup-tre.sh`,
    `scripts/backup/verificar-ultimo-backup.sh` e `scripts/db/suite_banco.sh` em **`755 tre-deploy tre-deploy`**
    e `README.md` em `644` — o modo é o **do git**. (A primeira versão do script publicava `775`/`664`: o modo
