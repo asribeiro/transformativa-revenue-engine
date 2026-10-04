@@ -1,0 +1,171 @@
+{
+  "versao": "google-lead-attribution-v1",
+  "card": "TRE-W7-E03-T01",
+  "tema": "Atribuicao de lead do Google (formulario de Lead Ads do Google Ads e formulario do site com gclid/utm)",
+  "autoridade": [
+    "12_CONTRATOS_E_GOVERNANCA.md (envelope de evento, idempotencia, source of truth)",
+    "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md (idempotencia, reconciliacao, Google -> n8n)",
+    "04_PROJETO_FISICO_DE_DADOS.md (vocabulos e tabelas do Data Contract V1)",
+    "docs/data/DATA_CONTRACT_V1.md (interactions/sync_events — nada de coluna nova na V1)"
+  ],
+
+  "fontes": {
+    "google_ads_lead_form": {
+      "descricao": "formulario de Lead Ads do Google Ads: o payload do webhook carrega campaign_id/adgroup_id/creative_id do formulario",
+      "interaction_type": "LEAD_FORM",
+      "exige_campanha": true
+    },
+    "site_gclid": {
+      "descricao": "formulario do site com gclid na sessao: o gclid e' resolvido pela porta declarada da Ads API",
+      "interaction_type": "LEAD_WEB",
+      "exige_campanha": false
+    },
+    "site_utm": {
+      "descricao": "formulario do site sem gclid, so' com utm_* (evidencia fraca declarada)",
+      "interaction_type": "LEAD_WEB",
+      "exige_campanha": false
+    }
+  },
+
+  "campos_conhecidos": [
+    "lead_id",
+    "fonte",
+    "ocorrido_em",
+    "contato_email",
+    "contato_telefone",
+    "contato_nome",
+    "empresa_nome",
+    "empresa_dominio",
+    "campanha_id",
+    "campanha_nome",
+    "grupo_anuncio_id",
+    "criativo_id",
+    "palavra_chave",
+    "gclid",
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "pagina"
+  ],
+
+  "campos_obrigatorios": ["lead_id", "fonte"],
+
+  "dados_de_contato": {
+    "exigidos": "pelo menos um de",
+    "campos": ["contato_email", "contato_telefone"],
+    "motivo": "DADOS_INSUFICIENTES: sem e-mail e sem telefone nao ha como vincular a contato nem deduplicar o lead"
+  },
+
+  "incoerencias": [
+    {
+      "fonte": "google_ads_lead_form",
+      "falta": "campanha_id",
+      "veredito": "NAO_ATRIBUIDO",
+      "motivo": "FORMULARIO_SEM_CAMPANHA",
+      "explicacao": "o formulario de Lead Ads do Google Ads carrega campaign_id por contrato do produto; sem ele o payload e' incoerente e a atribuicao NAO se inventa"
+    }
+  ],
+
+  "tabela_de_atribuicao": [
+    {
+      "ordem": 1,
+      "evidencia": "FORMULARIO_GOOGLE_ADS",
+      "canal": "google",
+      "veredito": "ATRIBUIDO",
+      "confianca": 0.95,
+      "condicao": {"fonte": ["google_ads_lead_form"], "obrigatorios": ["campanha_id"]},
+      "campanha_de": "campanha_id",
+      "motivo": "formulario de Lead Ads do Google Ads: campanha vem declarada no proprio payload (evidencia forte)"
+    },
+    {
+      "ordem": 2,
+      "evidencia": "GCLID_RESOLVIDO",
+      "canal": "google",
+      "veredito": "ATRIBUIDO",
+      "confianca": 0.9,
+      "condicao": {"fonte": ["site_gclid", "google_ads_lead_form"], "obrigatorios": ["gclid"],
+                   "resolucao_gclid": "RESOLVIDO"},
+      "campanha_de": "resolucao_gclid.campanha_id",
+      "motivo": "gclid resolvido pela porta declarada da Ads API: clique pago do Google com campanha identificada"
+    },
+    {
+      "ordem": 3,
+      "evidencia": "GCLID_NAO_RESOLVIDO",
+      "canal": "google",
+      "veredito": "ATRIBUIDO",
+      "confianca": 0.6,
+      "condicao": {"fonte": ["site_gclid", "google_ads_lead_form"], "obrigatorios": ["gclid"],
+                   "resolucao_gclid": "NAO_ENCONTRADO"},
+      "campanha_de": null,
+      "motivo": "o gclid prova o clique do Google, mas a campanha nao foi resolvida: canal sim, campanha NAO (fail-closed)"
+    },
+    {
+      "ordem": 4,
+      "evidencia": "UTM_SOURCE_GOOGLE",
+      "canal": "google",
+      "veredito": "ATRIBUIDO",
+      "confianca": 0.45,
+      "condicao": {"obrigatorios": ["utm_source_google"]},
+      "campanha_de": null,
+      "motivo": "utm_source=google e' evidencia FRACA declarada: diz o canal, nao diz a campanha (utm_campaign e' rotulo, nao id de campanha)"
+    }
+  ],
+
+  "fallback": {
+    "veredito": "NAO_ATRIBUIDO",
+    "evidencia": null,
+    "canal": null,
+    "confianca": 0.0,
+    "motivo": "SEM_IDENTIFICADOR",
+    "explicacao": "nenhuma evidencia nomeada casou: um lead nao recebe canal por conveniencia; sem evidencia nao ha atribuicao e nao ha linha em interactions"
+  },
+
+  "resolucao_de_gclid": {
+    "porta": "TRE_GOOGLE_ADS_PORTA (URL base; em dev obrigatoriamente loopback)",
+    "rota": "GET {porta}/gclid/<gclid>",
+    "resposta_esperada": {"status": "RESOLVIDO|NAO_ENCONTRADO", "campanha_id": "string|null",
+                          "campanha_nome": "string|null", "grupo_anuncio_id": "string|null",
+                          "palavra_chave": "string|null"},
+    "fail_closed": "porta ausente, fora do loopback em dev, timeout, HTTP != 200 ou JSON invalido: a resolucao NAO e' usada (veredito cai nas regras seguintes; sem alternativa, NAO_ATRIBUIDO/SEM_IDENTIFICADOR)",
+    "segredo": "o developer token/OAuth do Google Ads e' da porta, nunca do payload: o valor de TRE_GOOGLE_ADS_TOKEN nao pode aparecer na gravacao (SENHA_VAZADA, exit 5)"
+  },
+
+  "vocabulario": {
+    "status": ["ATRIBUIDO", "NAO_ATRIBUIDO", "SEM_VINCULO", "DADOS_INSUFICIENTES", "DESFEITO"],
+    "evidencia": ["FORMULARIO_GOOGLE_ADS", "GCLID_RESOLVIDO", "GCLID_NAO_RESOLVIDO", "UTM_SOURCE_GOOGLE"],
+    "canal": ["google"],
+    "interaction_type": ["LEAD_FORM", "LEAD_WEB"],
+    "desfecho_de_atribuicao": ["FORMULARIO_SEM_CAMPANHA", "SEM_IDENTIFICADOR"]
+  },
+
+  "escrita": {
+    "tabelas": ["sales_intelligence.interactions", "sales_intelligence.sync_events"],
+    "operacoes": ["INSERT"],
+    "proibidas": ["UPDATE", "DELETE", "TRUNCATE", "DROP", "ALTER", "CREATE"],
+    "quando_grava_interactions": "somente veredito ATRIBUIDO E vinculo (contato) encontrado",
+    "sem_vinculo": "SEM_VINCULO: trilha em sync_events e nenhuma linha em interactions (nunca se inventa organizacao/contato — invariante 4 do W6-E05)",
+    "coluna_de_auditoria": "a confianca da ATRIBUICAO vive no request_payload da trilha; ai_confidence fica NULL (decisao por regra declarada nao e' classificacao de IA)",
+    "pii": "content_summary nao expoe e-mail/telefone em claro (mascarados); subject sem dado pessoal"
+  },
+
+  "idempotencia": {
+    "chave": "google-lead:<fonte>:<lead_id>",
+    "replay": "JA_INGERIDO: a trilha ja' existe, nada e' gravado de novo e a porta do gclid nao e' chamada",
+    "reprocesso": "evidencia nova do mesmo lead entra como trilha nova com idempotency_key '<chave>#evidencia-<n>' — a anterior nao e' reescrita"
+  },
+
+  "guardas_de_ambiente": {
+    "dev": "porta de banco LOCAL (docker exec -i pg-(google|inbound|sales|odoo|aceite)... psql) e porta do gclid em loopback",
+    "homolog": "exige TRE_GOOGLE_APROVACAO_HUMANA registrada",
+    "prod": "RECUSA por desenho (ADR-005): exit 4",
+    "dry_run": "--atribuir/--ingerir sem --confirmo e' DRY_RUN (exit 0, nada gravado)"
+  },
+
+  "lacunas": [
+    "A Ads API real (developer token + OAuth) NAO e' chamada nesta v1: mede-se contra a porta declarada em loopback (stub do aceite). Prova contra a API real exige credencial do Google Ads e aprovacao registrada do dono — homolog.",
+    "Sem evento de outbox: o vocabulario de eventos do Data Contract V1 (doc 12 §2) nao tem evento de lead inbound; emitir um exigiria nova versao do contrato. O lead fica registrado em interactions + trilha e o encaminhamento ao CRM e' do caminho de integracao.",
+    "interactions.campaign_id e' UUID e a campanha do Google tem id proprietario (string): o id do Google vai para o request_payload da trilha, nunca forjado como UUID na coluna.",
+    "A gravacao de `organizations`/`contacts` a partir de um lead inbound (empresa nova vinda do anuncio) nao e' deste card: o dono operacional do contato e' o Odoo (doc 05 §4).",
+    "Nada mede volume, taxa de clique ou qualidade do formulario: o aceite mede 1 lead por evidencia."
+  ]
+}

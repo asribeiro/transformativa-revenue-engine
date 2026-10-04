@@ -2812,3 +2812,33 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
 - **Portao de estrutura:** `bash scripts/verificar_estrutura.sh` -> **PASS (0 falhas)**, com o bloco do card
   TRE-W7-E02-T01 (8 artefatos versionados, `bash -n` do aceite e `dev-meta.env` sem segredo).
 - Segredos: nenhum valor nesta entrada.
+## 2026-10-03 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W7-E03-T01: atribuicao de lead do Google
+
+- **O que foi executado:** `bash scripts/inbound/aceite-atribuicao-google.sh` e
+  `bash scripts/inbound/aceite-atribuicao-google.sh --prova-de-dente`, do checkout em
+  `/tmp/tre-w7e03-r2` na VPS (ADR-0008: o Docker do TRE vive la').
+- **Resultado medido:** `ACEITE_GOOGLE_LEADS_001_OK` — **35 itens OK / 0 FALHOU** (exit 0); com
+  `--prova-de-dente`, **38 itens OK / 0 FALHOU** e **3/3 dentes** (confianca do formulario degradada,
+  guarda de producao desligada e INSERT fora do limite — cada mutacao reprovou o item que nomeia).
+- **Suíte offline:** `python3 scripts/inbound/verificar_atribuicao_google.py` → 28 itens / 0 falhas;
+  `--autoteste` → 8/8 dentes.
+- **Pontas do aceite:** PostgreSQL descartavel `pg-google-acc` (imagem `postgres:16`, migration 0001
+  aplicada de verdade) e **stub local** do resolvedor de `gclid` da Ads API em `127.0.0.1:8899`.
+  Nenhuma credencial real: ha item medindo 0 variaveis de token do Google Ads no ambiente do aceite e
+  outro medindo `SENHA_VAZADA` (exit 5) quando o valor do token aparece na saida.
+- **Guardas medidas:** `prod` recusa (exit 4); banco nao-local recusado (exit 3); homolog sem aprovacao
+  registrada recusado (exit 3); snapshot das 12 tabelas provando que **so'** `interactions` e
+  `sync_events` mudaram (e `organizations`/`contacts` intactos); replay = `JA_INGERIDO` sem linha nova;
+  `--desfazer` grava trilha `DESFEITO` sem apagar a trilha original.
+- **Defeitos do proprio instrumento medidos e corrigidos na rodada:** (1) o aceite media um `gclid` que
+  o exemplo nao carregava (cenario 2 caia em `GCLID_NAO_RESOLVIDO`); (2) o snapshot das 12 tabelas
+  (lista de `{table_name, linhas}`) era lido como dicionario e o item 11.1 ficava **cego**.
+- **Logs brutos:** saidas completas anexadas ao card — `aceite-atribuicao-google-35ok.out`
+  (sha256 `af61a07b2824ed93c298dc0cee38e1bbef01f7bcbd7e86f2eb572d261a322009`) e
+  `aceite-atribuicao-google-dentes.out`
+  (sha256 `547b268b763ad9f646a89d0b631630e18c2aff491a55eafe4d3e9790db73f2d0`).
+- **Containers do ambiente** (`pg-sales-dev`, `pg-odoo-dev`, `odoo-dev`, `proxy-dev`) **nao** foram
+  tocados: o aceite aborta se `pg-google-acc` ou a porta `8899` ja' existirem, e remove o proprio trio
+  ao sair.
+- Segredos: nenhum valor real nesta entrada. O `gclid` que aparece na trilha e' identificador de clique
+  (nao e' credencial); o token do Google Ads entra no aceite apenas como valor falso, para medir a recusa.
