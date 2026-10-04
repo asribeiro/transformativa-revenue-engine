@@ -694,6 +694,11 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   recorta a secao pelo grupo do vendedor (medido 0)` e a prova independente com 2 falhas); dente 2
   (a view do modelo fora do manifesto `data`) → `VIEWS_FALHOU (83 itens, 27 falhas)`, exit 1.
   Resultado do comando: `RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas)`, exit 0.
+  (`res.users, tf.process.opportunity`). `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`, exit 0. Cada
+  prova escreve no **próprio** diretório de log (`"$TRE_LOG_DIR/dente/prova-N"`) e uma guarda
+  fail-closed confere o sha256 dos `[1-4]-*.log` do aceite antes/depois; o dente 2 ainda exige que o
+  item do log de teste dispare — guarda e dente do item chegaram no retrabalho da revisão rodada 1
+  (ver `Fixed`, `TRE-W2-E07-T01`).
 
 ### Security
 
@@ -820,6 +825,27 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `ctl-e` módulo inexistente, `ctl-f` README divergente). Achado menor corrigido no mesmo rework: a
   rodada 1 registrou sha256 igual "nos 20 arquivos" e a cópia medida carregava um `README.md` de
   rodada anterior ao commit entregue. Detalhe no runbook §8.
+- **Duas classes de defeito do E03 reincidiram no verificador NOVO das ACLs (`TRE-W2-E07-T01`), achadas
+  na verificação independente (rodada 1, perfil `tester`) e consertadas no retrabalho** — um arquivo,
+  `scripts/odoo/verificar-acl-modulo.sh` (o módulo, o XML/CSV de segurança e o prover não foram tocados):
+  (1) o `--prova-de-dente` herdava `TRE_LOG_DIR="$LOG_DIR"` nos dois sub-runs mutados e escrevia os
+  **mesmos nomes de passo** no diretório do aceite — a sequência do runbook §3 (um `export TRE_LOG_DIR`
+  seguido do aceite **e** dos dentes) **apagava a evidência bruta do aceite** e deixava no lugar a do
+  mutante (`tre_e07t01_acl_d2`, `1 failed … of 26 tests`, `ACL_ITENS=22 ACL_FALHAS=2`): é o defeito
+  `TRE-W2-E03-T01-D02` reincidente; (2) o item "nenhuma linha de teste 'FAIL:'/'ERROR:' no log" usava o
+  padrão **morto** no Odoo 19 (`^(FAIL|ERROR): `, ancorado no início da linha) e imprimia `OK` com teste
+  reprovado no log — defeito `TRE-W2-E03-T01-D01` reincidente. Conserto: cada prova passa a escrever em
+  `"$TRE_LOG_DIR/dente/prova-N"` (os `.out` dos dentes em `"$TRE_LOG_DIR/dente/"`), com **guarda
+  fail-closed** que fotografa o sha256 dos `[1-4]-*.log` do aceite antes/depois e reprova o dente se
+  algum mudar; o item do log passou a `grep -E '(^| )(FAIL|ERROR): [A-Za-z_]'` (o mesmo já medido em
+  `scripts/odoo/verificar-res-partner.sh`), com as linhas casadas impressas, e o dente 2 ganhou **item
+  próprio** (exige que o item dispare com um teste reprovado). Medido na VPS em 01/10/2026: aceite →
+  dentes no mesmo `TRE_LOG_DIR` → `ACL_OK (51 itens, 0 falhas)` exit 0 e `ACL_DENTE_OK (2 provas, 0
+  falhas)` exit 0, os **3 arquivos do aceite com sha256 idêntico** antes/depois e ainda citando
+  `tre_e07t01_acl`; controle com o caminho compartilhado de volta → `ACL_DENTE_FALHOU (… 1 falha na
+  guarda)`, exit 1; controle com o padrão morto de volta → `OK nenhuma linha de teste 'FAIL:'/'ERROR:'
+  no log` num log com `1 failed, 0 error(s) of 26 tests` (o defeito, reproduzido). Detalhe no runbook
+  §8/§9.
 
 ### Notas de estado
 
