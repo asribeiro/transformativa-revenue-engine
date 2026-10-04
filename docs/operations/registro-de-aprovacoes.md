@@ -106,6 +106,7 @@ corrigidas abaixo).
 | `E04-T02` | `t_430ba4cc` | done | `94136cb`, `f437072` |
 | `E05` | `t_c7281fce` | done | `58ec9fb` |
 | `E06` | `t_72672e48` | done | `9b9c3ad`, `adbfcf1` |
+| 02/10/2026 (Telegram: "C") | Anderson Ribeiro | **Cobertura do verificador de estrutura — ADR opção C (híbrida)** (card `t_c77ca273`, DEFEITO [cobertura] do E03-T01): descoberta automática dos artefatos da árvore versionada + isenções declaradas com justificativa/responsável/data + fail-closed para artefato nem coberto nem isento | `docs/architecture/cobertura-do-verificador-de-estrutura.md` (novo) | decisão tomada com 3 opções e riscos apresentados; consequência aceita: rito de isenção revisado na abertura de onda |
 
 - **Ressalvas que continuam abertas (nao bloqueiam a homologacao):** os defeitos residuais
   da ressincronizacao da copia operacional, da publicacao intermitente e da precisao
