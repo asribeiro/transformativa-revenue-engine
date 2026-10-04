@@ -1534,7 +1534,8 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **nasce inativo**), montado por `scripts/n8n/montar_workflow_observabilidade.py` (o Code node embute o nucleo
   versionado byte a byte e os nos Postgres embutem os arquivos SQL).
   Medicao na VPS, sobre copia propria do commit: aceite `OBSERVABILIDADE_SYNC_OK` (**119 itens, 0 falhas**)
-  exit 0 — lente estrutural **118 itens**, suite do nucleo **58 itens**, montador `--conferir` OK — com 8 estados
+  exit 0 — lente estrutural **118 itens**, suite do nucleo **62 itens** (58 no head medido; o caso novo do
+  `TRE-W3-E05-T01-D01-D01` leva a suite a 62), montador `--conferir` OK — com 8 estados
   reais semeados (saudavel, falha transitoria, dead-letter sem/com motivo, PROCESSED sem trilha, fila no teto,
   direcao fora do vocabulario, trilha COMPLETED sem conclusao), cada metrica medida **por dois caminhos
   independentes** (`psql` direto e pelo workflow no n8n descartavel) e o retrato das duas tabelas identico
@@ -1561,6 +1562,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   papéis e contrato de dados, todos exit 0. Cherry-pick isolado do commit `a5c3a1f` (nascido de `a38585d`)
   sobre árvore que contém o T02: **0 conflito** e `PASS (0 falhas)` exit 0; em árvore anterior ao T02 o gate
   reprova por ausência — que é exatamente o comportamento pedido.
+- **Cobertura da suíte do núcleo: linha com só `tentativas` preenchido (`TRE-W3-E05-T01-D01-D01`)** — defeito de
+  **cobertura de gate** achado pela verificação independente do conserto D01 (cards `t_9b31706d` e
+  `t_dc0bd6d2`): o item 3 do D01 passou a testar `tentativas` em `linhaDeDetalheVazia` (fail-closed,
+  contrato x código), mas **nenhum artefato versionado travava a condição** —
+  `scripts/n8n/testar_observabilidade_sync.js` não foi tocado no branch (`git diff --stat 4a8cead abeae38 --
+  scripts/n8n/testar_observabilidade_sync.js` vazio) e, revertendo só a cláusula numa cópia, o comando
+  versionado do aceite seguia `OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)` exit 0. Conserto (commit
+  `44e0803`): caso novo na suíte que exercita `avaliarDetalhes` com `[{tentativas: 1}]` (dado: `total=1`,
+  `linhas_vazias=0`, divergência `tipo_de_detalhe_nao_declarado:(vazio)`), mantém o placeholder `{}` como
+  ausência de detalhe e fecha a ponta a ponta — a suíte passa de **58** para **62 itens**. **Prova negativa:**
+  a suíte nova contra o núcleo com a cláusula revertida (cópia, nada do entregável editado) fecha
+  `OBSERVABILIDADE_SYNC_NUCLEO_FALHOU (62 itens, 3 falha(s))` exit 1, e a sonda de comportamento na mesma
+  cópia mostra o descarte silencioso (`{tentativas:1}` -> `linhas_vazias=1, total=0`). Medido: suíte 62/0
+  exit 0 nos dois modos (solto e `--workflow`), lente `118 itens, 0 falhas` exit 0, montador `--conferir` OK
+  e os 5 verificadores do projeto PASS; na VPS, o passo de código do próprio aceite (`--apenas-codigo`, cópia
+  própria por bundle) fecha `OBSERVABILIDADE_SYNC_OK (3 itens, 0 falhas)` exit 0 com a suíte 62/0 **dentro
+  da imagem do n8n**, e o mesmo controle negativo morde dentro da imagem (exit 1).
+
 - **Quatro achados de precisão/robustez da revisão independente (`TRE-W3-E05-T01-D01`)** — da revisão do card
   `t_0b77a689`; nenhum altera resultado medido, todos são precisão de texto/contrato ou robustez da própria
   lente. (a) `CHANGELOG.md` dizia `7 saídas sintéticas` no juiz do dente quando o artefato já tinha **8**

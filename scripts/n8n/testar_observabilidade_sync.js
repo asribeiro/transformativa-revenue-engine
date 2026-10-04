@@ -338,6 +338,23 @@ const MORTO_SEM_MOTIVO = {
         'linha de detalhe COM dado e tipo vazio continua fechando INDETERMINADO (placeholder e linha quebrada sao coisas diferentes)');
 }
 {
+    // `tentativas` e' campo de DETALHE como os outros: linha com SO' `tentativas` preenchido e' DADO
+    // (regra declarada no contrato, `detalhes.linha_vazia.regra`: "linha com QUALQUER campo preenchido
+    // e' dado"). Sem este caso, uma linha assim virava descarte silencioso (`linhas_vazias++`) e a
+    // suite versionada NAO discriminava a direcao — quem travava era so' a sonda anexada ao card.
+    const soTentativas = nucleo.avaliarDetalhes(contrato, [{ tentativas: 1 }]);
+    verifica(soTentativas.total === 1 && soTentativas.linhas_vazias === 0,
+        'linha com SO tentativas preenchido e DADO (total=1, linhas_vazias=0) — nunca descarte silencioso');
+    verifica(soTentativas.divergencias.length === 1 && soTentativas.divergencias[0] === 'tipo_de_detalhe_nao_declarado:(vazio)',
+        'a linha so com tentativas entra como tipo nao declarado (o dado nao some do relatorio)');
+    const soPlaceholder = nucleo.avaliarDetalhes(contrato, [{}]);
+    verifica(soPlaceholder.total === 0 && soPlaceholder.linhas_vazias === 1,
+        'o placeholder {} do alwaysOutputData continua AUSENCIA de detalhe (total=0, linhas_vazias=1)');
+    const r3 = nucleo.avaliar(contrato, linhas(), [{ tentativas: 1 }], AGORA);
+    verifica(r3.veredito === 'INDETERMINADO' && r3.indeterminados.some((i) => i.motivo === 'tipo_de_detalhe_nao_declarado:(vazio)'),
+        'a linha so com tentativas fecha INDETERMINADO ponta a ponta (o descarte silencioso daria OK)');
+}
+{
     const r = nucleo.avaliar(contrato, linhas(), detalhes({ tipo_que_ninguem_declarou: [{ id: 'x', motivo: 'y' }] }), AGORA);
     verifica(r.veredito === 'INDETERMINADO' && r.indeterminados.some((i) => i.motivo.startsWith('tipo_de_detalhe_nao_declarado')),
         'tipo de detalhe nao declarado no contrato fecha INDETERMINADO (nada e ignorado em silencio)');
