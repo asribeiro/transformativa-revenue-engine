@@ -33,6 +33,10 @@
 # TRE_VERSAO_ESPERADA, TRE_SERIE_ESPERADA, TRE_LOG_DIR, TRE_DEV_PG_CT (conferencia do dev),
 # TRE_MANTER_BANCO=1 (nao limpa no fim).
 #
+# TRE_LOG_DIR: diretorio dos logs de passo do aceite (passos 1 a 4). O modo --prova-de-dente
+# NAO escreve nele: cada prova usa "$TRE_LOG_DIR/dente/prova-N" (defeito TRE-W2-E03-T01-D02 —
+# antes, o dente herdava este diretorio e sobrescrevia a evidencia do aceite).
+#
 # Saida: um item por linha (`OK`/`FALHOU`), resumo final em uma linha e exit code:
 #   0 = aceite cumprido (todos os itens OK)   1 = falhou / nao deu para medir
 # ============================================================================
@@ -91,17 +95,31 @@ resumo() {
 
 # ---------------------------------------------------------------------------
 # --prova-de-dente: o aceite tem dentes? duas mutacoes, cada uma em copia propria
+#
+# LOG PROPRIO (defeito TRE-W2-E03-T01-D02, conserto): cada prova escreve num diretorio
+# seu, sob "$LOG_DIR/dente/", e o modo dente NAO escreve nem um arquivo no diretorio do
+# aceite. Antes deste conserto o sub-run herdava o TRE_LOG_DIR do chamador por ambiente e
+# usava os MESMOS nomes de passo: rodar o dente depois de um aceite verde sobrescrevia
+# `1-instalacao.log`/`2-teste.log` (e os outros dois) com a execucao mutada, apagando a
+# evidencia bruta do aceite. O runbook §5.1 registra o caso medido.
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e03t01-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
+    DENTE_LOG_DIR="${LOG_DIR}/dente"
+    mkdir -p "$DENTE_LOG_DIR/prova-1" "$DENTE_LOG_DIR/prova-2"
     DENTE_FALHAS=0
+    GUARDA_FALHAS=0
+    # Guarda fail-closed do proprio defeito D02: o conteudo dos logs de passo do aceite
+    # e fotografado antes e depois das provas; qualquer mudanca reprova o dente.
+    ACEITE_ANTES="$(cd "$LOG_DIR" 2>/dev/null && sha256sum [1-4]-*.log 2>/dev/null | LC_ALL=C sort)"
+    info "logs do aceite: $LOG_DIR  |  logs do dente: $DENTE_LOG_DIR (caminhos separados)"
     cabecalho "prova de dente 1: versao do manifesto mutada (espera-se FALHOU)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m1"
     sed -i "s/'version': *'$VERSAO_ESPERADA'/'version': '18.0.1.0.0'/" "$DENTE_DIR/m1/__manifest__.py"
     sed -i "s/'version': *\"$VERSAO_ESPERADA\"/'version': '18.0.1.0.0'/" "$DENTE_DIR/m1/__manifest__.py"
-    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$LOG_DIR" "$0" --apenas-manifesto 2>&1)"
-    echo "$D1" >"$LOG_DIR/dente-1-manifesto-mutado.out"
+    D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-1" "$0" --apenas-manifesto 2>&1)"
+    echo "$D1" >"$DENTE_LOG_DIR/dente-1-manifesto-mutado.out"
     echo "$D1" | tail -4
     if echo "$D1" | grep -q 'RESULTADO: MODULO_ODOO_FALHOU'; then
         echo 'OK    dente 1: versao mutada reprova (o verificador nao passa por qualquer coisa)'
@@ -117,9 +135,9 @@ if [ "$MODO" = "dente" ]; then
         """Teste plantado pela prova de dente do verificador: TEM de reprovar."""
         self.assertTrue(False, 'teste plantado pela prova de dente (TRE-W2-E03-T01)')
 PY
-    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_dente" TRE_LOG_DIR="$LOG_DIR" \
+    D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_dente" TRE_LOG_DIR="$DENTE_LOG_DIR/prova-2" \
           "$0" --apenas-instalacao-e-teste 2>&1)"
-    echo "$D2" >"$LOG_DIR/dente-2-teste-mutado.out"
+    echo "$D2" >"$DENTE_LOG_DIR/dente-2-teste-mutado.out"
     echo "$D2" | tail -4
     if echo "$D2" | grep -q 'RESULTADO: MODULO_ODOO_FALHOU'; then
         echo 'OK    dente 2: teste que falha reprova o aceite'
@@ -134,12 +152,24 @@ PY
         echo 'FALHOU dente 2: o item "nenhuma linha de teste FAIL:/ERROR:" NAO disparou com um teste reprovado — item sem dente'; DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
 
+    # Guarda D02: os logs de passo do aceite tem de sair das provas com o MESMO conteudo.
+    ACEITE_DEPOIS="$(cd "$LOG_DIR" 2>/dev/null && sha256sum [1-4]-*.log 2>/dev/null | LC_ALL=C sort)"
+    if [ -z "$ACEITE_ANTES" ]; then
+        info "sem logs de passo do aceite em $LOG_DIR (guarda D02 sem o que proteger nesta rodada)"
+    elif [ "$ACEITE_ANTES" = "$ACEITE_DEPOIS" ]; then
+        echo "OK    logs de passo do aceite intactos depois das provas ($(printf '%s\n' "$ACEITE_ANTES" | grep -c . | tr -d ' ') arquivo(s) com sha256 identico)"
+    else
+        echo 'FALHOU o modo dente mexeu nos logs de passo do aceite — evidencia do aceite destruida (defeito TRE-W2-E03-T01-D02 de volta)'; GUARDA_FALHAS=$((GUARDA_FALHAS + 1))
+        printf '%s\n' "$ACEITE_ANTES" | sed 's/^/      antes:  /'
+        printf '%s\n' "$ACEITE_DEPOIS" | sed 's/^/      depois: /'
+    fi
+
     echo '---'
-    if [ "$DENTE_FALHAS" -eq 0 ]; then
-        echo "RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO"
+    if [ "$DENTE_FALHAS" -eq 0 ] && [ "$GUARDA_FALHAS" -eq 0 ]; then
+        echo "RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) modulo=$MODULO logs_aceite=$LOG_DIR logs_dente=$DENTE_LOG_DIR"
         exit 0
     fi
-    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente) modulo=$MODULO"
+    echo "RESULTADO: MODULO_ODOO_DENTE_FALHOU ($DENTE_FALHAS prova(s) sem dente, $GUARDA_FALHAS falha(s) na guarda dos logs do aceite) modulo=$MODULO"
     exit 1
 fi
 

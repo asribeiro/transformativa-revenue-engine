@@ -80,6 +80,9 @@ bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh --prova-de-dente
 TRE_LOG_DIR=/opt/tre/dev/evidencias/<card>/logs bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh
 ```
 
+`--prova-de-dente` pode ser rodado com o **mesmo** `TRE_LOG_DIR` do aceite: o dente escreve
+em `$TRE_LOG_DIR/dente/` e não toca os logs do aceite (§5.1).
+
 O verificador, em ordem: **guardas** (docker, as duas imagens com os digests medidos, `openssl`,
 módulo em disco, nome de banco descartável; e mede o estado do dev **antes**) → **dupla
 descartável** (rede própria, `postgres:16` com senha gerada na hora, `odoo:19.0` com
@@ -127,6 +130,30 @@ Scripts do aceite (também iguais nos dois lados): `verificar-modulo-odoo.sh 72d
 
 O dente 2 mostra também que **o exit code do comando do Odoo reflete teste reprovado**
 (`exit 1`) — o item de exit code não é decorativo.
+
+### 5.1 Logs do aceite × logs do dente (defeito `TRE-W2-E03-T01-D02`, consertado em 01/10/2026)
+
+O modo `--prova-de-dente` **não escreve no diretório do aceite**: cada prova usa um
+diretório próprio (`$TRE_LOG_DIR/dente/prova-1`, `.../prova-2`) e os `.out` do dente ficam
+em `$TRE_LOG_DIR/dente/`. Rodar a bateria inteira (aceite → dente) com o **mesmo**
+`TRE_LOG_DIR` deixa os 4 logs do aceite intactos — medido: `sha256` idêntico antes e depois
+das provas, e os 4 arquivos seguindo com o banco do aceite (`tre_e03_t01_modulo`), enquanto
+o log do dente (`logs/dente/prova-2/2-teste.log`) cita o banco mutado.
+
+Isso não era verdade antes do conserto: o sub-run do dente herdava o `TRE_LOG_DIR` do
+chamador **por ambiente** e usava os mesmos nomes de passo, então encadear aceite → dente
+sobrescrevia `1-instalacao.log` e `2-teste.log` do aceite com a execução mutada e a
+evidência bruta do aceite passava a existir só no console. Reproduzido com o script anterior
+(`72d00aa1…`), aceite (51/51, exit 0) seguido de `--prova-de-dente` no mesmo diretório:
+`1-instalacao.log` ficou com **547** referências ao banco `tre_e03_t01_modulo_dente` e
+`2-teste.log` com **33** (os passos 3 e 4, que o dente não executa, seguiam do aceite).
+
+Além do diretório próprio, o dente ganhou uma **guarda fail-closed**: antes das provas ele
+fotografa o `sha256` dos `[1-4]-*.log` do aceite e, no fim, imprime
+`OK logs de passo do aceite intactos depois das provas (N arquivo(s) com sha256 identico)`
+ou reprova o dente com `FALHOU o modo dente mexeu nos logs de passo do aceite …`. O controle
+negativo (cópia do script com o caminho compartilhado de volta) é medido e registrado no
+card `t_5c4fc7ac` / `docs/operations/registro-de-execucoes.md`.
 
 ## 6. Rollback
 
