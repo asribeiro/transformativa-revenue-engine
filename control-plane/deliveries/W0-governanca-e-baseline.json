@@ -113,9 +113,37 @@
         {
           "hermes_task_id": "t_8c332df7",
           "stage": "DONE",
-          "evidence": "docs/architecture/hermes-dev-x-sales.md homologada em 29/09/2026 · verificador 13 itens PASS"
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador de papeis no develop 4aa00c2: PASSA (0 falhas, 18 itens). Prova os invariantes da separacao Dev Harness x Sales AI: politicas versionadas (dev-harness.yaml, sales-ai.yaml, human-approval.yaml) com role declarado; Sales AI nao pode deploy/codigo/DDL/workflow n8n e nao recebe GITHUB_TOKEN nem a chave de publicacao do n8n; Dev Harness recebe GITHUB_TOKEN e nao recebe Titan; os itens de contato/publicacao exigem Human Approval. Dente: concedendo GITHUB_TOKEN ao sales-ai em CLONE isolado, o item nomeado 'sales-ai NAO recebe GITHUB_TOKEN' reprova.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/verificar_papeis.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (0 falhas); 18 itens OK — papeis (dev-harness/sales-ai/human-approval) existem e declaram role; sales-ai proibido de deploy/codigo/DDL/workflow n8n; sales-ai NAO recebe GITHUB_TOKEN nem chave do n8n; dev-harness recebe GITHUB_TOKEN e NAO recebe Titan; Human Approval nos itens de contato/publicacao"
+              },
+              {
+                "gate": "bash scripts/verificar_papeis.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (0 falhas)"
+              },
+              {
+                "gate": "dente EXTERNO (clone isolado): concede GITHUB_TOKEN ao sales-ai em credenciais_permitidas",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA o item nomeado 'sales-ai NAO recebe GITHUB_TOKEN' + RESULTADO: FALHOU (1), exit 1 — o dente morde a separacao de credenciais que o card garante"
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "current_gate": "DONE"
     },
     {
       "id": "TRE-W0-E03-T01",
@@ -229,9 +257,37 @@
         {
           "hermes_task_id": "t_b3387f25",
           "stage": "DONE",
-          "evidence": "validacao adversarial dos guardrails e do fallback: 72 itens, 0 falhas, autoteste 17/17 (hoje validar_jev_guardrails.py = 74 itens PASS); defeitos D03/D04/D05/D06 fechados"
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da validacao ADVERSARIAL E INDEPENDENTE dos guardrails e do fallback do JEV no develop 4aa00c2: 74 itens, 0 falhas, 0 achados (--estrito). Prova item por item que cada guardrail do YAML tem lado REPROVA e lado APROVA, que as 8 acoes de nunca_decidido_por_maquina nunca executam, que o fail-closed bloqueia (nao libera) em entrada invalida/sinal desconhecido, e que o fallback entra em modo degradado conservador (lane high, sem execucao) nos 4 gatilhos. Dente: autoteste 20/20 — cada mutacao (remover o guardrail, reabrir o texto livre do D07, reacionar a DDL sem DDL real, apagar o motivo verdadeiro do D08) reprova o item nomeado.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/validar_jev_guardrails.py --autoteste --estrito (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (74 itens, 0 falhas) + autoteste OK (20/20); 0 achados em --estrito — os 5 guardrails (segredo, do_not_contact, DDL, papel/credencial, fail-closed) com REPROVA + APROVA, as 8 acoes nunca_decidido_por_maquina, e o fallback/degradado exercitado ponta a ponta"
+              },
+              {
+                "gate": "python3 scripts/validar_jev_guardrails.py --autoteste --estrito (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (74 itens, 0 falhas) + autoteste OK (20/20)"
+              },
+              {
+                "gate": "dente INTERNO (autoteste 20/20): ex. 'guardrail DDL removido', 'D07: texto livre sem codigo volta a executar', 'D08: guardrail de DDL volta a acionar sem DDL real', 'D08: motivo do guardrail de DDL deixa de dizer a causa real'",
+                "exit": 0,
+                "resultado": "cada mutacao REPROVA o item nomeado: 'guardrail DDL — D08: so aciona com DDL/migration REAL e o motivo diz a causa real', 'D07 — texto livre sem codigo canonico NAO executa', 'guardrail segredo — REPROVA: 6 formas de segredo bloqueiam' etc. — o autoteste morde, nao e' decorativo"
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "current_gate": "DONE"
     },
     {
       "id": "TRE-W0-E04-T05",
@@ -322,9 +378,42 @@
         {
           "hermes_task_id": "t_b4b11995",
           "stage": "DONE",
-          "evidence": "jev-policy-v1.2 em vigor (lane_por_codigo_de_acao, classificador aposentado; portao de versao aberto) — scripts/verificar_jev_policy_v1_2.py = 233 itens PASS + autoteste 8/8; commits 1227310, fbc26a9, 83922db"
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador da JEV Decision Policy v1.2 no develop 4aa00c2: 234 itens, 0 falhas. Prova, por COMPORTAMENTO contra o roteador, que o classificador de card foi aposentado do caminho de decisao ('C4', chamadas=0) e permanece apenas como linha de base historica do benchmark; que a lane e' DECLARADA por codigo canonico ('C2', trocar a lane no YAML troca a decisao; nenhuma lane literal no roteador) e que o TEXTO do card nao decide lane ('C1', inclusive o caso vivo do T09 onde 'producao'/'credencial' apareciam para isentar); que codigo sem lane declarada ABSTEM ('C3'/'C8'); que o piso por ambiente segue elevando ('C5'); e que o recibo mantem os 13 campos ('C6'). Corrige o card 'Aposentar o classificador de lane (decisao do dono, com a medicao que sustenta)'. Dente: autoteste 8/8 — fazendo o roteador voltar a chamar o classificador OU voltar a decidir a lane pelo texto, os itens C1/C2/C4 reprovam.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_policy_v1_2.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (234 itens, 0 falhas) + autoteste OK (8/8); item 'C4: o caminho de decisao NAO chama o classificador — e ele segue alcancavel como linha de base do benchmark' OK [chamadas no caminho de decisao=0]"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_policy_v1_2.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (234 itens, 0 falhas) + autoteste OK (8/8)"
+              },
+              {
+                "gate": "dente INTERNO (autoteste): 'ROTEADOR: classificador volta a ser chamado no caminho de decisao'",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA o item nomeado 'C4: o caminho de decisao NAO chama o classificador' (1 item); a mutacao 'o TEXTO do card decide a lane' reprova 3 itens (C1/C2/C4) — o dente morde a aposentadoria do classificador"
+              },
+              {
+                "gate": "corroboracao: python3 scripts/verificar_jev_policy_v1_3.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (474 itens, 0 falhas) + autoteste OK — a PARTE 3 re-roda a bateria da v1.2 inteira sobre a v1.2, reconfirmando C1..C8 (incl. C4) na arvore sob teste"
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "current_gate": "DONE"
     },
     {
       "id": "TRE-W0-E07-T01",
@@ -722,6 +811,141 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W0-E04-T01-D02",
+      "title": "DEFEITO [retroativo] verificador checava a precedencia por palavras soltas, nao pela cadeia",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_aac6215b",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador da JEV Decision Policy V1 no develop 4aa00c2: o item 'documento cita a cadeia de precedencia na ordem' PASSA — o documento da politica declara a cadeia completa com as setas ('Security → Human Approval → prioridade/dependencias → JEV → LLM'), nao apenas as palavras soltas em qualquer ordem. Corrige o defeito [retroativo] em que o verificador checava a precedencia por palavras soltas (achava 'Security', 'Human Approval', ... em qualquer lugar do texto) e dava verde a um documento com a ordem trocada: agora exige a CADEIA na ordem. Dente: removida a cadeia com setas em COPIA do documento (clone isolado), o item nomeado reprova; o autoteste embutido (12/12) ja' cobre essa mutacao.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_policy.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (42 itens, 0 falhas) + autoteste OK; item 'documento cita a cadeia de precedencia na ordem' OK [a cadeia completa COM AS SETAS existe no documento]"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_policy.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (42 itens, 0 falhas) + autoteste OK (12/12)"
+              },
+              {
+                "gate": "dente EXTERNO (clone isolado): remove a cadeia com setas do documento da v1 (deixa so' as palavras soltas, o defeito D02)",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA o item nomeado 'documento cita a cadeia de precedencia na ordem' [cadeia completa (com as setas) nao encontrada no documento] + RESULTADO: FALHOU (42 itens, 1 falha), exit 1 — o dente morde exatamente a classe do defeito"
+              },
+              {
+                "gate": "dente INTERNO (autoteste): mutacao 'documento sem a cadeia de precedencia'",
+                "exit": 0,
+                "resultado": "detectada — reprova 1 item (o item nomeado); o autoteste roda sozinho no comando padrao"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E04-T04-D01",
+      "title": "DEFEITO [retroativo] fixture de segredo em literal bloqueava o commit pelo scanner do projeto",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_ae66f348",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do scanner do projeto no develop 4aa00c2: `bash scripts/secret_scan.sh` PASSA (nenhum segredo versionado) — a fixture do teste do guardrail de segredo deixou de ficar como literal que casa o PADROES do scanner, entao o commit nao e' mais bloqueado por ela; e a mesma fixture continua exercitando o guardrail (o item 'guardrail segredo — REPROVA: 6 formas de segredo bloqueiam' segue OK na suite adversarial). Corrige o defeito [retroativo] em que um literal de segredo no fixture bloqueava o commit pelo scanner do projeto. Dente: plantado um literal `sk-...` em arquivo rastreado num CLONE isolado, o scanner reprova ('segredo encontrado', exit 1).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/secret_scan.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (nenhum segredo versionado) — nenhum literal que case os PADROES do scanner esta versionado; o commit nao e' mais bloqueado"
+              },
+              {
+                "gate": "bash scripts/secret_scan.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (nenhum segredo versionado)"
+              },
+              {
+                "gate": "dente EXTERNO (clone isolado): planta um literal que casa o scanner (sk-<28 chars>) em arquivo rastreado",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA: 'RESULTADO: FALHOU (segredo encontrado)', exit 1 — o dente morde (o scanner distingue fixture inocua de segredo literal)"
+              },
+              {
+                "gate": "corroboracao: python3 scripts/validar_jev_guardrails.py --autoteste --estrito (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (74 itens, 0 falhas) + autoteste OK; item 'guardrail segredo — REPROVA: 6 formas de segredo bloqueiam' OK [a fixture sintetica continua exercitando o guardrail sem derrubar o scanner do projeto]"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W0-E03-D01",
+      "title": "DEFEITO [retroativo] .gitignore engolia docs/data/ e o contrato nao estava versionado",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_b1e3bdf9",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador de estrutura e do verificador do contrato de dados no develop 4aa00c2: verificar_estrutura.sh PASSA (0 falhas) com 'versionado docs/data/DATA_CONTRACT_V1.md' OK — o Data Contract V1.0 esta' versionado (git ls-files) e `git check-ignore docs/data/DATA_CONTRACT_V1.md` retorna exit 1 (nao ignorado); o .gitignore usa `/data/` (com barra inicial), nao `data/`. E verificar_contrato_dados.py PASSA (26 itens): SQL + doc + JSON coerentes. Corrige o defeito [retroativo] em que a regra `data/` (sem barra) do .gitignore engolia `docs/data/` e o contrato ficou sem versionamento. Dente: desversionado o arquivo em CLONE isolado, o verificador reprova o item nomeado.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+          "verification": {
+            "commit": "4aa00c2f0a42b106658a23a0aec9df4eab1d5eab",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 4aa00c2 (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao: as suites leem o proprio repo (o secret_scan le o indice do git; a estrutura le o git ls-files). DUAS passadas com exit 0 em TODAS as suites e saida crua BYTE-IDENTICA (diff cru = 0) — NENHUMA normalizacao foi necessaria: estas suites nao emitem caminhos/ids volateis. Dente por mutacao em DUAS frentes: (a) o autoteste EMBUTIDO das suites que tem um (politica 12/12, guardrails 20/20, policy v1.2 8/8, policy v1.3 8/8) e (b) mutacoes EXTERNAS aplicadas em CLONE ISOLADO do repo (git clone --local, HARD-LINK, em temp) para as 3 suites SEM autoteste — papeis (concede GITHUB_TOKEN ao sales-ai), secret_scan (planta literal que casa o padrao) e estrutura (desversiona docs/data/DATA_CONTRACT_V1.md): os arquivos VERSIONADOS nunca foram alterados. O board real e /opt/hermes NAO foram tocados; nenhum container/volume foi criado (VPS: 5 containers / 7 volumes / 0 dangling ANTES e DEPOIS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/verificar_estrutura.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (0 falhas); item 'versionado  docs/data/DATA_CONTRACT_V1.md' OK (o contrato existe E esta' no git) — a regra errada do .gitignore nao engole mais docs/data/"
+              },
+              {
+                "gate": "bash scripts/verificar_estrutura.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (0 falhas)"
+              },
+              {
+                "gate": "python3 scripts/verificar_contrato_dados.py (passada 1, corroboracao do conteudo)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (26 itens, 0 falhas) — o SQL, o documento e o JSON do contrato nao divergem; os tres artefatos estao' versionados e coerentes"
+              },
+              {
+                "gate": "dente EXTERNO (clone isolado): desversiona docs/data/DATA_CONTRACT_V1.md (git rm --cached, arquivo segue no disco)",
+                "exit": 0,
+                "resultado": "a mutacao REPROVA o item nomeado 'versionado docs/data/DATA_CONTRACT_V1.md (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)' + RESULTADO: FALHOU (1), exit 1 — o dente morde (prova negativa do bloco versionado)"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
@@ -773,6 +997,21 @@
         "t_83242193",
         "t_4f20bd10",
         "t_6d326367"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 10 — 6 cards de W0 da fila: JEV + contrato + papeis)",
+      "scope": "lote 10 — 6 cards de W0 da fila (D02 do T01 + D01 do T04 + D01 do E03 + E02-T01 + E04-T04 + E04-T09)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T01:19:39+00:00",
+      "cards": [
+        "t_aac6215b",
+        "t_ae66f348",
+        "t_b1e3bdf9",
+        "t_8c332df7",
+        "t_b3387f25",
+        "t_b4b11995"
       ]
     }
   ]
