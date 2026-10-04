@@ -211,3 +211,14 @@ cards e são medidas nos aceites deles.
   ser legível pelo uid do Odoo e o diretório do n8n precisa pertencer a quem o container executa
   (`docker run --user $(id -u):$(id -g)`), senão o import do cofre morre em `EACCES` e o Odoo cai
   para os defaults sem dizer por quê.
+* **A chave derivada de CONTEÚDO colapsa dois fatos distintos de payload idêntico** (lacuna
+  declarada, preço do desenho) — a `idempotency_key` sai do conteúdo do fato
+  (`odoo:<event_type>:<modelo>:<res_id>:<sha1 do envelope SEM o instante>`, §3.1 item 2), então dois
+  fatos **diferentes** do mesmo tipo com payload idêntico (ex.: o mesmo lead saindo do estágio A para
+  o B duas vezes no mesmo segundo, ou um valor que muda e volta ao anterior) geram a **mesma** chave:
+  o segundo **não vira linha** na fila do Odoo nem na trilha, e o remetente o trata como já entregue
+  (`SENT` no ciclo, ou `duplicado: true` na porta — §3.2 item 7). Ao ler a trilha, **não** trate essa
+  ausência como perda de dado: é o colapso declarado, o que faz o reenvio do MESMO fato não duplicar
+  (`ON CONFLICT (idempotency_key) DO NOTHING`, contrato §6 regra 2). O que **não** fazer para
+  "consertar": emitir chave aleatória por envio — isso quebra a idempotência do retry e passa a criar
+  duplicata a cada reentrega do mesmo fato.
