@@ -1110,5 +1110,69 @@ python3 scripts/agentes/verificar_whatsapp_lead.py >/dev/null 2>&1 \
   && echo "OK    suite do componente verde (verificar_whatsapp_lead.py)" \
   || { echo "FALHOU card TRE-W7-E05-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
 
+
+# --- card TRE-W7-E06-T01 (captura de lead coletado em evento) ----------------------------------------
+# O componente existe E esta' versionado, com o contrato fechado (vinculo do evento + forma do consentimento),
+# a guarda de producao e o portao do entregavel (suite + aceite).
+for arquivo in hermes/agentes/inbound/captura_evento.py hermes/agentes/inbound/captura-evento-v1.json \
+               scripts/agentes/verificar_captura_evento.py scripts/agentes/teste_captura_evento_aceite.sh \
+               docs/runbooks/captura-de-lead-de-evento.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E06-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E06-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f hermes/agentes/inbound/captura_evento.py ]; then
+  if grep -q 'auditar_fonte()' hermes/agentes/inbound/captura_evento.py \
+     && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'PRODUCAO_RECUSADA' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'BANCO_NAO_E_DEV' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'EVENTO_NAO_DECLARADO' hermes/agentes/inbound/captura_evento.py; then
+    echo "OK    captura_evento.py: auditoria de fonte, sem DDL, guardas de prod/dev e barreira do evento"
+  else
+    echo "FALHOU card TRE-W7-E06-T01: componente sem auditoria de fonte / com DDL / sem guardas"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agentes/inbound/captura-evento-v1.json ]; then
+  python3 - <<'PY' || { echo "FALHOU card TRE-W7-E06-T01: contrato sem a barreira do evento/consentimento"; FALHAS=$((FALHAS+1)); }
+import json, sys
+c = json.load(open("hermes/agentes/inbound/captura-evento-v1.json", encoding="utf-8"))
+obrig = c["coleta"]["campos_obrigatorios"]
+vocab = c["vocabulario"]
+ok = ("origem_evento.event_id" in obrig and "origem_evento.capture_method" in obrig
+      and "origem_evento.capturado_em" in obrig
+      and "consentimento.aceito" in obrig and "consentimento.legal_basis" in obrig
+      and "consentimento.forma" in obrig
+      and "EVENTO_NAO_DECLARADO" in vocab["status_trilha"]
+      and "RECUSADO_CONSENTIMENTO" in vocab["status_trilha"]
+      and vocab["channel"] == ["EVENTO"]
+      and float(c["identificadores"]["limiar_de_merge_automatico"]) == 0.95
+      and c["lacunas"])
+sys.exit(0 if ok else 1)
+PY
+fi
+if [ -f scripts/agentes/teste_captura_evento_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_captura_evento_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E06-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q '127.0.0.1\|loopback' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'TRE_AMBIENTE=dev' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'RECUSADO_CONSENTIMENTO' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'EVENTO_NAO_DECLARADO' scripts/agentes/teste_captura_evento_aceite.sh; then
+    echo "FALHOU card TRE-W7-E06-T01: aceite sem as pontas locais/guarda de ambiente/barreiras do canal"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+python3 scripts/agentes/verificar_captura_evento.py >/dev/null 2>&1 \
+  && echo "OK    suite do componente verde (verificar_captura_evento.py)" \
+  || { echo "FALHOU card TRE-W7-E06-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

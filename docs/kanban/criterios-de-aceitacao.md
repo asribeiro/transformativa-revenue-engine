@@ -924,3 +924,34 @@ somente INSERT).
 - **Depends on:** `TRE-W6-E07-T01` (E2E Outbound #002, fechado e medido) — o lead engajado é o que a onda
   W6 abordou; **Destrava:** `TRE-W8-*` (o canal passa a produzir interação classificada para o funil) e a
   lacuna de propagação de descadastro já apontada para o `W6-E06`.
+## TRE-W7-E06-T01 — Event lead capture
+
+- A **coleta do evento** (QR / crachá / ficha / lista) em JSON do contrato `captura-evento-v1` vira cadastro
+  canônico: **1** `organizations` (source `EVENTO_CAPTURA`, status `DISCOVERED`), **1** `contacts`, **1**
+  `interactions` (`EVENTO`/`INBOUND`/`CAPTURA_EVENTO`, `occurred_at` = `capturado_em`) e **1** trilha
+  `sync_events` com a chave `evento:<event_id>:<captura_id>`.
+- **Vínculo do evento é barreira:** sem `origem_evento.event_id`, sem `capture_method` no vocabulário ou sem
+  `capturado_em` válido, nada é cadastrado — só a trilha `EVENTO_NAO_DECLARADO`. Lead de evento sem o
+  vínculo do evento é lead sem atribuição (doc 03, Motor 3 — Relationship).
+- **Consentimento é barreira:** opt-in explícito **+** base legal **+** **forma** (`TERMO_DIGITAL`,
+  `FICHA_ASSINADA`, `QR_INSCRICAO`, `LISTA_PRESENCA`), que é a evidência de como o opt-in foi dado no evento;
+  fora do vocabulário → `RECUSADO_CONSENTIMENTO` sem cadastro.
+- **Identidade:** forte (CNPJ → domínio → LinkedIn, ≥ 0,95) reusa a organização; **fraco** (nome+cidade /
+  nome+telefone) vai para `REVIEW_REQUIRED` — fila humana, nunca merge silencioso; nada casando, UUID
+  canônico novo gerado no INSERT.
+- **Idempotência:** reentrega da mesma coleta → `JA_CAPTURADO`, zero linha nova; a **mesma** `captura_id` em
+  **outro** `event_id` é coleta distinta (2 interações / 2 trilhas) — o `event_id` entra na chave.
+- **Limite de escrita:** só `organizations`, `contacts`, `interactions`, `sync_events`, só por INSERT; a
+  auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar.
+- **Privacidade:** e-mail, telefone e CNPJ mascarados na evidência; `do_not_contact`/`opt_out_*` da ficha do
+  evento gravados como **bloqueio**.
+
+**Test plan:** `python3 scripts/agentes/verificar_captura_evento.py --autoteste` (41 itens + 5 dentes) e
+`bash scripts/agentes/teste_captura_evento_aceite.sh` (PostgreSQL descartável na VPS, 60 itens; inclui 3
+dentes de ponta medidos no banco: sem evento, método inventado e sem instante não viram cadastro).
+**Rollback:** reverter o commit (5 arquivos novos, sem DDL) e remover o container descartável do aceite.
+**Risco:** Médio (dado pessoal coletado em evento; LGPD) — mitigado por opt-in obrigatório, base legal e
+forma declaradas, bloqueios gravados e mascaramento; risco de organização duplicada mitigado por
+identificador forte antes do fraco + fila humana; riscos **declarados**: o lead não chega ao Odoo por este
+card (evento novo exige versão do contrato + aprovação humana) e evento **não** é entidade do schema de 12
+tabelas — o vínculo vive no resumo/referência da interação e no payload da trilha (lacuna L3 do contrato).

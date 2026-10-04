@@ -2910,3 +2910,39 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
   vermelha com 277 falhas antes desta nota.
 - Segredos: nenhum valor nesta entrada. Nenhuma credencial real foi usada; as pontas são 100% locais e o
   container de aceite é descartável.
+## TRE-W7-E06-T01 — Event lead capture (W7/E06)
+
+- **ACCEPTANCE.** (a) coleta de evento com opt-in cria **1** `organizations` (source `EVENTO_CAPTURA`,
+  status `DISCOVERED`), **1** `contacts` (com `legal_basis`, `source` e bloqueios) e **1** `interactions`
+  (`EVENTO`/`INBOUND`/`CAPTURA_EVENTO`, `occurred_at` = `capturado_em`) + trilha `CAPTURADO` na chave
+  `evento:<event_id>:<captura_id>`; (b) **vinculo do evento e' barreira**: sem `event_id`, com
+  `capture_method` fora do vocabulario ou sem `capturado_em` valido nao nasce cadastro (so' trilha
+  `EVENTO_NAO_DECLARADO`, medido em 3 dentes de ponta no banco); (c) **consentimento e' barreira**: sem
+  opt-in / base legal / forma valida nada nasce (so' trilha `RECUSADO_CONSENTIMENTO`); (d) **identidade**:
+  forte (CNPJ/dominio/LinkedIn) reusa a organizacao, fraco (nome+cidade/nome+telefone) vai para
+  `REVIEW_REQUIRED` — nunca merge silencioso; (e) **idempotencia**: reentrega da mesma coleta →
+  `JA_CAPTURADO` zero linha nova, e a MESMA `captura_id` em OUTRO evento e' coleta distinta (2 interacoes /
+  2 trilhas); (f) **limite de escrita**: so' `organizations`, `contacts`, `interactions`, `sync_events`, so'
+  INSERT, nenhuma coluna de evento inventada no schema; (g) ADR-005: `prod` recusa (exit 4), dev exige banco
+  local, `--confirmo` obrigatorio para escrever; (h) PII (e-mail/telefone/CNPJ) mascarada na evidencia.
+- **TEST.** `python3 scripts/agentes/verificar_captura_evento.py --autoteste` →
+  `VERIFICADOR_CAPTURA_EVENTO_PASS (46 itens, 0 falhas, 5 dentes)`;
+  `bash scripts/agentes/teste_captura_evento_aceite.sh` (na VPS do ambiente, container `pg-evt-acc`
+  descartavel + migration 0001, pontas em 127.0.0.1) → `ACEITE_CAPTURA_EVENTO_001_OK (60 itens, 0 falhas,
+  exit 0)`; `bash scripts/verificar_estrutura.sh`.
+- **ROLLBACK.** Nenhuma DDL e nada em producao: reverter o commit (5 arquivos novos) e remover o container
+  descartavel do aceite (`docker rm -f pg-evt-acc`).
+- **RISK.** Medio. Dado pessoal coletado em evento (LGPD) — mitigado por opt-in obrigatorio, base legal e
+  **forma** de consentimento declaradas, bloqueios gravados e mascaramento na evidencia; coleta sem evento
+  contaminando a base — mitigado pela barreira do vinculo do evento; organizacao duplicada — mitigada por
+  identificador forte antes do fraco + fila humana; riscos **declarados**: o lead nao chega ao Odoo por este
+  card e evento nao e' entidade do schema de 12 tabelas (lacunas L1/L3 do contrato).
+- **EVIDENCIA.** Logs do aceite anexados ao card (`aceite-captura-evento-60ok.out`,
+  `verificador-captura-evento-dentes-5de5.out`, `sha256-artefatos.out`); componentes:
+  `hermes/agentes/inbound/captura_evento.py`, `hermes/agentes/inbound/captura-evento-v1.json`,
+  `scripts/agentes/verificar_captura_evento.py`, `scripts/agentes/teste_captura_evento_aceite.sh`,
+  `docs/runbooks/captura-de-lead-de-evento.md`. Execucao: VPS do ambiente (Contabo `vmi3619453`,
+  `tre-deploy`), commit do card na branch `feature/TRE-W7-E06-T01`. Segredos: nenhum (o aceite gera a senha
+  do container descartavel na hora; ha item medindo a ausencia de PII na evidencia).
+- **Destrava:** o canal `eventos` (Motor 3 — Relationship, doc 03) passa a entrar na base canonica com o
+  vinculo do evento; a escrita no Odoo a partir de evento fica atras do card de contrato/aprovacao (lacuna L1).
