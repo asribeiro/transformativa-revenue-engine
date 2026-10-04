@@ -398,9 +398,37 @@
         {
           "hermes_task_id": "t_e9535df3",
           "stage": "DONE",
-          "evidence": "hermes/jev/policy_v1_1.yaml + docs/architecture/jev-decision-policy-v1.1.md + scripts/verificar_jev_policy_v1_1.py = 155 itens PASS; homologada por Anderson Ribeiro (registro-de-aprovacoes, commit b7f2aa7)"
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real do verificador da JEV Decision Policy v1.1 no develop 8e1466d: 155 itens, 0 falhas + autoteste 64/64. Prova que a lane conservadora virou CONTRATO LEGIVEL POR MAQUINA (chave explicita `limiares.lane_conservadora`, nao prosa do YAML) e que as metricas declaradas na secao `metricas` estao instrumentadas no recibo (13 campos exatos, sem 14o). A regra por ambiente (DDL em dev => high; DDL em ambiente vivo => critical com aprovacao humana; ambiente nao declarado => ramo conservador) e executada pelo roteador em vigor. Dente: autoteste 64/64 — desligar o piso, faze-lo rebaixar, jogar o ambiente nao declarado no ramo dev, ou tirar a chave do documento reprova os itens nomeados.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "8e1466d50b4d53eecb4093b67c8c1113f910ca7d",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 8e1466d (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao. DUAS passadas com exit 0; saida crua BYTE-IDENTICA para verificar_jev_policy_v1_1.py (sem token volatil) e para verificar_jev_router.py (normalizacao declarada de decision_id aleatorio dec-<hex> -> dec-HASH); para verificar_gate_jev.py a saida e byte-identica apos normalizacao declarada do diretorio temporario da suite (/opt/data/cache/scratch/gate-jev-XXXX -> gate-jev-TMP). Dente por mutacao INTERNA (autoteste embutido): policy v1.1 64/64, roteador 21/21; no gate a suite traz as mutacoes embutidas S6/S6b/S6c (kernel sem a edicao) como itens proprios. Nenhum container/volume docker foi criado nesta hosted host (docker ausente).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_policy_v1_1.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (155 itens, 0 falhas) + autoteste OK; itens nomeados pelo card 'v1.1: a regra e piso (so eleva, nunca rebaixa)', 'v1.1: ramo vivo_ou_producao: valores enumerados', 'v1.1: ramo vivo exige aprovacao humana registrada', 'v1.1: ambiente nao declarado cai no ramo MAIS conservador', 'documento deixa de citar a chave explicita (limiares.lane_conservadora)' e 'custo_por_card_verified deixa de declarar por que nao e medivel' OK"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_policy_v1_1.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (155 itens, 0 falhas) + autoteste OK (64/64)"
+              },
+              {
+                "gate": "dente INTERNO (autoteste 64/64): 'roteador sem o piso: a regra declarada volta a ser ignorada em silencio' (5 itens reprovados), 'piso REBAIXANDO: a lane minima do ramo vira a lane final' (4), 'ambiente NAO declarado caindo no PRIMEIRO ramo (dev)' (4), 'documento deixa de declarar a regra por ambiente' (1), 'custo_por_card_verified deixa de declarar por que nao e medivel' (1)",
+                "exit": 0,
+                "resultado": "cada mutacao REPROVA os itens nomeados — a chave explicita `lane_conservadora` e as metricas do recibo instrumentadas tem dente, nao sao decorativas"
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "current_gate": "DONE"
     },
     {
       "id": "TRE-W0-E04-T07",
@@ -410,9 +438,37 @@
         {
           "hermes_task_id": "t_f8a6e209",
           "stage": "DONE",
-          "evidence": "hermes/jev/acoes-declaradas.yaml (catalogo de codigos) + falha fechada D07/D08: acao sem codigo comum NAO executa (abstem), acao proibida exige aprovacao"
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da suite do roteador JEV no develop 8e1466d: 63 itens, 0 falhas + autoteste 21/21. A correcao de raiz do D06 esta entregue: o roteador resolve a acao para um CODIGO canonico antes de decidir (texto livre fica como PONTE), infere do proprio texto os dominios sensiveis (producao/release, credencial, dado de cliente, outbound a terceiro) e FALHA FECHADO (ESCALATE, exit 2, recibo de 13 campos, origem='nao_classificada') quando a acao nao classifica em tarefa sensivel. A frase que escapou no D06 ('enviar mensagem ao primeiro cliente interessado') nao executa. Dente: autoteste 21/21 — remover a falha fechada ou a inferencia de dominio, ou fazer o roteador voltar a depender de prosa, reprova os itens nomeados.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "8e1466d50b4d53eecb4093b67c8c1113f910ca7d",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 8e1466d (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao. DUAS passadas com exit 0; saida crua BYTE-IDENTICA para verificar_jev_policy_v1_1.py (sem token volatil) e para verificar_jev_router.py (normalizacao declarada de decision_id aleatorio dec-<hex> -> dec-HASH); para verificar_gate_jev.py a saida e byte-identica apos normalizacao declarada do diretorio temporario da suite (/opt/data/cache/scratch/gate-jev-XXXX -> gate-jev-TMP). Dente por mutacao INTERNA (autoteste embutido): policy v1.1 64/64, roteador 21/21; no gate a suite traz as mutacoes embutidas S6/S6b/S6c (kernel sem a edicao) como itens proprios. Nenhum container/volume docker foi criado nesta hosted host (docker ausente).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (63 itens, 0 falhas) + autoteste OK (21/21); itens 'T07: as 5 frases que ja escaparam nao executam (4 do D04 + 1 do D06)' OK [terminam em BLOCK/ESCALATE com recibo de 13 campos], 'T07: dominio sensivel inferido do texto barra mesmo sem sinal declarado' OK, 'D07: codigo canonico comum com texto limpo segue executando' OK"
+              },
+              {
+                "gate": "python3 scripts/verificar_jev_router.py --autoteste (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida byte-identica APOS normalizacao declarada (decision_id aleatorio dec-<hex> -> dec-HASH); PASS (63 itens, 0 falhas) + autoteste OK (21/21)"
+              },
+              {
+                "gate": "dente INTERNO (autoteste 21/21): 'T07: acao deixa de resolver para codigo canonico (volta a depender de prosa)' (18 itens reprovados), 'T07: falha fechada da acao nao classificada removida' (11), 'T07: inferencia de dominio sensivel do texto desligada' (5), 'D07: texto livre sem codigo volta a executar' (6)",
+                "exit": 0,
+                "resultado": "cada mutacao REPROVA o item nomeado — o codigo canonico de acao como via principal e a falha fechada para acao nao classificada tem dente"
+              }
+            ]
+          }
         }
-      ]
+      ],
+      "current_gate": "DONE"
     },
     {
       "id": "TRE-W0-E04-T08",
@@ -1247,6 +1303,46 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W0-E04-T05-D01",
+      "title": "Suite do gate JEV: expectativa impossivel no S9 (exige 6 recibos de 8 cenarios, dos quais 3 sao registros de falha)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_fa85fa52",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Reexecucao real da suite do encaixe do gate JEV no develop 8e1466d: 30 itens, 0 falhas. O defeito retroativo (S9 exigia `verificados >= 6` recibos de 8 cenarios, dos quais 3 sao registros de falha do encaixe — 5 >= 6 falso por construcao) esta corrigido: a expectativa passou a contar os 5 cenarios obrigatorios de SUCESSO, coerente com a enumeracao do proprio item 25. Nao houve afrouxamento: item 25 continua exigindo registro em TODOS os 8 cenarios. Dente: as mutacoes embutidas S6/S6b/S6c continuam reprovando o aceite quando o codigo do ponto de estrangulamento e revertido.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "8e1466d50b4d53eecb4093b67c8c1113f910ca7d",
+            "ambiente": "clone limpo (scratch) do repo do TRE em origin/develop = commit 8e1466d (arvore sob teste), python /opt/hermes/.venv. Verificacao OFFLINE/ESTATICA, sem banco de producao, rede, credencial real, runtime de producao nem promocao. DUAS passadas com exit 0; saida crua BYTE-IDENTICA para verificar_jev_policy_v1_1.py (sem token volatil) e para verificar_jev_router.py (normalizacao declarada de decision_id aleatorio dec-<hex> -> dec-HASH); para verificar_gate_jev.py a saida e byte-identica apos normalizacao declarada do diretorio temporario da suite (/opt/data/cache/scratch/gate-jev-XXXX -> gate-jev-TMP). Dente por mutacao INTERNA (autoteste embutido): policy v1.1 64/64, roteador 21/21; no gate a suite traz as mutacoes embutidas S6/S6b/S6c (kernel sem a edicao) como itens proprios. Nenhum container/volume docker foi criado nesta hosted host (docker ausente).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_gate_jev.py (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (30 itens, 0 falhas); item 25 'S9 recibo: consulta ao gate SEMPRE deixa registro (recibo de 13 campos ou registro explicito de falha do encaixe), nos 8 cenarios' OK; item 26 'S9 recibo: os 5 cenarios obrigatorios de SUCESSO deixam, cada um, o seu recibo com os 13 campos exatos do contrato' OK — a conta impossivel (>=6 recibos de 8 cenarios, dos quais 3 sao registros de falha) foi corrigida para os 5 cenarios de SUCESSO que de fato emitem recibo"
+              },
+              {
+                "gate": "python3 scripts/verificar_gate_jev.py (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida byte-identica APOS normalizacao declarada do diretorio temporario da suite (gate-jev-XXXX -> gate-jev-TMP); PASS (30 itens, 0 falhas)"
+              },
+              {
+                "gate": "mutacoes embutidas S6/S6b/S6c (o codigo do ponto de estrangulamento e a trava do caminho manual)",
+                "exit": 0,
+                "resultado": "itens 15-18: 'S6 MUTACAO: encaixe ligado + kernel sem a edicao => card EXECUTA', 'S6b MUTACAO: revertendo SO a edicao de claim_task, o claim manual volta a funcionar', 'S6b: com o claim_task livre, o DESPACHANTE ainda segura o card', 'S6b: o tick reporta o card no balde skipped_jev_gate' — a mutacao do kernel faz o card executar, provando que a edicao e o que segura"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
@@ -1330,6 +1426,18 @@
         "t_d8bc83b3",
         "t_d36c7d0f",
         "t_b74c2edd"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+      "scope": "lote 12 — 3 cards da fila (ordens 110..119) no artefato TRE-W0-GOV",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T02:08:41+00:00",
+      "cards": [
+        "t_fa85fa52",
+        "t_e9535df3",
+        "t_f8a6e209"
       ]
     }
   ]
