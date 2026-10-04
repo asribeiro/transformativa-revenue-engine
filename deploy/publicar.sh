@@ -495,7 +495,7 @@ trap 'limpar_staging; liberar_lock; rm -rf "$TMP"' EXIT
 if [ "$ENSAIO" -eq 0 ]; then
   if R "mkdir '$LOCK_REMOTO' 2>/dev/null"; then
     LOCK_PEGO=1
-    R "printf '%s\n' 'card=$CARD host=$(hostname) inicio=$(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$SHA' > '$LOCK_REMOTO/quem'"
+    R "printf '%s\n' 'card=$CARD host=$(hostname) inicio=$(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$SHA destino=$DESTINO' > '$LOCK_REMOTO/quem'"
   else
     QUEM="$(R "cat '$LOCK_REMOTO/quem' 2>/dev/null" || true)"
     AGORA="$(date +%s)"

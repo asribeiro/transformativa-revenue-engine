@@ -184,6 +184,15 @@ fecham isso:
    `inicio` que o próprio lock grava; **sem idade confiável a publicação não derruba o lock** —
    `PUBLICACAO_FALHOU`, exit 3, nada escrito. `--forcar-lock` continua sendo o caminho explícito para
    quem tem certeza.
+7. **O lock de OUTRA publicação não cega o watchdog.** O lock passou a registrar `destino=`. O watchdog
+   só se cala quando o lock é de uma publicação **para o destino que ele vigia** (e não vencida); lock de
+   publicação em destino isolado (que usa o lock padrão) não impede a conferência da produção — medido em
+   30/09: com o lock padrão do card `t_0f74266d`/`tester` na mão, a cópia real ficou 2 ciclos divergente
+   sem ninguém conferir. Lock sem `destino=` (publicação antiga) continua sendo motivo de silêncio
+   (conservador: não conferir durante uma troca em curso é melhor que conferir no meio dela).
+8. **Cópia certa mas SEM trava é rearmada no ciclo.** Se a cópia é o commit registrado e está sem
+   `chattr +i` (publicação antiga sem `--travar`, ou alguém que destravou na mão), o ciclo `--reparar`
+   rearma e reporta `trava=rearmada` — a janela em que o ad-hoc passa não sobrevive 2 minutos.
 
 Saída do watchdog (uma linha, para automatizar):
 

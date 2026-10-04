@@ -3870,4 +3870,26 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   2 min compara disco x manifesto do **artefato** (referencia independente, `root:root` 700, fora da
   copia) e **restaura** — medido (deteccao exit 5 com atribuicao; `PUBLICACAO_REPARO_OK`, alerta limpo,
   trava rearmada); (iii) o verificador com dente impede o enforcement de virar decoracao.
+- **Execucao CONCORRENTE medida contra a copia REAL (publicada em `719a628`, digest `d2215645`, 315
+  arquivos):** 12 rodadas x 4 caminhos ad-hoc = **48 tentativas, todas bloqueadas** (`>>` EPERM, `sed -i`
+  EPERM no tempfile, arquivo novo EPERM, `tar -xz` de arvore alheia com `Exiting with failure status`),
+  **0 escritas aceitas**; o `sha256` de `scripts/backup/backup-tre.sh` ficou `3f0bebd9…` em **todas** as
+  12 rodadas e o commit publicado **nao foi revertido** (`.publicado` = `719a628`/`d2215645`, 315 arquivos,
+  trava armada, `alerta=ausente`). No mesmo intervalo o watchdog da VPS conferiu sozinho e deu
+  `PUBLICACAO_OK` as 23:24:08Z, 23:26:17Z, 23:28:27Z e 23:30:35Z, e a par de aceite pelo caminho de
+  referencia deu `PUBLICACAO_OK` com o mesmo digest em **T1 23:26:00Z** e **T2 23:30:21Z** (4m21s de
+  intervalo, com o atacante rodando). Bruto: `ev/concorrencia-real.log` e `ev/ataque-concorrente.log` no
+  workspace do card.
+- **Dois furos achados durante o proprio ensaio (medidos, nao supostos):** (i) o watchdog tratava
+  **qualquer** lock como "publicacao em curso": as 23:38:56Z o card `t_0f74266d` segurava o lock
+  **padrao** para publicar em destino isolado e a copia real (divergida as 23:36:50Z pelo meu proprio
+  ensaio) ficou **2 ciclos sem ser conferida** — `PUBLICACAO_EM_ANDAMENTO` as 23:38:56Z e reparo so as
+  23:41:12Z, depois do lock sair. Agora o lock registra `destino=` e o watchdog so se cala quando o lock
+  e de publicacao **para o destino que ele vigia** (ou sem `destino=`, conservador). (ii) a copia pode
+  estar **correta e SEM trava** (publicacao feita por versao antiga do `publicar.sh`, sem `--travar`):
+  janela em que o ad-hoc passa. O ciclo `--reparar` agora **rearma** e reporta `trava=rearmada`. Corrigido
+  tambem o meu proprio script de negativos, que destravava a copia real e **nao restaurava** (foi o que
+  deixou a janela): agora tem `trap ... EXIT` com restauracao obrigatoria (`watchdog --reparar` + checagem
+  da trava) e termina em **exit 7** se a producao nao voltar armada — ensaio destrutivo so vale com
+  restauracao garantida.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.
