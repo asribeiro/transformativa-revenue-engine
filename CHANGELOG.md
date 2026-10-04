@@ -685,6 +685,43 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   etapas reprovadas; desvio reprova a suíte). A guarda tem prova negativa: com o registro da migration
   divergido no alvo descartável, a suíte sai com exit 1, aponta a etapa e o resumo **não** pode dizer `OK` —
   `SUITE_DENTE_OK (19 itens, 0 falhas)`.
+- **Publicação versionada da cópia operacional** (`t_091cfea9`, DEFEITO F3 do `TRE-W1-E06-T01`) —
+  `deploy/publicar.sh` passa a ser o **único** caminho de escrita em `/opt/tre/repo`: publica um
+  **commit** (nunca a árvore de trabalho) por `git archive` → staging → `rsync -a --delete`, com o modo
+  vindo do índice do git; grava o commit em uso em `/opt/tre/repo/.publicado` (+ `.publicado.manifest`
+  com modo/sha256 de cada arquivo), recusa árvore suja (só passa com `--permitir-arvore-suja`, que
+  registra o desvio), aceita **uma publicação por vez** (`/opt/tre/.publicacao.lock`), avisa quando outro
+  card publicou antes, mantém o histórico em `/opt/tre/.publicacoes.log` e confere depois do `rsync` que
+  o `digest` da cópia é o do commit (senão falha com exit 6). Antes de publicar, confere os `ExecStart=`
+  dos units contra o modo do commit e **conta/registra** os alvos sem bit (`AVISO modo`; `--exigir-modos`
+  vira exit 4) — a publicação deixa de recriar o `203/EXEC` por acidente. `deploy/publicar.sh
+  --conferir` compara a cópia com o commit registrado arquivo a arquivo **e modo a modo**, devolvendo
+  `PUBLICACAO_DIVERGENTE` (exit 5) com o diff quando alguém reescreveu a cópia por fora do caminho único;
+  `docs/runbooks/publicacao-da-copia-operacional.md` é o runbook (comando, guardas, rollback do código
+  publicado e o que o caminho não faz).
+
+### Fixed
+
+- **A rotina de backup cobria zero ambientes e saía `BACKUP_OK`; o verificador aprovava sem backup nenhum**
+  (`TRE-W1-E06-T01-F2`, card `t_1b2ab418`; era o achado "trio `TRE_PG_*`") — `backup-tre.sh` procurava
+  `pg-dev`/`pg-homolog`/`pg-prod` e lia o trio de variáveis globais que o `EnvironmentFile` do unit não
+  declara, embora o dev real seja `pg-sales-dev` (`sales_ai`), declarado em `deploy/environments/dev.env`
+  — arquivo que nenhum timer lia. Medido no defeito: `PULADO` nos três ambientes, exit 0, **nenhum artefato**;
+  o `tre-backup-verify.service` também aprovava (`VERIFICACAO_OK`) porque procurava o mesmo prefixo
+  `tre_dev_*` que a rotina nunca produzia. Corrigido com a resolução do trio **por ambiente**
+  (`scripts/backup/lib-ambiente.sh`, novo, usado pela rotina e pela verificação): variável por ambiente
+  (`TRE_PG_SERVICO_<AMBIENTE>`) → `$TRE_ENV_DIR/<ambiente>.env` → variável global **só** em chamada de um
+  ambiente → convenção `pg-<ambiente>`; `TRE_ENV_DIR=/opt/tre/repo/deploy/environments` no `backup.env`.
+  Ambiente **declarado** cujo container não existe agora **falha** (exit 1, `BACKUP_FALHOU`), `todos` sem
+  nenhum ambiente coberto devolve `BACKUP_SEM_AMBIENTE` (nunca `BACKUP_OK`), e a verificação reprova
+  ambiente provisionado sem backup. Prova medida **sob o usuário do timer**:
+  `systemctl start tre-backup.service` → `Result=success`, `ExecMainStatus=0`, `RESULTADO: BACKUP_OK
+  (todos; 1 coberto, 2 pulados)` e artefato `tre_dev_*` com `servico: pg-sales-dev`/`externo: enviado`;
+  `tre-backup-verify.service` → `RESTORE_OK (11 itens)` restaurado do artefato que a rotina acabou de
+  produzir + `VERIFICACAO_OK`. Teste hermético versionado `scripts/backup/teste-rotina-ambiente.sh`
+  (`TESTE_OK`, 55 itens, 0 falhas) com regressão contra os scripts anteriores (antes: `BACKUP_OK` com
+  **0 artefatos**; depois: artefato criado). Detalhes e evidência em
+  `docs/runbooks/backup-restore-rollback.md` §7f.
 
 - **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
   usuário) morria com diagnóstico vazio** (`TRE-W1-E01-T01-D02`, defeito `F1` achado na revisão
@@ -714,12 +751,18 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   dois units executam sob `tre-deploy`: `tre-backup.service` roda `backup-tre.sh todos` (exit 0) e
   `tre-backup-verify.service` faz o restore real do último artefato (`RESTORE_OK`, 11 itens).
   **O backup diário ainda não gera artefato** — isso é o defeito irmão `t_1b2ab418` (trio `TRE_PG_*` ausente
-  do `EnvironmentFile`), não o bit. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
-  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`,
-  publicações de teste do card `t_091cfea9`) — o bit no git e a guarda são duráveis, a cópia operacional
+  do `EnvironmentFile`), não o bit. **Resolvido em 30/09/2026 pelo próprio `t_1b2ab418`** (resolução do trio
+  por ambiente, `scripts/backup/lib-ambiente.sh`; evidência em `docs/runbooks/backup-restore-rollback.md`
+  §7f): sob `tre-deploy`, `tre-backup.service` → `Result=success` + `RESULTADO: BACKUP_OK` + artefato
+  `tre_dev_*`, e `tre-backup-verify.service` → `RESTORE_OK`/`VERIFICACAO_OK`. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
+  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`)
+  — o bit no git e a guarda são duráveis, a cópia operacional
   depende do caminho versionado de publicação (ACHADO ABERTO 3). Depois da publicação versionada de
   20:12:35Z os dois critérios da cópia foram remedidos com horário (`test -x` exit 0; `systemctl start` →
-  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8.
+  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8. **Correção de atribuição (medida pelo card
+  `t_091cfea9`):** as publicações de ensaio de 20:03:59Z/20:06:19Z foram para o destino **isolado**
+  `/opt/tre/.teste-publicacao`, não para `/opt/tre/repo` (o campo `destino=` só passou a ser gravado no log
+  depois delas) — o revert da cópia operacional medido ali é de sincronização por `tar` ad-hoc, não delas.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
@@ -745,6 +788,16 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **não** é prefixo de `0 itens` — a guarda funcionava e a prova dizia que não. Corrigidos: restauração
   recria coluna **e** índice; a checagem passou a casar a mensagem real (`nao executou item nenhum`).
   Segunda execução: `SUITE_DENTE_OK (14 itens, 0 falhas)`.
+- **Cópia operacional `/opt/tre/repo` reescrita por qualquer card — sem dono, sem modo e sem registro**
+  (`t_091cfea9`, o achado F3 do card `TRE-W1-E06-T01`) — cada card publicava o seu pedaço com
+  `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'`: quem sincronizava por último mandava (o driver recém
+  instalado voltou de `sha256 d29c9c97…` para `9f24572a…` no meio de uma rodada), o modo vinha do
+  *checkout* e não do git (foi o que devolveu `644` para `scripts/backup/*.sh` e produziu o `203/EXEC`) e
+  a cópia não tinha `.git` nem registro — na medição de 30/09 ela tinha **122 arquivos** de **300**
+  versionados, sem ninguém saber qual commit estava no ar. Corrigido com **um caminho único de
+  publicação** (`deploy/publicar.sh`, ver o `Added` acima): commit explícito, modo do índice do git,
+  `.publicado` com o commit em uso, `--conferir` que reprova a cópia divergente e histórico em
+  `/opt/tre/.publicacoes.log`. Evidência medida em `docs/runbooks/backup-restore-rollback.md` §7e.
 
 ### Notas de estado
 
@@ -769,11 +822,13 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `tre_dev_20260930T193704Z` (12 tabelas, 30 índices, contagens batendo linha a linha), enviado ao bucket
   `tre-backup` com manifesto `externo: enviado`; negativos reprovados (dump truncado, dump de 0 byte, dump
   de outro banco, contagem mutada, destino externo inexistente).
-- **A rotina automática de backup NÃO está funcionando** — dois achados abertos medidos no mesmo card:
-  o unit `tre-backup.service` falha com `203/EXEC` (scripts de `scripts/backup/` estão `100644` no git) e,
-  mesmo executando, `backup-tre.sh todos` **pula os três ambientes** (procura `pg-dev`, o dev real é
-  `pg-sales-dev`) e sai `BACKUP_OK` sem gerar artefato. Detalhes em
-  `docs/runbooks/backup-restore-rollback.md` §8.
+- **A rotina automática de backup NÃO estava funcionando** — dois achados abertos medidos no mesmo card:
+  o unit `tre-backup.service` falhava com `203/EXEC` (scripts de `scripts/backup/` estavam `100644` no git)
+  e, mesmo executando, `backup-tre.sh todos` **pulava os três ambientes** (procurava `pg-dev`, o dev real é
+  `pg-sales-dev`) e saía `BACKUP_OK` sem gerar artefato. **Os dois foram resolvidos em 30/09/2026**
+  (`6a580ee`/`fix/TRE-W1-E06-T01-D01` e `9b464ed`/`fix/TRE-W1-E06-T01-F2`): sob o usuário do timer,
+  `tre-backup.service` sai `BACKUP_OK` com artefato `tre_dev_*` e `tre-backup-verify.service` restaura de
+  verdade (`RESTORE_OK`, 11 itens). Detalhes em `docs/runbooks/backup-restore-rollback.md` §7c/§7f/§8.
 - **Suíte do banco medida em dev (`TRE-W1-E05-T01`):** `suite_banco.sh dev` → `SUITE_FALHOU` (exit 1) com
   **uma** reprovação e **um** critério não testável; `--somente-leitura` roda a mesma bateria sem escrever
   no alvo (varredura `--detectar` no lugar do cenário). As etapas de contrato (37 itens), constraints/índices

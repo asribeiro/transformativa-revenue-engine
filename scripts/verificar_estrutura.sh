@@ -1765,5 +1765,21 @@ if [ -f scripts/agentes/teste_memoria_comercial_aceite.sh ]; then
   done
 fi
 
+
+         scripts/backup/verificar-ultimo-backup.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/teste-rotina-ambiente.sh \
+# Artefatos da publicacao versionada da copia operacional (DEFEITO F3 do TRE-W1-E06-T01) existem
+# E estao versionados. A publicacao e o unico caminho de escrita em /opt/tre/repo: o script tem de
+# estar no git (senao a proxima publicacao o apaga) e executavel no indice.
+for f in deploy/publicar.sh docs/runbooks/publicacao-da-copia-operacional.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in deploy/publicar.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

@@ -27,6 +27,11 @@ if [ ! -f "$DEST_ENV" ]; then
 TRE_RAIZ=/opt/tre
 TRE_BACKUP_DIR=/opt/tre/backup
 TRE_BACKUP_RETENCAO_DIAS=14
+# Trio (container/usuario/banco) POR AMBIENTE, um arquivo por ambiente deste diretorio
+# (par NAO-SECRETO versionado; ex.: deploy/environments/dev.env = pg-sales-dev/sales_ai).
+# Nao declare TRE_PG_SERVICO global aqui: uma variavel unica nao vale para os tres
+# ambientes em `backup-tre.sh todos` (ver scripts/backup/lib-ambiente.sh).
+TRE_ENV_DIR=/opt/tre/repo/deploy/environments
 # Destino externo (S3-compativel via rclone). Vazio = backup so local.
 # TRE_BACKUP_EXTERNO=s3:tre-backup
 ENV
@@ -34,6 +39,11 @@ ENV
   echo "  criado: $DEST_ENV"
 else
   echo "  mantido: $DEST_ENV (ja existia)"
+  if ! grep -q '^[[:space:]]*TRE_ENV_DIR=' "$DEST_ENV"; then
+    echo "  NOTA: $DEST_ENV nao declara TRE_ENV_DIR — o trio por ambiente sera resolvido pelo"
+    echo "        caminho deduzido do proprio script (<raiz do checkout>/deploy/environments)."
+    echo "        Para declarar explicitamente: TRE_ENV_DIR=/opt/tre/repo/deploy/environments"
+  fi
 fi
 
 echo "== 3. unidades systemd =="
