@@ -1324,5 +1324,64 @@ if [ -f scripts/agentes/teste_custo_agentes_aceite.sh ]; then
   fi
 fi
 
+
+# --- card TRE-W9-E03-T01 (Previsao do melhor canal — efetividade por canal + opt-out como bloqueio) --------
+CONTRATO_CANAL="hermes/agentes/analytics/previsao-canal-v1.json"
+COMPONENTE_CANAL="hermes/agentes/analytics/previsao_canal.py"
+for arquivo in "$COMPONENTE_CANAL" "$CONTRATO_CANAL" scripts/agentes/verificar_previsao_canal.py \
+               scripts/agentes/teste_previsao_canal_aceite.sh docs/architecture/previsao-de-canal-v1.md \
+               docs/runbooks/previsao-de-canal.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CANAL" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CANAL" \
+       scripts/agentes/verificar_previsao_canal.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Vocabulario de canal e minimos da pre-condicao sao LIDOS do contrato e a dependencia (funil) e' conferida:
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CANAL" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: --conferir recusou (contrato de dados ou dependencia do funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O desfecho NAO pode ser reimplementado: o componente tem de consumir o alcance do funil (W8-E01-T01).
+  if ! grep -q "alcance_por_organizacao" "$COMPONENTE_CANAL"; then
+    echo "FALHOU card TRE-W9-E03-T01: componente nao consome o alcance por organizacao do funil"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'base_suficiente' 'dados_multicanal' 'opt_out'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CANAL"; then
+      echo "FALHOU card TRE-W9-E03-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_previsao_canal_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_previsao_canal_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_PREVISAO_CANAL_OK' scripts/agentes/teste_previsao_canal_aceite.sh; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite sem o marcador ACEITE_PREVISAO_CANAL_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A prova do aceite nao pode fechar sem rodar: todo bloco Python tem de ter o item de exit code.
+  for bloco in RC_ASSERT RC_INTEG RC_PRIV; do
+    if ! grep -q "$bloco" scripts/agentes/teste_previsao_canal_aceite.sh; then
+      echo "FALHOU card TRE-W9-E03-T01: aceite sem a guarda de bloco $bloco (prova que morre em silencio)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
