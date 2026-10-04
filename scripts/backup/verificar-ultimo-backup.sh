@@ -54,6 +54,20 @@ verificar_ambiente() {
   # existe artefato: configuracao quebrada continua sendo falha, e o artefato e conferido
   [ "$TRE_AMB_ESTADO" = "FALHAR" ] && ko "$TRE_AMB_MOTIVO"
 
+  # Quem roda ESTE verificador consegue LER o artefato? Caso real medido na rodada 2 da
+  # revisao independente deste card: artefato gravado por execucao manual do operador como
+  # root (`root:root 700`) e o verificador do timer rodando como `tre-deploy` — o diagnostico
+  # que saia era "backup pela metade"/"artefato sem Odoo" (defeito de CONTEUDO, falso) para um
+  # artefato INTEGRO. Ilegivel por permissao tem de ser dito como permissao.
+  if [ ! -r "$ultimo" ] || [ ! -x "$ultimo" ]; then
+    ko "artefato mais recente de '$amb' ($(basename "$ultimo")) existe mas NAO e legivel por '$(id -un)': dono $(stat -c '%U:%G' "$ultimo" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$ultimo" 2>/dev/null || echo n/d) — e PERMISSAO, nao conteudo; a rotina de backup tem de entregar o artefato com dono do usuario de servico"
+    return 0
+  fi
+  if [ -e "$ultimo/manifest.txt" ] && [ ! -r "$ultimo/manifest.txt" ]; then
+    ko "manifesto do artefato mais recente de '$amb' existe e nao e legivel por '$(id -un)' (dono $(stat -c '%U:%G' "$ultimo/manifest.txt" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$ultimo/manifest.txt" 2>/dev/null || echo n/d)) — e PERMISSAO, nao 'manifesto ausente'"
+    return 0
+  fi
+
   local idade_h
   idade_h="$(python3 - "$ultimo" <<'PY' 2>/dev/null || echo "?"
 import os, sys, time
@@ -79,6 +93,25 @@ PY
     ok "restore do ultimo backup de '$amb' aprovado"
   else
     ko "restore do ultimo backup de '$amb' REPROVADO"
+  fi
+
+  # Odoo do ambiente (card TRE-W2-E01-T01-F01): o artefato que declara Odoo tem de passar
+  # pelo restore proprio — subir o Odoo contra o banco restaurado. Ambiente que declara
+  # Odoo e cujo artefato NAO tem o bloco do Odoo tambem e falha (backup pela metade).
+  if [ -s "$ultimo/odoo-manifest.txt" ]; then
+    if bash "$AQUI/verificar-odoo.sh" "$ultimo"; then
+      ok "restore do Odoo do ultimo backup de '$amb' aprovado"
+    else
+      ko "restore do Odoo do ultimo backup de '$amb' REPROVADO"
+    fi
+  else
+    tre_resolver_odoo "$amb" >/dev/null 2>&1 || true
+    tre_estado_odoo
+    if [ "$TRE_ODOO_ESTADO" = "COBRIR" ]; then
+      ko "ambiente '$amb' tem Odoo ($TRE_ODOO_MOTIVO) e o artefato mais recente NAO tem o bloco do Odoo — backup do ambiente esta pela metade"
+    else
+      echo "NOTA   artefato sem bloco do Odoo e o ambiente nao declara Odoo (nada a restaurar la)"
+    fi
   fi
 
   # backup velho tambem e falha: se a rotina diaria parou, quero saber aqui

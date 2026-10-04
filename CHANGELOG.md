@@ -746,6 +746,30 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
   isolado).
 
+### Changed
+
+- **AC2 do E05 passou a ser medido na forma reformulada — "não existem dois clientes no mesmo banco"**
+  (`TRE-W1-E05-T01`, decisão do dono `A` de 30/09/2026, card `t_e340c29b`; isolamento **físico**, um banco
+  por cliente) — a etapa 5 da suíte deixa de ser `tenant/RLS` (forma antiga: "consulta sem filtro de tenant
+  devolve vazio ou erro", **não decidível** contra o Data Contract V1.0, que não tem dimensão de cliente) e
+  passa a medir o que é medível no ambiente atual: **0 dimensão de cliente/tenant no schema**, **1 base de
+  aplicação na instância do alvo** e **1 base provisionada (`pg-*`) servindo o schema no host**. A barreira
+  do critério passa a ser de **provisionamento**, não de schema — declarado em
+  `docs/data/DATA_CONTRACT_V1.md` e em `docs/runbooks/suite-de-teste-do-banco.md` §4/§8. O medidor é
+  `scripts/db/teste_isolamento_clientes.sh` (novo, com `--prova-de-dente`); `scripts/db/teste_tenant_rls.sh`
+  fica **versionado como instrumento do V2** (não wired na suíte) para o dia em que houver multi-cliente no
+  mesmo banco. `scripts/verificar_estrutura.sh` passa a exigir o artefato novo (versionado e executável).
+- **Régua de aceite do E05 passou a registrar a reformulação do AC2** (`TRE-W1-E05-T01`, 30/09/2026) — a
+  revisão independente mostrou que `docs/kanban/criterios-de-aceitacao.md` continuava com a forma antiga do
+  2º critério ("consulta sem filtro de tenant"), **sem nota**, enquanto o entregue media a forma nova: pelo
+  documento que governa o fechamento (*"card cujo critério não bater não fecha"*), o entregue não batia com o
+  critério homologado. A seção `TRE-W1-E05-T01` da régua ganhou **nota datada** com a decisão do dono (opção
+  A, card `t_e340c29b`, `docs/operations/registro-de-aprovacoes.md`) e o **texto vigente** — "não existem
+  dois clientes no mesmo banco" —, declarando ainda que a forma antiga foi medida e devolvida ao requisito
+  (`NAO_TESTAVEL`, exit 3). Junto: `scripts/db/teste_tenant_rls.sh` (instrumento do V2) passou a usar a
+  **mesma superfície de detector** do teste vigente (`~*`, token `tenant|cliente|client` em qualquer
+  posição), para não haver duas definições de "coluna de cliente" no repo.
+
 ### Fixed
 
 - **A rotina de backup cobria zero ambientes e saía `BACKUP_OK`; o verificador aprovava sem backup nenhum**
@@ -768,6 +792,46 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (`TESTE_OK`, 55 itens, 0 falhas) com regressão contra os scripts anteriores (antes: `BACKUP_OK` com
   **0 artefatos**; depois: artefato criado). Detalhes e evidência em
   `docs/runbooks/backup-restore-rollback.md` §7f.
+- **Teste de isolamento entre clientes: catálogo mudo virava "0 coluna" (verde falso) e o detector só via
+  nomes terminando em `tenant|cliente|client`** (`TRE-W1-E05-T01`, os 2 itens de medição da revisão
+  independente) — medido por ela em alvo descartável e **reproduzido aqui nos dois artefatos, lado a lado**:
+  com `organizations.tenant_uuid` presente, o artefato anterior imprimia `dimensao de cliente/tenant no
+  schema: 0` e fechava `ISOLAMENTO_OK (5 itens)`, **exit 0**; com a leitura do catálogo falhando, **exit 0**
+  também (verde falso). Correções: `leitura()` passou a devolver falha (exit != 0) e o item 3 exige **número**
+   — leitura vazia/erro vira `NAO_TESTAVEL` (exit 3, nunca verde) com a causa impressa (no item 4, leitura que
+  falha **reprova**); o detector passou a cobrir o token em qualquer posição, **case-insensitive**
+  (`tenant_uuid`, `conta_Cliente`), e a superfície que fica **fora** dele (outra grafia, ex. `customer_id`)
+  está declarada no runbook §8 — quem a pega é a **etapa 1** (contrato, `sobram=[...]`). O dente do AC2 ganhou
+  3 casos novos (2 grafias de co-locação + catálogo ilegível): `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)`,
+  exit 0, contra `17 itens` antes. Sem falso positivo no contrato: **0** colunas casam na base dev (as 203
+  colunas do schema foram conferidas).
+- **Veredito do item 5 (provisionamento) dizia mais do que a medição cobria** (`TRE-W1-E05-T01`, 3º item da
+  revisão independente) — o item mede `docker ps` filtrando a **convenção de nome `pg-*`**, mas o texto
+  afirmava "o provisionamento nao co-loca clientes". O texto passou a declarar exatamente o que é medido
+  (uma base pela convenção, nenhuma **segunda** base provisionada; provisionamento fora da convenção **não é
+  medido** por este item) e a saída ganhou linha **informativa** com os containers de pé fora da convenção que
+  servem o schema — nunca escondidos, nunca contados. Medido no dente: um container fora da convenção
+  (`e05r3-probe`) servindo o schema aparece no informativo e o item permanece `OK`. Limite documentado no
+  runbook §8.
+- **`--faixas` se contradizia quando o limiar do contrato não era 0,95** (`TRE-W1-E04-T02-D02`, defeito medido
+  na revisão independente do T02) — a linha de detalhe do comando tinha os **nomes das faixas fixos no código**
+  enquanto as decisões eram calculadas: com o contrato em 0,90 o próprio comando imprimia
+  `MERGE_AUTOMATICO [0.90, 1.00] -> MERGE` na tabela e "0,94 cai em REVISAO_HUMANA" na linha de detalhe, com
+  exit 0 — o artefato que prova o critério 2 se contradizendo. Corrigido extraindo `linha_detalhe_faixas()`,
+  derivada de `faixa_de_confianca()` (a mesma fonte que decide o merge). O teste do projeto deixou de asserir
+  a string constante (que era a evidência do critério) e passa a comparar com a saída do **próprio modelo**,
+  inclusive numa cópia com o limiar em 0,90, onde tabela e linha de detalhe têm de se mover juntas; a suíte
+  ganhou a sabotagem `detalhe` (`--sabotar detalhe` → `TESTE_FALHOU`, exit 1) para o item novo não nascer sem
+  prova de que reprova.
+- **Suíte de banco: linha do `RESUMO` mentia sobre a etapa `ambiente`** (`TRE-W1-E05-T01` — defeito achado
+  pelo card de D01/`t_39838c5b`, que reproduziu a etapa reprovando com o resumo imprimindo
+  `ambiente ............. OK`) — a linha era **texto fixo** e não refletia o veredito contado: quem lesse só
+  o resumo (ou o resumo de um log grande) concluiria "ambiente OK" com a suíte falhando por causa daquela
+  etapa. A linha agora sai do que foi contado (`FALHOU (N itens)` quando há reprovação na etapa) e entrou uma
+  **guarda de consistência do próprio resumo** (o número de linhas `FALHOU` no resumo tem de cobrir as
+  etapas reprovadas; desvio reprova a suíte). A guarda tem prova negativa: com o registro da migration
+  divergido no alvo descartável, a suíte sai com exit 1, aponta a etapa e o resumo **não** pode dizer `OK` —
+  `SUITE_DENTE_OK (19 itens, 0 falhas)`.
 
 - **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
   usuário) morria com diagnóstico vazio** (`TRE-W1-E01-T01-D02`, defeito `F1` achado na revisão
@@ -1162,6 +1226,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   exit 1, e o configurador a removeu; rollback **padrão** → `CRM_DEV_FALHOU (29 itens, 15 falhas)`, exit 1;
   rollback **total** (módulo desinstalado) → `CRM_DEV_FALHOU (13 itens, 3 falhas)`, exit 1 — com o aceite
   voltando a 29/29 em cada reconfiguração.
+- **Backup do Odoo no MESMO artefato do ambiente (`TRE-W2-E01-T01-F01`, card `t_a5afde31`)** — o
+  artefato diário deixa de ser "só o trio": passa a levar o Odoo do ambiente junto
+  (`odoo_dev.dump` + `.sha256`, `odoo-contagens.txt` por tabela, `odoo-filestore.tar.gz` do volume
+  `odoo-data-dev` e `odoo-manifest.txt` com o **digest da imagem** do Odoo), tudo em
+  `scripts/backup/{lib-ambiente.sh,backup-tre.sh}` e declarado no par não-secreto
+  `deploy/environments/dev.env` (`TRE_ODOO_PG_SERVICO`/`_USER`/`_DB`/`TRE_ODOO_FILESTORE`/
+  `TRE_ODOO_IMAGEM`). O Odoo é resolvido **por ambiente**, na mesma precedência do trio (variável por
+  ambiente → arquivo do ambiente → nada): ambiente que não declara Odoo é **pulado com a ausência
+  declarada no manifesto**, ambiente que declara e não tem container (ou cujo dump/filestore não sai)
+  é **falha** — nunca `BACKUP_OK`.
+- **`scripts/backup/verificar-odoo.sh` — a prova de restore do Odoo** (alvo descartável): confere
+  `sha256`/nº de arquivos/**digest da imagem** contra o manifesto, restaura o dump num PostgreSQL
+  descartável **sem porta publicada**, compara **tabela por tabela linha a linha**, exige o módulo
+  `base` instalado, desempacota o filestore (exige `filestore/odoo_dev` e a mesma contagem de
+  arquivos), sobe um **Odoo descartável** contra o banco restaurado e só aceita com `/web/login` em
+  **HTTP 200** + JSON-RPC respondendo — e confere ao fim que `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev`
+  continuam `running`. `verificar-ultimo-backup.sh` encadeia esse verificador quando o artefato mais
+  recente do ambiente traz o Odoo; artefato **pela metade** (trio sem Odoo, com o ambiente declarando
+  Odoo) é **falha** na verificação.
 
 ### Security
 
@@ -1442,6 +1525,34 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   ficava **vazio** depois do rollback; a reposição é explícita e conferida (`repor_etapas_padrao_crm.py`);
   (8) `odoo-dev` é compartilhado e um reinício de container por outro card mata o `docker exec` no meio
   (exit **137**) — cada passo de ORM sobe o serviço, confere `HTTP 200` e tem até 3 tentativas.
+- **Dois defeitos do verificador do Odoo, achados rodando (01/10/2026):**
+  (6) o `/entrypoint.sh` da imagem faz `exec odoo "$@" "${DB_ARGS[@]}"` e os argumentos que ele monta
+  (com `HOST` default **`db`**) entram **depois** dos informados — o Odoo descartável subia procurando
+  um host `db` (`Database connection failure: could not translate host name "db"`) e o verificador
+  reprovava um backup **bom**; conserto: `--entrypoint /usr/bin/odoo`;
+  (7) o teste de identidade do Odoo pedia `GET` em `/web/webclient/version_info` e o endpoint é
+  JSON-RPC (**415 Unsupported Media Type**) — mesmo efeito de reprovar quem responde; conserto: `POST`
+  `Content-Type: application/json`, mantendo o `/web/login` **HTTP 200** como critério principal.
+- **`ls *.dump | head -1` deixou de ser o seletor de dump** (`verificar-backup.sh`, `restore-tre.sh`,
+  `teste-backup-restore.sh`): com o Odoo no mesmo artefato há **dois** `*.dump` e `odoo_dev.dump` vem
+  primeiro em ordem alfabética — o verificador do trio compararia o banco errado. Quem escolhe agora é
+  o **manifesto** (`banco:`). Medido: `verificar-backup.sh` num artefato com dois dumps →
+  `RESTORE_OK (11 itens, 0 falhas)`.
+- **Rodada 2 do `TRE-W2-E01-T01-F01` (card `t_a5afde31`, 01/10/2026 — o que a revisão independente
+  reprovou):** o artefato de backup passou a nascer com o dono do **usuário de serviço**
+  (`TRE_BACKUP_DONO`, padrão `tre-deploy` quando existe na máquina; rodando como `root` a rotina
+  aplica o `chown` antes da retenção; declarar um usuário inexistente é **falha**), porque a execução
+  manual do operador como `root` gerava `root:root 700` e o verificador do timer (`tre-deploy`) não
+  conseguia ler o artefato — acusava "backup pela metade"/"sem Odoo" (defeito de **conteúdo**, falso)
+  para um artefato íntegro. Junto: a retenção passou a **conferir o exit do `rm`** e a reportar
+  `NAO consegui remover …` (`BACKUP_FALHOU`) em vez de contar como removido o que continua no disco; os
+  três verificadores passaram a distinguir **ilegível por permissão** de **ausente/pela metade**; o
+  `pg_restore.err` deixou de ser gravado **dentro** do artefato verificado (arquivo temporário); e
+  destino sem escrita falha com o diagnóstico certo (antes: `No such file or directory` no meio do
+  dump). Medido no mesmo estado entregue: rotina a mão por `root` → artefato `tre-deploy:tre-deploy`
+  (`executado_por: root`) verificado por `tre-deploy` → `VERIFICACAO_OK (3 itens)`; units →
+  `Result=success`; negativos de conteúdo continuam reprovando (dump truncado 10 falhas, filestore
+  ausente 4); hermético `TESTE_OK (84 itens, 0 falhas)`. Runbook §7h.
 
 ### Notas de estado
 
@@ -2998,3 +3109,14 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   ensaio, o cálculo antigo fazia o destino isolado passar por produção e pedia `--producao`). Teste local sem
   VPS: `deploy/teste-staging-unico.sh` (39 verificações, 0 falhas em duas execuções — roda o `publicar.sh`
   real contra um `ssh` de mentira e reproduz o defeito na versão de `3bf5e07` antes de provar o conserto).
+  **Atualização 01/10/2026 (`t_a5afde31`):** a branch `feature/TRE-W2-E01-T01-F01` foi criada **da**
+  `fix/t_daca4bda-enforcement` e trouxe o `develop` para dentro (`git merge origin/develop`), então a
+  publicação dela **não apaga o enforcement** — é o caminho para o Odoo do dev voltar a rodar do par
+  versionado. Publicação por `deploy/publicar.sh` e evidência em
+  `docs/runbooks/backup-restore-rollback.md` §7g e `docs/operations/registro-de-execucoes.md`.
+- **Rotina de backup cobre o Odoo do dev desde 01/10/2026** (`t_a5afde31`): `backup-tre.sh dev` grava
+  num **único** artefato o dump do trio **e** o par do Odoo (banco + filestore), e o timer de
+  domingo (`tre-backup-verify.timer`) verifica os dois. Ambiente que declare Odoo e cujo artefato não
+  o traga é **falha** de verificação, não "meio backup". O artefato nasce com dono do **usuário de
+  serviço** (`TRE_BACKUP_DONO`, padrão `tre-deploy`) mesmo quando a rotina é executada a mão por
+  `root`, e a retenção **confere o `rm`** antes de dizer que removeu (rodada 2, runbook §7h).

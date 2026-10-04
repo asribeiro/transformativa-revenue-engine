@@ -16,6 +16,13 @@ na VPS e o resultado medido está na seção 7.
 | `pg_dumpall --globals-only` (papéis e globais, sem senhas) | senhas, tokens, chaves de API |
 | `contagens.txt` (linhas por tabela) e `manifest.txt` (metadados) | dados de tenant diferente do ambiente copiado |
 | `sha256` do dump e `pg_dump.err` (vazio em caso de sucesso) | imagens Docker (são reconstruíveis do repositório) |
+| **Odoo do ambiente:** `odoo_dev.dump` + `odoo_dev.dump.sha256`, `odoo-contagens.txt` (por tabela) e `odoo-manifest.txt` | `/etc/tre/odoo-dev/*` (senha mestra e senha do banco), `sessions/` do filestore |
+
+**O artefato de um ambiente carrega o ambiente inteiro** (TRE-W2-E01-T01-F01): o Odoo grava no
+**mesmo** diretório do dump do trio, com manifesto próprio (`odoo-manifest.txt`). Quem escolhe "o
+dump do artefato" pelo manifesto (`banco:`) e **nunca** por `ls *.dump | head -1` — com o Odoo no
+mesmo diretório existem **dois** `*.dump` e `odoo_dev.dump` vem primeiro em ordem alfabética
+(`verificar-backup.sh`/`restore-tre.sh` já resolvem pelo manifesto; medido em 01/10/2026).
 
 Segredo se recupera do cofre (`docs/operations/gestao-de-secrets.md`), **não** de arquivo de
 backup. Um diretório de backup que carrega senha vira um vazamento com data marcada.
@@ -29,8 +36,18 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
 | `tre-backup.timer` | diário **02:30** (America/Sao_Paulo) | `backup-tre.sh todos` — copia dev, homolog e prod |
 | `tre-backup-verify.timer` | domingo **04:00** | `verificar-ultimo-backup.sh todos` — **restaura de verdade** o artefato mais recente e compara |
 
-- Artefatos: `/opt/tre/backup/tre_<ambiente>_<YYYYmmddTHHMMSSZ>/` (permissão 700).
+- Artefatos: `/opt/tre/backup/tre_<ambiente>_<YYYYmmddTHHMMSSZ>/` (permissão 700, dono `tre-deploy`).
 - Retenção: **14 dias** (`TRE_BACKUP_RETENCAO_DIAS`), aplicada só ao prefixo do próprio ambiente.
+  A remoção **confere o exit do `rm`**: artefato que não pôde ser removido é reportado
+  (`FALHOU retencao: NAO consegui remover …`, `RESULTADO: BACKUP_FALHOU`) e **não** é contado como
+  removido — `rm -rf` sem conferir exit foi o que deixou um diretório de outro dono escapar da
+  retenção para sempre enquanto o log dizia "removido(s)" (§7h).
+- **Dono do artefato = usuário de serviço, não quem executa** (`TRE_BACKUP_DONO`; padrão
+  `tre-deploy` quando o usuário existe na máquina; sem ele, quem executa, com `NOTA`). Rodando como
+  `root`, `backup-tre.sh` aplica `chown` no diretório do artefato antes da retenção: uma execução
+  manual do operador como `root` entrega o artefato para `tre-deploy` (o `manifest.txt` registra
+  `executado_por:` e `dono_artefato:`). Declarar `TRE_BACKUP_DONO` inexistente é **falha** — o
+  artefato ilegível pelo timer não pode nascer em silêncio (§7h).
 - Configuração: `/etc/tre/backup.env` (caminhos, `TRE_ENV_DIR` e destino — **sem segredo**).
 - **Cópia operacional (`/opt/tre/repo`):** instalada **somente** por `deploy/publicar.sh` (um commit por
   vez, com `.publicado` gravando o commit em uso). Nada de `tar`/`scp`/`rsync` direto — runbook
@@ -50,6 +67,26 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
   **falha** — nunca `BACKUP_OK`. Ambiente provisionado **sem** backup é **falha** na verificação, assim
   como backup com **mais de 48h** (é o sinal de que a rotina parou).
 - Zero ambientes cobertos ⇒ `RESULTADO: BACKUP_SEM_AMBIENTE` (nunca `BACKUP_OK` com exit 0).
+- **O Odoo é resolvido por ambiente, na mesma ordem** (`scripts/backup/lib-ambiente.sh`,
+  `tre_resolver_odoo`): 1. `TRE_ODOO_PG_SERVICO_<AMBIENTE>`, `TRE_ODOO_PG_USER_<AMBIENTE>`,
+  `TRE_ODOO_PG_DB_<AMBIENTE>`, `TRE_ODOO_FILESTORE_<AMBIENTE>`, `TRE_ODOO_IMAGEM_<AMBIENTE>`,
+  `TRE_ODOO_IMAGEM_DIGEST_<AMBIENTE>`; 2. as mesmas chaves sem sufixo em
+  `$TRE_ENV_DIR/<ambiente>.env`; 3. nada (Odoo **não é** uma quarta etapa global — um Odoo único em
+  variável global atravessaria os três ambientes em `todos`, a mesma armadilha do trio).
+  - Ambiente que **não declara** Odoo ⇒ `PULADO ambiente ... (Odoo nao declarado)` e o manifesto
+    grava `odoo: ausente neste ambiente` — a ausência fica **declarada**, não omitida.
+  - Ambiente que **declara** Odoo e cujo container não existe (ou cujo dump/filestore não sai)
+    ⇒ **falha**; o artefato do trio ainda é gravado (com `odoo: ausente neste ambiente`) e o
+    `RESULTADO` é `BACKUP_FALHOU`, nunca `BACKUP_OK`.
+  - O filestore sai do **volume** (`odoo-data-dev`), empacotado por container efêmero
+    (`docker run --entrypoint tar -v <volume>:/origem:ro`), sem depender do caminho do host.
+- Na verificação, ambiente que declara Odoo cujo artefato mais recente **não** tem o bloco do Odoo
+  ⇒ `FALHOU backup do ambiente esta pela metade` (o dump do trio existe e o do Odoo não).
+- **Artefato ilegível por permissão ≠ artefato pela metade.** Os três verificadores distinguem os
+  dois casos: se o diretório do artefato (ou o `manifest.txt`) existe mas não é legível pelo usuário
+  que verifica, a saída é `FALHOU … e PERMISSAO, nao conteudo` / `… e PERMISSAO, nao 'artefato sem
+  Odoo'` — nunca "backup pela metade" (§7h item 3). O diagnóstico de conteúdo fica reservado para
+  defeito de conteúdo: os negativos de conteúdo continuam reprovando (§7h item 5).
 
 ## 3. BACKUP — manual
 
@@ -105,6 +142,42 @@ scripts/backup/restore-tre.sh homolog /opt/tre/backup/tre_prod_20260929T174742Z 
 2. subir os containers do ambiente: `docker compose -f /opt/tre/prod/compose/*.yml up -d`
 3. restaurar os dados: `restore-tre.sh prod <artefato> --confirmo`
 4. validar: `verificar-backup.sh <artefato>` e o smoke test do ambiente
+
+### 4.4 Restore do Odoo — a prova é o par banco **+** filestore
+
+```bash
+# 1) rotina (já roda no timer das 02:30): o artefato do ambiente passa a levar o Odoo junto
+scripts/backup/backup-tre.sh dev
+
+# 2) prova: restore do Odoo em alvo DESCARTAVEL, com o Odoo RESPONDENDO depois
+scripts/backup/verificar-odoo.sh /opt/tre/backup/tre_dev_20261001T133653Z
+
+# no domingo o timer já encadeia os dois (verificar-ultimo-backup.sh chama o do Odoo
+# quando o artefato mais recente do ambiente traz odoo-manifest.txt)
+```
+
+O verificador **não** pergunta se o arquivo existe — ele:
+
+1. confere a identidade do artefato: `sha256` do dump e do filestore **contra o manifesto**,
+   número de arquivos do tar, e o **digest da imagem** do Odoo registrado no backup contra o
+   `RepoDigest` da imagem local (um Odoo de imagem diferente não é o mesmo Odoo);
+2. sobe um PostgreSQL **descartável** (rede própria, **sem porta publicada**) e roda `pg_restore`
+   `--no-owner --no-privileges` do `odoo_dev.dump`;
+3. compara **tabela por tabela, linha a linha** (`odoo-contagens.txt`) e exige o módulo `base`
+   instalado — um banco vazio também "restaura" sem erro;
+4. desempacota o filestore e exige o diretório `filestore/odoo_dev` e o mesmo número de arquivos;
+5. sobe um **Odoo descartável** (`odoo:<versão do manifesto>`, `--entrypoint /usr/bin/odoo`)
+   contra esse banco, publicado **só em loopback**, e só aceita quando `/web/login` responde
+   **HTTP 200** com a cara do Odoo e o JSON-RPC `/web/webclient/version_info` responde;
+6. derruba tudo e confere que `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` **continuam running**.
+
+`RESULTADO: RESTORE_ODOO_OK` / `RESTORE_ODOO_FALHOU`, com `OK`/`FALHOU` por item — o container
+descartável é removido no `trap` mesmo quando o teste falha.
+
+**Por que `--entrypoint /usr/bin/odoo`:** o `/entrypoint.sh` da imagem acrescenta os argumentos de
+banco **depois** dos informados (`exec odoo "$@" "${DB_ARGS[@]}"`), com `HOST` default `db` — o
+Odoo subia procurando um host `db` que não existe e o verificador reprovava um backup bom.
+Medido em 01/10/2026 (`Database connection failure: could not translate host name "db"`).
 
 ## 5. ROLLBACK
 
@@ -373,6 +446,168 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
    `TRE_PG_SERVICO` global, que é justamente o que não escala para três ambientes. Timers seguem habilitados:
    `tre-backup.timer` próxima execução **01/10/2026 02:34 -03**, `tre-backup-verify.timer` **04/10/2026 04:00 -03**.
 
+## 7g. Evidência medida — 01/10/2026, o Odoo do dev dentro do artefato do ambiente (`TRE-W2-E01-T01-F01`, card `t_a5afde31`)
+
+Commit publicado **`e2b960b5bb79e5773a25fa3c594461a699ccf9d5`** (árvore `f10552201efe…`, digest
+`4f0c65390a54aa9df22a0871ae920935e5121795303e63145c2f9a9eb878a845`, 323 arquivos) em
+`root@169.58.24.102:/opt/tre/repo` às **13:54:33Z**, `--producao` declarado, **trava rearmada**
+(`lsattr -d` → `----i---------e-------`) e `--conferir` posterior `PUBLICACAO_OK … trava=travada`.
+**Ponta final publicada:** o commit de documentação que acompanha este texto (`--conferir`
+`PUBLICACAO_OK … trava=travada` na hora da publicação; os commits seguintes ao `e2b960b5` mudam só
+documentação — o mesmo `323 arquivos` e o mesmo código de rotina).
+Antes, a cópia estava idêntica ao commit `66c7152` (card `t_daca4bda`): a publicação é **avanço na
+própria linha** (branch nascida da `fix/t_daca4bda-enforcement` com `origin/develop` mergeado), e
+nenhuma publicação de outro card ficou de fora — `/opt/tre/.publicacoes.log` mostra a última
+publicação em `/opt/tre/repo` em `2026-09-30T23:42:48Z` (`66c7152`) e, depois dela, apenas
+`watchdog-reparo` do **mesmo** commit.
+
+1. **O que a rotina passou a gravar** (medido na cópia publicada, `backup-tre.sh dev`, artefato
+   `/opt/tre/backup/tre_dev_20261001T135513Z`, `BACKUP_OK` exit 0): `odoo_dev.dump` **2 487 524 B**
+   (sha256 `529cd429…`), `odoo-contagens.txt` com **281 tabelas / 26 213 linhas**,
+   `odoo-filestore.tar.gz` **115 082 B / 21 arquivos** (sha256 `521d4ece…`, volume `odoo-data-dev`
+   empacotado por container efêmero) e `odoo-manifest.txt` com `odoo_imagem_restore: odoo:19.0`,
+   `odoo_imagem_digest: sha256:77bac5cd…` e `odoo_segredos: fora do artefato (o dump nao leva
+   /etc/tre/odoo-dev/*)`. O dump do trio (`sales_intelligence.dump`, 35 428 B) e o `manifest.txt` do
+   ambiente seguem no **mesmo** diretório.
+2. **Prova de restore em alvo descartável** — `verificar-odoo.sh` →
+   `RESTORE_ODOO_OK (27 itens, 0 falhas)`: sha256 dos dois arquivos e **digest da imagem** conferidos
+   contra o manifesto; `pg_restore` num PostgreSQL descartável **sem porta publicada**; **281 tabelas
+   com as contagens batendo linha a linha**; módulo `base` instalado; filestore desempacotado com
+   `filestore/odoo_dev` e 21 arquivos; Odoo descartável respondendo **HTTP 200** em
+   `127.0.0.1:32774/web/login` (`Odoo Server 19.0-20260926`) e JSON-RPC respondendo; ao fim,
+   `odoo-dev`, `pg-odoo-dev` e `pg-sales-dev` **continuavam `running`**.
+3. **Verificação encadeada — o que o timer de domingo roda**, pela cópia publicada
+   (`verificar-ultimo-backup.sh todos`): `RESTORE_OK (11 itens, 0 falhas)` (trio) +
+   `RESTORE_ODOO_OK (27 itens, 0 falhas)` (Odoo), com `homolog`/`prod` **pulados** por não
+   provisionados → `VERIFICACAO_OK (3 itens)`, exit 0. **Por quem foi medida: pelo agente, como
+   `root`** (não pela identidade do timer) — a identidade `tre-deploy` só entrou na rodada 2, que
+   consertou justamente o que essa diferença escondia (§7h itens 1–2).
+4. **Destino externo (storage de objeto) com ida e volta lida** —
+   `rclone lsl contabo:tre-backup/prova-t_a5afde31/<artefato>` lista os 14 arquivos, incluindo
+   `odoo_dev.dump`, `odoo-filestore.tar.gz`, `odoo-contagens.txt` e `odoo-manifest.txt`;
+   `rclone cat …/odoo_dev.dump | sha256sum` = `529cd429…` e `rclone cat …/odoo-filestore.tar.gz |
+   sha256sum` = `521d4ece…`, **iguais** aos sha256 do manifesto local. O prefixo
+   `prova-t_a5afde31/` é prova, não backup de produção (mesma convenção do `prova-t03/`).
+5. **Negativos medidos (exit 1 em todos)** — (a) dump do Odoo **truncado** →
+   `RESTORE_ODOO_FALHOU (27 itens, 10 falhas)`, começando em `FALHOU sha256 do dump NAO confere` e
+   seguindo com `pg_restore` reprovando o arquivo, `tabelas em public: restaurado=0 backup=281`,
+   `modulo 'base' NAO esta instalado no banco restaurado` e `HTTP 500` no Odoo; (b) **filestore
+   removido** do artefato → `RESTORE_ODOO_FALHOU (26 itens, 5 falhas)` (`filestore ausente ou vazio`,
+   `arquivos do filestore: desempacotado=0 manifesto=21`, `diretorio filestore/odoo_dev AUSENTE`);
+   (c) dump truncado **sem** `.sha256` → mesma reprovação (nada de "restaurou sem erro" com banco
+   vazio).
+6. **Regressão do verificador do trio num artefato com DOIS `*.dump`** — `verificar-backup.sh` →
+   `RESTORE_OK (11 itens, 0 falhas)`: a escolha do dump passou a ser pelo **manifesto** (`banco:`), e
+   não por `ls *.dump | head -1` (que pegaria `odoo_dev.dump`).
+7. **Teste hermético da rotina** (`scripts/backup/teste-rotina-ambiente.sh`, dublê de `docker`, nenhum
+   container real tocado): `TESTE_OK (65 itens, 0 falhas)`, incluindo as seções novas **9b** (ambiente
+   que **declara** Odoo e cujo container **não existe** → `BACKUP_FALHOU`, com o manifesto gravando
+   `odoo: ausente neste ambiente` e sem `odoo-manifest.txt`) e **9c** (o verificador **reprova**
+   artefato pela metade: `backup do ambiente esta pela metade`).
+8. **Achado que decidiu o aceite (a)+(c):** rodando o ciclo com o `/etc/tre/backup.env` do timer
+   **antes** da publicação, a rotina imprimiu `PULADO odoo: ambiente 'dev' nao declara Odoo` — o
+   `TRE_ENV_DIR` do timer aponta para o `deploy/environments` **da cópia operacional**, então o bloco
+   `TRE_ODOO_*` só existe na rotina depois da publicação. Um "backup do Odoo em dev" medido só no
+   destino isolado estaria **aprovando a árvore, não a rotina**.
+9. **Rollback** — alvos de teste removidos (cópia isolada, artefatos de teste, dublês `docker`, redes e
+   containers `tre-verif-odoo-*`, nada disso sobrou: `0` container e `0` rede `tre-verif-odoo-*`);
+   **nenhum timer novo** foi instalado (a rotina usa os `tre-backup.timer`/`tre-backup-verify.timer`
+   que já existiam); trava da cópia seguiu armada; e a verificação encadeada rodou **de novo depois do
+   rollback** (`VERIFICACAO_OK (3 itens)`, exit 0, log `/opt/tre/rollback-evidencia-t_a5afde31.log`).
+   O ambiente ficou com os **mesmos ids de container** do início do card: `pg-sales-dev`
+   `396ace563710…` (criado e iniciado em `2026-09-30T17:05:15Z`, `restarts=0` — o mesmo par id/StartedAt
+   que o card `t_1b2ab418` registrou), `pg-odoo-dev` `c7cb12f75eb9…` (12:41:17Z, `restarts=0`) e
+   `odoo-dev` `12cf65a3c1c6…` (criado 12:42:29Z; iniciado 13:48:40Z — **antes** da publicação deste
+   card, `restarts=0`: reinício de fora, container não recriado). O artefato real
+   `tre_dev_20261001T135513Z` foi mantido; o artefato enganoso da primeira rodada (trio sem Odoo,
+   gravado quando a cópia ainda estava no commit antigo) foi **removido de propósito**, com registro.
+
+## 7h. Rodada 2 — **dono do artefato, retenção honesta e diagnóstico de permissão** (01/10/2026, card `t_a5afde31`, `TRE-W2-E01-T01-F01`)
+
+Correção pedida pela **revisão independente (perfil `tester`, rodada 1)**: o artefato que o handoff
+nomeava (`/opt/tre/backup/tre_dev_20261001T135513Z`) era **`root:root 700`** — gravado por execução
+manual do operador como `root` — e **não reproduzia sob a identidade do timer**: o
+`verificar-ultimo-backup.sh` de `tre-deploy` acusava "backup pela metade" e "artefato sem Odoo"
+(defeito de **conteúdo**, falso) para um artefato íntegro; o diretório era irremovível por
+`tre-deploy` (a retenção contava como removido mesmo assim). Máquina: VPS `vmi3619453`
+(`169.58.24.102`). Publicado com `deploy/publicar.sh --commit 9c17e5f81b154e82e59d785c3ea0a03dbe9d8915
+--producao --card t_a5afde31` → `PUBLICACAO_OK commit=9c17e5f… digest=106440348b44ba76a441a8fec66e524e60c07f72ec1bfb5a59343ebc2a41cc90
+arquivos=323 trava=travada`, `publicado_em 2026-10-01T14:26:42Z`, `concorrencia: (nenhuma)` e
+`digest_antes = 09e36cdf…` (`a879fdf`, o commit imediatamente anterior — a publicação é avanço na
+própria linha). sha256 dos scripts publicados: `backup-tre.sh f5fd66cf…`,
+`verificar-ultimo-backup.sh 0a58bd3d…`, `verificar-odoo.sh ff6397d0…`, `verificar-backup.sh a9af12e6…`.
+
+1. **O caso real do defeito, consertado: rotina executada a mão pelo `root`.** Com o
+   `/etc/tre/backup.env` **do timer** e a cópia publicada, `backup-tre.sh dev` como `root` →
+   `BACKUP_OK` e artefato `/opt/tre/backup/tre_dev_20261001T142755Z` **`tre-deploy:tre-deploy 700`**
+   (`OK dono do artefato: tre-deploy:tre-deploy (modo 700)`), com o manifesto registrando
+   `executado_por: root` e `dono_artefato: tre-deploy`. O **mesmo** artefato verificado pela
+   identidade do timer: `sudo -u tre-deploy … verificar-ultimo-backup.sh todos` → `RESTORE_OK (11
+   itens, 0 falhas)` + `RESTORE_ODOO_OK (27 itens, 0 falhas)` → **`VERIFICACAO_OK (3 itens)` exit 0**.
+   Antes disso o cenário reproduzia o defeito em instrumento isolado (`/opt/tre/neg-r2/ilegivel`, já
+   removido): com o código **anterior**, o mesmo usuário obtinha
+   `FALHOU nenhum arquivo .dump legivel …` + `FALHOU … artefato mais recente NAO tem o bloco do Odoo —
+   backup do ambiente esta pela metade` → `VERIFICACAO_FALHOU (2 itens, 2 falhas)`, e o verificador do
+   Odoo dizia `FALHOU manifesto do Odoo ausente … artefato sem Odoo?`.
+2. **Retenção que não remove não pode dizer que removeu** (antes × depois, cenário isolado com
+   artefato antigo `root:root 700`, executado como `tre-deploy`):
+   - **ANTES** (código anterior): `rm: cannot remove …: Permission denied` seguido de
+     `OK retencao aplicada (1 dias; 1 artefato(s) antigo(s) removido(s))` e `RESULTADO: BACKUP_OK`
+     (exit 0) — com o diretório **ainda no disco**;
+   - **DEPOIS**: `FALHOU retencao: NAO consegui remover tre_dev_20200101T000000Z (dono root:root,
+     modo 700, rodando como tre-deploy) — este artefato escapa da retencao` +
+     `FALHOU retencao 1 dias: 0 de 1 artefato(s) removido(s), 1 NAO removido(s)` →
+     `RESULTADO: BACKUP_FALHOU` (exit 1), diretório no disco;
+   - **positivo (regressão)**: artefato antigo **removível** → `OK retencao aplicada (1 dias; 1 de 1
+     artefato(s) antigo(s) removido(s))`, `BACKUP_OK` — a retenção continua funcionando.
+3. **O diagnóstico passou a separar PERMISSÃO de CONTEÚDO** (com o código publicado, identidade
+   `tre-deploy`, artefato novo `root:root 700` em destino isolado):
+   `FALHOU artefato mais recente de 'dev' (…) existe mas NAO e legivel por 'tre-deploy': dono root:root,
+   modo 700 — e PERMISSAO, nao conteudo` → `VERIFICACAO_FALHOU (1 itens, 1 falha)`; e
+   `verificar-odoo.sh` → `FALHOU artefato '…' existe mas NAO e legivel por 'tre-deploy': … — e
+   PERMISSAO, nao 'artefato sem Odoo'`. Nem "pela metade", nem "sem Odoo".
+4. **O caminho real do timer, exercitado de ponta a ponta:** `systemctl start tre-backup.service`
+   (`User=tre-deploy`) → `Result=success`, `ExecMainStatus=0`, journal `RESULTADO: BACKUP_OK (todos;
+   1 ambiente(s) coberto(s), 2 pulado(s))`; artefato `tre_dev_20261001T142800Z` `tre-deploy:tre-deploy
+   700`. `systemctl start tre-backup-verify.service` → `Result=success`, `ExecMainStatus=0`,
+   `RESTORE_OK` + `RESTORE_ODOO_OK (27 itens, 0 falhas)` (HTTP 200 em `127.0.0.1:32781/web/login`,
+   JSON-RPC e tela de login do banco restaurado) → `RESULTADO: VERIFICACAO_OK (3 itens)`.
+5. **Os negativos de CONTEÚDO continuam reprovando** (com o código publicado e identidade
+   `tre-deploy`, cópias em `/opt/tre/neg-r4`, já removidas): (a) `odoo_dev.dump` truncado →
+   `RESTORE_ODOO_FALHOU (27 itens, 10 falhas)` (`sha256 NAO confere`, `pg_restore` reprovando,
+   `tabelas em public: restaurado=0 backup=281`, `HTTP 500`); (b) filestore ausente →
+   `RESTORE_ODOO_FALHOU (26 itens, 4 falhas)`; (c) dump do trio truncado → `RESTORE_FALHOU (11 itens,
+   7 falhas)`; (d) controle positivo da mesma cópia → `RESTORE_ODOO_OK (27 itens, 0 falhas)`. O
+   conserto de dono/permissão **não** afrouxou nenhuma reprovação de conteúdo.
+6. **Remediação do artefato da rodada 1** `/opt/tre/backup/tre_dev_20261001T135513Z`:
+   `ANTES dono=root:root modo=700` → `DEPOIS dono=tre-deploy:tre-deploy modo=700`, com
+   `tre-deploy` lendo **e** escrevendo no diretório. E o artefato que o verificador antigo chamava de
+   "sem Odoo" restaurou **inteiro** sob a identidade do timer: `RESTORE_ODOO_OK (27 itens, 0 falhas)`
+   com HTTP 200 em `127.0.0.1:32780/web/login` e 281 tabelas batendo linha a linha — estava íntegro;
+   o defeito era o dono, exatamente como a revisão apontou.
+7. **Destino externo com o artefato novo (ida e volta lida):** `rclone lsl
+   contabo:tre-backup/tre_dev_20261001T142800Z` lista os 14 objetos e
+   `sha256` lido do bucket **==** manifesto local para `odoo_dev.dump` (`f77d0f27…`),
+   `odoo-filestore.tar.gz` (`521d4ece…`) e `sales_intelligence.dump` (`153630db…`).
+8. **Nada além disso foi tocado:** `odoo-dev 12cf65a3c1c6` (`StartedAt 2026-10-01T13:48:40Z`),
+   `pg-odoo-dev c7cb12f75eb9` (`12:41:17Z`) e `pg-sales-dev 396ace563710`
+   (`2026-09-30T17:05:15Z`) seguem `running` com os **mesmos** ids/StartedAt do início do card;
+   `0` container de verificação deixado (`tre-verif*`/`tre-restore*`); nenhum timer novo (os dois
+   units e o watchdog da publicação seguem `active`); trava da cópia armada
+   (`----i---------e-------`); produção intocada (`environments/` só `dev.env`/`dev-odoo.env`).
+9. **Teste hermético da rotina** (`scripts/backup/teste-rotina-ambiente.sh`, dublê de `docker`,
+   nenhum container real): `TESTE_OK (84 itens, 0 falhas)`, com as seções novas **9d** (retenção que
+   não consegue remover: exit != 0, nomeia o artefato, `1 NAO removido(s)`), **9e** (dono ≠ usuário
+   de serviço = falha; manifesto `dono_artefato`/`executado_por`; e o `chown` do `root` para
+   `tre-deploy` quando o usuário de serviço existe na máquina) e **9f** (permissão ≠ conteúdo nos dois
+   verificadores — medido como usuário não-root, porque `[ -r ]` não restringe `root`).
+10. **Rollback desta rodada:** cenários isolados removidos (`/opt/tre/neg-r2`, `neg-r3`, `neg-r4`,
+    `/opt/tre/ensaio-t_a5afde31-r2`), **nenhum** timer novo, `/opt/tre/backup` mantido com os artefatos
+    reais que a rotina publicada criou (`tre_dev_20261001T142755Z` da execução manual como `root` e
+    `tre_dev_20261001T142800Z` do unit) e o artefato da rodada 1 **remediado** (dono). Logs brutos:
+    `/opt/data/profiles/devops/evidence/t_a5afde31/rodada2/` (agente) e `/opt/tre/evid-t_a5afde31-r2/`
+    (VPS). Revert do código é `deploy/publicar.sh --commit a879fdf… --producao`.
+
 ## 8. Pendências declaradas (não disfarçadas)
 
 - **RESOLVIDO NO GIT — o serviço do timer não executava (era ACHADO ABERTO 1, alta); a cópia operacional
@@ -445,6 +680,24 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   `tre-deploy` (§7c item 2), e desde a correção do ACHADO ABERTO 2 os **dois** units rodaram inteiros sob
   `tre-deploy` com o trio real do ambiente (`tre-backup.service` → `BACKUP_OK` + artefato `tre_dev_*`;
   `tre-backup-verify.service` → `RESTORE_OK`) — §7f item 4.
+  **Atualização 01/10/2026 (rodada 2, §7h):** a diferença "medido como `root`" × "medido como
+  `tre-deploy`" deixou de ser nota de rodapé e **virou o defeito**: o artefato da rodada 1 era
+  `root:root 700` e o verificador do timer não conseguia ler (diagnóstico falso de conteúdo). A
+  rodada 2 mede as **duas** identidades no mesmo estado entregue: a rotina rodada a mão por `root`
+  **entrega** o artefato para `tre-deploy` (chown) e o ciclo inteiro também foi exercitado pelos
+  units (`Result=success`, `User=tre-deploy`, `VERIFICACAO_OK (3 itens)`).
+- **Leituras que ficaram de fora do conserto, registradas (não bloqueiam):**
+  - **`pg_restore.err` dentro do artefato verificado** (apontado pela revisão da rodada 1): o
+    `verificar-backup.sh` gravava o stderr do `pg_restore` **dentro** do artefato conferido, que assim
+    divergia da cópia no bucket depois do envio. O stderr passou a sair em arquivo temporário
+    (`mktemp`, removido no trap). Os arquivos de **0 byte** criados pelo verificador antigo
+    continuam nos artefatos anteriores ao conserto (10 deles, em `/opt/tre/backup/tre_dev_*`) — não
+    são removidos de propósito: são resíduo histórico do verificador antigo, sem efeito no restore.
+  - **`globals.sql` carrega o verificador SCRAM do papel `sales_ai`** (apontado pela revisão da
+    rodada 1): comportamento **anterior a este card** (vem do `66c7152`, fora do diff do
+    `TRE-W2-E01-T01-F01`) e não é alterado aqui — o `pg_dumpall --globals-only` é o que captura
+    papéis; tirar o verificador exige decidir o que fazer com a criação do papel no restore (card
+    próprio, se o dono quiser).
 - **Destino externo (Object Storage) — ATIVO desde 29/09/2026.** Storage: Object Storage European
   Union, 250 GB (endpoint `https://eu2.contabostorage.com`); bucket `tre-backup`; credenciais em
   `/etc/tre/rclone.conf` (600, dono `tre-deploy`); `TRE_BACKUP_EXTERNO=contabo:tre-backup` em
@@ -468,8 +721,30 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
 - **Watchdog externo** (checar a idade do último backup de fora da máquina, onde o Hermes vive)
   ainda **não** está ligado: hoje o sinal é o `tre-backup-verify.timer` no journal local. Se a
   VPS inteira morrer, ninguém avisa — item para o W1.
-- **Restauração do Odoo** (arquivos + banco) entra quando o Odoo subir (W2): este runbook cobre
-  o PostgreSQL.
+- **RESOLVIDO 01/10/2026 (`feature/TRE-W2-E01-T01-F01`, card `t_a5afde31`; evidência em §7g) — era
+  "Restauração do Odoo entra quando o Odoo subir (W2)".** O Odoo do dev subiu e a rotina **não** o
+  cobria: `backup-tre.sh` copiava só o PostgreSQL do trio, e um restore do dump do `sales_intelligence`
+  devolveria um dev sem Odoo nenhum. Agora o **artefato do ambiente carrega o ambiente inteiro** —
+  `odoo_dev.dump` + `odoo_dev.dump.sha256`, `odoo-contagens.txt`, `odoo-filestore.tar.gz` (volume
+  `odoo-data-dev`) e `odoo-manifest.txt` (com o digest da imagem do Odoo) no **mesmo** diretório do
+  dump do trio —, e `scripts/backup/verificar-odoo.sh` **prova** o restore num alvo descartável com o
+  Odoo **respondendo HTTP 200** contra o banco restaurado (`RESTORE_ODOO_OK`).
+  **O que fica declarado:** o restore do Odoo é provado em alvo descartável; a **restauração
+  operacional** (dentro do `odoo-dev`/`pg-odoo-dev` de verdade) continua sendo procedimento manual
+  documentado em §4.4 + §4.3, sem script destrutivo próprio (`restore-tre.sh` cobre o trio) — não
+  inventar um caminho destrutivo novo sem card.
+- **O filestore do Odoo não tem retenção própria:** vai e volta junto com o artefato do ambiente
+  (mesma janela de 14 dias). Não há versionamento de anexo por dia.
+- **Publicação em produção declarada por worker, sob gate JEV — linha formal de aprovação pendente.**
+  Para o AC (a)/(c) valerem na rotina de verdade foi preciso publicar o commit `e2b960b5` na cópia
+  operacional com `--producao` (§7g item 8). A base foi o gate JEV do próprio card — aprovação humana
+  de **Anderson Ribeiro** (canal telegram, validade **2026-10-07**), `dec-4a54b3c39ce9cc52`,
+  `outcome: PASS`, `exige_aprovacao_humana: false` —, que é o que `deploy/publicar.sh` exige ("card e
+  aprovação registrados"). **O que fica declarado:** uma linha desta ação em
+  `docs/operations/registro-de-aprovacoes.md` **não foi escrita pelo worker** (linha de aprovação é do
+  humano, não de quem executa); se o dono entender que a publicação precisava de aprovação
+  específica, o revert é o caminho versionado (`publicar.sh --commit 66c7152 --producao`) + o artefato
+  do commit anterior que o watchdog já mantém em `/opt/tre/.publicacao-artefato`.
 
 ## 9. Armadilhas registradas (custaram tempo real)
 
@@ -488,6 +763,21 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
   devolve 644 na cópia operacional e o `ExecStart` do systemd morre com `203/EXEC` — **mesmo que a máquina
   tenha rodado o timer ontem**. Antes de publicar um script por timer, conferir
   `git ls-files -s <arquivo>` e, na cópia operacional, `install -m 755`.
+- **Dois `*.dump` no mesmo artefato: `ls *.dump | head -1` escolhe o errado.** Com o Odoo no mesmo
+  diretório do trio, `odoo_dev.dump` vem **antes** de `sales_intelligence.dump` em ordem alfabética e
+  o verificador compararia o banco errado (ou reprovaria um backup bom). Quem escolhe o dump é o
+  **manifesto** (`banco:`), nunca o glob. Medido 01/10/2026.
+- **O `CMD` da imagem do Odoo não é o binário.** O `/entrypoint.sh` faz `exec odoo "$@" "${DB_ARGS[@]}"`
+  — os argumentos de banco que ele monta (com `HOST` default **`db`**) entram **depois** dos seus e
+  vencem. Subir com `--db_host=<container>` não basta: `Database connection failure: could not
+  translate host name "db"`. Para um alvo descartável, `--entrypoint /usr/bin/odoo` (sem entrypoint)
+  e passar tudo na linha de comando. Medido 01/10/2026.
+- **`GET` em `/web/webclient/version_info` devolve 415 (`Unsupported Media Type`)** — o endpoint é
+  JSON-RPC e exige `POST` com `Content-Type: application/json`. Um teste que pede `GET` reprova um
+  Odoo que está respondendo (o `HTTP 200` em `/web/login` é o critério que vale). Medido 01/10/2026.
+- **Verificador com veredito no fim é lento quando o alvo está quebrado:** o `pg_restore` falha e o
+  script ainda sobe o Odoo e espera o timeout de HTTP. Para um artefato truncado, ouça o
+  `FALHOU sha256 do dump NAO confere` — ele já é a resposta; o resto é confirmação.
 - **"Só o meu pedaço" na cópia operacional.** `tar -cz <subconjunto> | ssh … 'tar -xz -C /opt/tre/repo'`
   parece inofensivo e é o defeito: o `tar` da árvore de trabalho leva o modo do *checkout* (não o do
   git), **não apaga** o que não vai no pacote (arquivo velho sobrevive ao lado do novo) e não deixa

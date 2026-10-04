@@ -21,15 +21,32 @@ if [ -z "$ALVO" ]; then
 fi
 if [ -d "$ALVO" ]; then
   DIR="$ALVO"
-  DUMP="$(ls "$DIR"/*.dump 2>/dev/null | head -1)"
+  # Com o Odoo no MESMO artefato existem DOIS *.dump (odoo_dev.dump e o do trio): `ls |
+  # head -1` pegaria o do Odoo (ordem alfabetica) e o comparativo seria do banco errado.
+  # O dump do trio e o que o manifesto declara em `banco:` (scripts/backup/backup-tre.sh).
+  BANCO_ARTEFATO="$(awk -F': ' '/^banco:/{print $2; exit}' "$DIR/manifest.txt" 2>/dev/null | tr -d '[:space:]')"
+  if [ -n "$BANCO_ARTEFATO" ] && [ -s "$DIR/$BANCO_ARTEFATO.dump" ]; then
+    DUMP="$DIR/$BANCO_ARTEFATO.dump"
+  else
+    DUMP="$(ls "$DIR"/*.dump 2>/dev/null | grep -v '/odoo_' | head -1)"
+  fi
+  # dumps do Odoo ficam para o verificador proprio (scripts/backup/verificar-odoo.sh)
+  ODOO_DUMP="$(ls "$DIR"/odoo*.dump 2>/dev/null | head -1)"
 else
   DIR="$(cd "$(dirname "$ALVO")" && pwd)"
   DUMP="$ALVO"
+  ODOO_DUMP=""
 fi
 
 IMAGEM="${TRE_BACKUP_IMAGEM:-postgres:16}"
 NOME="tre-restore-$$-$RANDOM"
 SENHA="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+# O stderr do pg_restore NAO pode ser gravado DENTRO do artefato verificado: isso fazia a copia
+# local divergir da externa (o `pg_restore.err` aparecia no artefato depois do envio ao bucket)
+# e ainda exigia escrita no artefato (defeito registrado na revisao independente do card
+# t_a5afde31). Arquivo temporario, dono de quem verifica.
+ERRO_RESTORE="$(mktemp "${TMPDIR:-/tmp}/tre-restore-erro.XXXXXX" 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/tre-restore-erro.$$")"
+trap 'docker rm -f -v "$NOME" >/dev/null 2>&1; rm -f "$ERRO_RESTORE"' EXIT INT TERM HUP
 ITENS=0
 FALHAS=0
 
@@ -49,6 +66,15 @@ if [ -z "${DUMP:-}" ] || [ ! -s "$DUMP" ]; then
 fi
 ok "dump encontrado ($(du -h "$DUMP" | cut -f1))"
 
+# O artefato e legivel por quem verifica? Ilegivel por PERMISSAO nao e "backup vazio/incompleto"
+# (rodada 2 da revisao do card t_a5afde31: artefato root:root 700 verificado como tre-deploy
+# saia como "nenhum arquivo .dump legivel" — diagnostico de conteudo para problema de dono).
+if [ -d "${DIR:-}" ] && { [ ! -r "$DIR" ] || [ ! -x "$DIR" ]; }; then
+  ko "artefato '$DIR' existe mas NAO e legivel por '$(id -un)': dono $(stat -c '%U:%G' "$DIR" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$DIR" 2>/dev/null || echo n/d) — e PERMISSAO, nao artefato vazio/incompleto"
+  echo; echo "RESULTADO: RESTORE_FALHOU ($ITENS itens, $FALHAS falha(s))"
+  exit 1
+fi
+
 # 1. sobe o destino descartavel
 if ! docker run -d --name "$NOME" \
       -e POSTGRES_PASSWORD="$SENHA" -e POSTGRES_USER=tre -e POSTGRES_DB=verificacao \
@@ -57,7 +83,6 @@ if ! docker run -d --name "$NOME" \
   echo; echo "RESULTADO: RESTORE_FALHOU ($ITENS itens, $FALHAS falha(s))"
   exit 1
 fi
-trap 'docker rm -f -v "$NOME" >/dev/null 2>&1' EXIT
 ok "container de verificacao no ar"
 
 # 2. espera o servidor DEFINITIVO (a imagem oficial derruba um servidor temporario no init —
@@ -89,10 +114,10 @@ fi
 
 # 4. restaura
 if docker exec -i "$NOME" pg_restore -U tre -d verificacao --no-owner --no-privileges \
-     <"$DUMP" 2>"$DIR/pg_restore.err"; then
+     <"$DUMP" 2>"$ERRO_RESTORE"; then
   ok "pg_restore concluido sem erro"
 else
-  ko "pg_restore retornou erro: $(head -c 300 "$DIR/pg_restore.err" | tr '\n' ' ')"
+  ko "pg_restore retornou erro: $(head -c 300 "$ERRO_RESTORE" | tr '\n' ' ')"
 fi
 
 # 5. schema, tabelas e indices

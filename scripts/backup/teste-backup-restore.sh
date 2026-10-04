@@ -240,8 +240,10 @@ DIR="$(ls -d "$BASE_ARTEFATO"/tre_"$AMB_BACKUP"_* 2>/dev/null | sort | tail -1)"
 [ -n "${DIR:-}" ] && ok "artefato do backup gerado ($(basename "$DIR"))" || ko "nenhum artefato de backup encontrado em $BASE_ARTEFATO"
 
 if [ -n "${DIR:-}" ]; then
-  # 3b. integridade do artefato, medida de forma independente do proprio backup
-  sha_arquivo="$(cd "$DIR" && sha256sum ./*.dump 2>/dev/null | cut -d' ' -f1)"
+  # 3b. integridade do artefato, medida de forma independente do proprio backup.
+  # Nome explicito do dump do trio: com o Odoo no mesmo artefato ha DOIS *.dump
+  # (card TRE-W2-E01-T01-F01) e `sha256sum ./*.dump` devolveria duas linhas.
+  sha_arquivo="$(cd "$DIR" && sha256sum "./${BANCO}.dump" 2>/dev/null | cut -d' ' -f1)"
   sha_manifesto="$(awk -F': ' '/^sha256:/{print $2}' "$DIR/manifest.txt" 2>/dev/null | tr -d '[:space:]')"
   if [ -n "$sha_arquivo" ] && [ "$sha_arquivo" = "$sha_manifesto" ]; then
     ok "sha256 do dump confere com o manifesto ($sha_arquivo)"
@@ -286,7 +288,7 @@ fi
 # 5. TESTE NEGATIVO — o verificador precisa reprovar um dump corrompido
 if [ -n "${DIR:-}" ]; then
   mkdir -p "$TMP/corrompido"
-  head -c 2048 "$DIR"/*.dump >"$TMP/corrompido/${BANCO}.dump"
+  head -c 2048 "$DIR/${BANCO}.dump" >"$TMP/corrompido/${BANCO}.dump"
   cp "$DIR/contagens.txt" "$DIR/manifest.txt" "$TMP/corrompido/" 2>/dev/null
   if bash "$RAIZ_REPO/scripts/backup/verificar-backup.sh" "$TMP/corrompido" >"$TMP/negativo.log" 2>&1; then
     ko "teste negativo: um dump TRUNCADO foi aprovado — o verificador nao vale nada"

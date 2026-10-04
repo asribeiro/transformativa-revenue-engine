@@ -3893,3 +3893,191 @@ Recorrencia do defeito do `t_091cfea9` (dono `devops`): um card **em execucao** 
   da trava) e termina em **exit 7** se a producao nao voltar armada — ensaio destrutivo so vale com
   restauracao garantida.
 - Segredos: nenhum valor nesta entrada; a conexao usa a chave do agente, e nada de `.env` entrou nos artefatos publicados.
+
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W1-E05-T01 (rodada 2): AC2 na forma reformulada e defeito do rotulo do RESUMO
+
+- **O que destravou a rodada:** os dois pre-requisitos do card fecharam — `t_39838c5b` (defeito D01: registro da migration 0001 realinhado ao sha do arquivo em dev) e `t_e340c29b` (requisito D02: decisao do dono, opcao A — isolamento FISICO, um banco por cliente; AC2 reformulado para "nao existem dois clientes no mesmo banco", registrado em `docs/data/DATA_CONTRACT_V1.md` e em `docs/operations/registro-de-aprovacoes.md`).
+- **Publicacao do artefato testado (caminho versionado, destino isolado de ensaio — t_091cfea9, decisao 2):** `TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao-t_c7281fce deploy/publicar.sh --commit e74ec02 --card t_c7281fce` -> `PUBLICACAO_OK commit=e74ec02… digest=3b431df75535b5d42e81d237332866504fa78c9207c43fd71ddcd5c3683d187f arquivos=307`. **A copia operacional `/opt/tre/repo` NAO foi escrita** por esta rodada (foi apenas **conferida** ao fim, a partir de um checkout git local — o `--conferir` sai do git, nao da arvore de trabalho: `deploy/publicar.sh --conferir` -> `PUBLICACAO_OK commit=c7972ca… digest=89729f5d… arquivos=310`, exit 0). **Correcao de rota registrada:** a primeira bateria desta rodada usou `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'` (padrao da rodada 1) e isso sobrescreveu a arvore publicada — o card `t_1b2ab418` (DEFEITO F2) mediu o dano (`deploy/publicar.sh --conferir` -> `PUBLICACAO_DIVERGENTE`, exit 5; `scripts/backup/backup-tre.sh` de volta a versao pre-correcao, com a rotina de backup voltando a imprimir `BACKUP_OK` sem cobrir ambiente); o dano foi reparado pelo proprio caminho versionado (republicacao as 21:52:24Z). Aquela bateria foi **parada** e os resultados dela **nao foram usados**: a bateria final (itens 1–10 + estado final) rodou no destino de ensaio publicado. O runbook ganhou a secao 1.1 declarando que `tar` para a copia e proibido.
+- **sha256 dos artefatos sob teste no destino de ensaio (conferidos tambem no repo local, iguais):** `suite_banco.sh 5fb644a2375e…`, `teste_isolamento_clientes.sh f3586c102e30…`, `teste_tenant_rls.sh 217bfd050a14…`, `suite-de-teste-do-banco.md 3bbdc1214fa7…`; reusados: `estado_do_ambiente.sh 7f9a12a50481…`, `deduplicar_organizacoes.py e58058469a06…`, `verificar_contrato_dados.py dfb8ad79…`, `verificar_constraints_indices.py 68cc57cb…`, `0001_sales_intelligence_v1.sql 0484a3701b8c…` (inalterado).
+- **Comando unico, exit code como resposta (no destino de ensaio publicado):** `bash /opt/tre/.teste-publicacao-t_c7281fce/scripts/db/suite_banco.sh dev` -> `RESULTADO: SUITE_OK (89 itens, 0 falhas)`, **exit 0**; por etapa: ambiente OK (3 itens — identidade, estado do schema `12 tabelas | 30 indices` e sha da migration registrada igual ao repo), `contrato 37 itens`, `constraints 16 itens`, `dedup_sintetico 7 itens`, `dedup_ambiente 21 itens` (`CENARIO_OK`, estado restaurado), `isolamento 5 itens`. `--somente-leitura` -> `SUITE_OK (69 itens, 0 falhas)`, **exit 0**, sem escrever no alvo (a etapa de dedup vira varredura `--detectar`). `prod` -> `FALHOU ADR-005: a suite escreve no alvo (etapa 4)`, **exit 1** (recusado antes de tocar no alvo). `homolog` -> `FALHOU ambiente: alvo nao respondeu (… No such container: pg-homolog)`, **exit 1**.
+- **AC2 (forma reformulada) medido no ambiente do card:** `bash scripts/db/teste_isolamento_clientes.sh dev` -> `RESULTADO: ISOLAMENTO_OK (5 itens, 0 falhas)`, **exit 0**: alvo responde; schema `sales_intelligence` com 12 tabelas; **0 coluna de cliente/tenant** (regex `(^|_)(tenant|cliente|client)(_id)?$` em 12 tabelas); **1 base de aplicacao na instancia** (`sales_intelligence`, sem templates); **1 base provisionada `pg-*` no host servindo o schema** (`pg-sales-dev`). Com a medicao de provisionamento impossivel (`TRE_ISOLAMENTO_SEM_DOCKER=1`) -> `ISOLAMENTO_NAO_TESTAVEL (5 itens, 0 reprovacoes, 1 item nao medido)`, **exit 3** — nunca verde.
+- **Prova de dente do AC2 (containers descartaveis; o caminho proibido tem de REPROVAR):** `bash scripts/db/teste_isolamento_clientes.sh --prova-de-dente` -> `RESULTADO: ISOLAMENTO_DENTE_OK (17 itens, 0 falhas)`, **exit 0**: base integra -> exit 0; **dimensao de cliente com linhas de 2 clientes** -> **exit 1** (`dimensao de cliente no schema`); **segunda base de aplicacao na mesma instancia** -> **exit 1**; **segundo servico `pg-*` com o schema no host** -> **exit 1**; **docker ausente** -> exit 3. Cada mutacao desfeita volta a `ISOLAMENTO_OK` (exit 0). Containers removidos pelo proprio teste.
+- **DEFEITO CORRIGIDO — rotulo do RESUMO mentia (achado pelo card de D01):** a etapa `ambiente` reprovava e o resumo imprimia `ambiente ............. OK` (linha era texto fixo no script). Agora a linha sai do veredito CONTADO e entrou a guarda de consistencia do resumo (nº de linhas `FALHOU` no resumo >= nº de etapas reprovadas; desvio reprova a suite e imprime `resumo ............... INCONSISTENTE`). **Prova negativa:** `bash scripts/db/suite_banco.sh --prova-de-dente` -> `RESULTADO: SUITE_DENTE_OK (19 itens, 0 falhas)`, **exit 0**, com o alvo descartavel de registro divergido -> suite **exit 1**, `FALHOU ambiente: migration do alvo … DIVERGE`, resumo com `ambiente ... FALHOU` e **sem** linha `ambiente ... OK`; registro removido -> suite volta a `SUITE_OK` (exit 0).
+- **AC1/AC3 (dente):** na mesma prova, alvo integro -> exit 0 (`SUITE_OK`); `DROP COLUMN organizations.cnpj` -> exit 1 apontando `contrato`; `CREATE INDEX idx_intruso_suite` -> exit 1 apontando `constraints`; cada divergencia desfeita -> volta ao verde; `TRE_SUITE_SABOTAGEM=sem-saida` -> exit 1 (`etapa terminou SEM linha RESULTADO`); `TRE_SUITE_SABOTAGEM=zero-itens` -> exit 1 (`nao executou item nenhum`).
+- **Instrumento do V2 fora da suite:** `bash scripts/db/teste_tenant_rls.sh dev` -> `TENANT_RLS_NAO_TESTAVEL (2 itens, 0 reprovacoes, 1 criterio nao testavel)`, **exit 3** — o script mede a forma ANTIGA do criterio e fica versionado para o dia em que houver multi-cliente no mesmo banco (nao e mais chamado pela suite).
+- **Runner de migrations em dev (D01 fechado, medido nesta rodada):** `bash scripts/db/aplicar_migracoes.sh dev --somente-checar` -> `MIGRACAO_OK (--somente-checar; 0 aplicada(s)/pendente(s), 1 pulada(s), 4 itens, 0 falhas)`, **exit 0**.
+- **Estado DEPOIS (read-only):** `12 tabelas | 30 indices`; `psql \dt` com as 12 tabelas do contrato; registro `0001 | 0484a3701b8c… | 2026-09-30 17:29:22+00`; `docker ps -a` -> so `pg-sales-dev` (nenhum descartavel orfao); `/opt/tre/prod` e `/opt/tre/homolog` com `0` arquivo.
+- **Logs brutos na VPS:** `/tmp/e05r2_bateria.log` (itens 1–8 + estado final, com `### EXIT=` por comando), `/tmp/e05r2_suite_dente.log` (dente da suite), `/tmp/e05r2_isolamento_dente.log` (dente do isolamento).
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de teste/analise (estagio 6); a homologacao (estagio 7) e do Anderson, com esta evidencia na mao.
+- Segredos: nenhum valor nesta entrada; conexao pelo socket local do container, sem senha em argumento, arquivo ou log.
+
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W1-E05-T01 (rodada 3): os 3 itens da revisao independente, corrigidos e medidos
+
+- **O que disparou a rodada:** a revisao independente do E05 **reproduziu** a bateria (`SUITE_OK (89)`, `ISOLAMENTO_OK (5)`, os dentes e a guarda ADR-005), deu **AC1/AC2/AC3 = PASS** e **reprovou 3 itens** de texto x medicao: (1) a regua `docs/kanban/criterios-de-aceitacao.md` ainda trazia o AC2 na forma antiga, sem nota; (2) o item 3 de `teste_isolamento_clientes.sh` falhava ABERTO (leitura de catalogo vazia lida como "0 coluna") e o detector so pegava nomes terminando em `tenant|cliente|client`, case-sensitive; (3) o texto do item 5 (provisionamento) afirmava mais do que a medicao por convencao de nome `pg-*` cobria.
+- **Commit da correcao:** `git push` do `21ed325` para `origin/develop` (4 arquivos: `scripts/db/teste_isolamento_clientes.sh`, `scripts/db/teste_tenant_rls.sh`, `docs/runbooks/suite-de-teste-do-banco.md`, `docs/kanban/criterios-de-aceitacao.md`). `git diff e74ec02 21ed325 -- scripts/` mostra que **nenhum** script de dedup/backup foi tocado por este card (a diferenca de 47 para 48 itens no dedup sintetico vem do `7a6a270`, TRE-W1-E04-T02).
+- **Prova do defeito e da correcao, lado a lado (container descartavel `e05r3-probe`, `postgres:16`, migration congelada aplicada, medicao por `--prefixo`; nada em dev):**
+  - co-locacao `ALTER TABLE sales_intelligence.organizations ADD COLUMN tenant_uuid uuid` -> artefato da rodada 2 (`f3586c102e30…`): `-- dimensao de cliente/tenant no schema: 0 ((nenhuma))` / `RESULTADO: ISOLAMENTO_OK (5 itens, 0 falhas)`, **exit 0 (verde falso)**; artefato desta rodada (`a69e08d1779c…`): `FALHOU dimensao de cliente no schema: 1 coluna(s) … (organizations.tenant_uuid )` / `ISOLAMENTO_FALHOU`, **exit 1**. Mutacao desfeita -> `ISOLAMENTO_OK`, exit 0.
+  - co-locacao com grafia mista `ALTER TABLE sales_intelligence.contacts ADD COLUMN "conta_Cliente" uuid` -> rodada 2: `ISOLAMENTO_OK`, **exit 0 (verde falso)**; rodada 3: `FALHOU … (contacts.conta_Cliente )`, **exit 1**.
+  - **catalogo ilegivel** (o alvo responde, mas a leitura de `information_schema.columns` falha — wrapper de prova por `--prefixo`, que responde todo o resto) -> rodada 2: `ISOLAMENTO_OK (5 itens)`, **exit 0 (verde falso)**; rodada 3: `NAO_TESTAVEL nao consegui medir a dimensao de cliente no schema (leitura vazia/erro NAO e '0 coluna')` / `ISOLAMENTO_NAO_TESTAVEL (5 itens, 0 reprovacoes, 1 item nao medido)`, **exit 3 (nunca verde)**, com o item 4 tambem fail-closed (leitura que falha REPROVA, nao vira "0 bases").
+  - **dente do AC2:** rodada 2 -> `ISOLAMENTO_DENTE_OK (17 itens)` (nenhum caso cobria `tenant_uuid`/grafia mista/catalogo mudo); rodada 3 -> `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)`, **exit 0**, com os novos: grafia `tenant_uuid` -> exit 1, grafia mista `conta_Cliente` -> exit 1, catalogo ilegivel -> exit 3, cada mutacao desfeita volta a `ISOLAMENTO_OK`.
+  - **sem falso positivo no contrato:** `SELECT count(*)` com a regex nova (`~*`, token em qualquer posicao) na base dev -> **0** (igual a regex antiga); as 203 colunas do schema foram conferidas.
+  - **limite do item 5 declarado e visivel:** em vez de esconder a convencao de nome, a saida ganhou a linha informativa com os containers de pe FORA de `pg-*` que servem o schema. Medido: no dente, `e05r3-probe` (fora da convencao, servindo o schema) aparece nessa linha e o item permanece `OK`; em dev, a linha saiu `nenhum`. O texto do veredito passou a dizer exatamente o que a medicao cobre; runbook 8 atualizado (superficie do detector, o que fica fora — coluna de cliente com outra grafia e pega pela **etapa 1** — e limite de provisionamento).
+- **Publicacao do artefato testado (caminho versionado, destino isolado de ensaio — t_091cfea9, decisao 2):** `TRE_PUBLICAR_DESTINO=/opt/tre/.teste-publicacao-t_c7281fce deploy/publicar.sh --commit 21ed325 --card t_c7281fce` -> `PUBLICACAO_OK commit=21ed325… digest=c35ecba3457ffc1c396c1c68b407d576ce360e9db471388f2baff0e7308ed0ba arquivos=307` (antes: copia identica ao commit `e74ec02…` registrado — `digest_antes=3b431df7…`). **A copia operacional `/opt/tre/repo` NAO foi escrita** nesta rodada.
+- **sha256 dos artefatos sob teste no destino publicado:** `teste_isolamento_clientes.sh a69e08d1779c…`, `teste_tenant_rls.sh d4ade21185c0…`, `suite_banco.sh 5fb644a2375e…` (nao alterado nesta rodada), `estado_do_ambiente.sh 7f9a12a50481…`, `aplicar_migracoes.sh d0baf1e15fd6…`; reusados: `verificar_contrato_dados.py dfb8ad79…`, `verificar_constraints_indices.py 68cc57cb…`, `0001_sales_intelligence_v1.sql 0484a3701b8c…` (inalterado).
+- **Bateria (11 itens, com `### EXIT=` por comando; nada "passou" sem comando, saida e exit code):** `suite_banco.sh dev` -> `SUITE_OK (89 itens, 0 falhas)`, **exit 0**; `--somente-leitura` -> `SUITE_OK (69 itens)`, **exit 0**; `prod` -> `FALHOU ADR-005`, **exit 1**; `homolog` -> `FALHOU ambiente` (`pg-homolog` inexistente), **exit 1**; `teste_isolamento_clientes.sh dev` -> `ISOLAMENTO_OK (5 itens, 0 falhas)`, **exit 0**; `TRE_ISOLAMENTO_SEM_DOCKER=1` -> `ISOLAMENTO_NAO_TESTAVEL`, **exit 3**; `teste_tenant_rls.sh dev` -> `TENANT_RLS_NAO_TESTAVEL (2 itens)`, **exit 3**; `aplicar_migracoes.sh dev --somente-checar` -> `MIGRACAO_OK (4 itens, 0 falhas)`, **exit 0**; `suite_banco.sh --prova-de-dente` -> `SUITE_DENTE_OK (19 itens, 0 falhas)`, **exit 0**; `teste_isolamento_clientes.sh --prova-de-dente` -> `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)`, **exit 0**; `teste_tenant_rls.sh --prova-de-dente` -> `TENANT_RLS_DENTE_OK (18 itens, 0 falhas)`, **exit 0** (regex nova, mesmo comportamento).
+- **Item 4 fail-closed — a outra ponta do par, medida com envelope (read-only no dev real, 22:48Z; re-executada em 23:24Z pelo follow-up `t_8253ad1f`):** as duas guardas de leitura do teste de isolamento sao **de proposito** diferentes — leitura do **catalogo de colunas** que falha -> item 3 `NAO_TESTAVEL` (**exit 3**, nunca verde); leitura de **`pg_database`** que falha -> item 4 **REPROVA** (**exit 1**, nunca vira "0 bases"). Comando, no destino publicado (commit `58ec9fb`, `teste_isolamento_clientes.sh a69e08d1…`; envelope `psql_bases_mudo.sh be0cec01…`, que responde todo o resto pelo dev e falha so a consulta a `pg_database`): `bash scripts/db/teste_isolamento_clientes.sh dev --prefixo "bash /tmp/e05r3b/psql_bases_mudo.sh"` -> `-- bases de aplicacao na instancia: 0 (nenhuma)` / `FALHOU nao consegui medir as bases de aplicacao da instancia (leitura do catalogo falhou) — sem medicao o criterio nao pode ser dado como cumprido` / `RESULTADO: ISOLAMENTO_FALHOU (5 itens, 1 falha(s))`, **exit 1** (os itens 3 e 5 do mesmo alvo sairam `OK`). E o par da guarda **(e)** do dente do AC2 e era a unica afirmacao do relatorio §10 que ainda nao tinha medição versionada; log bruto `a_item4_envelope.log` (anexo do card `t_8253ad1f`).
+- **Estado DEPOIS (read-only):** `12 tabelas | 30 indices`; registro `0001 | 0484a3701b8c…` == arquivo do repo; contagens `organizations=2 / contacts=1 / interactions=1`; `/opt/tre/prod` e `/opt/tre/homolog` com `0` arquivo; `docker ps -a` com `pg-sales-dev` e — de **outro card** rodando em paralelo (teste de backup/restore, E06) — `tre-restore-637931-27223`, que ja havia sido removida quando fui inspeciona-la (caso concreto do limite declarado do item 5); meus descartaveis `tre-isolamento-*` foram removidos pelos proprios testes.
+- **Logs brutos na VPS:** `/tmp/e05r3b/bateria_r3.log` (11 itens + estado final, com `### EXIT=` por comando) e `/tmp/e05r3b/prova_r3.log` (rodada 2 x rodada 3, lado a lado, no mesmo alvo mutado). Copias anexadas ao card (conferidas byte a byte).
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de teste/analise (estagio 6); a homologacao (estagio 7) e do Anderson, com esta evidencia na mao.
+- Segredos: nenhum valor nesta entrada; conexao pelo socket local do container, sem senha em argumento, arquivo ou log.
+
+## 2026-09-30 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W1-E05-T01 (follow-up pos-revisao, card `t_8253ad1f`): precisao documental — o exemplo do runbook §8, medido
+
+- **O que este card e:** follow-up **docs-only** do veredito APROVADO da revisao independente da rodada 3 (`t_c7281fce`); os sha256 sob teste continuam os do veredito (`suite_banco.sh 5fb644a2…`, `teste_isolamento_clientes.sh a69e08d1…`, `teste_tenant_rls.sh d4ade211…`) — **nenhum byte de script mudou** (o diff deste card toca so `.md`). Artefato medido: destino publicado `/opt/tre/.teste-publicacao-t_c7281fce`, commit `58ec9fb1b3ef89ddfe87f008f0413227cabc821f` (`publicado_em 2026-09-30T22:46:17Z`, `digest 36ed9261b8258ff7c66519f3969eca80cb2362378c8fc869bf521d4ad70b8027`).
+- **A medicao do item 4 (fail-closed) entra no registro versionado** — esta na entrada da rodada 3 (bullet "Item 4 fail-closed — a outra ponta do par"), com comando, saida e exit code, re-executada as 23:24Z no mesmo artefato publicado (`ISOLAMENTO_FALHOU (5 itens, 1 falha(s))`, **exit 1**); log bruto `a_item4_envelope.log`. Ate este card, a medicao existia so no fio de comentarios do board.
+- **O exemplo do runbook §8 (grafia FORA da superficie do item 3) foi medido:** o texto citava `organizations.tenant_uuid`, que com a regex nova (`~*`, token em qualquer posicao) **casa** a superficie do item 3 — deixou de ilustrar "fora da superficie". Caso medido em alvo **descartavel** proprio (`e05r4-probe`, `postgres:16`, migration congelada do repo aplicada): `ALTER TABLE sales_intelligence.organizations ADD COLUMN customer_id text` (grafia que a regex nao casa — conferido nome a nome pela revisao) e `TRE_PG_SERVICO=e05r4-probe TRE_PG_USER=tre TRE_PG_DB=sales_intelligence bash scripts/db/suite_banco.sh dev` -> `FALHOU as colunas do banco sao exatamente as do contrato (nem sobra, nem falta)  -> faltam=[] sobram=['organizations.customer_id']`; `FALHOU contrato: RESULTADO: FALHOU (1 de 37 itens) (exit 1)`; `RESULTADO: SUITE_FALHOU (88 itens, 1 falha(s), 0 nao testavel(is))`, **exit 1**. Quem reprova e a **etapa 1** (`contrato`); no mesmo alvo mutado o item 3 saiu `ISOLAMENTO_OK (5 itens, 0 falhas)`, **exit 0** — o limite declarado, medido.
+  - **Controles do roteiro (mesmo container):** alvo integro (antes da mutacao) -> `SUITE_OK (88 itens, 0 falhas)`, **exit 0**; mutacao desfeita -> `SUITE_OK (88 itens, 0 falhas)`, **exit 0**. Sem isso, o exit 1 poderia ser do alvo e nao da divergencia.
+- **Estado do dev real:** nao foi mutado em momento nenhum — a mutacao viveu so no container descartavel (removido pelo proprio roteiro) e a medicao do item 4 e read-only no dev. `docker ps -a` ao fim: so `pg-sales-dev`.
+- **Logs brutos:** `a_item4_envelope.log`, `b0_integro.log`, `b2_suite_customer_id.log`, `b3_isolamento_customer_id.log`, `b4_volta_verde.log` — anexos do card `t_8253ad1f`.
+- **Verificacao independente:** quem entrega nao homologa; a homologacao (estagio 7) e do Anderson.
+- Segredos: nenhum valor nesta entrada; conexao pelo socket local do container, sem senha em argumento, arquivo ou log.
+
+## 2026-10-01 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W2-E01-T01 (card `t_d6dc5a4c`): Odoo Community 19.0 instalado no **dev**
+
+- **Campos do card definidos ANTES de executar** (doc 11 §2): ACCEPTANCE CRITERIA (os 4 homologados por Anderson em 29/09/2026), TEST PLAN, ROLLBACK PLAN, AFFECTED COMPONENTS e RISK LEVEL (alto) registrados em comentario no card `t_d6dc5a4c` **antes da primeira medicao**, junto com a decisao de deploy (versao/portas/onde hospedar).
+- **Autorizacao:** declaracao de acao do dono para este card (`hermes/jev/acoes-declaradas.yaml`, 01/10/2026, `ambiente_alvo: desenvolvimento`, `producao=false`, `credencial=false`) sob a onda dev homologada em 30/09/2026 (validade 07/10/2026); recibo JEV `dec-c6650746cbb56e76` = PASS. Nada em producao.
+- **Guardas medidos (VPS, antes de criar qualquer coisa):** docker `29.8.1` + compose `5.5.1`; `docker ps -a` so com `pg-sales-dev` (`Up 20 hours`); `/opt/tre/{homolog,prod}` com **0 arquivo**; UFW ativo com **so 22/tcp**; `ss -lnt` sem nada em 8069.
+- **Transferencia do par + scripts (agente):** `cat > …` por SSH do repo para a VPS em `/opt/tre/dev/compose/{odoo.yml,odoo.env}` e `/opt/tre/dev/scripts/{instalar,verificar,remover}-odoo-dev.sh` -> **sha256 igual nos dois lados** nos 5 arquivos: `odoo.yml e4f2632d695e…`, `odoo.env 86206a6a0037…`, `verificar-odoo-dev.sh 7db09de011c9…`, `remover-odoo-dev.sh 241694fd3285…`. O `instalar-odoo-dev.sh` foi editado duas vezes depois da primeira transferencia (defeitos 4 e 5 abaixo) e o sha final, medido igual nos dois lados ao fim: `instalar-odoo-dev.sh b6b483e61b53…`.
+- **Instalacao (agente, na VPS):** `bash /opt/tre/dev/scripts/instalar-odoo-dev.sh` -> `OK guardas`, `OK segredos gerados /etc/tre/odoo-dev/{pg.env,odoo.conf} (600)`, `OK compose valido … (versao 19.0, porta 127.0.0.1:8069)`, `OK pg-odoo-dev healthy (postgres:16)`, `OK banco odoo_dev inicializado (195 linhas de log; sem demo)`, `RESULTADO: ODOO_DEV_INSTALADO versao=19.0 porta=127.0.0.1:8069 http=200`, exit 0. Evidencia: imagem `odoo:19.0` / digest `odoo@sha256:77bac5cd1e065210828f34883a7f76740b7373d06dd3a5a55d3eeb31ee2f85cd` (confere com o par), versao interna `Odoo Server 19.0-20260926`, `pg-odoo-dev=id=c7cb12f75eb9…`, `odoo-dev=id=12cf65a3c1c6…`, **iniciado_em 2026-10-01T12:42:30.380559934Z**.
+- **Aceite (agente, na VPS):** `bash /opt/tre/dev/scripts/verificar-odoo-dev.sh` -> `RESULTADO: ODOO_DEV_OK (19 itens, 0 falhas) versao=19.0 porta=127.0.0.1:8069`, **exit 0**. Itens: compose valido e imagem declarada; os dois containers de pe com `restart=unless-stopped`; imagem do container == tag local == digest registrado; `HTTP 200` em `127.0.0.1:8069/web/login` (5535 bytes, pagina do Odoo) e binario respondendo `19.0-20260926`; banco `odoo_dev` presente e **separacao medida nos dois lados** (o Postgres do Odoo nao tem `sales_intelligence`; o `pg-sales-dev` nao tem `odoo_dev`; volumes distintos); nenhuma porta publica (`odoo-dev` so em `8069/tcp -> 127.0.0.1:8069`, `pg-odoo-dev` sem porta publicada, `ss` com `127.0.0.1:8069`, UFW com regras `[22/tcp]`).
+- **Dentes do aceite (provas negativas medidas, na VPS):** (a) com um `docker` falso no PATH respondendo `docker port odoo-dev` = `8069/tcp -> 0.0.0.0:8069` -> `FALHOU odoo-dev publica endereco publico` e `RESULTADO: ODOO_DEV_FALHOU (19 itens, 1 falha(s))`, **exit 1** (as demais 18 seguem OK — o item reprova por comportamento, nao por cascata); (b) `remover-odoo-dev.sh` sem `TRE_ODOO_CONFIRMAR_REMOCAO=1` -> `FALHOU remocao exige confirmacao explicita`, **exit 1**, nada tocado; (c) verificador rodado **depois** do rollback -> `RESULTADO: ODOO_DEV_FALHOU (19 itens, 13 falha(s))`, **exit 1**.
+- **Rollback executado (agente, na VPS) e reinstalacao limpa:** `TRE_ODOO_CONFIRMAR_REMOCAO=1 bash /opt/tre/dev/scripts/remover-odoo-dev.sh` -> `RESULTADO: ODOO_DEV_REMOVIDO`, exit 0; removidos `odoo-dev`, `pg-odoo-dev`, rede `tre-odoo-dev`, volumes `pgdata-odoo-dev` e `odoo-data-dev` e `/etc/tre/odoo-dev`; **`pg-sales-dev` intocado** (`integrity: running` no DEPOIS). Em seguida `bash instalar-odoo-dev.sh` do **zero** (segredos novos, volumes novos, banco inicializado com 195 linhas de log, `odoo-dev` novo id `12cf65a3c1c6…`) -> exit 0, e o aceite voltou a `ODOO_DEV_OK (19 itens, 0 falhas)`, exit 0.
+- **Defeitos encontrados e consertados nesta execucao (5):** (1) o `POSTGRES_DB=odoo_dev` do `postgres:16` cria o banco **vazio** e o check por `pg_database` pulou a inicializacao -> o Odoo respondia **HTTP 500** em `/web/login` (medido: `FALHOU Odoo nao respondeu 200 … (ultimo codigo: 500)`); conserto: o que prova inicializacao e a tabela `ir_module_module`; (2) `docker compose run` **consome o stdin** de quem o executa e, orquestrado por `ssh 'bash -s' < script`, matou o script remoto no meio (a rodada 2 parou depois do `OK banco odoo_dev inicializado`, exit 0 sem subir o servico) — a MESMA armadilha ja registrada neste repositorio; conserto: `-T` + `< /dev/null` no `compose run` e execucao por arquivo na VPS; (3) o item 6 do proprio verificador reprovava o **formato** real do `docker port` em vez do comportamento — conserto com a prova por mutacao (a) acima; (4) o script de instalacao reprovava o proprio `secret_scan.sh` do repo por escrever a chave `db_password` na forma literal `"<chave> = <variavel>"` (falso positivo) — conserto no codigo (nome da chave por variavel + `awk` na leitura), **nao** no scanner, e `secret_scan.sh` -> `PASS (nenhum segredo versionado)`; (5) a guarda de "porta em uso" reprovava a **reexecucao idempotente** (o proprio `odoo-dev` de pe segurava a 8069) — conserto: a guarda so vale quando o container `odoo-dev` ainda nao existe.
+- **Reexecucao idempotente com o script final (agente, na VPS):** `TRE_ODOO_RECRIAR=1 bash instalar-odoo-dev.sh` -> `OK segredos: reaproveitando …`, `OK banco odoo_dev ja inicializado pelo Odoo — inicializacao sera pulada`, `OK digest confere com o par`, `RESULTADO: ODOO_DEV_INSTALADO … http=200`, **exit 0**, com o `odoo-dev` **no mesmo id e no mesmo `iniciado_em 12:42:30.380559934Z`** (nada foi recriado) e o aceite de novo em `ODOO_DEV_OK (19 itens, 0 falhas)`, exit 0. Sem `TRE_ODOO_RECRIAR=1` o script **recusa** (`FALHOU container 'odoo-dev' JA EXISTE — nao mexo nele`, exit 1) — medido.
+- **Auditoria de segredo no artefato:** nenhum valor de senha em arquivo do repo (as senhas nascem na VPS, em `/etc/tre/odoo-dev/`, 600); o `verificar_estrutura.sh` ganhou item que reprova par de ambiente com valor de senha. Logs desta execucao nao carregam senha (o verificador le o par sem imprimir valor).
+- **O que NAO foi tocado:** `pg-sales-dev` e o banco `sales_intelligence` (medido antes/depois), a UFW (regras `[22/tcp]`), `/opt/tre/{homolog,prod}` (0 arquivo, 0 container), os scripts e o compose de outros cards, e a copia operacional `/opt/tre/repo` (**nenhuma escrita ad-hoc**: o dev do Odoo roda do par em `/opt/tre/dev/compose/`, e o motivo esta no runbook §2 — a copia esta numa linha divergente do `develop`).
+- **Logs brutos (agente):** `instalar-odoo-dev-3.out`, `aceite-1.out` (aceite 19/19 + mutacao da porta), `rollback-1.out`, `rollback-e-reinstalacao.out` (recusa do rollback + verificador pos-rollback + reinstalacao + aceite final), no scratch do perfil `devops`.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao/teste (estagio 6); a homologacao (estagio 7) e do Anderson, com esta evidencia na mao. A **ratificacao da versao escolhida** (19.0) tambem e dele, antes de homologacao/producao.
+- Segredos: nenhum valor nesta entrada.
+
+## 2026-10-01 — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W2-E01-T01-F01 (card `t_a5afde31`): backup/restore do Odoo (banco + filestore) no artefato do ambiente
+
+- **Publicacao versionada pela via unica (agente, do worktree `feature/TRE-W2-E01-T01-F01`):**
+  `deploy/publicar.sh --commit e2b960b5 --card t_a5afde31 --producao` →
+  `PUBLICACAO_OK commit=e2b960b5bb79e5773a25fa3c594461a699ccf9d5 digest=4f0c65390a54aa9df22a0871ae920935e5121795303e63145c2f9a9eb878a845
+  arquivos=323 digest_antes=7cfeee18ce055de88be1ced4867b1d3784fd9dc53abf2cd30cf1baa8e9637ba5 trava=travada`
+  (13:54:33Z; `AVISO concorrencia: card t_daca4bda publicou 66c7152… antes deste card`). `--conferir`
+  depois: `PUBLICACAO_OK … conferido_em=root@169.58.24.102:/opt/tre/repo trava=travada`. Antes de
+  publicar, li `/opt/tre/.publicacoes.log`: a ultima escrita em `/opt/tre/repo` era `66c7152`
+  (30/09 23:42:48Z), o resto `watchdog-reparo` do mesmo commit — nenhum card ficou para tras.
+  **Base declarada da publicacao:** gate JEV do card, `dec-4a54b3c39ce9cc52`, aprovacao humana de
+  Anderson Ribeiro (telegram, validade 2026-10-07), `exige_aprovacao_humana: false`.
+- **Rotina pela copia publicada (o caminho do timer):** `bash /opt/tre/repo/scripts/backup/backup-tre.sh dev`
+  → `RESULTADO: BACKUP_OK (dev; 1 ambiente(s) coberto(s), 0 pulado(s))`, exit 0, artefato
+  `/opt/tre/backup/tre_dev_20261001T135513Z` com `odoo_dev.dump` 2487524 B (sha256 `529cd429…`),
+  `odoo-contagens.txt` 281 tabelas / 26213 linhas, `odoo-filestore.tar.gz` 115082 B / 21 arquivos
+  (sha256 `521d4ece…`), `odoo-manifest.txt` (`odoo_imagem_restore: odoo:19.0`,
+  `odoo_imagem_digest: sha256:77bac5cd…`, `odoo_segredos: fora do artefato`) e o dump do trio
+  (`sales_intelligence.dump`, 35428 B) no MESMO diretorio.
+- **Restore provado em alvo descartavel:** `verificar-odoo.sh <artefato>` →
+  `RESULTADO: RESTORE_ODOO_OK (27 itens, 0 falhas)` — `HTTP 200` em `127.0.0.1:32774/web/login`
+  (`Odoo Server 19.0-20260926`), 281 tabelas com contagens batendo linha a linha, modulo `base`
+  instalado, filestore com `filestore/odoo_dev` e 21 arquivos, JSON-RPC respondendo, e
+  `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev` seguindo `running` ao fim.
+- **Verificacao encadeada (o que o timer de domingo roda):**
+  `verificar-ultimo-backup.sh todos` pela copia publicada → `RESTORE_OK (11 itens, 0 falhas)` +
+  `RESTORE_ODOO_OK (27 itens, 0 falhas)`, `homolog`/`prod` pulados (nao provisionados) →
+  `RESULTADO: VERIFICACAO_OK (3 itens)`, exit 0.
+- **Destino externo com ida e volta lida:** `rclone lsl contabo:tre-backup/prova-t_a5afde31/<artefato>`
+  (14 objetos, incl. `odoo_dev.dump` e `odoo-filestore.tar.gz`); `rclone cat` dos dois + `sha256sum`
+  = `529cd429…` e `521d4ece…`, iguais aos sha256 do manifesto local. Prefixo `prova-t_a5afde31/`
+  (prova declarada, nao backup de producao).
+- **Negativos medidos (todos exit 1):** dump truncado → `RESTORE_ODOO_FALHOU (27 itens, 10 falhas)`
+  (`sha256 do dump NAO confere`, `tabelas em public: restaurado=0 backup=281`, `modulo 'base' NAO esta
+  instalado`, `HTTP 500`); filestore removido → `RESTORE_ODOO_FALHOU (26 itens, 5 falhas)`; dump
+  truncado sem `.sha256` → idem. `verificar-backup.sh` num artefato com DOIS `*.dump` →
+  `RESTORE_OK (11 itens, 0 falhas)`.
+- **Teste hermetico da rotina** (dublê de `docker`, nenhum container real tocado):
+  `RESULTADO: TESTE_OK (65 itens, 0 falhas)`, com as secoes novas 9b (Odoo declarado sem container →
+  `BACKUP_FALHOU`, manifesto grava `odoo: ausente neste ambiente`) e 9c (verificador reprova artefato
+  pela metade).
+- **Achado que decidiu o aceite:** com o `/etc/tre/backup.env` do timer e a copia ainda no commit
+  antigo, a rotina imprimiu `PULADO odoo: ambiente 'dev' nao declara Odoo` — o `TRE_ENV_DIR` aponta
+  para o `deploy/environments` da COPIA OPERACIONAL, entao o AC (a)/(c) so valem depois da publicacao.
+- **Rollback executado:** alvos de teste removidos (copia isolada `.teste-t_a5afde31*`, artefatos de
+  teste, `.teste-enforcement-local`, redes/containers `tre-verif-odoo-*` — `0` container e `0` rede de
+  teste ao fim); **nenhum timer novo** instalado; `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev` preservados
+  (mesmo id e `StartedAt` anterior a esta rodada); trava da copia seguindo armada
+  (`----i---------e-------`); artefato real mantido. O artefato enganoso da primeira rodada
+  (`tre_dev_20261001T135033Z`, trio sem Odoo, gravado quando a copia estava no commit antigo) foi
+  removido de proposito, com registro.
+- **O que NAO foi tocado:** `sales_intelligence`/`pg-sales-dev` (medido antes e depois), os segredos
+  `/etc/tre/odoo-dev/*` (nenhum valor sai da VPS; `odoo_segredos: fora do artefato`), `/opt/tre/{homolog,prod}`
+  (0 arquivo, 0 container), a UFW e os units do systemd.
+- **Logs brutos (agente, no workspace da tarefa):** `evidencia-t_a5afde31/{ciclo2.log,verif-odoo.log,negativos.log,negativos-n1.log,negativos-n2.log,negativos-n3.log,negativos-trio.log,ciclo-real.log,artefato-real-manifest.txt,artefato-real-odoo-manifest.txt}`;
+  na VPS, `/opt/tre/rollback-evidencia-t_a5afde31.log`.
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao
+  independente (estagio 6); a homologacao e do Anderson. A linha formal de aprovacao da publicacao em
+  `docs/operations/registro-de-aprovacoes.md` fica declarada como pendencia (runbook §8).
+- Segredos: nenhum valor nesta entrada.
+
+## 2026-10-01 (rodada 2) — VPS do TRE (Contabo vmi3619453, 169.58.24.102) — TRE-W2-E01-T01-F01 (card `t_a5afde31`): o que a revisao independente reprovou (dono do artefato, retencao honesta, diagnostico de permissao)
+
+- **Motivo da rodada:** a revisao independente (perfil `tester`) mediu que o artefato nomeado no handoff
+  (`/opt/tre/backup/tre_dev_20261001T135513Z`) era `root:root 700` (a rotina foi executada a mao pelo
+  agente como `root`) e **nao reproduzia sob a identidade do timer**: `verificar-ultimo-backup.sh` como
+  `tre-deploy` → `VERIFICACAO_FALHOU (2 itens, 2 falhas)` com "backup do ambiente esta pela metade" e
+  `verificar-odoo.sh` → "artefato sem Odoo?" (diagnostico FALSO, de conteudo, para artefato integro); o
+  diretorio era irremovivel por `tre-deploy` e a retencao o contava como removido.
+- **Publicacao versionada (`deploy/publicar.sh --commit 9c17e5f81b154e82e59d785c3ea0a03dbe9d8915
+  --producao --card t_a5afde31`):** `PUBLICACAO_OK commit=9c17e5f… digest=106440348b44ba76a441a8fec66e524e60c07f72ec1bfb5a59343ebc2a41cc90
+  arquivos=323 digest_antes=09e36cdf… trava=travada`, `publicado_em 2026-10-01T14:26:42Z`, `concorrencia:
+  (nenhuma)`. Antes de publicar, a copia estava **identica** ao commit que `.publicado` registrava
+  (`a879fdf`, publicado por este mesmo card na rodada 1). Revert: `--commit a879fdf… --producao`.
+- **Conserto medido (o caso real do defeito):** `backup-tre.sh dev` executado **a mao por `root`** com o
+  `/etc/tre/backup.env` do timer → `BACKUP_OK`, artefato `/opt/tre/backup/tre_dev_20261001T142755Z`
+  **`tre-deploy:tre-deploy 700`**, manifesto com `executado_por: root` / `dono_artefato: tre-deploy` /
+  `externo: enviado (contabo:tre-backup)`; o **mesmo** artefato verificado por `tre-deploy` →
+  `RESTORE_OK (11 itens, 0 falhas)` + `RESTORE_ODOO_OK (27 itens, 0 falhas)` → `VERIFICACAO_OK (3 itens)`,
+  exit 0. Com o codigo anterior, o mesmo cenario (instrumento isolado, `/opt/tre/neg-r2`, ja removido)
+  dava `VERIFICACAO_FALHOU (2 itens, 2 falhas)` e "artefato sem Odoo?".
+- **Retencao honesta (antes x depois, cenario isolado, usuario `tre-deploy`):** ANTES
+  (`rm: cannot remove …: Permission denied` + `OK retencao aplicada (1 dias; 1 artefato(s) antigo(s)
+  removido(s))` + `BACKUP_OK` exit 0, diretorio no disco); DEPOIS (`FALHOU retencao: NAO consegui
+  remover tre_dev_20200101T000000Z (dono root:root, modo 700, rodando como tre-deploy)` +
+  `FALHOU retencao 1 dias: 0 de 1 artefato(s) removido(s), 1 NAO removido(s)` → `BACKUP_FALHOU` exit 1).
+  Positivo: artefato antigo removivel → `OK retencao aplicada (1 dias; 1 de 1 …)`, `BACKUP_OK`.
+- **Diagnostico de permissao:** artefato `root:root 700` verificado por `tre-deploy` →
+  `FALHOU … existe mas NAO e legivel por 'tre-deploy': dono root:root, modo 700 — e PERMISSAO, nao
+  conteudo` (`VERIFICACAO_FALHOU (1 itens, 1 falha)`) e, no verificador do Odoo,
+  `… — e PERMISSAO, nao 'artefato sem Odoo'`.
+- **Caminho real do timer:** `systemctl start tre-backup.service` → `Result=success`,
+  `ExecMainStatus=0`, `User=tre-deploy`, artefato `tre_dev_20261001T142800Z` `tre-deploy:tre-deploy 700`;
+  `systemctl start tre-backup-verify.service` → `Result=success`, `ExecMainStatus=0`, `RESTORE_OK` +
+  `RESTORE_ODOO_OK (27 itens)` e `RESULTADO: VERIFICACAO_OK (3 itens)`.
+- **Negativos de CONTEUDO seguem reprovando** (codigo publicado, usuario `tre-deploy`, copias em
+  `/opt/tre/neg-r4`, removidas ao fim): dump do Odoo truncado → `RESTORE_ODOO_FALHOU (27 itens, 10
+  falhas)`; filestore ausente → `RESTORE_ODOO_FALHOU (26 itens, 4 falhas)`; dump do trio truncado →
+  `RESTORE_FALHOU (11 itens, 7 falhas)`; controle positivo → `RESTORE_ODOO_OK (27 itens, 0 falhas)`.
+- **Remediacao do artefato da rodada 1:** `/opt/tre/backup/tre_dev_20261001T135513Z`
+  `root:root 700` → `tre-deploy:tre-deploy 700` (leitura e escrita por `tre-deploy` comprovadas), e
+  esse mesmo artefato restaurou inteiro sob a identidade do timer → `RESTORE_ODOO_OK (27 itens, 0
+  falhas)` com HTTP 200 em `127.0.0.1:32780/web/login`: estava integro, o defeito era o dono.
+- **Destino externo:** `rclone lsl contabo:tre-backup/tre_dev_20261001T142800Z` (14 objetos) e `sha256`
+  do bucket == manifesto local para `odoo_dev.dump` (`f77d0f27…`), `odoo-filestore.tar.gz`
+  (`521d4ece…`) e `sales_intelligence.dump` (`153630db…`).
+- **Teste hermetico:** `scripts/backup/teste-rotina-ambiente.sh` → `TESTE_OK (84 itens, 0 falhas)`,
+  com as secoes novas 9d (retencao que nao remove), 9e (dono do artefato) e 9f (permissao x conteudo).
+- **O que NAO foi tocado:** `odoo-dev 12cf65a3c1c6` (`StartedAt 2026-10-01T13:48:40Z`),
+  `pg-odoo-dev c7cb12f75eb9` (`12:41:17Z`) e `pg-sales-dev 396ace563710` (`2026-09-30T17:05:15Z`) com os
+  mesmos ids/StartedAt; `0` container de verificacao deixado; nenhum timer novo (os dois units + watchdog
+  `active`); trava da copia armada (`----i---------e-------`); producao intocada.
+- **Rollback desta rodada:** `rm -rf` dos cenarios isolados (`/opt/tre/neg-r2`, `neg-r3`, `neg-r4`,
+  `/opt/tre/ensaio-t_a5afde31-r2`), mantidos os artefatos reais criados pela rotina publicada
+  (`tre_dev_20261001T142755Z`, `tre_dev_20261001T142800Z`) e o artefato da rodada 1 remediado.
+- **Logs brutos:** `/opt/data/profiles/devops/evidence/t_a5afde31/rodada2/` (agente) e
+  `/opt/tre/evid-t_a5afde31-r2/` (VPS: `antes-*`, `depois-*`, `neg-*`, `verificacao-tre-deploy.log`,
+  `remediado-verificar-odoo.log`).
+- **Verificacao independente:** quem entrega nao homologa — o veredito deste card e de revisao
+  independente (estagio 6); a homologacao e do Anderson.
+- Segredos: nenhum valor nesta entrada.
