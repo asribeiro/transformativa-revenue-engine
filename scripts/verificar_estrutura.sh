@@ -1383,5 +1383,107 @@ if [ -f scripts/agentes/teste_previsao_canal_aceite.sh ]; then
   done
 fi
 
+
+# --- card TRE-W8-E04-T01 (analise de desempenho de mensagens) ---------------------------------------
+# Contrato + componente + duble + verificador + aceite existem E estao versionados; o aceite e' bash
+# valido, usa container DESCARTavel e cobre as guardas de ambiente (prod recusado) e de leitura.
+ACEITE_DESEMP="scripts/agentes/teste_desempenho_mensagens_aceite.sh"
+for arquivo in \
+  hermes/analytics/desempenho-mensagens-v1.json \
+  hermes/analytics/desempenho_mensagens.py \
+  scripts/agentes/duble_psql_desempenho.py \
+  scripts/agentes/verificar_desempenho_mensagens.py \
+  "$ACEITE_DESEMP" \
+  docs/runbooks/desempenho-de-mensagens.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_DESEMP" ]; then
+  if ! bash -n "$ACEITE_DESEMP" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E04-T01: $ACEITE_DESEMP nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Container descartavel do aceite (nada nasce em ambiente existente) e guarda de prod medida.
+  if ! grep -q 'pg-desemp-acc' "$ACEITE_DESEMP" || ! grep -q 'ambiente prod' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Somente leitura e' medida: contagem das tabelas antes/depois tem de estar no aceite.
+  if ! grep -q 'ANTES' "$ACEITE_DESEMP" || ! grep -q 'DEPOIS' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode carregar verbo de escrita no caminho de leitura.
+if [ -f "hermes/analytics/desempenho_mensagens.py" ]; then
+  if ! grep -q 'afirmar_somente_leitura' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de somente-leitura"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+# --- card TRE-W9-E04-T01 (melhor horario de contato) --------------------------------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o aceite e' bash valido, usa
+# container DESCARTavel, cobre as guardas de ambiente (prod recusado) e de leitura, e o componente tem de
+# MANTER os guardrails herdados do irmao (somente leitura + prod recusado) em vez de reimplementa-los.
+ACEITE_TIMING="scripts/agentes/teste_melhor_horario_aceite.sh"
+for arquivo in \
+  hermes/analytics/melhor-horario-v1.json \
+  hermes/analytics/melhor_horario.py \
+  scripts/agentes/verificar_melhor_horario.py \
+  "$ACEITE_TIMING" \
+  docs/runbooks/melhor-horario.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_TIMING" ]; then
+  if ! bash -n "$ACEITE_TIMING" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E04-T01: $ACEITE_TIMING nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'pg-timing-acc' "$ACEITE_TIMING" || ! grep -q 'ambiente prod' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ANTES' "$ACEITE_TIMING" || ! grep -q 'DEPOIS' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de medir a coerencia com o irmao de desempenho (atribuicao unica), nao apenas roda-lo.
+  if ! grep -q 'desempenho_mensagens.py' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a coerencia medida com o irmao de desempenho"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode reimplementar a regra do irmao: a atribuicao e a guarda de leitura vem dele.
+if [ -f "hermes/analytics/melhor_horario.py" ]; then
+  if ! grep -q 'import desempenho_mensagens as irmao' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente nao reusa o irmao (atribuicao seria uma segunda regra)"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

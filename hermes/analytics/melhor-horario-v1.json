@@ -1,0 +1,101 @@
+{
+  "nome": "melhor-horario-v1",
+  "versao": "1.0.0",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "card": "TRE-W9-E04-T01",
+  "onda": "W9",
+  "epico": "E04",
+  "papel": "melhor_horario_de_contato",
+  "componente": {
+    "arquivo": "hermes/analytics/melhor_horario.py",
+    "modo": "LEITURA (SELECT somente) sobre sales_intelligence.interactions",
+    "nao_faz": [
+      "NAO envia, NAO aprova, NAO agenda e NAO classifica resposta: consome o fato ja gravado pelos cards irmaos (W6-E04 envio, W6-E05 ingestao/classificacao)",
+      "NAO escreve: nenhuma tabela e tocada; a unica instrucao enviada a porta de banco e um SELECT (a mesma consulta do irmao de desempenho)",
+      "NAO cria tabela, coluna, view, indice nem DDL — isso e mudanca de contrato (governanca §10)",
+      "NAO inventa a regra de atribuicao: resposta->envio e a MESMA do card irmao (mais proximo anterior)",
+      "NAO decide horario por media de resposta de lead que nunca respondeu: so' envios com desfecho medido entram na grade"
+    ]
+  },
+  "fonte_da_verdade": [
+    "docs/data/data_contract_v1.json#tables['interactions'] — o DONO do fato: channel, direction, interaction_type, occurred_at, content_reference, response_category",
+    "hermes/agentes/respostas/ingestao-respostas-v1.json#vocabulario.response_category — o DONO do vocabulario de resposta (este card NAO inventa categoria)",
+    "hermes/analytics/desempenho-mensagens-v1.json — o DONO do criterio de atribuicao resposta->envio (nearest preceding) e da particao de classes; este card herda os dois",
+    "11_KANBAN_DE_IMPLEMENTACAO.md (W9-E04-T01 'Best timing'; PRE-CONDICAO 'historico de interacoes') — o doc 11 nao detalha, entao ACCEPTANCE/TEST/ROLLBACK/RISK sao declarados neste contrato e no card",
+    "ADR-005 — nada nasce em producao: este componente RECUSA o ambiente prod (exit 4)"
+  ],
+  "reuso_do_irmao": {
+    "modulo": "hermes/analytics/desempenho_mensagens.py",
+    "por_que": "a ATRIBUICAO resposta->envio e' UMA SO' no projeto. Este componente IMPORTA o irmao e usa as mesmas funcoes (ler_interacoes, separar, creditar, medir_grupo, PortaBanco, afirmar_somente_leitura). Nao existe segunda regra de credito nem segunda leitura: duas copias divergiriam em silencio — e' exatamente o defeito que este desenho evita",
+    "o_que_se_reusa": [
+      "PortaBanco + afirmar_somente_leitura (guarda de leitura pura e de escrita recusada)",
+      "SQL da unica leitura (ler_interacoes) e a normalizacao de canal",
+      "separar() — baldes de exclusao declarados (sem silencio)",
+      "creditar() — resposta creditada a no maximo UM envio (mais proximo anterior, por faixa de contato e canal)",
+      "medir_grupo(), _taxa(), _mediana_horas() — as mesmas metricas do irmao",
+      "carregar_contrato() do irmao — a particao das classes de resposta contra o vocabulario do dono"
+    ],
+    "o_que_e_novo_aqui": "apenas o EIXO DE TEMPO: o instante de envio vira (dia da semana, faixa horaria) no fuso declarado, e a metrica e' agregada por essa grade"
+  },
+  "fuso": {
+    "nome": "America/Sao_Paulo",
+    "offset_utc": "-03:00",
+    "regra": "o fuso e um OFFSET FIXO DECLARADO aqui (nao lido do sistema, nao lido do banco): a janela de um envio e' sempre a mesma dada a mesma base. Fuso com horario de verao ou segundo fuso exige VERSAO NOVA do contrato — nunca um palpite do componente",
+    "por_que_novo_arquivo_e_nao_zoneinfo": "depender de base tzdata do sistema faria a MESMA base produzir relatorios diferentes em maquinas diferentes; o offset declarado torna a saida reproduzivel e o dependencia explicita"
+  },
+  "dias": ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"],
+  "faixas": [
+    {"nome": "madrugada", "de": 0, "ate": 6},
+    {"nome": "manha_cedo", "de": 6, "ate": 8},
+    {"nome": "manha", "de": 8, "ate": 12},
+    {"nome": "almoco", "de": 12, "ate": 14},
+    {"nome": "tarde", "de": 14, "ate": 18},
+    {"nome": "fim_de_tarde", "de": 18, "ate": 20},
+    {"nome": "noite", "de": 20, "ate": 24}
+  ],
+  "cobertura_da_grade": {
+    "regra": "as faixas tem de PARTICIONAR exatamente 0..24 (primeira `de` = 0, ultima `ate` = 24, `de < ate`, sem buraco e sem sobreposicao) e `dias` tem de ter exatamente 7 nomes. Violacao = CONTRATO_INCOERENTE exit 3, fail-closed",
+    "por_que": "faixa com buraco faria envio sumir da grade em silencio (a soma das linhas nao fecharia com o total) — o mesmo tipo de furo que a particao de classes do irmao evita"
+  },
+  "unidade_da_medida": {
+    "linha": "envio OUTBOUND com content_reference `envio:<approval_id>:<texto_hash>` dentro do recorte",
+    "eixo": "instante do ENVIO convertido para o fuso declarado: dia da semana (nome declarado) x faixa horaria (nome declarado)",
+    "desfecho": "resposta INBOUND creditada ao envio pela regra do irmao (mais proximo anterior, mesma organizacao, mesmo canal normalizado, mesma faixa de contato, janela inclusiva)"
+  },
+  "metricas": {
+    "por_janela": "agrupa por (dia, faixa); cada celula tem enviadas, organizacoes, respondidas, positivas, negativas, opt_outs, indefinidas, respostas_comerciais, respostas_descartadas, taxa_de_resposta, taxa_de_interesse, taxa_de_opt_out, tempo_medio_de_resposta_horas, tempo_mediano_de_resposta_horas, amostra_suficiente",
+    "por_dia": "marginal: as MESMAS metricas somadas por dia da semana",
+    "por_faixa": "marginal: as MESMAS metricas somadas por faixa horaria",
+    "grade_completa": "a grade tem 7 dias x N faixas celulas, TODAS presentes na saida (celula vazia vem com enviadas=0 e taxas null) — a grade nao e' o conjunto de celulas que por acaso tem dado",
+    "fechamento": "soma de enviadas das celulas == total enviadas lido; somas das duas marginais == total enviadas (lacuna declarada se nao fechar)",
+    "taxas": "numerador/denominador com 4 casas; denominador zero devolve null (nunca 0.0 fingindo medicao)",
+    "amostra_suficiente": "enviadas >= limite_amostra (default 5, declarado) — janela com 1 envio NAO pode ser coroada melhor"
+  },
+  "ranking": {
+    "melhor_janela": "somente entre celulas com amostra_suficiente; ordem: taxa_de_interesse desc, taxa_de_resposta desc, enviadas desc, (dia, faixa) asc — deterministico",
+    "sem_amostra": "melhor_janela = null com motivo AMOSTRA_INSUFICIENTE — nao se escolhe horario com ruido",
+    "sem_envios": "melhor_janela = null com motivo SEM_ENVIOS",
+    "marginais": "melhor_dia e melhor_faixa seguem a MESMA regra, pore'm restritas as marginais"
+  },
+  "vereditos": {
+    "ANALISADO": "recorte lido e ha pelo menos um envio: grade e marginais calculadas",
+    "SEM_ENVIOS": "recorte lido e nenhum envio identificado: taxas null (nunca 0.0)",
+    "RECUSADA": "ambiente prod, porta de banco ausente, contrato incoerente ou escrita recusada: nada medido, motivo declarado"
+  },
+  "guardrails": {
+    "ambiente": "prod RECUSADO exit 4 (ADR-005); permitidos dev e homolog",
+    "somente_leitura": "todo SQL enviado a porta tem de comecar por SELECT/WITH e nao conter verbo de escrita — a guarda vem do irmao (afirmar_somente_leitura); qualquer outro statement RECUSA exit 3",
+    "pii": "a saida e AGREGADA: nao carrega organization_id, contact_id, e-mail, nome, telefone nem o approval_id — so' a celula (dia x faixa) e contagens",
+    "fail_closed": "contrato incoerente com o vocabulario do dono = exit 3; grade com buraco/sobreposicao = exit 3; fuso ilegivel = exit 3; porta que nao responde = exit 2",
+    "nao_interpreta": "categoria de resposta desconhecida NAO e' chutada nem somada: e' contada como excluida (baldes do irmao)"
+  },
+  "lacunas": [
+    "FUSO: o offset e' declarado e fixo (-03:00). Horario de verao (extinto no Brasil desde 2019) ou operacao em outro fuso exige versao nova do contrato — o componente nao negocia fuso",
+    "BASE HISTORICA, NAO PREVISAO: este card MEDE o horario em que as respostas aconteceram; nao ha modelo preditivo. 'Best timing' aqui e' o melhor horario OBSERVADO com amostra declarada, nao uma previsao por lead (isso seria W9-E02)",
+    "SEM JANELA DE EXPEDIENTE DECLARADA NO CONTRATO DE DADOS: as faixas cobrem 24h de proposito. Nao existe no Data Contract V1 uma nocao de 'horario comercial da Transformativa' — por isso a grade nao corta nada e o leitor decide",
+    "CANAL UNICO NA PRATICA: so' o canal EMAIL e' produzido pelo irmao de envio (W6-E04). A grade NAO separa canal nesta versao (com dois canais, a celula passaria a ser dia x faixa x canal -> versao nova)",
+    "AUSENCIA DE HORARIO PESSOAL: `contacts` nao tem fuso do contato. A conversao usa o fuso do REMETENTE (declarado) — com lead em outro fuso, a janela observada dele desloca",
+    "SEM MATERIALIZACAO: a analise roda sob demanda; nao ha tabela de metrica nem agendamento (criar um exige contrato novo + aprovacao humana)",
+    "AMOSTRA: com menos de `limite_amostra` envios por celula, a grade informa e o ranking ABSTEM — a base atual do projeto ainda e' pequena, e a leitura honesta e' 'sem amostra', nao 'melhor horario'"
+  ]
+}
