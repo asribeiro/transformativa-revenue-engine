@@ -33,9 +33,14 @@ O QUE ESTA SUITE TRAVA (os dois lados exigidos no card)
      libera (PASS) e grava o recibo.
   4. COBERTURA dos achados D1/D2 da verificacao independente do card `t_2c8c5a22`, fechados no
      conserto do card `t_145eeaef`:
-       D1 — com anotacao E DDL/migration declarada no proprio card (o piso por ambiente age),
-       o rastro do guardrail segue no TOPO do campo `override` (nunca em
+       D1 (com piso) — com anotacao E DDL/migration declarada no proprio card (o piso por
+       ambiente age), o rastro do guardrail segue no TOPO do campo `override` (nunca em
        `override.humano.registro_marcado`), e `humano` nomeia SO o override do chamador;
+       D1 (SEM piso) — com anotacao e override do chamador mas SEM DDL/migration declarada
+       (o piso NAO age, entao nada recompila o campo `override`), `humano` continua nomeando
+       SO o override do chamador e o rastro do guardrail fica no TOPO; nenhuma chave do
+       chamador pode sair espelhada fora de `humano` (cobertura do defeito medido pela
+       verificacao do card `t_831d01f0`, consertada no card `t_c21fc474`);
        D2 — em modo degradado (politica ausente) a anotacao DECIDE: BLOCK/exit 3 com
        aprovacao humana exigida, e a aprovacao de onda NAO libera o card anotado (o card
        limpo em modo degradado segue no fluxo degradado — nao ha bloqueio geral).
@@ -49,6 +54,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import sqlite3
 import sys
@@ -82,7 +88,6 @@ ACOES = (
 )
 
 ITENS: list[tuple[str, bool]] = []
-ITENS_ANTES = 0
 
 
 def item(descricao: str, ok: bool, detalhe: str = "") -> None:
@@ -329,11 +334,42 @@ def checar(roteador=roteador_padrao, gate=None) -> None:
     d1b = _d1(declarado_d1)
     override_d1b = d1b["recibo"].get("override") or {}
     item("D1 — `humano` nomeia SO o override do chamador; o rastro de guardrail e IRMAO "
-         "dele no topo (nunca embrulhado sob `humano`)",
+         "dele no topo (nunca embrulhado sob `humano`), sem chave do chamador espelhada",
          override_d1b.get("humano") == declarado_d1
          and isinstance(override_d1b.get("registro_marcado"), dict)
-         and isinstance(override_d1b.get("piso_por_ambiente"), dict),
+         and isinstance(override_d1b.get("piso_por_ambiente"), dict)
+         and sorted(set(override_d1b) - {"humano", "registro_marcado", "piso_por_ambiente"}) == [],
          f"override={json.dumps(override_d1b, ensure_ascii=False)[:150]}")
+
+    # ------------------- D1 SEM piso: anotacao + override do chamador, sem DDL/migration
+    # Caminho em que o piso por ambiente NAO age (card anotado sem DDL/migration declarada):
+    # ninguem recompoe o campo `override` depois de `_registrar_proibicao_automatica_no_plano`,
+    # entao uma regressao ali (chaves do chamador espelhadas no topo e `humano` ausente) sai
+    # CRUA no recibo — era o buraco de cobertura medido pela verificacao independente do card
+    # `t_831d01f0` (o item D1 com piso nao o pega: `_compor_override_do_recibo` reconstroi
+    # `humano` a partir de `plano["override_do_chamador"]` e MASCARA a regressao).
+    def _d1_sem_piso(override_do_chamador=None):
+        tarefa = {"card_id": "t_d1_sem_piso_marcado", "acao": "ajuste de texto simples",
+                  "acao_codigo": "ajuste_de_texto", "ambiente_alvo": "desenvolvimento",
+                  "sinais": {SINAL: True}}
+        if override_do_chamador is not None:
+            tarefa["override"] = override_do_chamador
+        return roteador.decidir(tarefa, politica=politica)
+
+    sem_piso = _d1_sem_piso(declarado_d1)
+    recibo_sem_piso = sem_piso["recibo"]
+    override_sem_piso = recibo_sem_piso.get("override") or {}
+    item("D1 sem piso — anotacao + override do chamador sem DDL/migration (o piso NAO age): "
+         "`humano` nomeia SO o override do chamador, o rastro do guardrail fica no TOPO e "
+         "nenhuma chave do chamador aparece espelhada fora de `humano`",
+         sem_piso["decisao"]["outcome"] == "BLOCK"
+         and "piso_de_lane" not in sem_piso["decisao"]
+         and override_sem_piso.get("humano") == declarado_d1
+         and isinstance(override_sem_piso.get("registro_marcado"), dict)
+         and "piso_por_ambiente" not in override_sem_piso
+         and sorted(set(override_sem_piso) - {"humano", "registro_marcado"}) == []
+         and len(recibo_sem_piso) == 13 and list(recibo_sem_piso) == campos,
+         f"outcome={sem_piso['decisao']['outcome']} chaves de override={list(override_sem_piso)}")
 
     # -------------------- D2: modo degradado (politica ausente) com card ANOTADO (t_145eeaef)
     # O guardrail de registro marcado e CODIGO: sem politica carregavel ele tem de decidir
@@ -371,6 +407,13 @@ def checar(roteador=roteador_padrao, gate=None) -> None:
 
 # ---------------------------------------------------------------------------
 # Autoteste por mutacao: cada protecao removida tem de reprovar a suite
+#
+# DENTE HONESTO + CONTROLE NEGATIVO (defeito [fail-open] do card `t_99796978`, medido na
+# verificacao independente do card `t_75bedc5e`): a reprovacao so conta se a suite reprovar
+# POR ITEM (`[FALHA]`); excecao vira `[BURACO]`, nunca dente. E antes de aceitar qualquer
+# dente, a MESMA arvore temporaria roda com o modulo INTACTO e tem de dar 0 falhas e
+# nenhuma excecao — o controle que prova que a arvore esta fiel (sem ele, a arvore quebrada
+# entrega 8/8 verdes de graca).
 # ---------------------------------------------------------------------------
 def _carregar_modulo(caminho: pathlib.Path, nome: str):
     spec = importlib.util.spec_from_file_location(nome, caminho)
@@ -379,11 +422,103 @@ def _carregar_modulo(caminho: pathlib.Path, nome: str):
     return modulo
 
 
+def _arvore_da_mutacao(area: pathlib.Path, arquivo: pathlib.Path):
+    """(destino do arquivo mutado, links a criar): a mutacao medida NA ARVORE CERTA.
+
+    O roteador e o gate descobrem a raiz do repo por `__file__` e carregam a politica (e
+    as politicas de papel, o registro de aprovacoes e o modulo de aprovacoes) por caminho
+    relativo a essa raiz. Um copy plano no diretorio temporario faz a suite reprovar por
+    EXCECAO (`politica ausente`) em vez de medir a mutacao — dente falso, medido na
+    verificacao independente do card `t_831d01f0`. A arvore temporaria reproduz os
+    caminhos por symlink (mesma convencao da suite v1.1, `_arvore_do_roteador_mutado`):
+    a mutacao e exercitada pelo roteador/gate de verdade, sem tocar o arquivo versionado.
+    """
+    if arquivo == CAMINHO_DO_ROTEADOR:
+        relativo = pathlib.Path("hermes/jev/routing") / arquivo.name
+        links = {
+            pathlib.Path("hermes/jev/policy_v1_2.yaml"):
+                RAIZ / "hermes/jev/policy_v1_2.yaml",
+            pathlib.Path("hermes/policies"): RAIZ / "hermes/policies",
+        }
+    else:
+        relativo = pathlib.Path("hermes/jev/gate") / arquivo.name
+        links = {
+            pathlib.Path("hermes/jev/gate/aprovacoes.py"):
+                RAIZ / "hermes/jev/gate/aprovacoes.py",
+            pathlib.Path("hermes/jev/acoes-declaradas.yaml"):
+                RAIZ / "hermes/jev/acoes-declaradas.yaml",
+            pathlib.Path("hermes/jev/aprovacoes-humanas.yaml"):
+                RAIZ / "hermes/jev/aprovacoes-humanas.yaml",
+            pathlib.Path("hermes/jev/receipts"): RAIZ / "hermes/jev/receipts",
+            pathlib.Path("docs/operations/registro-de-aprovacoes.md"):
+                RAIZ / "docs/operations/registro-de-aprovacoes.md",
+        }
+    destino = area / relativo
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    return destino, links
+
+
+def _criar_links(area: pathlib.Path, links: dict) -> None:
+    for relativo, alvo in links.items():
+        ponto = area / relativo
+        ponto.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(alvo, ponto)
+
+
 def _copia_mutada(origem: pathlib.Path, destino: pathlib.Path, antigo: str, novo: str) -> None:
     texto = origem.read_text(encoding="utf-8")
     if antigo not in texto:
         raise RuntimeError(f"ancora ausente em {origem.name}: {antigo!r}")
     destino.write_text(texto.replace(antigo, novo, 1), encoding="utf-8")
+
+
+def _rodar_checar(roteador, gate) -> tuple[bool, list[str], str | None]:
+    """(reprovou por ITEM, itens reprovados, excecao).
+
+    DENTE HONESTO (defeito do card `t_99796978`): EXCECAO NAO E DENTE. Uma arvore
+    temporaria quebrada faz TODA mutacao estourar (`PoliticaInvalida`: politica ausente) e
+    o laco antigo contava isso como "mutacao reprovada" — 8/8 verdes com a arvore sabotada,
+    medido. Quem detecta a mutacao e a suite reprovando POR ITEM (`[FALHA]`); a excecao sai
+    no terceiro campo para o chamador acusar `[BURACO]` em vez de dar o dente de graca.
+    """
+    antes = len(ITENS)
+    buffer = io.StringIO()
+    reprovou = False
+    excecao = None
+    try:
+        with contextlib.redirect_stdout(buffer):
+            checar(roteador=roteador, gate=gate)
+        reprovou = "FALHA" in buffer.getvalue()
+    except Exception as erro:  # nao conta como dente — ver docstring
+        excecao = f"{type(erro).__name__}: {erro}"
+    itens_da_rodada = list(ITENS[antes:])
+    del ITENS[antes:]
+    return reprovou, [d for d, ok in itens_da_rodada if not ok], excecao
+
+
+def _controle_negativo(area: pathlib.Path, arquivo: pathlib.Path, destino: pathlib.Path,
+                       indice: int) -> tuple[bool, str]:
+    """A MESMA arvore temporaria com o modulo INTACTO: exige 0 falhas e nenhuma excecao.
+
+    E o controle que prova que a arvore temporaria esta FIEL — que os caminhos que o
+    roteador/gate carregam por `__file__` existem e resolvem. Sem ele o fail-open e
+    invisivel: no dia em que a lista de links de `_arvore_da_mutacao` divergir do que o
+    modulo carrega, as N mutacoes passam a reprovar por EXCECAO e o autoteste segue verde.
+    Medido no card `t_99796978` com `_criar_links` sabotado (return imediato): 8/8 PASS,
+    exit 0, o mesmo falso-verde que o card `t_c21fc474` veio eliminar.
+    """
+    try:
+        destino.write_text(arquivo.read_text(encoding="utf-8"), encoding="utf-8")
+        if arquivo == CAMINHO_DO_ROTEADOR:
+            intacto = _carregar_modulo(destino, f"router_intacto_{indice}")
+            reprovou, falhas, excecao = _rodar_checar(intacto, None)
+        else:
+            intacto = _carregar_modulo(destino, f"gate_intacto_{indice}")
+            reprovou, falhas, excecao = _rodar_checar(roteador_padrao, intacto)
+    except Exception as erro:  # nem carregar o modulo intacto da arvore: arvore quebrada
+        return False, f"carregamento/execucao do modulo intacto falhou: {type(erro).__name__}: {erro}"
+    return (not reprovou and not falhas and excecao is None), \
+        f"falhas={len(falhas)} excecao={excecao}"
 
 
 def mutacoes() -> list:
@@ -432,19 +567,40 @@ def mutacoes() -> list:
          CAMINHO_DO_ROTEADOR,
          '    guardrails = list(_guardrails_de_codigo(tarefa))',
          '    guardrails = [] if politica is None else list(_guardrails_de_codigo(tarefa))'),
+        ("D1 SEM piso: o override do chamador deixa de ser nomeado sob `humano` "
+         "(chaves do chamador espelham no topo e `humano` desaparece do recibo; no caminho "
+         "COM piso `_compor_override_do_recibo` recompunha o campo e mascarava isto)",
+         CAMINHO_DO_ROTEADOR,
+         '        plano["override"] = {"humano": humano, "registro_marcado": registro}\n',
+         '        plano["override"] = {**humano, "registro_marcado": registro}\n'),
     ]
 
 
 def autoteste() -> int:
     detectadas = 0
+    buracos: list[str] = []
     entradas = mutacoes()
     for indice, (nome, arquivo, antigo, novo) in enumerate(entradas, start=1):
         with tempfile.TemporaryDirectory(prefix=f"jev-registro-mut-{indice}-") as temporario:
             area = pathlib.Path(temporario)
-            destino = area / arquivo.name
+            destino, links = _arvore_da_mutacao(area, arquivo)
+            _criar_links(area, links)
+            # CONTROLE NEGATIVO antes de aceitar qualquer dente desta arvore: com o modulo
+            # INTACTO na MESMA arvore temporaria a suite tem de dar 0 falhas e nenhuma
+            # excecao. Se nao der, a arvore nao esta fiel e nenhum 8/8 medido nela vale.
+            fiel, detalhe_controle = _controle_negativo(area, arquivo, destino, indice)
+            if fiel:
+                print(f"  [OK] controle negativo — modulo INTACTO na arvore temporaria: "
+                      f"0 falhas, sem excecao (mutacao {indice})")
+            else:
+                buracos.append(f"controle negativo falhou (mutacao {indice}: {nome}) — "
+                               f"{detalhe_controle}")
+                print(f"  [BURACO] controle negativo — a arvore temporaria NAO esta fiel "
+                      f"(mutacao {indice}: {nome}) — {detalhe_controle}")
             try:
                 _copia_mutada(arquivo, destino, antigo, novo)
             except RuntimeError as erro:
+                buracos.append(f"mutacao nao aplicavel: {nome} — {erro}")
                 print(f"  [BURACO] mutacao nao aplicavel: {nome} — {erro}")
                 continue
             roteador_mutado, gate_mutado = roteador_padrao, None
@@ -452,24 +608,28 @@ def autoteste() -> int:
                 roteador_mutado = _carregar_modulo(destino, f"router_mut_{indice}")
             else:
                 gate_mutado = _carregar_modulo(destino, f"gate_mut_{indice}")
-            buffer = io.StringIO()
-            try:
-                with contextlib.redirect_stdout(buffer):
-                    checar(roteador=roteador_mutado, gate=gate_mutado)
-                reprovou = "FALHA" in buffer.getvalue()
-            except Exception:
-                reprovou = True  # mutacao que quebra a suite tambem conta como detectada
-            finally:
-                del ITENS[-ITENS_ANTES:]
-            detectadas += 1 if reprovou else 0
-            print(f"  [{'OK' if reprovou else 'BURACO'}] mutacao reprovada: {nome}")
+            reprovou, falhas, excecao = _rodar_checar(roteador_mutado, gate_mutado)
+            if reprovou and excecao is None:
+                detectadas += 1
+                print(f"  [OK] mutacao reprovada por ITEM ({len(falhas)} item(ns)): {nome}")
+            elif excecao is not None:
+                buracos.append(f"mutacao NAO reprovada por ITEM — a suite quebrou por "
+                               f"EXCECAO: {nome} — {excecao}")
+                print(f"  [BURACO] mutacao NAO reprovada por ITEM — a suite quebrou por "
+                      f"EXCECAO (nao e dente): {nome} — {excecao}")
+            else:
+                buracos.append(f"mutacao sobreviveu (nenhum item reprovou): {nome}")
+                print(f"  [BURACO] mutacao NAO reprovada (nenhum [FALHA]) — o mutante "
+                      f"sobrevive: {nome}")
     total = len(entradas)
-    print(f"AUTOTESTE: {detectadas}/{total} mutacoes reprovadas")
-    return 0 if detectadas == total else 1
+    print(f"AUTOTESTE: {detectadas}/{total} mutacoes reprovadas por ITEM "
+          f"({len(buracos)} buraco(s))")
+    for buraco in buracos:
+        print(f"  -> BURACO: {buraco}")
+    return 0 if detectadas == total and not buracos else 1
 
 
 def main() -> int:
-    global ITENS_ANTES
     parser = argparse.ArgumentParser()
     parser.add_argument("--autoteste", action="store_true")
     args = parser.parse_args()
@@ -480,7 +640,6 @@ def main() -> int:
     for d in falhas:
         print(f"  -> {d}")
     if args.autoteste:
-        ITENS_ANTES = len(ITENS)
         if autoteste():
             print("RESULTADO FINAL: FALHOU (autoteste com buraco)")
             return 1
