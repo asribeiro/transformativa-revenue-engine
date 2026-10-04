@@ -50,13 +50,18 @@
 # `pg-odoo-dev`, `odoo_dev` nem a copia operacional /opt/tre/repo.
 #
 # Uso (NA VPS, a partir de arquivo, como root — a dupla descartavel exige chown para o uid do
-# container):
-#   bash verificar-atividade-criar.sh
-#   bash verificar-atividade-criar.sh --apenas-motor
-#   bash verificar-atividade-criar.sh --apenas-suites        (instalacao + teste do Odoo)
-#   bash verificar-atividade-criar.sh --apenas-http         (instalacao + servidor + curl)
-#   bash verificar-atividade-criar.sh --prova-de-dente      (4 mutacoes; cada uma TEM de reprovar)
-#   bash verificar-atividade-criar.sh --banco tre_outro --modulo-dir /caminho/do/modulo
+# container; os caminhos abaixo sao relativos a raiz do repositorio):
+#   bash scripts/odoo/verificar-atividade-criar.sh
+#   bash scripts/odoo/verificar-atividade-criar.sh --apenas-motor
+#   bash scripts/odoo/verificar-atividade-criar.sh --apenas-suites        (instalacao + teste do Odoo)
+#   bash scripts/odoo/verificar-atividade-criar.sh --apenas-http         (instalacao + servidor + curl)
+#   bash scripts/odoo/verificar-atividade-criar.sh --prova-de-dente      (4 mutacoes; cada uma TEM de reprovar)
+#   bash scripts/odoo/verificar-atividade-criar.sh --banco tre_outro --modulo-dir /caminho/do/modulo
+#
+# Os sub-runs dos dentes sao lancados pelo caminho ABSOLUTO do proprio script (`bash "$AQUI/$(basename
+# "$0")"`): assim o `--prova-de-dente` mede igual invocando por caminho (`bash scripts/odoo/...`) ou
+# pelo nome de dentro do diretorio (`bash verificar-...sh`) — com `"$0"` puro o sub-run nao era
+# executavel e as 4 provas saiam inconclusivas (defeito do card TRE-W3-E01-T05-D01).
 #
 # Variaveis: TRE_MODULO, TRE_MODULO_DIR, TRE_BANCO, TRE_IMAGEM, TRE_IMAGEM_PG, TRE_PG_USER,
 # TRE_LOG_DIR, TRE_DEV_PG_CT, TRE_MANTER_BANCO=1 (nao limpa no fim).
@@ -238,7 +243,7 @@ PY
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
     D1="$(TRE_MODULO_DIR="$DENTE_DIR/m1" TRE_BANCO="${BANCO}_d1" TRE_LOG_DIR="$LOG_DIR/dente1" \
-          "$0" --apenas-http 2>&1)"
+          bash "$AQUI/$(basename "$0")" --apenas-http 2>&1)"
     printf '%s\n' "$D1" >"$LOG_DIR/dente-1-sem-operacao.out"
     printf '%s\n' "$D1" | tail -3
     avaliar_dente "dente 1 (politica sem a operacao)" "$LOG_DIR/dente-1-sem-operacao.out" \
@@ -279,7 +284,7 @@ PY
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
     D2="$(TRE_MODULO_DIR="$DENTE_DIR/m2" TRE_BANCO="${BANCO}_d2" TRE_LOG_DIR="$LOG_DIR/dente2" \
-          "$0" --apenas-http 2>&1)"
+          bash "$AQUI/$(basename "$0")" --apenas-http 2>&1)"
     printf '%s\n' "$D2" >"$LOG_DIR/dente-2-sem-valor-fixo.out"
     printf '%s\n' "$D2" | tail -3
     avaliar_dente "dente 2 (politica sem o valor fixo da ancora)" "$LOG_DIR/dente-2-sem-valor-fixo.out" \
@@ -324,7 +329,7 @@ PY
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
     D3="$(TRE_MODULO_DIR="$DENTE_DIR/m3" TRE_BANCO="${BANCO}_d3" TRE_LOG_DIR="$LOG_DIR/dente3" \
-          "$0" --apenas-http 2>&1)"
+          bash "$AQUI/$(basename "$0")" --apenas-http 2>&1)"
     printf '%s\n' "$D3" >"$LOG_DIR/dente-3-sem-ramo-de-criacao.out"
     printf '%s\n' "$D3" | tail -3
     avaliar_dente "dente 3 (controlador sem o ramo de criacao)" "$LOG_DIR/dente-3-sem-ramo-de-criacao.out" \
@@ -356,7 +361,7 @@ PY
         DENTE_FALHAS=$((DENTE_FALHAS + 1))
     fi
     D4="$(TRE_MODULO_DIR="$DENTE_DIR/m4" TRE_BANCO="${BANCO}_d4" TRE_LOG_DIR="$LOG_DIR/dente4" \
-          "$0" --apenas-http 2>&1)"
+          bash "$AQUI/$(basename "$0")" --apenas-http 2>&1)"
     printf '%s\n' "$D4" >"$LOG_DIR/dente-4-sem-traducao-de-ancora.out"
     printf '%s\n' "$D4" | tail -3
     avaliar_dente "dente 4 (modulo sem a traducao da ancora)" "$LOG_DIR/dente-4-sem-traducao-de-ancora.out" \
