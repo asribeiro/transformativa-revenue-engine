@@ -2750,3 +2750,30 @@ Segredos: nenhum valor nesta entrada; o componente recusa a rodada (exit 5) se o
 - **Estado DEPOIS / ambiente (medido):** mesmos 4 bancos no `pg-odoo-dev` antes e depois (`odoo_dev, postgres, template0, template1`); **0 container** e **0 rede** `e07t01-*` depois das rodadas (o proprio verificador remove a dupla descartavel); `/opt/tre/{homolog,prod}` com **0 arquivo** (ADR-005); `/opt/tre/repo` **sem escrita**. Bateria e controles do retrabalho: `/opt/tre/dev/e07t01-retrabalho/` (`out/aceite.out`, `out/dentes.out`, `out/controles.out`, `out/logs-aceite-{antes,depois}-dentes.sha256`, `controles/`); bateria `retrabalho-e07t01.sh` sha256 `5319f4fb…`.
 - **Verificacao independente:** este retrabalho **nao se auto-homologa** — a re-verificacao e do perfil `tester` (estagio 6) e a homologacao (estagio 7) e do Anderson.
 - Segredos: nenhum valor nesta entrada (as senhas das duplas descartaveis nascem na VPS, em arquivo 600 dono uid 100, e morrem com o diretorio temporario).
+## TRE-W7-E01-T01 — Website lead capture (W7/E01)
+
+- **ACCEPTANCE.** (a) submissão válida com opt-in cria **1** `organizations` (source `WEBSITE_FORMULARIO`,
+  status `DISCOVERED`), **1** `contacts` (com `legal_basis`, `source` e bloqueios) e **1** `interactions`
+  (`WEBSITE`/`INBOUND`/`FORMULARIO_SITE`) + trilha `CAPTURADO`; (b) **consentimento é barreira**: sem
+  opt-in/base legal válida nenhum cadastro nasce (só trilha `RECUSADO_CONSENTIMENTO`);
+  (c) **identidade**: forte (CNPJ/domínio/LinkedIn) reusa a organização, fraco (nome+cidade/nome+telefone)
+  vai para `REVIEW_REQUIRED` — nunca merge silencioso; (d) **idempotência**: reentrega da mesma submissão →
+  `JA_CAPTURADO`, zero linha nova; (e) **limite de escrita**: só `organizations`, `contacts`,
+  `interactions`, `sync_events`, só INSERT; (f) ADR-005: `prod` recusa (exit 4), dev exige banco local,
+  `--confirmo` obrigatório para escrever; (g) PII (e-mail/telefone/CNPJ) mascarada na evidência.
+- **TEST.** `python3 scripts/agentes/verificar_captura_site.py --autoteste` →
+  `VERIFICADOR_CAPTURA_SITE_PASS (37 itens, 0 falhas, 5 dentes)`;
+  `bash scripts/agentes/teste_captura_site_aceite.sh` (na VPS, container `pg-site-acc` descartável +
+  migration 0001) → `ACEITE_CAPTURA_SITE_001_OK (46 itens, 0 falhas)`; `bash scripts/verificar_estrutura.sh`.
+- **ROLLBACK.** Nenhuma DDL e nada em produção: reverter o commit (4 arquivos novos) e remover o container
+  descartável do aceite.
+- **RISK.** Médio. Dado pessoal de lead entrando (LGPD) — mitigado por opt-in obrigatório, base legal
+  declarada, `do_not_contact`/`opt_out_*` gravados como bloqueio e mascaramento na evidência; risco de
+  organização duplicada — mitigado por identificador forte antes do fraco e fila humana no fraco; risco de
+  o lead não chegar ao CRM — **declarado** (evento novo exige versão do contrato + aprovação humana).
+- **EVIDÊNCIA.** Logs do aceite anexados ao card (`aceite-captura-site-46ok.out`,
+  `verificador-captura-site-dentes-5de5.out`); componentes: `hermes/agentes/inbound/captura_site.py`,
+  `hermes/agentes/inbound/captura-site-v1.json`, `scripts/agentes/verificar_captura_site.py`,
+  `scripts/agentes/teste_captura_site_aceite.sh`, `docs/runbooks/captura-de-lead-do-site.md`.
+- **Destrava:** W7-E02 (Meta), W7-E03 (Google), W7-E06 (eventos) — a captura canônica de lead inbound passa
+  a existir; a escrita no Odoo a partir do site fica atrás do card de contrato/aprovação (lacuna L1).

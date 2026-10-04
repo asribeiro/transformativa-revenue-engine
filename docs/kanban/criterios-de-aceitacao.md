@@ -749,3 +749,25 @@ Card da onda W9 que depende da **calibracao** (W9-E01-T01): o objeto aqui **nao*
   e nao persistida (L4); (e) **vies de sucessao** do componente (L5, ultimo valor); (f) alvo e'
   'ganhou x perdeu', nao conversao de proposta (L6); (g) PAVA e' **guloso** (L7, um caminho
   determinista); (h) cobertura parcial quando falta lastro (L8, declarada em `cobertura_pct`).
+## TRE-W7-E01-T01 — Website lead capture
+
+- Submissão do formulário (JSON do contrato `captura-site-v1`) vira cadastro canônico: **1**
+  `organizations` (source `WEBSITE_FORMULARIO`, status `DISCOVERED`), **1** `contacts`, **1**
+  `interactions` (`WEBSITE`/`INBOUND`/`FORMULARIO_SITE`) e **1** trilha `sync_events` (`site:<submission_id>`).
+- **Consentimento é barreira:** sem `consentimento.aceito = true` e base legal no vocabulário, nada é
+  cadastrado — só a trilha `RECUSADO_CONSENTIMENTO` (compliance > volume).
+- **Identidade:** forte (CNPJ → domínio → LinkedIn, ≥ 0,95) reusa a organização; **fraco** (nome+cidade /
+  nome+telefone) vai para `REVIEW_REQUIRED` — fila humana, nunca merge silencioso; nada casando, UUID
+  canônico novo gerado no INSERT.
+- **Idempotência:** reentrega da mesma submissão → `JA_CAPTURADO`, zero linha nova.
+- **Limite de escrita:** só `organizations`, `contacts`, `interactions`, `sync_events`, só por INSERT; a
+  auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar.
+- **Privacidade:** e-mail, telefone e CNPJ mascarados na evidência; `do_not_contact`/`opt_out_*` do
+  formulário gravados como **bloqueio**.
+
+**Test plan:** `python3 scripts/agentes/verificar_captura_site.py --autoteste` (32 itens + 5 dentes) e
+`bash scripts/agentes/teste_captura_site_aceite.sh` (PostgreSQL descartável na VPS, 46 itens).
+**Rollback:** reverter o commit (4 arquivos novos, sem DDL) e remover o container descartável do aceite.
+**Risco:** Médio (dado pessoal de lead entrando; LGPD) — mitigado por opt-in obrigatório, base legal
+declarada, bloqueios gravados e mascaramento; risco de não escrever no Odoo é **declarado** (ver lacuna L1
+do runbook: evento novo exige versão do contrato + aprovação humana).

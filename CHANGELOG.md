@@ -110,6 +110,27 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   componente passou a emitir **dois `-c`** (`SET` e depois a consulta) e o aceite ganhou o item que
   injeta a escrita e exige `cannot execute INSERT in a read-only transaction`; a escrita recusada também
   não pode deixar linha.
+## [W7 — Inbound] — 03/10/2026
+
+### Added
+
+- **Captura de lead do site v1** (`TRE-W7-E01-T01`) — componente `hermes/agentes/inbound/captura_site.py`
+  (`captura-site-v1`) + contrato `hermes/agentes/inbound/captura-site-v1.json`: recebe a submissão do
+  formulário já normalizada em JSON, trata **consentimento como barreira** (sem opt-in explícito e base
+  legal declarada, nada é cadastrado — só trilha `RECUSADO_CONSENTIMENTO`), resolve a identidade da
+  empresa por **identificador forte** (CNPJ → domínio → LinkedIn, confiança ≥ 0,95) antes do **fraco**
+  (nome+cidade / nome+telefone), que vai para `REVIEW_REQUIRED` — nunca merge silencioso (Data Contract V1
+  §5) —, grava `organizations`/`contacts`/`interactions` (canal `WEBSITE`, direção `INBOUND`, tipo
+  `FORMULARIO_SITE`) com UUID canônico no próprio INSERT e a trilha de idempotência
+  `site:<submission_id>` em `sync_events`, e mascara e-mail/telefone/CNPJ na evidência. Escrita só por
+  INSERT nas 4 tabelas; auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar. Guardas:
+  dev exige porta de banco local (`docker exec -i pg-* psql`), `prod` recusa (exit 4), `homolog` exige
+  aprovação registrada, escrever exige `--confirmo` (senão `DRY_RUN`). Medição: suite offline
+  `VERIFICADOR_CAPTURA_SITE_PASS (32 itens + 5 dentes)` e aceite em PostgreSQL descartável
+  `ACEITE_CAPTURA_SITE_001_OK (46 itens, 0 falhas)`. Docs: `docs/runbooks/captura-de-lead-do-site.md`.
+  **Lacuna declarada:** o lead não é escrito no Odoo por este card — o vocabulário de eventos PG → Odoo do
+  contrato V1 não tem evento de lead capturado e o consumidor de outbox é fail-closed; criar `event_type`
+  novo exige nova versão do contrato + aprovação humana (doc 12/ADR-0004).
 
 ## [W6 — Outbound] — 02/10/2026
 
