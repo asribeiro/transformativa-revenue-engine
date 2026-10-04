@@ -154,9 +154,12 @@ def main():
              or not isinstance((m.get("limites") or {}).get("critico"), (int, float))]
     igual("toda metrica que decide veredito declara alerta e critico", ruins, [])
     invertidos = [m["id"] for m in decisoes
-                  if (m["limites"].get("critico") or 0) < (m["limites"].get("alerta") or 0)]
+                  if ((m.get("limites") or {}).get("critico") or 0)
+                  < ((m.get("limites") or {}).get("alerta") or 0)]
     igual("nenhum limiar invertido", invertidos, [])
-    abaixo_de_um = [m["id"] for m in decisoes if m["limites"]["alerta"] < 1 or m["limites"]["critico"] < 1]
+    abaixo_de_um = [m["id"] for m in decisoes
+                    if ((m.get("limites") or {}).get("alerta") or 0) < 1
+                    or ((m.get("limites") or {}).get("critico") or 0) < 1]
     igual("nenhum limiar abaixo de 1 (0 tornaria o estado saudavel em alerta)", abaixo_de_um, [])
     informativas_com_limite = [m["id"] for m in metricas
                                if m.get("informativa") is True and m.get("limites") is not None]

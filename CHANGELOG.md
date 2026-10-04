@@ -1539,7 +1539,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   direcao fora do vocabulario, trilha COMPLETED sem conclusao), cada metrica medida **por dois caminhos
   independentes** (`psql` direto e pelo workflow no n8n descartavel) e o retrato das duas tabelas identico
   antes/depois da rodada (somente-leitura provado em execucao real). Prova de dente:
-  `OBSERVABILIDADE_SYNC_DENTE_OK` (**12/12**, baseline nao mutado verde, juiz conferido com 7 saidas sinteticas).
+  `OBSERVABILIDADE_SYNC_DENTE_OK` (**12/12**, baseline nao mutado verde, juiz conferido com 8 saidas sinteticas + 2 de sha256).
   Runbook: `docs/runbooks/observabilidade-sync.md`.
 
 ### Fixed
@@ -1561,6 +1561,19 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   papéis e contrato de dados, todos exit 0. Cherry-pick isolado do commit `a5c3a1f` (nascido de `a38585d`)
   sobre árvore que contém o T02: **0 conflito** e `PASS (0 falhas)` exit 0; em árvore anterior ao T02 o gate
   reprova por ausência — que é exatamente o comportamento pedido.
+- **Quatro achados de precisão/robustez da revisão independente (`TRE-W3-E05-T01-D01`)** — da revisão do card
+  `t_0b77a689`; nenhum altera resultado medido, todos são precisão de texto/contrato ou robustez da própria
+  lente. (a) `CHANGELOG.md` dizia `7 saídas sintéticas` no juiz do dente quando o artefato já tinha **8**
+  (mais 2 de `sha256`) desde o commit `a58c0a7`; (b) o registro de execuções trazia
+  `(58 itens itens, 0 falhas` — palavra duplicada e parêntese sem fechar; (c) o contrato prometia "linha com
+  **QUALQUER** campo preenchido é dado" e `linhaDeDetalheVazia` do núcleo ignorava `tentativas` — a função
+  passou a testá-lo (direção **fail-closed**: linha ambígua agora é dado, nunca descarte silencioso) e o
+  workflow derivado foi remontado pelo montador; (d) a lente estrutural morria com `AttributeError`
+  (`limites: null` numa métrica de veredito) **depois** de imprimir o item reprovado e **sem** a linha
+  `RESULTADO` — agora usa `(m.get("limites") or {})` e fecha o resumo. Medido localmente (`python3`/`node`
+  puros, sem docker e sem VPS): lente `118 itens, 0 falhas` exit 0, suíte do núcleo `58 itens, 0 falhas`
+  exit 0, e o controle de `limites: null` fecha `OBSERVABILIDADE_LENTE_FALHOU (118 itens, 4 falha(s))`
+  exit 1 **sem** traceback.
 
 - **Âncora de dente do dedup apontava só para a mensagem de sucesso (`TRE-W3-E02-T02`)** — na primeira rodada
   do `--prova-de-dente`, o dente `guarda_de_sucesso_afrouxada` saía `NAO_CONTA (âncora quebrada)`: o item do E7
@@ -1641,7 +1654,7 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   apareceu no aceite r2 e a causa era o proprio padrao); (b) o dente do placeholder saiu `MUTACAO_SEM_DENTE`
   porque a ancora (`nao vira indeterminado`) tambem existia num item vizinho que continuava OK. Corrigido na
   raiz: ancora virou trecho unico, o juiz do dente julga **FALHOU antes de OK** (item vizinho de texto parecido
-  nao pode esconder o dente) e o juiz ganhou controle proprio para esse caso (7 saidas sinteticas).
+  nao pode esconder o dente) e o juiz ganhou controle proprio para esse caso (8 saidas sinteticas).
 
 ### Notas de estado
 
