@@ -229,6 +229,47 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (medido por `grep`: 0 referência a `linkedin.com`/`requests`/`urllib`/`selenium`/`playwright`).
 - Regra do dono preservada por código: **não publica, não comenta, não reage, não segue, não convida,
   não manda DM, não menciona e não responde** em nome dele — 11 ações recusadas por desenho (exit 5).
+## [W7 — Inbound / Multicanal] — 03/10/2026
+
+### Added
+
+- **WhatsApp engaged-lead workflow v1** (`TRE-W7-E05-T01`) — componente
+  `hermes/agentes/inbound/whatsapp_lead.py` (`whatsapp-lead-v1`) + contrato `whatsapp-lead-v1.json`:
+  recebe a mensagem INBOUND de WhatsApp já normalizada (o webhook do provedor é do n8n — lacuna L2),
+  resolve a identidade pelo **núcleo nacional do telefone** (11 dígitos; `+55`/`55`/sem país dão o mesmo
+  núcleo) contra `contacts.whatsapp` e `contacts.phone`, classifica por regra declarada com `OPT_OUT` na
+  ordem 1 (descadastro vence o interesse) e grava a interação `WHATSAPP`/`INBOUND`/`WHATSAPP_MENSAGEM` +
+  a trilha `whatsapp:<message_id>` em `sync_events` (INSERT apenas). **Nunca envia**: outbound de canal é
+  ação L1 com aprovação humana — a saída é uma PROPOSTA (`proximo_passo`) calculada pela **janela de
+  atendimento** do provedor (24 h desde a última entrada do contato): dentro da janela
+  `RESPOSTA_LIVRE_SUGERIDA`, fora dela `REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA`; `do_not_contact`,
+  `opt_out_whatsapp` e descadastro classificam `BLOQUEADO_POR_BLOQUEIO` (`NENHUM_FILA_HUMANA`) — a
+  mensagem continua registrada porque o fato aconteceu, e `contacts` fica intocada (dono operacional é o
+  Odoo; propagação é `W6-E06`). Telefone desconhecido → `SEM_VINCULO`, ambiguidade → `REVIEW_REQUIRED`:
+  identidade não se inventa. Medição: suite offline **60 itens, 0 falhas** + **10 dentes** (cada mutação
+  reprovando o item que nomeia), aceite em Postgres descartável na VPS
+  **ACEITE_WHATSAPP_LEAD_001_OK (68 itens, 0 falhas)**, portão de estrutura PASS. Docs:
+  `docs/runbooks/whatsapp-engaged-lead.md`.
+
+### Fixed
+
+- **Trilha duplicada por mensagem** (defeito medido na rodada 1 do aceite de `TRE-W7-E05-T01`):
+  `gravar_interacao` gravava a trilha em `sync_events` e o núcleo gravava de novo — a chave
+  `whatsapp:<message_id>` é UNIQUE, o segundo INSERT estourava e a mensagem terminava em RECUSA com a
+  interação já gravada. Agora quem grava a trilha é só o núcleo (`gravar_trilha`), com o status do
+  veredito; dente `D9`.
+- **Porta de banco lendo só a última linha do JSON** (defeito medido na rodada 1 do aceite de
+  `TRE-W7-E05-T01`): o `psql` quebra o valor agregado em várias linhas (`json_agg` com 2+ linhas sai como
+  `[{"…"}, \n {"…"}]`), então toda leitura com 2+ resultados caía em `BANCO_RESPOSTA_INVALIDA` — foi o
+  caso do telefone ambíguo, que existe para ir a `REVIEW_REQUIRED`. A porta passou a ler o DOCUMENTO
+  JSON, reunindo as linhas; dente `D10`.
+
+### Security
+
+- Nada em produção (ADR-005): `prod` recusado por medição (exit 4), dev exige porta de banco em
+  container local, escrita exige `--confirmo`. O aceite roda 100% em `127.0.0.1` com container
+  descartável; telefone do lead mascarado na evidência (item medindo 0 ocorrências cruas);
+  `outbox_events` vazia (nenhum evento de envio criado) e `contacts` intocada.
 
 ## [W6 — Outbound] — 02/10/2026
 
