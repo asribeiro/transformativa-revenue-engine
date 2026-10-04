@@ -6,7 +6,7 @@
   "release_status": "IN_PROGRESS",
   "current_gate": "VALIDATION",
   "production_promotion_authorized": false,
-  "updated_at": "2026-10-03",
+  "updated_at": "2026-10-04",
   "human_approval": {
     "required": true,
     "status": "PENDING",
@@ -289,6 +289,56 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W6-E06-T01",
+      "title": "Atualizar Odoo a partir de respostas",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_fa1f31bf",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E do card TRE-W6-E06-T01 por EXECUCAO REAL: PostgreSQL DESCARTALVEL proprio (pg-e06-acc) com a migration 0001 + fixtures de respostas ja' classificadas (materia-prima do W6-E05) + STUB local da API controlada do Odoo (127.0.0.1, Bearer). Mede: guardas (prod RECUSA exit 4; API fora de loopback RECUSA; porta de banco remota RECUSA; nenhuma guarda escreve trilha), dry-run sem escrita nem chamada, rodada confirmada com 3 respostas propagadas (RESPOSTA_INTERESSE + RESPOSTA_OPT_OUT + RESPOSTA_SEM_INTERESSE), BOUNCE como SEM_ATO e INTERESSE sem lead como SEM_VINCULO, 9 chamadas (3 atos x ler+upsert+atividade) com idempotency_key, evento/res_model/res_id no CRM, idempotencia por REPLAY (JA_ATUALIZADO, sem linha nova nem chamada nova), --desfazer (dry-run x --confirmo) preservando a trilha, escopo (as 9 tabelas do sales_intelligence intactas; interactions inalterado) e a chave nunca na saida. DUAS passadas byte-identicas (exit 0 em ambas; 45 itens, 0 falhas cada) + prova de dente em duas pontas: a suite offline com 12 mutacoes (12/12) E uma mutacao a mao no aceite E2E (guarda de producao desligada -> FALHOU o item nomeado, exit 1).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "54ee7690422458fa42943bc7eb9ef189ce6626dd",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone isolado /tmp/tre_lote7/repo (bundle git do develop, 3.2M) NO COMMIT develop 54ee769. Aceite sobe UM container PostgreSQL DESCARTALVEL proprio (pg-e06-acc) + stub LOCAL da API controlada do Odoo em 127.0.0.1:8799 (o dev nao tem chave de API do Odoo); nenhuma credencial Titan, nenhum host externo. Containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas byte-identicas (o aceite nao emite timestamp/uuid; diff cru = 0 linhas). A prova de dente e' a suite offline do mesmo card (verificar_atualizacao_odoo.py --prova-de-dente, 12 mutacoes) MAIS uma prova negativa a mao no aceite E2E: guarda de producao desativada em COPIA do componente -> o aceite REPROVA o item 'prod RECUSA por desenho (exit 4)' com exit 1. Higiene: descartaveis removidos com 'docker rm -f -v'; nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/agentes/teste_atualizacao_odoo_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_ATUALIZACAO_ODOO_RESPOSTAS_001_OK (45 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_atualizacao_odoo_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_ATUALIZACAO_ODOO_RESPOSTAS_001_OK (45 itens, 0 falhas)"
+              },
+              {
+                "gate": "python3 scripts/agentes/verificar_atualizacao_odoo.py (suite offline)",
+                "exit": 0,
+                "resultado": "PASS (67 itens, 0 falhas)"
+              },
+              {
+                "gate": "python3 scripts/agentes/verificar_atualizacao_odoo.py --prova-de-dente",
+                "exit": 0,
+                "resultado": "12/12 dentes reprovaram O ITEM NOMEADO (prod/loopback/categoria/ato/leitura/envelope/auditoria/md5/SQL/chave/ON CONFLICT/escrita crua)"
+              },
+              {
+                "gate": "aceite E2E com mutacao a mao (guarda de producao desativada em COPIA do componente)",
+                "exit": 1,
+                "resultado": "ACEITE_ATUALIZACAO_ODOO_RESPOSTAS_001_FALHOU (36 OK, 9 falhas); item nomeado 'FALHOU 1. prod RECUSA por desenho (exit 4)' — o aceite REPROVA a mutacao"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -327,6 +377,16 @@
         "t_d24b2861",
         "t_cbb01999",
         "t_74517731"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+      "scope": "lote 7 — W6-E06 (Odoo a partir de respostas) + onda W7 (captura de leads inbound)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T00:34:58+00:00",
+      "cards": [
+        "t_fa1f31bf"
       ]
     }
   ]

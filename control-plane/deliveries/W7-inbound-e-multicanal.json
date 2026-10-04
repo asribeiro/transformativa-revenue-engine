@@ -1,0 +1,241 @@
+{
+  "delivery_id": "TRE-W7",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W7 — Inbound e multicanal (captura de leads: site, Meta, Google, LinkedIn, WhatsApp e eventos)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-04",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote 7 (W6-E06 + onda W7)"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W7-E02-T01",
+      "title": "Meta lead ingestion",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_33bc1765",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E da INGESTAO DE LEADS META por EXECUCAO REAL contra pontas reais e descartaveis, sem token do Meta e sem tocar nada existente (ADR-005): STUB LOCAL da Graph API (127.0.0.1, GET com Bearer, contador de chamadas) + PostgreSQL DESCARTALVEL proprio (pg-meta-acc, migration 0001) + o componente hermes/agentes/inbound/ingestao_leads_meta.py gravando em sales_intelligence. WEBHOOKS ASSINADOS de verdade (HMAC-SHA256 do corpo cru com o app secret, inclusive assinatura ERRADA). Mede: guardas (prod RECUSA exit 4, banco remoto RECUSA, Graph fora de loopback RECUSA, --ingerir sem --confirmo = DRY_RUN sem gravar nem chamar a Graph); assinatura errada nao vira interacao; vinculo por e-mail e por TELEFONE formatado viram UMA linha; sem vinculo NAO inventa organizacao; dado insuficiente nao vira interacao; lead apagado = LEAD_INDISPONIVEL e erro persistente respeita o TETO de tentativas do contrato; idempotencia por leadgen_id (replay = JA_INGERIDO, zero chamada nova); PII fora do texto livre; escopo (so interactions/sync_events mudam); token/app secret fora da saida. DUAS passadas byte-identicas (exit 0 em ambas; 53 OK / 0 FALHOU cada) e prova de dente (--prova-de-dente) que REPROVA o item nomeado 5.8.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "c7155bc4e3100d5d5fb30ade05c9def928a7411b",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): MESMO clone isolado /tmp/tre_lote7/repo (bundle git do develop + as branches W7). OVERRIDE DECLARADO: os 5 cards da onda W7 sao verificados nos respectivos topos de branch — nao em develop — porque o codigo da W7 nao esta mergeado em develop (merge-base 20e8ea67). Cada aceite sobe um PostgreSQL DESCARTALVEL proprio (pg-meta-acc / pg-evt-acc / pg-lk-e04 / pg-google-acc / pg-wa-acc) e, quando aplicavel, stubs/sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA (diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_META_LEADS_001_OK (53 OK / 0 FALHOU)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_META_LEADS_001_OK (53 OK / 0 FALHOU)"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "ACEITE_META_LEADS_001_OK (54 OK / 0 FALHOU) com o dente: 'OK 10.1 dente: a mutacao do resumo REPROVA exatamente o item 5.8'; mutante reproduz 'FALHOU 5.8 content_summary NAO tem e-mail em claro (esperado=0 obtido=1)'"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W7-E06-T01",
+      "title": "Event lead capture",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_578d88a4",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E da CAPTURA DE LEAD DE EVENTO por EXECUCAO REAL num PostgreSQL DESCARTALVEL proprio (migration 0001) + o componente hermes/agentes/inbound/captura_evento.py gravando em sales_intelligence; nenhuma ponta externa. Mede a cadeia do card: assinatura fail-closed, primitivo de leitura, captura de lead de evento com consentimento obrigatorio e identificador forte no limiar de merge, barreira do vinculo do evento, idempotencia por event_id, mascaramento de e-mail, escopo de escrita e os DENTES DE PONTA medidos no BANCO (sem event_id e com capture_method inventado NAO viram cadastro). DUAS passadas byte-identicas (exit 0 em ambas; 60 itens, 0 falhas cada) e prova de dente INTERNA: a suite offline do componente (verificar_captura_evento.py --autoteste) roda 5 mutacoes e todas reprovam o item DECLARADO (5/5).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "618fa57efa54f1d66028a5877d577da8ecc5ee1a",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): MESMO clone isolado /tmp/tre_lote7/repo (bundle git do develop + as branches W7). OVERRIDE DECLARADO: os 5 cards da onda W7 sao verificados nos respectivos topos de branch — nao em develop — porque o codigo da W7 nao esta mergeado em develop (merge-base 20e8ea67). Cada aceite sobe um PostgreSQL DESCARTALVEL proprio (pg-meta-acc / pg-evt-acc / pg-lk-e04 / pg-google-acc / pg-wa-acc) e, quando aplicavel, stubs/sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA (diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/agentes/teste_captura_evento_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_CAPTURA_EVENTO_001_OK (60 itens, 0 falhas) — inclui o item 'suite offline + dentes verde' e os dentes de ponta do canal medidos no banco"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_captura_evento_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_CAPTURA_EVENTO_001_OK (60 itens, 0 falhas)"
+              },
+              {
+                "gate": "dente INTERNO: python3 scripts/agentes/verificar_captura_evento.py --autoteste",
+                "exit": 0,
+                "resultado": "VERIFICADOR_CAPTURA_EVENTO_PASS (46 itens, 0 falhas, 5 dentes); D1..D5 cada um 'item declarado REPROVOU sob mutacao' (o script nao expoe --prova-de-dente; o dente e' o autoteste do proprio verificador)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W7-E04-T01",
+      "title": "LinkedIn AI-assisted workflow",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_6c170b51",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E do LINKEDIN ASSISTIDO v1 por EXECUCAO REAL num PostgreSQL DESCARTALVEL proprio (pg-lk-e04, migration 0001); o canal LinkedIn NAO tem rede neste componente (o aceite mede isso por grep no codigo). Mede o que a maquina PREPARA (rascunho + pedido de aprovacao) e REGISTRA (engajamento), e o que o HUMANO decide/publica; e prova cada proibicao (publicar/comentar/reagir/seguir/convidar/enviar DM/mencionar/responder/agendar/automatizar navegador/usar API do LinkedIn) com exit 5 e zero escrita de efeito. DUAS passadas byte-identicas (exit 0 em ambas; 70 itens, 0 falhas cada) e prova de dente 3/3 (mutacao em COPIA do modulo: publicar pela maquina, sem aprovacao e sem evidencia — cada uma reprova o item nomeado).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "96a275ee85006abd1f78eda1536e4a37c143e544",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): MESMO clone isolado /tmp/tre_lote7/repo (bundle git do develop + as branches W7). OVERRIDE DECLARADO: os 5 cards da onda W7 sao verificados nos respectivos topos de branch — nao em develop — porque o codigo da W7 nao esta mergeado em develop (merge-base 20e8ea67). Cada aceite sobe um PostgreSQL DESCARTALVEL proprio (pg-meta-acc / pg-evt-acc / pg-lk-e04 / pg-google-acc / pg-wa-acc) e, quando aplicavel, stubs/sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA (diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/linkedin/verificar-linkedin-assistido.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_LINKEDIN_ASSISTIDO_OK (70 itens OK, 0 FALHOU)"
+              },
+              {
+                "gate": "bash scripts/linkedin/verificar-linkedin-assistido.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_LINKEDIN_ASSISTIDO_OK (70 itens OK, 0 FALHOU)"
+              },
+              {
+                "gate": "bash scripts/linkedin/verificar-linkedin-assistido.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "PROVA_DE_DENTE_OK (3/3); DENTE_OK 'publica' -> item 9.1, DENTE_OK 'sem-aprovacao' -> item 7.2, DENTE_OK 'evidencia' -> item 5.1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W7-E03-T01",
+      "title": "Google lead attribution",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_ba40919b",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E da ATRIBUICAO DE LEAD DO GOOGLE por EXECUCAO REAL contra pontas reais e descartaveis: STUB local do Google Ads (127.0.0.1) + PostgreSQL DESCARTALVEL proprio + o componente hermes/inbound/google/atribuicao_google.py. Mede: tabela declarada, fail-closed, trilha idempotente, confianca forte degradada no contrato, guarda de producao e limite de escrita (auditoria da fonte). DUAS passadas byte-identicas (exit 0 em ambas; 35 itens OK / 0 FALHOU cada) e prova de dente 3/3 (mutacao em COPIA do componente/contrato: confianca-forte, prod-liberado e escrita-fora-do-limite — cada uma REPROVA o item nomeado).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "9e78655ddae9598f5292a31426d4a24d96d7dd3f",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): MESMO clone isolado /tmp/tre_lote7/repo (bundle git do develop + as branches W7). OVERRIDE DECLARADO: os 5 cards da onda W7 sao verificados nos respectivos topos de branch — nao em develop — porque o codigo da W7 nao esta mergeado em develop (merge-base 20e8ea67). Cada aceite sobe um PostgreSQL DESCARTALVEL proprio (pg-meta-acc / pg-evt-acc / pg-lk-e04 / pg-google-acc / pg-wa-acc) e, quando aplicavel, stubs/sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA (diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/inbound/aceite-atribuicao-google.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_GOOGLE_LEADS_001_OK; 35 itens OK / 0 FALHOU"
+              },
+              {
+                "gate": "bash scripts/inbound/aceite-atribuicao-google.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_GOOGLE_LEADS_001_OK; 35 itens OK / 0 FALHOU"
+              },
+              {
+                "gate": "bash scripts/inbound/aceite-atribuicao-google.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "ACEITE_GOOGLE_LEADS_001_OK; 38 itens OK / 0 FALHOU; dentes: 3 ok / 0 falhou ('confianca-forte'->1.3, 'prod-liberado'->13.1, 'escrita-fora-do-limite'->11.1, cada um REPROVOU o item esperado)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W7-E05-T01",
+      "title": "WhatsApp engaged-lead workflow",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e5e497fd",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E do WORKFLOW DE LEAD ENGAJADO NO WHATSAPP por EXECUCAO REAL contra pontas reais e descartaveis: PostgreSQL DESCARTALVEL proprio + o componente hermes/agentes/inbound/whatsapp_lead.py gravando em sales_intelligence; nenhuma credencial do WhatsApp, nenhum destino externo. Mede: dados minimos (message_id), precedencia (OPT_OUT vence), negacao explicita do contrato, normalizacao do codigo do pais, bloqueio de contato, janela de atendimento, identidade desconhecida que nao vira interacao, mascaramento do telefone, trilha idempotente e os DENTES DE PONTA medidos no BANCO (descadastro por WhatsApp vira response_category=OPT_OUT). DUAS passadas byte-identicas (exit 0 em ambas; 68 itens, 0 falhas cada) e prova de dente INTERNA: a suite offline (verificar_whatsapp_lead.py --autoteste) roda 10 mutacoes, todas reprovando o item DECLARADO (10/10).",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+          "verification": {
+            "commit": "cfb45af4f2193090b778c386974735cc7c702036",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): MESMO clone isolado /tmp/tre_lote7/repo (bundle git do develop + as branches W7). OVERRIDE DECLARADO: os 5 cards da onda W7 sao verificados nos respectivos topos de branch — nao em develop — porque o codigo da W7 nao esta mergeado em develop (merge-base 20e8ea67). Cada aceite sobe um PostgreSQL DESCARTALVEL proprio (pg-meta-acc / pg-evt-acc / pg-lk-e04 / pg-google-acc / pg-wa-acc) e, quando aplicavel, stubs/sinks LOCAIS (Graph API, sink IMAP); nenhuma credencial real (Meta/Google/Titan/LinkedIn), nenhum destino externo, nada de producao. Containers do dev INTOCADOS; nada escrito em sales_intelligence do ambiente. DUAS passadas por aceite com saida normalizada BYTE-IDENTICA (diff cru = 0 linhas em todos). Higiene: descartaveis removidos com 'docker rm -f -v'; volumes dangling medidos antes/depois (zero crescimento); nenhum container ficou de pe.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/agentes/teste_whatsapp_lead_aceite.sh (passada 1)",
+                "exit": 0,
+                "resultado": "ACEITE_WHATSAPP_LEAD_001_OK (68 itens, 0 falhas) — inclui 'suite offline + dentes verde' e o dente de ponta do descadastro medido no banco"
+              },
+              {
+                "gate": "bash scripts/agentes/teste_whatsapp_lead_aceite.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (diff cru = 0 linhas); ACEITE_WHATSAPP_LEAD_001_OK (68 itens, 0 falhas)"
+              },
+              {
+                "gate": "dente INTERNO: python3 scripts/agentes/verificar_whatsapp_lead.py --autoteste",
+                "exit": 0,
+                "resultado": "VERIFICADOR_WHATSAPP_LEAD_PASS (70 itens, 0 falhas, 10 dentes); D1..D10 cada um 'item declarado REPROVOU sob mutacao' (o script nao expoe --prova-de-dente; o dente e' o autoteste do proprio verificador)"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 7 — W6-E06 + onda W7)",
+      "scope": "lote 7 — W6-E06 (Odoo a partir de respostas) + onda W7 (captura de leads inbound)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T00:34:58+00:00",
+      "cards": [
+        "t_33bc1765",
+        "t_578d88a4",
+        "t_6c170b51",
+        "t_ba40919b",
+        "t_e5e497fd"
+      ]
+    }
+  ]
+}
