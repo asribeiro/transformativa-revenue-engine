@@ -122,22 +122,39 @@ resumo() {
 #      verde nao existe prova de dente, e o comando termina em CRM_LEAD_DENTE_FALHOU, exit 1;
 #   2. exige de CADA prova a SUA assinatura de falha (o texto que so' aquela mutacao produz),
 #      em vez de "qualquer FALHOU";
-#   3. reprova o dente cuja saida abortou numa guarda do ambiente ou nao chegou ao passo medido.
+#   3. reprova o dente cuja saida abortou numa guarda do ambiente ou nao chegou ao passo medido;
+#   4. (defeito O8 do card t_945f96f1, revisao independente da rodada 2) nos dentes que medem por banco
+#      (1-3) exige tambem o caminho SAUDAVEL — a instalacao tem de ter medido `OK    odoo --init exit 0`
+#      e `OK    ir_module_module.state = installed` no passo 1. Sem isso a assinatura de falha do dente
+#      era satisfeita por uma quebra de INSTALACAO de outra classe (erro de sintaxe), que prova o
+#      SINTOMA (o campo sumiu do banco) sem provar a CAUSA (a mutacao do proprio dente).
 # ---------------------------------------------------------------------------
 if [ "$MODO" = "dente" ]; then
     DENTE_DIR="$(mktemp -d /tmp/dente-e04t02-XXXXXX)"
     trap 'rm -rf "$DENTE_DIR"' EXIT
     DENTE_FALHAS=0
     # $1=rotulo  $2=regex da ASSINATURA de falha esperada  $3=passo que tem de ter sido medido
-    # $4=saida do verificador mutado
+    # $4=saida do verificador mutado  $5=exige o caminho SAUDAVEL (1 = sim)
+    #
+    # DEFEITO (card t_945f96f1, achado da revisao independente do t_d3bd6660 rodada 2): a assinatura de
+    # falha prova o SINTOMA, nao a CAUSA. Um defeito de OUTRA classe plantado no modulo (erro de sintaxe
+    # -> `odoo --init exit 255`, nenhum rename) tambem faz o campo sumir do banco e SATISFAZIA a
+    # assinatura do dente 1 — o julgador aprovava o dente sem nunca ter mutado um modulo INSTALADO. Para
+    # os dentes que medem por banco (1-3), alem da assinatura o caminho tem de estar SAUDAVEL: a prova so'
+    # vale se o passo 1 mediu `OK    odoo --init exit 0` e `OK    ir_module_module.state = installed` —
+    # isto e', a mutacao mutou o POS-INSTALACAO em vez de derrubar o modulo.
     confere_dente() {
-        local rotulo="$1" assinatura="$2" passo="$3" saida="$4" motivo=""
+        local rotulo="$1" assinatura="$2" passo="$3" saida="$4" exige_saude="${5:-0}" motivo=""
         if ! printf '%s' "$saida" | grep -q 'RESULTADO: CRM_LEAD_FALHOU'; then
             motivo="a mutacao NAO reprovou o aceite — o item nao mede o que promete"
-        elif printf '%s' "$saida" | grep -qE 'nada a medir|sem contrato nao ha confronto|nao consegui ler o inventario|nao responde|nao ficou pronto|nao consegui subir|nao consegui criar'; then
+        elif printf '%s' "$saida" | grep -qE 'nada a medir|sem contrato nao ha confronto|nao consegui ler o inventario|nao consegui ler o banco|nao responde|nao ficou pronto|nao consegui subir|nao consegui criar'; then
             motivo="a prova ABORTOU numa guarda do ambiente, antes de medir — aborto nao e' prova de dente"
         elif ! printf '%s' "$saida" | grep -q "$passo"; then
             motivo="a prova nao chegou ao '$passo' (morreu antes de medir) — aborto nao e' prova de dente"
+        elif [ "$exige_saude" = "1" ] && ! printf '%s' "$saida" | grep -q 'OK    odoo --init exit 0'; then
+            motivo="a prova nao instalou o modulo — queda de ambiente nao e' prova de dente (falta 'OK    odoo --init exit 0' no passo 1)"
+        elif [ "$exige_saude" = "1" ] && ! printf '%s' "$saida" | grep -q 'OK    ir_module_module.state = installed'; then
+            motivo="a prova nao instalou o modulo — queda de ambiente nao e' prova de dente (falta 'OK    ir_module_module.state = installed' no passo 1)"
         elif ! printf '%s' "$saida" | grep -qE "$assinatura"; then
             motivo="a prova reprovou por outro motivo: falta a assinatura esperada /$assinatura/"
         fi
@@ -175,7 +192,7 @@ if [ "$MODO" = "dente" ]; then
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D1" >"$LOG_DIR/dente-1-campo-renomeado.out"
     echo "$D1" | tail -3
-    confere_dente "dente 1" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|so' 12 de 13 campos do inventario" "passo 2/6" "$D1"
+    confere_dente "dente 1" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|so' 12 de 13 campos do inventario" "passo 2/6" "$D1" 1
 
     cabecalho "dente 2: indice removido do campo de idempotencia (tf_idempotency_key)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m2"
@@ -198,7 +215,7 @@ PY
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D2" >"$LOG_DIR/dente-2-indice-removido.out"
     echo "$D2" | tail -3
-    confere_dente "dente 2" "sem indice no banco para tf_idempotency_key" "passo 2/6" "$D2"
+    confere_dente "dente 2" "sem indice no banco para tf_idempotency_key" "passo 2/6" "$D2" 1
 
     cabecalho "dente 3: campo do inventario apagado do modelo (tf_next_best_action)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
@@ -221,7 +238,7 @@ PY
           bash "$SELF" --apenas-instalacao-e-campos 2>&1)"
     echo "$D3" >"$LOG_DIR/dente-3-campo-apagado.out"
     echo "$D3" | tail -3
-    confere_dente "dente 3" "crm.lead tem 12 campo" "passo 2/6" "$D3"
+    confere_dente "dente 3" "crm.lead tem 12 campo" "passo 2/6" "$D3" 1
 
     cabecalho "dente 5: campo do contrato renomeado, medido SO' pelo confronto estatico (passo 0)"
     cp -a "$DENTE_DIR/m1" "$DENTE_DIR/m5"
@@ -229,7 +246,7 @@ PY
           bash "$SELF" --apenas-confronto 2>&1)"
     echo "$D5" >"$LOG_DIR/dente-5-confronto-estatico.out"
     echo "$D5" | tail -3
-    confere_dente "dente 5" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|inventario != implementado" "passo 0/6" "$D5"
+    confere_dente "dente 5" "campo nomeado pelo contrato AUSENTE: tf_opportunity_id|inventario != implementado" "passo 0/6" "$D5" 0
 
     cabecalho "dente 4: teste plantado que falha de proposito (espera-se FALHOU no passo 3)"
     cp -a "$MODULO_DIR" "$DENTE_DIR/m4"
@@ -243,7 +260,9 @@ PY
           bash "$SELF" --apenas-instalacao-e-testes 2>&1)"
     echo "$D4" >"$LOG_DIR/dente-4-teste-plantado.out"
     echo "$D4" | tail -3
-    confere_dente "dente 4" "1 failed, 0 error\(s\) of" "passo 3/6" "$D4"
+    # dente 4 nao pede o passo 1 saudavel: a assinatura dele (relatorio do runner do Odoo) so' existe
+    # depois de o modulo carregar — uma queda de instalacao nao a produz.
+    confere_dente "dente 4" "1 failed, 0 error\(s\) of" "passo 3/6" "$D4" 0
 
     echo '---'
     if [ "$DENTE_FALHAS" -eq 0 ]; then
@@ -473,6 +492,16 @@ ESTADO_CRM="$(psql_bd "$BANCO" "select state from ir_module_module where name = 
 # passo 2/6 — os campos do contrato no banco (AC1)
 # ---------------------------------------------------------------------------
 cabecalho "passo 2/6 — campos de rastreio no banco (AC1)"
+# FAIL-CLOSED da MEDICAO (defeito O8 do card t_945f96f1): todos os itens deste passo sao LEITURA de
+# banco. Se o `psql` cair, cada leitura volta VAZIA e os itens viram "campo ausente"/"sem indice" — uma
+# queda de ambiente passaria a satisfazer a assinatura de falha de um dente (era o caso da assinatura
+# do dente 2). Sem o banco respondendo, o comando recusa AQUI, antes de imprimir medicao que nao existe.
+# Nao conta item (`info`): a contagem do aceite (64) e a dos dentes (35/3, 35/1, 35/2) nao mudam.
+if [ "$(psql_bd "$BANCO" 'select 1')" = "1" ]; then
+    info "banco responde a leitura SQL do passo 2 (medicao de banco de pe')"
+else
+    falhou "nao consegui ler o banco (leitura SQL vazia) — sem medicao nao ha aceite"; resumo
+fi
 LISTA_SQL="$(printf '%s\n' "$CAMPOS_INVENTARIO" | sed "s/^/'/;s/\$/'/" | tr '\n' ',' | sed 's/,$//')"
 info "inventario conferido no banco: $(printf '%s' "$CAMPOS_INVENTARIO" | tr '\n' ' ')"
 PRESENTES="$(psql_bd "$BANCO" "select count(*) from ir_model_fields where model = 'crm.lead' and name in ($LISTA_SQL)")"

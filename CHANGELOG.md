@@ -1279,6 +1279,20 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   teste que falha) → o item do D01 **FALHOU** (1 linha casada, exit 1) enquanto o padrão morto do defeito
   dá 0 no mesmo log. `verificar_estrutura.sh`, `secret_scan.sh` e `verificar_papeis.sh` → `PASS` no
   commit consolidado. Detalhe no runbook §11.
+  (6) **a assinatura de falha de um dente provava o sintoma, não a causa** (achado da **revisão
+  independente da rodada 2**, observação O8, card de defeito `t_945f96f1`) — um defeito de **outra
+  classe** (erro de sintaxe plantado na cauda de `models/crm_lead.py` → `odoo --init exit 255`, nenhum
+  rename) faz o campo sumir do banco e **satisfazia** a assinatura do dente 1: o `confere_dente`
+  aprovava (`DENTE_FALHAS_O8=0`) sem o módulo nunca ter instalado; o mesmo valia para a assinatura de
+  índice do dente 2 quando a leitura do banco cai. Conserto (rodada 3, `verificar-crm-lead-odoo.sh`
+  `8127577487ba…`): os dentes 1–3 (os que medem por banco) também exigem o **caminho saudável** do
+  passo 1 (`OK    odoo --init exit 0` + `OK    ir_module_module.state = installed`), reprovando com
+  `"a prova nao instalou o modulo — queda de ambiente nao e' prova de dente"`; o passo 2 recusa de cara
+  quando a leitura SQL volta vazia (queda de ambiente não vira "campo ausente"/"sem índice") — e essa
+  guarda **não conta item**, para as contagens (64; 35/3, 35/1, 35/2) não mudarem. Remedições: a bateria
+  completa seguiu `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)` e `CRM_LEAD_OK (64 itens, 0 falhas)`, exit 0,
+  e o MESMO arquivo de saída do defeito passou de **OK** para **reprovado** no julgador. Detalhe no
+  runbook §8.2.
 
 ### Notas de estado
 
