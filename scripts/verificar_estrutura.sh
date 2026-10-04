@@ -1663,5 +1663,20 @@ else
   echo "OK    par do proxy sem valor de senha/hash"
 fi
 
+# Artefatos do CRM basico / funil comercial em dev (TRE-W2-E02-T01) existem E estao versionados
+for f in odoo/crm/funil-transformativa.yaml scripts/provision/configurar-crm-dev.sh \
+         scripts/provision/verificar-crm-dev.sh scripts/provision/reverter-crm-dev.sh \
+         scripts/provision/aplicar_funil_crm.py scripts/provision/desfazer_funil_crm.py \
+         scripts/provision/repor_etapas_padrao_crm.py docs/runbooks/odoo-crm-dev.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/provision/configurar-crm-dev.sh scripts/provision/verificar-crm-dev.sh \
+         scripts/provision/reverter-crm-dev.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi
