@@ -165,6 +165,50 @@ CARDS = [
             "acoplamento": "a regua deste criterio so' roda no modo --ambiente: card TRE-W1-E06-T01 (t_72672e48)",
         },
     },
+    {
+        "onda": "W1",
+        "id": "TRE-W1-E06-T01",
+        "title": "Testar backup/restore (contra o banco real do ambiente dev)",
+        "task": "t_72672e48",
+        "evidence": (
+            "Ciclo completo de backup/restore rodado contra o banco REAL do ambiente dev, na VPS, em "
+            "container descartavel apenas para o RESTORE (producao recusada pelo proprio script, ADR-005). "
+            "DUAS passadas identicas no modo `--ambiente dev`: `RESULTADO: TESTE_OK (14 itens, 0 falhas)` "
+            "(o modo descartavel tem 12; os 2 a mais sao exatamente os do ambiente). Os itens medidos, "
+            "todos OK: 'origem e o container do ambiente dev: pg-sales-dev (nenhum container descartavel de "
+            "origem)'; 'postgres do ambiente dev responde (16.15)'; 'origem tem conteudo real: 12 tabelas "
+            "em sales_intelligence (amostra: 4 linhas)'; 'backup do ambiente dev concluido (BACKUP_OK)'; "
+            "'sha256 do dump confere com o manifesto'; 'manifesto registra a origem real do ambiente "
+            "(pg-sales-dev)'; 'manifesto registra o envio externo (externo: enviado "
+            "(contabo:tre-backup/prova-l14))'; 'teste de restore APROVADO (RESTORE_OK)'; 'contagens "
+            "conferidas linha a linha na restauracao'; 'reverificacao do dump bom segue APROVADA'; e "
+            "'container do ambiente intacto (mesmo Id e StartedAt antes/depois do ciclo)'. DENTE 1 (embutido "
+            "no verificador, morde): 'teste negativo: dump truncado foi REPROVADO, como devia (8 falha(s) "
+            "apontada(s))'. DENTE 2 (meu, o que o header do script promete — 'nunca cai para container "
+            "descartavel em silencio'): apontando TRE_PG_SERVICO para um container inexistente, o teste "
+            "REPROVOU -> `RESULTADO: TESTE_FALHOU`, 'container de origem pg-que-nao-existe NAO existe no "
+            "ambiente dev — o modo ambiente nao cai para container descartavel', e ZERO containers "
+            "descartaveis foram criados. Essa rodada FECHA a regua do card 133 (o criterio 'manifesto "
+            "registra externo: enviado' so roda neste modo). EFEITOS EXTERNOS: um artefato de prova no "
+            "prefixo `prova-l14/` do bucket (autorizado pelo dono) — lido de volta ('servico: pg-sales-dev', "
+            "'externo: enviado') e REMOVIDO em seguida; os artefatos da rotina diaria nao foram tocados. "
+            "ANOMALIA DE MODELAGEM DECLARADA: o artefato `W1-dados-e-dedup.json` tem 10 work_items e "
+            "NENHUM item E06, enquanto W2..W7 todos tem um `E06-T01` — este card existe no board mas nao "
+            "tinha casa no artefato da propria onda; foi registrado aqui como work_item novo (mesmo "
+            "tratamento dado aos 4 cards de defeito do W0)."
+        ),
+        "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh --ambiente dev",
+            "passadas": 2,
+            "medicao": "TESTE_OK (14 itens, 0 falhas) x2 — origem = container real pg-sales-dev, sem container descartavel de origem",
+            "dente": "MORDE x2: (a) dump truncado reprovado com 8 falhas (embutido); (b) container do ambiente inexistente -> TESTE_FALHOU sem fallback",
+            "adr005": "container do ambiente intacto (mesmo Id e StartedAt antes/depois); producao recusada pelo script",
+            "efeitos_externos": "artefato de prova no prefixo prova-l14/ (autorizado) — removido com rclone purge; rotina diaria intocada",
+            "baseline_vps": "5 containers / 7 volumes / 0 dangling / 4 redes",
+            "fecha": "TRE-W0-E01-T03-D04 (t_586daace) — criterio 'externo: enviado' medido de verdade",
+            "log": "/tmp/tre_lote14/card134_{pass1,pass2}.out (VPS)",
+        },
+    },
 ]
 
 

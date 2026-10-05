@@ -6,7 +6,7 @@
   "release_status": "IN_PROGRESS",
   "current_gate": "VALIDATION",
   "production_promotion_authorized": false,
-  "updated_at": "2026-10-03",
+  "updated_at": "2026-10-05",
   "human_approval": {
     "required": true,
     "status": "PENDING",
@@ -343,6 +343,36 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W1-E06-T01",
+      "title": "Testar backup/restore (contra o banco real do ambiente dev)",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_72672e48",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Ciclo completo de backup/restore rodado contra o banco REAL do ambiente dev, na VPS, em container descartavel apenas para o RESTORE (producao recusada pelo proprio script, ADR-005). DUAS passadas identicas no modo `--ambiente dev`: `RESULTADO: TESTE_OK (14 itens, 0 falhas)` (o modo descartavel tem 12; os 2 a mais sao exatamente os do ambiente). Os itens medidos, todos OK: 'origem e o container do ambiente dev: pg-sales-dev (nenhum container descartavel de origem)'; 'postgres do ambiente dev responde (16.15)'; 'origem tem conteudo real: 12 tabelas em sales_intelligence (amostra: 4 linhas)'; 'backup do ambiente dev concluido (BACKUP_OK)'; 'sha256 do dump confere com o manifesto'; 'manifesto registra a origem real do ambiente (pg-sales-dev)'; 'manifesto registra o envio externo (externo: enviado (contabo:tre-backup/prova-l14))'; 'teste de restore APROVADO (RESTORE_OK)'; 'contagens conferidas linha a linha na restauracao'; 'reverificacao do dump bom segue APROVADA'; e 'container do ambiente intacto (mesmo Id e StartedAt antes/depois do ciclo)'. DENTE 1 (embutido no verificador, morde): 'teste negativo: dump truncado foi REPROVADO, como devia (8 falha(s) apontada(s))'. DENTE 2 (meu, o que o header do script promete — 'nunca cai para container descartavel em silencio'): apontando TRE_PG_SERVICO para um container inexistente, o teste REPROVOU -> `RESULTADO: TESTE_FALHOU`, 'container de origem pg-que-nao-existe NAO existe no ambiente dev — o modo ambiente nao cai para container descartavel', e ZERO containers descartaveis foram criados. Essa rodada FECHA a regua do card 133 (o criterio 'manifesto registra externo: enviado' so roda neste modo). EFEITOS EXTERNOS: um artefato de prova no prefixo `prova-l14/` do bucket (autorizado pelo dono) — lido de volta ('servico: pg-sales-dev', 'externo: enviado') e REMOVIDO em seguida; os artefatos da rotina diaria nao foram tocados. ANOMALIA DE MODELAGEM DECLARADA: o artefato `W1-dados-e-dedup.json` tem 10 work_items e NENHUM item E06, enquanto W2..W7 todos tem um `E06-T01` — este card existe no board mas nao tinha casa no artefato da propria onda; foi registrado aqui como work_item novo (mesmo tratamento dado aos 4 cards de defeito do W0).",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh --ambiente dev",
+            "passadas": 2,
+            "medicao": "TESTE_OK (14 itens, 0 falhas) x2 — origem = container real pg-sales-dev, sem container descartavel de origem",
+            "dente": "MORDE x2: (a) dump truncado reprovado com 8 falhas (embutido); (b) container do ambiente inexistente -> TESTE_FALHOU sem fallback",
+            "adr005": "container do ambiente intacto (mesmo Id e StartedAt antes/depois); producao recusada pelo script",
+            "efeitos_externos": "artefato de prova no prefixo prova-l14/ (autorizado) — removido com rclone purge; rotina diaria intocada",
+            "baseline_vps": "5 containers / 7 volumes / 0 dangling / 4 redes",
+            "fecha": "TRE-W0-E01-T03-D04 (t_586daace) — criterio 'externo: enviado' medido de verdade",
+            "log": "/tmp/tre_lote14/card134_{pass1,pass2}.out (VPS)",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -384,6 +414,16 @@
         "t_969affa7"
       ],
       "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+      "scope": "lote 14 — onda W1: vereditos gravados com 2 passadas + prova de dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-05T14:00:00+00:00",
+      "cards": [
+        "t_72672e48"
+      ]
     }
   ]
 }
