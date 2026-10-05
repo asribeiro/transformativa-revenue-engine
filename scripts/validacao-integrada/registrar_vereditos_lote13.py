@@ -111,6 +111,30 @@ CARDS = [
             "log": "/tmp/tre_lote13/card127_{pass1,pass2,dente}.out",
         },
     },
+    {
+        "id": "TRE-W2-E03-T01-D05",
+        "title": "Publicar UMA vez o verificador consolidado (D01+D03+D04)",
+        "task": "t_de461d14",
+        "evidence": (
+            "2 passadas identicas: `PASS (41 itens, 0 falhas, 1 pulados)` (exit 0) em ambas; unica "
+            "diferenca entre os logs e' o nome do diretorio temporario da suite. Suite do lado do Hermes "
+            "(nao do VPS), rodada com o venv do /opt/hermes contra destino temporario. Cobre o encaixe do "
+            "gate de hotspot: A1/A2 formas de declaracao, B3/C4 balde `skipped_hotspot`, F1/F2 `--check` "
+            "sem alterar o runtime, F5/F6 `--aplicar` (6 ancoras + adaptador) com o kernel compilando, "
+            "F7 idempotencia e **F8 rollback byte a byte** (`--reverter` devolve os 3 modulos ao estado "
+            "anterior e remove o adaptador). LIMITACAO DECLARADA: F3 (adaptador instalado == versionado no "
+            "repo) ficou PULADO por exigir root em /opt/hermes — `deploy/hermes/aplicar_hotspot.sh` e' o "
+            "caminho do operador para esse passo."
+        ),
+        "verification": {
+            "verificador": "scripts/verificar_hotspot_gate.py (suite declarada em docs/validation/hotspot-de-arquivo-suite.md)",
+            "onde": "host do Hermes (nao VPS): /opt/hermes/.venv/bin/python, contra destino temporario",
+            "passadas": 2,
+            "itens": "41 itens, 0 falhas, 1 pulado (F3, exige root)",
+            "rollback": "F8 provado byte a byte",
+            "log": "/tmp/l13_hotspot{,2}.out",
+        },
+    },
 ]
 
 

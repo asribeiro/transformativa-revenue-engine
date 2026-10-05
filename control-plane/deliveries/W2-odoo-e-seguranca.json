@@ -443,6 +443,33 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D05",
+      "title": "Publicar UMA vez o verificador consolidado (D01+D03+D04)",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_de461d14",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `PASS (41 itens, 0 falhas, 1 pulados)` (exit 0) em ambas; unica diferenca entre os logs e' o nome do diretorio temporario da suite. Suite do lado do Hermes (nao do VPS), rodada com o venv do /opt/hermes contra destino temporario. Cobre o encaixe do gate de hotspot: A1/A2 formas de declaracao, B3/C4 balde `skipped_hotspot`, F1/F2 `--check` sem alterar o runtime, F5/F6 `--aplicar` (6 ancoras + adaptador) com o kernel compilando, F7 idempotencia e **F8 rollback byte a byte** (`--reverter` devolve os 3 modulos ao estado anterior e remove o adaptador). LIMITACAO DECLARADA: F3 (adaptador instalado == versionado no repo) ficou PULADO por exigir root em /opt/hermes — `deploy/hermes/aplicar_hotspot.sh` e' o caminho do operador para esse passo.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/verificar_hotspot_gate.py (suite declarada em docs/validation/hotspot-de-arquivo-suite.md)",
+            "onde": "host do Hermes (nao VPS): /opt/hermes/.venv/bin/python, contra destino temporario",
+            "passadas": 2,
+            "itens": "41 itens, 0 falhas, 1 pulado (F3, exige root)",
+            "rollback": "F8 provado byte a byte",
+            "log": "/tmp/l13_hotspot{,2}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
     }
   ],
   "production_promoted_task_ids": [],
@@ -496,6 +523,16 @@
         "t_adee6ad7",
         "t_cf7519c9",
         "t_d3bd6660"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_de461d14"
       ]
     }
   ]
