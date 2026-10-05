@@ -67,6 +67,36 @@ CARDS = [
             "log": "/tmp/tre_lote14/card130_{pass1,pass2,dente}.out",
         },
     },
+    {
+        "onda": "W0",
+        "id": "TRE-W0-E01-T03-D02",
+        "title": "DEFEITO [retroativo]: paste -d rotaciona caracteres e o SQL montado por psql -c ficou invalido",
+        "task": "t_9f106731",
+        "evidence": (
+            "Conserto presente nos TRES scripts que o card exige, na forma declarada: o `UNION ALL` e' "
+            "montado DENTRO do SQL com `string_agg` sobre `information_schema.tables` — "
+            "`backup-tre.sh` (3 ocorrencias de string_agg, 0 uso ATIVO de `paste -d`; a unica mencao e' o "
+            "comentario que documenta a armadilha), `verificar-backup.sh` (2 string_agg, 0 paste) e "
+            "`restore-tre.sh` (2 string_agg, 0 paste). MEDIDO NO VPS, em banco descartavel proprio: duas "
+            "passadas -> `RESULTADO: TESTE_OK (12 itens, 0 falhas)`, com a migracao aplicando as 12 "
+            "tabelas e as contagens por tabela batendo (os mesmos runs do card 130 — mesmo verificador, "
+            "mesma arvore; diferem apenas o nome do dump com carimbo de tempo e o sha256 dele). DENTE "
+            "QUE MORDE, na classe exata do defeito: mutando o separador do SQL montado de volta para a "
+            "forma literal (`' UNION ALL '` -> `' | '`) em copia isolada, o teste REPROVOU -> "
+            "`RESULTADO: TESTE_FALHOU (11 itens, 4 falhas)`, com 'FALHOU nao consegui extrair as "
+            "contagens por tabela (schema existe, com 12 tabelas)' e 'FALHOU artefato incompleto "
+            "(contagens.txt ...)' — ou seja, a regua pega quem voltar a montar o SQL fora do banco."
+        ),
+        "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh (modo descartavel) + inspecao dos 3 scripts",
+            "conserto": "scripts/backup/{backup-tre.sh,verificar-backup.sh,restore-tre.sh}",
+            "passadas": 2,
+            "medicao": "TESTE_OK (12 itens, 0 falhas) x2 (runs compartilhados com o card 130)",
+            "dente": "MORDE: separador mutado -> TESTE_FALHOU (11 itens, 4 falhas), 'nao consegui extrair as contagens por tabela'",
+            "volateis_declarados": "nome do dump (carimbo de tempo) e sha256 do dump",
+            "log": "/tmp/tre_lote14/card131_dente.out (dente) + card130_{pass1,pass2}.out (passadas)",
+        },
+    },
 ]
 
 
