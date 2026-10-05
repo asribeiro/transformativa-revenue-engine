@@ -139,18 +139,45 @@ else
     || falhou "HTTPS $CODIGO em $BASE_URL/web/login (esperado 200)"
 fi
 
-echo "== 7. a validacao e real (sem a ancora FALHA) =="
+echo "== 7. a validacao e real (discriminator por modo) =="
 # DEFEITO 2 (achado executando): a primeira versao desta checagem estava INVERTIDA — tratava
 # "curl falhou sem a ancora" (que e o resultado BOM) como reprovacao. Medido no alvo: sem a
-# ancora o curl devolve RC=60 ("unable to get local issuer certificate"). Agora a logica diz o
-# que quer dizer: passou-sem-ancora e que reprova.
+# ancora o curl devolve RC=60 ("unable to get local issuer certificate").
+#
+# MODO CA PUBLICA (decisao do dono, 05/10/2026 — TLS publico nesta VPS, certificado Let's
+# Encrypt): com certificado publico, passar SEM a ancora e' o ESPERADO — a premissa antiga
+# ("sem ancora tem de falhar") valia so' para CA interna e, mantida, reprovaria para sempre um
+# alvo melhor. Mas "passou" nao pode virar passe livre: o discriminator passa a ser DUPLO —
+# (a) o EMISSOR tem de ser CA publica (nunca a Caddy Local Authority, nunca vazio) e (b) a
+# prova negativa: com uma CA ERRADA o pedido tem de FALHAR. Se passasse com CA errada, a
+# validacao da cadeia estaria sendo pulada — que e' o auto-engano que este item existe para
+# pegar. No modo CA interna nada muda: sem ancora tem de falhar.
 SEM_ANCORA_PASSOU=0
 curl -s -o /dev/null -m 10 --resolve "$HOSTNAME_PROXY:$PORTA_HTTPS_EFETIVA:$RESOLVE_HOST" "${CRED[@]}" "$BASE_URL/web/login" 2>/dev/null \
   && SEM_ANCORA_PASSOU=1
 if [ "$SEM_ANCORA_PASSOU" = "0" ]; then
-  ok "sem a ancora o pedido FALHA (a validacao do item 6 nao e auto-engano)"
+  ok "sem a ancora o pedido FALHA (a validacao do item 6 nao e auto-engano; modo CA interna)"
 else
-  falhou "o pedido passou SEM a ancora — a cadeia nao esta sendo validada de verdade"
+  EMISSOR="$(echo | timeout 15 openssl s_client -connect "$RESOLVE_HOST:$PORTA_HTTPS_EFETIVA" -servername "$HOSTNAME_PROXY" 2>/dev/null | openssl x509 -noout -issuer 2>/dev/null || true)"
+  case "$EMISSOR" in
+    ""|*"Caddy Local Authority"*)
+      falhou "sem a ancora o pedido passou, mas o emissor NAO e' CA publica ('${EMISSOR:-vazio}') — cadeia nao validada de verdade" ;;
+    *)
+      ok "sem a ancora o pedido passa e o emissor e' CA publica ($EMISSOR)"
+      # Prova negativa com mecanismo que DISCRIMINA: `curl --cacert` NAO substitui o store do
+      # sistema neste build (medido: curl 8.18 + OpenSSL 3.5 devolve exit=0 com CA errada), entao
+      # ele nao serve. O `openssl s_client -CAfile` usa SO' o arquivo apontado — e a prova.
+      CA_ERRADA="$(mktemp)"
+      openssl req -x509 -newkey rsa:2048 -nodes -subj "/CN=CA-ERRADA-TESTE" -keyout /dev/null -out "$CA_ERRADA" -days 1 >/dev/null 2>&1 || true
+      VIU_ERRADA="$(echo | timeout 15 openssl s_client -CAfile "$CA_ERRADA" -connect "$RESOLVE_HOST:$PORTA_HTTPS_EFETIVA" -servername "$HOSTNAME_PROXY" 2>/dev/null | grep -m1 'Verify return code' || true)"
+      case "$VIU_ERRADA" in
+        *"Verify return code: 0"*|"")
+          falhou "com CA errada a cadeia AINDA validou ('${VIU_ERRADA:-sem resposta}') — a validacao da cadeia esta sendo pulada" ;;
+        *)
+          ok "com CA errada a cadeia NAO valida ($VIU_ERRADA) — a validacao e' real" ;;
+      esac
+      rm -f "$CA_ERRADA" ;;
+  esac
 fi
 
 echo "== 8. cabecalhos de hardening =="
