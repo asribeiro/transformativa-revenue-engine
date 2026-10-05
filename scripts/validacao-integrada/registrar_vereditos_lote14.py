@@ -132,6 +132,39 @@ CARDS = [
             "log": "/tmp/tre_lote14/d132/ (recusa) e d132m/ (dente)",
         },
     },
+    {
+        "onda": "W0",
+        "id": "TRE-W0-E01-T03-D04",
+        "title": "DEFEITO [retroativo]: manifesto do backup registrava 'externo: pendente' apos envio bem-sucedido",
+        "task": "t_586daace",
+        "evidence": (
+            "Conserto presente em `scripts/backup/backup-tre.sh`, na forma que o card exige: o "
+            "`rclone copy` sobe o artefato (linha 398), o resultado REAL do envio e' entao gravado no "
+            "manifesto (`externo: enviado ($EXTERNO)` na linha 400 / `externo: falhou` na 408) e o "
+            "manifesto e' REENVIADO (linha 401, com o comentario que registra a causa raiz: 'o manifesto "
+            "sobe ANTES de saber o resultado do envio; reenvia para que a copia...'). `externo: pendente` "
+            "ficou restrito ao caso legitimo 'sem destino configurado' (linha 412). EVIDENCIA MEDIDA NA "
+            "FONTE (leitura de volta DO BUCKET, read-only, sem escrever nada): manifesto do artefato real "
+            "de 05/10/2026 05:32Z (o do timer diario) em `contabo:tre-backup/tre_dev_20261005T053217Z/"
+            "manifest.txt` registra `externo: enviado (contabo:tre-backup)`, com `banco: "
+            "sales_intelligence` e `tabelas: 12`. LIMITACAO DECLARADA (decisao do dono, 05/10/2026): o "
+            "DENTE por mutacao NAO foi provado nesta rodada — ele exigiria subir um artefato de prova ao "
+            "bucket real (prefixo `prova-t03/`, como o card declara) para mostrar que a mutacao que pula o "
+            "reenvio deixa a copia do bucket sem a linha `externo:`; o dono optou por nao escrever no "
+            "Object Storage nesta rodada. Observacao de metodo: a checagem desse criterio no verificador "
+            "existe SOMENTE no modo `--ambiente` (`if [ \"$MODO\" = \"ambiente\" ]` em "
+            "teste-backup-restore.sh) — por isso os runs do modo descartavel (cards 130/131) nao a "
+            "exercitam; quem fecha essa regua e' o card TRE-W1-E06-T01 (t_72672e48), o proximo da fila."
+        ),
+        "verification": {
+            "verificador": "leitura de volta do bucket (rclone cat) + inspecao de backup-tre.sh (reenvio do manifesto)",
+            "conserto": "backup-tre.sh linhas 398-401: rclone copy -> grava resultado real -> reenvia o manifesto",
+            "medicao": "manifesto do artefato 2026-10-05T05:32Z no bucket: 'externo: enviado (contabo:tre-backup)'",
+            "dente": "NAO PROVADO nesta rodada: exigiria escrita no bucket real (prefixo prova-t03/); decisao do dono = nao escrever",
+            "efeitos_externos": "nenhum — medida 100% leitura (rclone cat/lsf)",
+            "acoplamento": "a regua deste criterio so' roda no modo --ambiente: card TRE-W1-E06-T01 (t_72672e48)",
+        },
+    },
 ]
 
 
