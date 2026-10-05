@@ -14,6 +14,8 @@
 #   6. INTEGRACAO com o pai: o avanco por canal fecha com o relatorio do funil (sem segunda verdade);
 #   7. LEITURA PURA: snapshot das 12 tabelas antes/depois igual e a transacao READ ONLY recusando escrita;
 #   8. determinismo, saida sem PII e dashboard HTML auto-contido.
+#   9. HIGIENE: o aceite mede o PROPRIO rastro — teardown com `docker rm -f -v` e nenhum
+#      volume anonimo novo no fim (o baseline de docker nao pode mentir por causa do aceite).
 #
 # Pre-requisitos: docker com imagem postgres:16, python3. Nada de rede externa.
 # Uso (na VPS, na raiz do repo): bash scripts/agentes/teste_previsao_canal_aceite.sh [--manter]
@@ -36,11 +38,13 @@ item() { # item <nome> <0|1> [detalhe]
   if [ "$2" = "0" ]; then echo "OK    $1"; OK=$((OK+1)); else echo "FALHOU $1 ${3:-}"; FALHAS=$((FALHAS+1)); fi
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
-limpar() { docker rm -f "$PG" >/dev/null 2>&1; }
+volumes_anonimos() { docker volume ls -q 2>/dev/null | grep -E '^[0-9a-f]{64}$' | sort; }
+limpar() { docker rm -f -v "$PG" >/dev/null 2>&1; }
 [ "$MANTER" = "1" ] || trap limpar EXIT
 
 rm -rf "$BASE"; mkdir -p "$BASE/out"
 cd "$REPO" || exit 1
+ANON_ANTES="$(volumes_anonimos | tr '\n' ' ')"
 
 echo "== 0. pre-flight"
 docker info >/dev/null 2>&1; item "docker responde (daemon presente)" $?
@@ -76,7 +80,7 @@ else
 fi
 
 echo "== 3. PostgreSQL descartavel + migration 0001"
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD=dev -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container descartavel $PG criado" $?
 pronto=1
@@ -370,6 +374,29 @@ else
 fi
 OK=$((OK + $(grep -c "^OK    " "$BASE/out/priv.out")))
 FALHAS=$((FALHAS + $(grep -c "^FALHOU " "$BASE/out/priv.out")))
+
+echo "== 10. higiene: o aceite prova que NAO deixa volume anonimo novo"
+# O teardown e' o MESMO do trap (`docker rm -f -v`): o aceite mede o PROPRIO rastro. Sem o `-v` o
+# container descartavel deixa o volume anonimo da imagem `postgres:16` para tras (defeito t_3148dbbf:
+# cada rodada de aceite vazava 1 volume e o baseline de docker mentia em silencio).
+if [ "$MANTER" = "1" ]; then
+  item "higiene: pulado em --manter (container mantido de proposito)" 0
+else
+  docker rm -f -v "$PG" >/dev/null 2>&1
+  novos=0
+  for v in $(volumes_anonimos); do
+    case " $ANON_ANTES " in
+      *" $v "*) ;;
+      *) novos=$((novos + 1)) ;;
+    esac
+  done
+  if [ "$novos" = "0" ]; then
+    item "higiene: nenhum volume anonimo novo depois do teardown com -v" 0
+  else
+    item "higiene: nenhum volume anonimo novo depois do teardown com -v" 1 \
+      "$novos volume(s) novo(s): $(volumes_anonimos | tr '\n' ' ')"
+  fi
+fi
 
 echo
 echo "RESULTADO: $([ "$FALHAS" = "0" ] && echo PASS || echo FALHOU) ($OK itens, $FALHAS falhas)"
