@@ -6,7 +6,7 @@
   "release_status": "DELIVERED",
   "current_gate": "DONE",
   "production_promotion_authorized": false,
-  "updated_at": "2026-10-04",
+  "updated_at": "2026-10-05",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -1343,6 +1343,34 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W0-E01-T03-D01",
+      "title": "DEFEITO [retroativo]: pg_isready respondia OK no servidor temporario do init",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_4e8ade57",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "O conserto esta' nos DOIS arquivos que o card exige, e a espera e' a robusta: faz conexao real (`docker exec ... psql -tAc 'SELECT 1'`) e so' aceita o servidor se ele SOBREVIVER a uma segunda checagem 3s depois (`sleep 3` + mesma consulta) — que e' a definicao de 'servidor definitivo, nao o temporario da inicializacao'. O teste declara o item 'origem pronta (servidor definitivo, nao o temporario da inicializacao)'. MEDIDO NO VPS, em banco descartavel proprio: DUAS passadas identicas -> `RESULTADO: TESTE_OK (12 itens, 0 falhas)` (o card declarou 9 itens; a prova cresceu), diferindo apenas o nome do dump com carimbo de tempo e o sha256 dele, que nascem novos por rodada. LIMITACAO DECLARADA (decisao do dono, 05/10/2026): o DENTE por mutacao NAO morde neste item — mutando a espera para 'pronto sem checar' em copia isolada, o teste passou igual (`TESTE_OK 12/0`), porque no ambiente descartavel a corrida original (a janela em que o Postgres derruba o servidor temporario) nao se reproduz. Logo: conserto implementado e caminho feliz medido, mas a protecao da espera nao tem prova negativa. Construir o cenario que reproduz a corrida foi reconhecido como trabalho de card proprio, nao de validacao.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh (modo descartavel, sem --ambiente)",
+            "conserto": "scripts/backup/verificar-backup.sh + scripts/backup/teste-backup-restore.sh",
+            "passadas": 2,
+            "medicao": "TESTE_OK (12 itens, 0 falhas) x2",
+            "dente": "NAO MORDE: mutacao 'pronto sem checar' nao reprova no ambiente descartavel",
+            "volateis_declarados": "nome do dump (carimbo de tempo) e sha256 do dump",
+            "log": "/tmp/tre_lote14/card130_{pass1,pass2,dente}.out",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+          }
+        }
+      ]
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
@@ -1438,6 +1466,16 @@
         "t_fa85fa52",
         "t_e9535df3",
         "t_f8a6e209"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+      "scope": "lote 14 — onda W0: vereditos gravados com 2 passadas + prova de dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-05T14:00:00+00:00",
+      "cards": [
+        "t_4e8ade57"
       ]
     }
   ]
