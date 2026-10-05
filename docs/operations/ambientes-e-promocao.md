@@ -103,10 +103,42 @@ Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `ma
   Descartadas: só plataforma (não vê evidência) e só disciplina (com repo privado e sem proteção, "sem push
   direto" vira convenção).
 
-## Decisões que ainda faltam (para o desenho virar operação)
+- **D5 · Escopo de serviços por ambiente (05/10/2026) — o MESMO conjunto nos três** (proxy + Odoo +
+  Postgres + n8n), com **limite de memória por stack** e `n8n` sem workers no Dev. Razão: Homolog existe para
+  detectar a diferença entre ambientes; conjunto diferente homologa só o que alguém lembrou de replicar.
+  Descartadas: ambientes enxutos (quebraria a paridade justamente no n8n, o serviço mais provável de quebrar
+  em Produção) e serviços de apoio compartilhados (um Postgres para três: economiza pouco e acopla — um
+  restart derruba os três, e um teste pesado em Dev degrada Produção).
 
-1. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
-   (12 GB em uso) e 11 GB de RAM (≈9 GB disponíveis): cabe, mas convém fixar limites de memória por stack.
+## Plano de execução (em ordem)
+
+Dependências do dono marcadas com **[DONO]**. Nada aqui autoriza release: promover para `main` continua
+exigindo aprovação humana registrada.
+
+1. **Branch `homolog`** — criar a partir de `develop` (hoje não existe). Sem ele, nada promove.
+2. **[DONO] Registros DNS** — `tre`, `dev.tre` e `homolog.tre` → `169.58.24.102` no painel do Netlify (ou
+   token do Netlify para o agente criar). Sem isso, Homolog/Produção só sobem com CA local e o webhook dos
+   canais não fecha.
+3. **Provisionar Homolog** — `deploy/compose/homolog/`, `deploy/environments/homolog-*.env`,
+   `scripts/provision/*-homolog.sh` (espelhando o que já existe para dev), `mem_limit` por serviço, `n8n` sem
+   workers, segredos em `/etc/tre/<serviço>-homolog/` (600). Fecha com a sonda de TLS e um E2E do funil **em
+   Homolog**.
+4. **Provisionar Produção** — mesmo formato em `deploy/compose/prod/`, mesmos limites.
+5. **Gate no motor + vigia de auditoria** (parte B de D4) — o motor passa a recusar promoção de card sem AC
+   fechados e evidência anexada, registrando o sha; o vigia confere que `main` só avançou por merge vindo de
+   `homolog`. É script que roda a cada 5 min: entra com dry-run e janela declarada, nunca às cegas.
+6. **[DONO] GitHub Pro** (parte A de D4) — assinatura. Com o upgrade feito, os rulesets de `homolog` e `main`
+   são configurados por API (o token do agente já tem `admin` no repo).
+7. **Política** — registrar o mapa ambiente↔branch↔aprovação em `hermes/policies/human-approval.yaml`:
+   promoção Dev→Homolog não exige humano; `homolog`→`main` exige; rollback em Produção exige.
+8. **Primeiro release** (D2) — declarar o bloco de cards do caminho crítico; promover para Homolog com a
+   evidência anexada nos cards; revalidar em Homolog; montar o pedido de aprovação humana; aprovado, promover
+   para `main` com **tag de versão por data**.
+
+## Perguntas em aberto do desenho (não bloqueiam os passos 1, 3 e 5)
+
+- Quem cria os **registros DNS** (passo 2): o dono no painel, ou token do Netlify para o agente.
+- O **upgrade para GitHub Pro** (passo 6) entra agora ou depois do primeiro release?
 
 
 ## Pendências de forma (não bloqueiam o desenho)
