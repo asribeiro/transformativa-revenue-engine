@@ -92,13 +92,12 @@ Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `ma
 
 ## Decisões que ainda faltam (para o desenho virar operação)
 
-2. **Primeiro release.** `develop` já tem W0–W9: o primeiro envio a Homolog/Produção entra **completo** ou
-   começa com um pacote pequeno e verificável?
-4. **Enforcement.** Proteger `homolog` e `main` no GitHub (PR obrigatório, sem push direto) e registrar o
+1. **Enforcement.** Proteger `homolog` e `main` no GitHub (PR obrigatório, sem push direto) e registrar o
    mapa ambiente↔branch↔aprovação na política (`hermes/policies/human-approval.yaml`) para o portão ser
    verificável por máquina, não por disciplina. **Alterar a política é decisão do dono.**
 2. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
    (12 GB em uso) e 11 GB de RAM (≈9 GB disponíveis): cabe, mas convém fixar limites de memória por stack.
+
 
 ## Pendências de forma (não bloqueiam o desenho)
 
