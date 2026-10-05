@@ -156,6 +156,53 @@ CARDS = [
             "log": "/tmp/tre_lote13/card125_{pass1,pass2,dente}.out",
         },
     },
+    {
+        "id": "TRE-W2-E03-T01-D03",
+        "title": "DEFEITO: itens de resquício do aceite medem pelo nome do módulo e não cobrem entidade Odoo",
+        "task": "t_9e402411",
+        "evidence": (
+            "Verificacao do conserto no artefato entregue: o verificador passou a capturar a superficie "
+            "COM o modulo instalado — `capturar_superficie_do_modulo()` recebe o banco nesse estado, o "
+            "INFO imprime a regua derivada ('item sem superficie nao prova nada') e o aceite confere "
+            "`ir_module_module.state = installed` no banco. PROVA DE QUE A REGUA ANTIGA NAO TINHA DENTE: "
+            "a regua antiga media pelo nome do PACOTE e acusava 0 resquicio COM o modulo instalado; a nova "
+            "reprova com resquicio plantado (dente 3: desinstalacao real + plantio de modelo, tabela, "
+            "campo e view), e a sonda direta le `MODELOS_PROPRIOS=tf.process.opportunity`. Medicao "
+            "PROPRIA nesta rodada (independente da do card): `--prova-de-dente` do mesmo verificador -> "
+            "`MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, com o aceite remedido em `MODULO_ODOO_OK (51 "
+            "itens, 0 falhas)` nas duas passadas do card 125."
+        ),
+        "verification": {
+            "verificador": "scripts/odoo/verificar-modulo-odoo.sh (passo 3 com superficie + dente 3 de resquicio plantado)",
+            "regua": "superficie derivada do modulo em state='installed' (nao o nome do pacote)",
+            "dente": "resquicio plantado reprova; regua antiga era cega no mesmo cenario",
+            "medicao_propria": "MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) + aceite 51 itens/0 falhas x2",
+            "registro": "docs/operations/registro-de-execucoes.md, entrada de 2026-10-01 (D03)",
+        },
+    },
+    {
+        "id": "TRE-W2-E03-T01-D03-D01",
+        "title": "DEFEITO [retroativo]: runbook §10 e registro citam \"8 compartilhadas\" no crm",
+        "task": "t_d705ea32",
+        "evidence": (
+            "Defeito de NÚMERO em texto entregue. Checagem por string exata nos documentos do repo: "
+            "`das quais **8 compartilhadas**` -> **0 ocorrencias** (o numero errado nao existe mais em "
+            "docs/); `das quais **11 compartilhadas**` -> 1 ocorrencia, no §10 do runbook do modulo "
+            "(linha 328), ja com a lista completa de 11 (`calendar.event`, `crm.lead`, `crm.team`, "
+            "`crm.team.member`, `digest.digest`, `ir.config_parameter`, `mail.activity`, "
+            "`res.config.settings`, `res.partner`, `res.users`, `utm.campaign`); `crm.team.member` -> 2 "
+            "ocorrencias; `utm.campaign` (forma correta do modelo Odoo) -> 2 ocorrencias. O unico "
+            "`utm_campaign` que permanece e' legitimo: campo JSON de payload em "
+            "`docs/runbooks/captura-de-lead-do-site.md`, nao nome de modelo. No registro de execucoes a "
+            "frase com a contagem nao existe (nem com 8 nem com 11), logo nao ha' afirmacao errada "
+            "remanescente. Sem efeito em codigo ou na conclusao do filtro, como o proprio card declara."
+        ),
+        "verification": {
+            "checagem": "string exata em docs/ (grep -rF): 0 ocorrencias do numero errado, 1 do corrigido",
+            "arquivo_corrigido": "docs/runbooks/odoo-modulo-sales-ai.md §10 (linha 328)",
+            "nota": "defeito documental retroativo: numero errado em justificativa de filtro, sem efeito no codigo",
+        },
+    },
 ]
 
 
