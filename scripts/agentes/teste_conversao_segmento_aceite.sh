@@ -389,7 +389,7 @@ echo "== 9. higiene: o aceite prova que NAO deixa volume anonimo novo"
 if [ "$MANTER" = "1" ]; then
   item "higiene: pulado em --manter (container mantido de proposito)" 0
 else
-  docker rm -f -v "$PG" >/dev/null 2>&1
+  limpar   # a MESMA limpeza do trap: aqui o aceite mede o rastro que ELE deixa
   novos=0
   for v in $(volumes_anonimos); do
     case " $ANON_ANTES " in
