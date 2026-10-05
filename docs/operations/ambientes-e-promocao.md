@@ -75,18 +75,29 @@ Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `ma
   Consequência de desenho: existe **um pacote de evidência por release**, montado das evidências anexadas nos
   cards que entram nele.
 
+- **D2 · Tamanho do primeiro release (05/10/2026) — fatia de valor ponta a ponta, pequena.** O primeiro
+  release cobre o **caminho crítico** (base: proxy/TLS + Odoo + Postgres, mais um funil real de captura de
+  lead → CRM) e existe para **provar o processo com carga leve** (merge em `homolog` → deploy → revalidação →
+  pedido de aprovação → registro), não para entregar valor. Descartadas: **W0–W2** (primeiro release já com
+  carga média: se falhar, o diagnóstico é caro justo na primeira volta) e **W0–W9 completo** (revalidar 9
+  ondas não cabe em janela e a aprovação humana viraria carimbo de fé sobre ~170 evidências).
+- **D3 · Domínios por ambiente (05/10/2026) — `tre.transformativa.com.br` (canônico, Produção),
+  `homolog.tre.transformativa.com.br` e `dev.tre.transformativa.com.br`.** Espelha a convenção da casa
+  (`candidate.finance.transformativa.com.br` = ambiente como subdomínio do produto). Os três stacks convivem
+  no IP da VPS (`169.58.24.102`) e o roteamento é por hostname, com certificado por nome. `dev.` e `homolog.`
+  ficam atrás de **basic auth**; o canônico é público (é ele que atende o webhook dos canais, que exige HTTPS
+  com domínio válido). Descartadas: prefixo no primeiro nível (`tre-dev.…`), domínio próprio do produto (marca
+  separada — volta à mesa se houver SaaS com marca própria) e IP:porta (bloquearia o webhook). DNS vive no
+  **Netlify**; os três registros `A → 169.58.24.102` **ainda não existem**.
+
 ## Decisões que ainda faltam (para o desenho virar operação)
 
-1. **Domínios/hostnames por ambiente.** Hoje **pendente no próprio repo** (`deploy/environments/dev.env` diz
-   "DOMINIO — decisao do dono, PENDENTE"). Dev roda com `tls internal` (CA local do Caddy). Sugestão a
-   validar: `dev.tre.<dominio>`, `homolog.tre.<dominio>`, `app.tre.<dominio>` — a convenção da casa é o
-   hostname canônico apontar para a release ativa.
 2. **Primeiro release.** `develop` já tem W0–W9: o primeiro envio a Homolog/Produção entra **completo** ou
    começa com um pacote pequeno e verificável?
 4. **Enforcement.** Proteger `homolog` e `main` no GitHub (PR obrigatório, sem push direto) e registrar o
    mapa ambiente↔branch↔aprovação na política (`hermes/policies/human-approval.yaml`) para o portão ser
    verificável por máquina, não por disciplina. **Alterar a política é decisão do dono.**
-4. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
+2. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
    (12 GB em uso) e 11 GB de RAM (≈9 GB disponíveis): cabe, mas convém fixar limites de memória por stack.
 
 ## Pendências de forma (não bloqueiam o desenho)
