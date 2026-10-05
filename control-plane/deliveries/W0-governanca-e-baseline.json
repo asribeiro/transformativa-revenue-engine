@@ -76,7 +76,21 @@
         {
           "hermes_task_id": "t_ac8a2130",
           "stage": "DONE",
-          "evidence": "repo com 23 diretórios, .env.example sem segredo, 6 ADRs — commit f109e87"
+          "evidence": "Exigencia literal do corpo do card: 'clone limpo reproduz a estrutura; script de verificacao confere diretorios; nenhum segredo em Git'. ACEITE CUMPRIDO: `scripts/verificar_estrutura.sh` -> `RESULTADO: PASS (0 falhas)` em 3 passadas com md5 identico (12c0cf52...), exit 0. DENTE MORDE com as duas mutacoes do alvo em copia isolada: (M1) desmarcar `docs/data/DATA_CONTRACT_V1.md` do indice (via GIT_INDEX_FILE temporario, indice real intocado) -> `FALHOU versionado docs/data/DATA_CONTRACT_V1.md (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)`, rc=1 — reproduz exatamente o defeito historico do `.gitignore data/` engolindo `docs/data/`; (M2) remover `docs/kanban/` -> `FALHOU dir docs/kanban` + `FALHOU ausente docs/kanban/processo-de-defeitos.md`, rc=1. ACHADO DE CONFLITO ENTRE ONDAS (declarado, NAO e' falha deste card): a suite offline `verificar_lote1_offline.sh` da' `LOTE1_FALHOU (1 falhas)` porque o gate t_4be20bcc (secret scan) reprova por `api_key=` em `hermes/memoria/memoria_comercial.py` — arquivo da W9 que entrou no merge. CONFERIDO POR MIM NO CODIGO: sao parametros de funcao (`api_key=None`, `api_key=api_key`), portanto FALSO POSITIVO do scanner, NAO segredo literal. O gate que roda o verificador DESTE card (t_967965f0) passa. ANOMALIA DECLARADA: uma rodada concorrente da suite deu resultado instavel (corrida no git) e foi DESCARTADA — rodada concorrente nao vale. Baseline inicio == fim == 5/7/0/4.",
+          "validation_result": "PASS",
+          "current_gate": "VALIDATION",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/verificar_estrutura.sh (fail-closed)",
+            "medicao": "RESULTADO: PASS (0 falhas) x3, md5 identico",
+            "dente": "MORDE: arquivo versionado fora do indice -> FALHOU (1); dir removido -> FALHOU (2)",
+            "achado_cruzado": "secret scan (t_4be20bcc) reprova por `api_key=` em hermes/memoria/memoria_comercial.py (W9) — falso positivo confirmado no codigo",
+            "log": "/tmp/tre_lote16/agentA/logs/",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
         },
         {
           "hermes_task_id": "t_4be20bcc",
@@ -480,7 +494,21 @@
         {
           "hermes_task_id": "t_38cbab9a",
           "stage": "DONE",
-          "evidence": "defeito da suite do gate (overlay escrevia atraves do bind) corrigido: scripts/verificar_gate_jev.py, commit 59832b2 — a suite roda e fecha 30 itens PASS"
+          "evidence": "Exigencia literal do corpo do card: `verificar_gate_jev.py` roda ate' o fim e volta a PASS, E `ls -la /opt/hermes/hermes_cli/kanban_jev_gate.py` continua com o mesmo mtime/permissao depois da rodada. ACEITE CUMPRIDO nas DUAS metades: `scripts/verificar_gate_jev.py` -> `PASS (30 itens, 0 falhas)`, exit 0 nas QUATRO passadas, saídas byte-identicas apos normalizar so' o token volatil do tmp (`gate-jev-XXXX -> TMP`); e a prova de isolamento: `/opt/hermes/hermes_cli/kanban_jev_gate.py` com sha `f10d4ef8...6716`, mode 644, 15922 B, mtime 2026-09-29 23:56:36 — IDENTICO antes/depois nas quatro. O item 29 (S10 isolamento, o item novo do card) passa em todas. DENTE MORDE: com o alvo mutado de volta a forma que causou o defeito (`nomes_que_viram_copia = editados | {ADAPTADOR_VERSIONADO.name}` -> `= editados`), contra um `/opt/hermes` FALSO e gravavel, o item 29 reprova (`FALHOU 29 S10 isolamento: adaptador do overlay e' copia real (nao symlink para o instalado)`) e a prova da escrita pelo link aparece: o adaptador do fake sai de 15997 B/mtime 2000-01-01 para 15922 B/mtime de hoje (= a copia do repo o sobrescreveu). No codigo bom o fake fica intacto e a suite passa 30/30 — ou seja, o item DISCRIMINA. LIMITACAO DECLARADA: a suite exige `/opt/hermes`, que existe no host do Hermes e NAO na VPS (medido) — rodou no host do Hermes, o mesmo usado pelo lote 12 para os cards W0/JEV. Este card nao tem aceite E2E script proprio (o E2E pertence a outro card, ja' com veredito). Baseline da VPS: inicio 5/7/0/4; o footprint do executor foi ZERO (a verificacao e' offline e o host do Hermes nao tem daemon docker); volumes extras no fim eram de execucao irma em voo, nao tocados.",
+          "validation_result": "PASS",
+          "current_gate": "VALIDATION",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/verificar_gate_jev.py (30 itens, inclui S10 isolamento)",
+            "medicao": "PASS (30 itens, 0 falhas) x4 (2 aceite + 2 suite), byte-identicas apos normalizar o tmp",
+            "dente": "MORDE: mutacao reverte o conserto -> item 29 reprova e o fake e' sobrescrito (escrita pelo symlink) confirmada por sha/mtime",
+            "isolamento_provado": "/opt/hermes/hermes_cli/kanban_jev_gate.py identico antes/depois (sha f10d4ef8, mtime 29/09 23:56)",
+            "log": "/tmp/tre_lote16/agentO/logs/agentO_{aceite,suite,dente}*.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
         }
       ],
       "current_gate": "DONE"

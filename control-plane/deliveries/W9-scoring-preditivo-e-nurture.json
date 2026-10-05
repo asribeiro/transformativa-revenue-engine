@@ -136,7 +136,6 @@
             "medicao": "offline VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42, 0) + autoteste 5/5 x2 byte-identicas; E2E ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas) x2 byte-identicas",
             "dente": "MORDE nos dois niveis: exige_aprovacao_humana desligado -> offline FALHOU (42, 1) e E2E FALHOU (32 OK, 4 falhas)",
             "achado_higiene": "o --autoteste vaza 5 diretorios temporarios por execucao (tempfile.mkdtemp sem cleanup)",
-            "log": "/tmp/tre_lote15/agentL/logs/{offline_L1,offline_L2,aceite_L1b,aceite_L2,offline_MUT,aceite_MUT}.out",
             "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
             "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
@@ -154,8 +153,20 @@
           "hermes_task_id": "t_b2c848da",
           "stage": "DONE",
           "current_gate": "VALIDATION",
-          "validation_result": null,
-          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+          "validation_result": "PASS",
+          "evidence": "Medido na copia isolada no commit `ffd5d9e` (ancestral de develop; o componente em HEAD e' byte-identico ao commit, sha256 0bdf0656...). Duas passadas IDENTICAS por sha256 dos logs: offline `VERIFICADOR_MEMORIA_COMERCIAL_PASS (26 itens, 0 falhas)` + `AUTOTESTE 11/11 mutacoes detectadas`; E2E `RESULTADO: PASS (66 itens, 0 falhas)` + `ACEITE_MEMORIA_COMERCIAL_OK`, byte-identico SEM normalizacao (o aceite fixa --agora). DENTE MORDE NAS DUAS CAMADAS com mutacao independente que reverte o defeito #1 do proprio card (leitura por linha em vez de texto inteiro): offline `VERIFICADOR_MEMORIA_COMERCIAL_FALHOU (25 itens, 1 falhas)` (`FONTE_JSON_ILEGIVEL`) e E2E `RESULTADO: FALHOU (28 itens, 13 falhas)` + `ACEITE_MEMORIA_COMERCIAL_FALHOU`; o limpo passa 66/0. Amostra do aceite: 12 documentos, 4 tipos, contagem exata 12, snapshot canonico igual antes/depois (8/3/2/4), sessao READ ONLY recusou escrita, PII em lacuna. Baseline inicio == fim == 5/7/0/4. ACHADO DA MESMA CLASSE JA' CARDADA: `teste_memoria_comercial_aceite.sh` limpar() linha 45 usa `docker rm -f \"$PG\" \"$QD\"` SEM `-v` -> vaza 1 volume anonimo por E2E (quem vaza e' o postgres:16; o qdrant nao tem VOLUME); 3 medidos e removidos por ID. DRIFT COSMETICO declarado: o cabecalho do aceite diz '25 itens + 10 dentes' e o real e' 26 + 11.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/verificar_memoria_comercial.py --autoteste (26 itens, 11 mutacoes) + teste_memoria_comercial_aceite.sh (66 itens)",
+            "medicao": "offline PASS (26, 0) + 11/11 x2 mesmo sha256; E2E PASS (66, 0) + ACEITE_MEMORIA_COMERCIAL_OK x2 byte-identicas",
+            "dente": "MORDE nas duas camadas: leitura por linha revertida -> offline FALHOU (25, 1) e E2E FALHOU (28, 13)",
+            "achado_higiene": "limpar() sem -v vaza 1 volume anonimo por execucao E2E (arquivo ja' citado no card de conserto t_3148dbbf)",
+            "log": "/tmp/tre_lote16/agentM/logs/{offline_p1,offline_p2,aceite_p1,aceite_p2,aceite_dente}.log",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
         }
       ]
     }

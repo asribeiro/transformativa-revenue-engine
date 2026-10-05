@@ -607,7 +607,90 @@ CARDS = [
                          "medicao": "offline VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42, 0) + autoteste 5/5 x2 byte-identicas; E2E ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas) x2 byte-identicas",
                          "dente": "MORDE nos dois niveis: exige_aprovacao_humana desligado -> offline FALHOU (42, 1) e E2E FALHOU (32 OK, 4 falhas)",
                          "achado_higiene": "o --autoteste vaza 5 diretorios temporarios por execucao (tempfile.mkdtemp sem cleanup)",
-                         "log": "/tmp/tre_lote15/agentL/logs/{offline_L1,offline_L2,aceite_L1b,aceite_L2,offline_MUT,aceite_MUT}.out",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W9", "id": "TRE-W9-E06-T01", "title": "Memoria comercial", "task": "t_b2c848da",
+        "evidence": (
+            "Medido na copia isolada no commit `ffd5d9e` (ancestral de develop; o componente em HEAD e' "
+            "byte-identico ao commit, sha256 0bdf0656...). Duas passadas IDENTICAS por sha256 dos logs: "
+            "offline `VERIFICADOR_MEMORIA_COMERCIAL_PASS (26 itens, 0 falhas)` + `AUTOTESTE 11/11 mutacoes "
+            "detectadas`; E2E `RESULTADO: PASS (66 itens, 0 falhas)` + `ACEITE_MEMORIA_COMERCIAL_OK`, "
+            "byte-identico SEM normalizacao (o aceite fixa --agora). DENTE MORDE NAS DUAS CAMADAS com "
+            "mutacao independente que reverte o defeito #1 do proprio card (leitura por linha em vez de "
+            "texto inteiro): offline `VERIFICADOR_MEMORIA_COMERCIAL_FALHOU (25 itens, 1 falhas)` "
+            "(`FONTE_JSON_ILEGIVEL`) e E2E `RESULTADO: FALHOU (28 itens, 13 falhas)` + "
+            "`ACEITE_MEMORIA_COMERCIAL_FALHOU`; o limpo passa 66/0. Amostra do aceite: 12 documentos, 4 "
+            "tipos, contagem exata 12, snapshot canonico igual antes/depois (8/3/2/4), sessao READ ONLY "
+            "recusou escrita, PII em lacuna. Baseline inicio == fim == 5/7/0/4. ACHADO DA MESMA CLASSE "
+            "JA' CARDADA: `teste_memoria_comercial_aceite.sh` limpar() linha 45 usa `docker rm -f \"$PG\" "
+            "\"$QD\"` SEM `-v` -> vaza 1 volume anonimo por E2E (quem vaza e' o postgres:16; o qdrant nao "
+            "tem VOLUME); 3 medidos e removidos por ID. DRIFT COSMETICO declarado: o cabecalho do aceite "
+            "diz '25 itens + 10 dentes' e o real e' 26 + 11."
+        ),
+        "verification": {"verificador": "scripts/agentes/verificar_memoria_comercial.py --autoteste (26 itens, 11 mutacoes) + teste_memoria_comercial_aceite.sh (66 itens)",
+                         "medicao": "offline PASS (26, 0) + 11/11 x2 mesmo sha256; E2E PASS (66, 0) + ACEITE_MEMORIA_COMERCIAL_OK x2 byte-identicas",
+                         "dente": "MORDE nas duas camadas: leitura por linha revertida -> offline FALHOU (25, 1) e E2E FALHOU (28, 13)",
+                         "achado_higiene": "limpar() sem -v vaza 1 volume anonimo por execucao E2E (arquivo ja' citado no card de conserto t_3148dbbf)",
+                         "log": "/tmp/tre_lote16/agentM/logs/{offline_p1,offline_p2,aceite_p1,aceite_p2,aceite_dente}.log",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W0", "id": "TRE-W0-E01-T01", "title": "Criar estrutura do repositorio", "task": "t_ac8a2130",
+        "evidence": (
+            "Exigencia literal do corpo do card: 'clone limpo reproduz a estrutura; script de verificacao "
+            "confere diretorios; nenhum segredo em Git'. ACEITE CUMPRIDO: `scripts/verificar_estrutura.sh` "
+            "-> `RESULTADO: PASS (0 falhas)` em 3 passadas com md5 identico (12c0cf52...), exit 0. DENTE "
+            "MORDE com as duas mutacoes do alvo em copia isolada: (M1) desmarcar "
+            "`docs/data/DATA_CONTRACT_V1.md` do indice (via GIT_INDEX_FILE temporario, indice real "
+            "intocado) -> `FALHOU versionado docs/data/DATA_CONTRACT_V1.md (arquivo existe mas nao esta no "
+            "git — ignorado pelo .gitignore?)`, rc=1 — reproduz exatamente o defeito historico do "
+            "`.gitignore data/` engolindo `docs/data/`; (M2) remover `docs/kanban/` -> `FALHOU dir "
+            "docs/kanban` + `FALHOU ausente docs/kanban/processo-de-defeitos.md`, rc=1. ACHADO DE "
+            "CONFLITO ENTRE ONDAS (declarado, NAO e' falha deste card): a suite offline "
+            "`verificar_lote1_offline.sh` da' `LOTE1_FALHOU (1 falhas)` porque o gate t_4be20bcc "
+            "(secret scan) reprova por `api_key=` em `hermes/memoria/memoria_comercial.py` — arquivo da "
+            "W9 que entrou no merge. CONFERIDO POR MIM NO CODIGO: sao parametros de funcao "
+            "(`api_key=None`, `api_key=api_key`), portanto FALSO POSITIVO do scanner, NAO segredo "
+            "literal. O gate que roda o verificador DESTE card (t_967965f0) passa. ANOMALIA DECLARADA: "
+            "uma rodada concorrente da suite deu resultado instavel (corrida no git) e foi DESCARTADA — "
+            "rodada concorrente nao vale. Baseline inicio == fim == 5/7/0/4."
+        ),
+        "verification": {"verificador": "scripts/verificar_estrutura.sh (fail-closed)",
+                         "medicao": "RESULTADO: PASS (0 falhas) x3, md5 identico",
+                         "dente": "MORDE: arquivo versionado fora do indice -> FALHOU (1); dir removido -> FALHOU (2)",
+                         "achado_cruzado": "secret scan (t_4be20bcc) reprova por `api_key=` em hermes/memoria/memoria_comercial.py (W9) — falso positivo confirmado no codigo",
+                         "log": "/tmp/tre_lote16/agentA/logs/",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W0", "id": "TRE-W0-E04-T05-D02", "title": "DEFEITO: suite do gate nao roda (overlay escrevia pelo symlink do adaptador)", "task": "t_38cbab9a",
+        "evidence": (
+            "Exigencia literal do corpo do card: `verificar_gate_jev.py` roda ate' o fim e volta a PASS, E "
+            "`ls -la /opt/hermes/hermes_cli/kanban_jev_gate.py` continua com o mesmo mtime/permissao "
+            "depois da rodada. ACEITE CUMPRIDO nas DUAS metades: `scripts/verificar_gate_jev.py` -> "
+            "`PASS (30 itens, 0 falhas)`, exit 0 nas QUATRO passadas, saídas byte-identicas apos "
+            "normalizar so' o token volatil do tmp (`gate-jev-XXXX -> TMP`); e a prova de isolamento: "
+            "`/opt/hermes/hermes_cli/kanban_jev_gate.py` com sha `f10d4ef8...6716`, mode 644, 15922 B, "
+            "mtime 2026-09-29 23:56:36 — IDENTICO antes/depois nas quatro. O item 29 (S10 isolamento, o "
+            "item novo do card) passa em todas. DENTE MORDE: com o alvo mutado de volta a forma que causou "
+            "o defeito (`nomes_que_viram_copia = editados | {ADAPTADOR_VERSIONADO.name}` -> "
+            "`= editados`), contra um `/opt/hermes` FALSO e gravavel, o item 29 reprova "
+            "(`FALHOU 29 S10 isolamento: adaptador do overlay e' copia real (nao symlink para o instalado)`) "
+            "e a prova da escrita pelo link aparece: o adaptador do fake sai de 15997 B/mtime 2000-01-01 "
+            "para 15922 B/mtime de hoje (= a copia do repo o sobrescreveu). No codigo bom o fake fica "
+            "intacto e a suite passa 30/30 — ou seja, o item DISCRIMINA. LIMITACAO DECLARADA: a suite "
+            "exige `/opt/hermes`, que existe no host do Hermes e NAO na VPS (medido) — rodou no host do "
+            "Hermes, o mesmo usado pelo lote 12 para os cards W0/JEV. Este card nao tem aceite E2E script "
+            "proprio (o E2E pertence a outro card, ja' com veredito). Baseline da VPS: inicio 5/7/0/4; o "
+            "footprint do executor foi ZERO (a verificacao e' offline e o host do Hermes nao tem daemon "
+            "docker); volumes extras no fim eram de execucao irma em voo, nao tocados."
+        ),
+        "verification": {"verificador": "scripts/verificar_gate_jev.py (30 itens, inclui S10 isolamento)",
+                         "medicao": "PASS (30 itens, 0 falhas) x4 (2 aceite + 2 suite), byte-identicas apos normalizar o tmp",
+                         "dente": "MORDE: mutacao reverte o conserto -> item 29 reprova e o fake e' sobrescrito (escrita pelo symlink) confirmada por sha/mtime",
+                         "isolamento_provado": "/opt/hermes/hermes_cli/kanban_jev_gate.py identico antes/depois (sha f10d4ef8, mtime 29/09 23:56)",
+                         "log": "/tmp/tre_lote16/agentO/logs/agentO_{aceite,suite,dente}*.out",
                          "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
     },
 ]
