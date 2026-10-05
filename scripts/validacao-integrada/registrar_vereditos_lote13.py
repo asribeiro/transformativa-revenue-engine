@@ -135,6 +135,27 @@ CARDS = [
             "log": "/tmp/l13_hotspot{,2}.out",
         },
     },
+    {
+        "id": "TRE-W2-E03-T01",
+        "title": "Criar módulo transformativa_sales_ai",
+        "task": "t_c536ce86",
+        "evidence": (
+            "2 passadas identicas: `RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas)` (exit 0) em ambas, "
+            "banco descartavel `tre_e03_t01_modulo` nacendo do zero. Prova de dente (`--prova-de-dente`, "
+            "tres provas: versao, teste, resquicio): as mutacoes reprovaram com 3 falhas cada "
+            "(`MODULO_ODOO_FALHOU (19 itens, 3 falhas)` e `(36 itens, 3 falhas)`) -> "
+            "`RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`. O aceite mede o modulo em banco "
+            "limpo e le o estado no banco, nao a copia operacional."
+        ),
+        "verification": {
+            "verificador": "scripts/odoo/verificar-modulo-odoo.sh (aceite 51 itens + --prova-de-dente)",
+            "passadas": 2,
+            "dente": "3 provas (versao, teste, resquicio) -> MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)",
+            "banco_descartavel": "tre_e03_t01_modulo",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card125_{pass1,pass2,dente}.out",
+        },
+    },
 ]
 
 
