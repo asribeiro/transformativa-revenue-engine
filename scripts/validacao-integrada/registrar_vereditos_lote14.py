@@ -433,6 +433,85 @@ CARDS = [
             "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
         },
     },
+    {
+        "onda": "W9", "id": "TRE-W9-E01-T01", "title": "Score calibration", "task": "t_f599bd02",
+        "evidence": (
+            "Exigencia literal (comentario 361 do card): `ACEITE_CALIBRACAO_SCORE_OK` (0 falhas) com gate de "
+            "volume medido e recusado quando a base nao sustenta, pesos por grade do simplexo (passo 0,05, "
+            "1771 vetores), AUC contra Won/Lost, corte ajuste/validacao por sha256 e margem exigida NA "
+            "VALIDACAO, faixas por Youden recursivo cobrindo 0..100, leitura pura provada por snapshot + "
+            "transacao READ ONLY, determinismo, sem PII e proposta NAO aplicada (`aplicado: false`, "
+            "`aprovacao_humana: pendente`). MEDIDO no commit do card (2d6451b): suite offline "
+            "`VERIFICADOR_CALIBRACAO_PASS (51 itens, 0 falhas)` + `AUTOTESTE 7/7 mutacoes detectadas` em "
+            "DUAS passadas com sha256 IDENTICO cru; aceite E2E `ACEITE_CALIBRACAO_SCORE_OK (32 itens, 0 "
+            "falhas)` x2, identicas apos normalizar so' o nome do container e o dir-base. DENTES QUE MORDEM "
+            "(2 mutacoes independentes no alvo): revertendo a margem -> `VERIFICADOR_CALIBRACAO_FALHOU (50 "
+            "itens, 1 falhas)` com 'ganho na validacao abaixo da margem (anti-overfitting)'; afrouxando o "
+            "gate de volume -> `FALHOU (50 itens, 1 falhas)` com motivo nomeado "
+            "'CLASSE_LOST_ABAIXO_DO_MINIMO'. LIMITACAO DECLARADA: o aceite foi parametrizado no nome do "
+            "container (default preservado) por haver agentes paralelos na VPS; a 1a tentativa com nome fora "
+            "do padrao foi RECUSADA pelo proprio guard (`CONTAINER_NAO_LOCAL_DE_DEV`) — limitacao do setup, "
+            "nao do artefato. Baseline inicio=fim=5/7/0/4."
+        ),
+        "verification": {"verificador": "scripts/agentes/teste_calibracao_score_aceite.sh + verificar_calibracao_score.py --autoteste",
+                         "medicao": "ACEITE_CALIBRACAO_SCORE_OK (32 itens, 0 falhas) x2; offline PASS (51 itens, 0 falhas) + AUTOTESTE 7/7 x2",
+                         "dente": "MORDE x2 (margem e gate de volume)", "commit_medido": "2d6451b",
+                         "log": "/tmp/tre_lote14/agentG/logs/{suite_pass1,aceite_pass1,dente_margem,dente_gate}.out",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W9", "id": "TRE-W9-E02-T01", "title": "Predictive scoring", "task": "t_2821c15b",
+        "evidence": (
+            "Exigencia literal (comentario 368): `ACEITE_PONTUACAO_PREDITIVA_OK` (35 itens, 0 falhas), base "
+            "insuficiente => exit 6 SEM modelo/avaliacao/previsao, pesos vindos do RELATORIO da calibracao, "
+            "corte ajuste/validacao igual ao do relatorio (divergente => RECUSA), blocos PAVA monotonicos, "
+            "bino sem base herdando o bloco anterior. MEDIDO no develop publicado (9e638f7): E2E "
+            "`ACEITE_PONTUACAO_PREDITIVA OK (35 itens OK, 0 falhas)` x2 BYTE-IDENTICAS (sha256 2c818627...) e "
+            "offline `VERIFICADOR_PONTUACAO_PASS (66 itens, 0 falhas) + autoteste OK (8/8 dentes)` x2 "
+            "byte-identicas (0d70cdfa...) — nenhum token volatil precisou de normalizacao. DENTE QUE MORDE: "
+            "afrouxando o portao de volume (`base_suficiente = True`), o E2E REPROVOU -> "
+            "`ACEITE_PONTUACAO_PREDITIVA FALHOU (33 itens OK, 2 falhas)` com 'FALHOU coorte abaixo do minimo "
+            "ABSTEVE (exit 6)' e 'FALHOU abstencao NAO produz modelo nem previsao'; o versionado nao foi "
+            "tocado. ACHADO DE HIGIENE DECLARADO: o aceite deixa 1 volume anonimo por execucao (3 medidos "
+            "numa janela de 3 passadas) apesar de o codigo usar `docker rm -f -v` — o subagente removeu os 3 "
+            "por ID; baseline final medido por mim 5/7/0/4. LIMITACAO: o literal do aceite e' "
+            "`ACEITE_PONTUACAO_PREDITIVA OK` (com espaco), nao `..._OK` como grafado no card."
+        ),
+        "verification": {"verificador": "scripts/agentes/teste_pontuacao_preditiva_aceite.sh + verificar_pontuacao_preditiva.py --autoteste",
+                         "medicao": "ACEITE_PONTUACAO_PREDITIVA OK (35 itens, 0 falhas) x2 byte-identicas; offline PASS (66 itens, 0 falhas) + autoteste 8/8 x2",
+                         "dente": "MORDE: portao de volume afrouxado -> E2E FALHOU (33 itens OK, 2 falhas)",
+                         "achado_higiene": "1 volume anonimo vazado por execucao apesar do `-v` no codigo (3 removidos por ID)",
+                         "log": "/tmp/tre_lote14/agentH/logs/{e2e_pass1,e2e_pass2,off_pass1,dente_pass}.log",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W9", "id": "TRE-W9-E03-T01", "title": "Best channel prediction", "task": "t_90b83807",
+        "evidence": (
+            "Exigencia literal (comentario 359): `ACEITE_PREVISAO_CANAL_OK` (0 falhas) com o requisito "
+            "central 'opt-out e' bloqueio': canal bloqueado por opt_out_email/opt_out_whatsapp/"
+            "do_not_contact NUNCA e' previsto e o bloqueio e' nomeado na saida. MEDIDO no develop publicado "
+            "(9e638f7; zero diferenca nos arquivos do card vs o commit f0cc981): offline `RESULTADO: PASS (23 "
+            "itens, 0 falhas)` + `AUTOTESTE 8/8 mutacoes detectadas` + `VERIFICADOR_PREVISAO_CANAL_PASS` x2 "
+            "IDÊNTICAS byte-a-byte; E2E `RESULTADO: PASS (42 itens, 0 falhas)` + `ACEITE_PREVISAO_CANAL_OK` "
+            "x2 (0 linhas divergentes apos normalizar so' o token volatil do TRE_ACEITE_BASE). DENTE QUE "
+            "MORDE com mutacao INDEPENDENTE das 8 embutidas (do_not_contact sempre falso): offline "
+            "`RESULTADO: FALHOU (21 itens, 2 falhas)` com 'do_not_contact bloqueia TODOS os canais' e E2E "
+            "`RESULTADO: FALHOU (38 itens, 4 falhas)` + `ACEITE_PREVISAO_CANAL_FALHOU` (exit 1) — o MESMO "
+            "aceite passa 42/0 no codigo bom. ACHADO CONFIRMADO NO CODIGO POR MIM: "
+            "`teste_previsao_canal_aceite.sh` limpa com `docker rm -f` SEM `-v` (0 ocorrencias com `-v`, 2 "
+            "sem) -> vaza 1 volume anonimo por rodada (o subagente removeu os 4 dele por ID). DESVIO "
+            "DECLARADO PELO PROPRIO CARD (comentario 363): o aceite entregue NAO reexecuta o aceite do pai "
+            "(ACEITE_FUNIL_OK), prometido no comentario de abertura; prova integracao por reconciliacao "
+            "numerica. Baseline final medido por mim: 5/7/0/4."
+        ),
+        "verification": {"verificador": "scripts/agentes/teste_previsao_canal_aceite.sh + verificar_previsao_canal.py --autoteste",
+                         "medicao": "E2E PASS (42 itens, 0 falhas) -> ACEITE_PREVISAO_CANAL_OK x2; offline PASS (23 itens, 0 falhas) + AUTOTESTE 8/8 x2 byte-identicas",
+                         "dente": "MORDE: do_not_contact sempre falso -> offline FALHOU (21, 2) e E2E FALHOU (38, 4)",
+                         "defeito_no_aceite": "docker rm -f sem -v (0 com, 2 sem) vaza 1 volume anonimo por rodada",
+                         "desvio_do_card": "nao reexecuta o aceite do pai (prometido no comentario de abertura; declarado no 363)",
+                         "log": "/tmp/tre_lote14/agentI/logs/{I_off1,I_e2e1,I_dente,I_dente_offline}.log",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
 ]
 
 
