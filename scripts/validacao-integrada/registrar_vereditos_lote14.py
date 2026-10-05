@@ -534,6 +534,82 @@ CARDS = [
                          "log": "/tmp/tre_lote14/agentI/logs/{I_off1,I_e2e1,I_dente,I_dente_offline}.log",
                          "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
     },
+    {
+        "onda": "W8", "id": "TRE-W8-E04-T01", "title": "Message performance", "task": "t_f5751cd2",
+        "evidence": (
+            "Duas passadas na VPS: offline `PASS (desempenho de mensagens v1: 48 itens, 0 falhas)` com "
+            "`7/7 dentes` no autoteste, e E2E `ACEITE_DESEMPENHO_MENSAGENS_001_OK (19 itens, 0 falhas)`, "
+            "exit 0 nos quatro logs. DENTE MORDE NOS DOIS NIVEIS (mutacao independente que reverte a "
+            "causa-raiz do card: `normalizar_canal` `strip().upper()` -> `strip()`): offline `FALHOU "
+            "(desempenho de mensagens v1: 48 itens, 13 falhas)` e E2E "
+            "`ACEITE_DESEMPENHO_MENSAGENS_001_FALHOU (12 OK, 7 falhas)`, com os itens nomeados "
+            "`V1 canal EMAIL...normalizacao (esperado=2 obtido=0)` e `B5..B11`; os 7 dentes embutidos "
+            "reprovaram cada item nomeado (sem-normalizacao-de-canal, janela-exclusiva-no-limite, "
+            "credito-a-todos-os-envios, auto-resposta-conta-como-resposta, amostra-desligada, "
+            "sem-guarda-de-prod, referencia-malformada-aceita). Higiene do aceite: usa `docker rm -f -v` "
+            "(1 ocorrencia, 0 sem) e NAO vazou volume — dangling=0. Baseline inicio == fim == 5/7/0/4. "
+            "LIMITACAO DECLARADA: o E2E semeia envio/resposta por fixture SQL 'na forma dos irmaos'; a "
+            "cadeia real SMTP/IMAP -> `interactions` e' prova de W6-E07/W6-E05, NAO desta rodada (a "
+            "analise contra PostgreSQL real, migration 0001, leitura pura e recusa de prod por exit 4 "
+            "estao medidos). Medido no HEAD publicado, sha identico ao clone de leitura."
+        ),
+        "verification": {"verificador": "scripts/agentes/verificar_desempenho_mensagens.py --autoteste (48 itens, 7 dentes) + teste_desempenho_mensagens_aceite.sh (19 itens)",
+                         "medicao": "offline PASS (48, 0) x2 + 7/7 dentes; E2E ACEITE_DESEMPENHO_MENSAGENS_001_OK (19 itens, 0 falhas) x2",
+                         "dente": "MORDE nos dois niveis: normalizacao de canal revertida -> offline FALHOU (48, 13) e E2E FALHOU (12 OK, 7 falhas)",
+                         "log": "/tmp/tre_lote15/agentJ/logs/{offline_pass1,offline_pass2,e2e_pass1,e2e_pass2,dente_*}.log",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W9", "id": "TRE-W9-E04-T01", "title": "Best timing", "task": "t_7722449b",
+        "evidence": (
+            "Duas passadas IDENTICAS (diff vazio, nenhum token volatil): offline "
+            "`VERIFICADOR_MELHOR_HORARIO_PASS (29 itens, 0 falhas) + autoteste OK (6/6 mutacoes "
+            "detectadas)` e E2E `ACEITE_MELHOR_HORARIO_001_OK (19 itens, 0 falhas)`, exit 0 nas quatro. "
+            "DENTE MORDE com DUAS mutacoes independentes no alvo `hermes/analytics/melhor_horario.py`: "
+            "(a) ignorar o offset do fuso -> `FALHOU (melhor horario v1: 29 itens, 8 falhas)`, primeira "
+            "linha `V4 fuso -03:00 com virada de dia: sexta 02:00Z = quinta 23:00 local (esperado=2 "
+            "obtido=0)`; (b) desligar o limite de amostra -> `FALHOU (melhor horario v1: 29 itens, 3 "
+            "falhas)`, `V17 nenhuma celula com amostra -> ABSTEM (AMOSTRA_INSUFICIENTE)`. Os dois itens "
+            "passam verdes na copia limpa, entao o dente nao e' falso positivo. A grade completa de 49 "
+            "celulas, as duas marginais e a abstencao explicita estao medidos. Higiene: o aceite usa "
+            "`docker rm -f -v` e o baseline fechou inicio == fim == 5/7/0/4. LIMITACAO DECLARADA: a prova "
+            "negativa vive no autoteste offline — o shell E2E nao tem dente embutido (o proprio script "
+            "declara); e o E2E semeia fixture SQL 'na forma dos contratos irmaos', entao a cadeia real "
+            "SMTP/IMAP fica com W6-E07-T01."
+        ),
+        "verification": {"verificador": "scripts/agentes/verificar_melhor_horario.py --autoteste (29 itens, 6 mutacoes) + teste_melhor_horario_aceite.sh (19 itens)",
+                         "medicao": "offline VERIFICADOR_MELHOR_HORARIO_PASS (29, 0) + autoteste 6/6 x2 identicas; E2E ACEITE_MELHOR_HORARIO_001_OK (19 itens, 0 falhas) x2 identicas",
+                         "dente": "MORDE (2 mutacoes independentes): offset ignorado -> FALHOU (29, 8); limite de amostra desligado -> FALHOU (29, 3)",
+                         "log": "/tmp/tre_lote15/agentK/logs/{offline_pass1,offline_pass2,e2e_pass1,e2e_pass2,dente_offset,dente_amostra}.log",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
+    {
+        "onda": "W9", "id": "TRE-W9-E05-T01", "title": "Automated nurture", "task": "t_632a199f",
+        "evidence": (
+            "Medido no commit declarado pelo card `cc346c7` (ancestral de develop), na copia isolada. "
+            "Duas passadas BYTE-IDENTICAS (nenhum token volatil a normalizar): offline "
+            "`VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` com `AUTOTESTE OK (5/5 mutacoes "
+            "detectadas)` e E2E `ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas)`. DENTE MORDE NAS "
+            "DUAS CAMADAS com mutacao que reproduz a causa-raiz do requisito central 'NADA ENVIA' "
+            "(`exige_aprovacao_humana: True` -> `False`, 2 ocorrencias): offline "
+            "`VERIFICADOR_NUTRICAO_AUTOMATICA_FALHOU (42 itens, 1 falhas)` nomeando 'fila: TODO toque "
+            "exige aprovacao humana e carrega as condicoes de parada do contrato'; E2E "
+            "`ACEITE_NUTRICAO_AUTOMATICA_001_FALHOU (32 OK, 4 falhas)` com `P8 NADA ENVIA: todo toque "
+            "exige aprovacao humana...` (+ cascata B3/B4/G3). Higiene: o aceite usa `docker rm -f -v` e "
+            "NAO vazou volume; baseline inicio == fim == 5/7/0/4. ACHADO DE HIGIENE DO PROPRIO "
+            "VERIFICADOR (declarado, nao consertado por estar fora de escopo): o `--autoteste` cria "
+            "`tempfile.mkdtemp` e NAO limpa — vaza 5 diretorios por execucao (classe diferente do "
+            "vazamento de volume, ja' cardado). LIMITACAO DE SETUP, nao do artefato: a primeira tentativa "
+            "de aceite foi RECUSADA pelo guard do pai (`RECUSA CONTAINER_NAO_LOCAL_DE_DEV`, nome de "
+            "container fora de `pg-(sales|funil|analytics|aceite)*`) — o guard pegou o setup."
+        ),
+        "verification": {"verificador": "scripts/agentes/verificar_nutricao_automatica.py --autoteste (42 itens, 5 mutacoes) + teste_nutricao_automatica_aceite.sh (36 itens)",
+                         "medicao": "offline VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42, 0) + autoteste 5/5 x2 byte-identicas; E2E ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas) x2 byte-identicas",
+                         "dente": "MORDE nos dois niveis: exige_aprovacao_humana desligado -> offline FALHOU (42, 1) e E2E FALHOU (32 OK, 4 falhas)",
+                         "achado_higiene": "o --autoteste vaza 5 diretorios temporarios por execucao (tempfile.mkdtemp sem cleanup)",
+                         "log": "/tmp/tre_lote15/agentL/logs/{offline_L1,offline_L2,aceite_L1b,aceite_L2,offline_MUT,aceite_MUT}.out",
+                         "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar"},
+    },
 ]
 
 
