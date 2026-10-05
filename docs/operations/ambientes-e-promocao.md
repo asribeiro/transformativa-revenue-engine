@@ -65,20 +65,28 @@ Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `ma
 - **Sem CI** (`.github/workflows` não existe) e sem proteção de branch: hoje nada impede um push direto no
   `main`.
 
+## Decisões tomadas
+
+- **D1 · Unidade de promoção (05/10/2026) — bloco de cards com AC fechados.** Um release é um **conjunto
+  declarado de cards** com critérios de aceite fechados; a versão segue a data (`AAAA.MM.N`) e é marcada com
+  **tag no `main`**. Descartadas: **por onda** (W0 = 38 cards, W3 = 64 commits — grande demais para revalidar
+  em Homolog, e rollback grosseiro) e **por card** (dissolve a noção de versão: como `homolog` muda antes de o
+  humano aprovar, o "aprovado" ficaria ambíguo; e exigiria suíte amarrada a cada merge, que não existe sem CI).
+  Consequência de desenho: existe **um pacote de evidência por release**, montado das evidências anexadas nos
+  cards que entram nele.
+
 ## Decisões que ainda faltam (para o desenho virar operação)
 
 1. **Domínios/hostnames por ambiente.** Hoje **pendente no próprio repo** (`deploy/environments/dev.env` diz
    "DOMINIO — decisao do dono, PENDENTE"). Dev roda com `tls internal` (CA local do Caddy). Sugestão a
    validar: `dev.tre.<dominio>`, `homolog.tre.<dominio>`, `app.tre.<dominio>` — a convenção da casa é o
    hostname canônico apontar para a release ativa.
-2. **Unidade de promoção.** O que sobe: uma onda (W0…W9), um bloco de cards, ou uma versão? Hoje não há
-   definição e não há tag. Sem isso, "release" continua sendo uma palavra.
-3. **Primeiro release.** `develop` já tem W0–W9: o primeiro envio a Homolog/Produção entra **completo** ou
+2. **Primeiro release.** `develop` já tem W0–W9: o primeiro envio a Homolog/Produção entra **completo** ou
    começa com um pacote pequeno e verificável?
 4. **Enforcement.** Proteger `homolog` e `main` no GitHub (PR obrigatório, sem push direto) e registrar o
    mapa ambiente↔branch↔aprovação na política (`hermes/policies/human-approval.yaml`) para o portão ser
    verificável por máquina, não por disciplina. **Alterar a política é decisão do dono.**
-5. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
+4. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
    (12 GB em uso) e 11 GB de RAM (≈9 GB disponíveis): cabe, mas convém fixar limites de memória por stack.
 
 ## Pendências de forma (não bloqueiam o desenho)
