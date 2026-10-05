@@ -1,0 +1,113 @@
+{
+  "delivery_id": "W9-scoring-preditivo-e-nurture",
+  "project": "TRE",
+  "release": "V1.1.0",
+  "wave": "W9",
+  "release_status": "in_validation",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-05",
+  "human_approval": null,
+  "work_items": [
+    {
+      "id": "TRE-W9-E01-T01",
+      "title": "Score calibration",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_f599bd02",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E02-T01",
+      "title": "Predictive scoring",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_2821c15b",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E03-T01",
+      "title": "Best channel prediction",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_90b83807",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E04-T01",
+      "title": "Best timing",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_7722449b",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E05-T01",
+      "title": "Automated nurture",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_632a199f",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E06-T01",
+      "title": "Qdrant commercial memory",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_b2c848da",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": null,
+          "evidence": "pendente de validacao integrada (veredito ainda nao medido)"
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "DELIVERY_ARTIFACT_CREATED",
+      "by": "Hermes — validacao integrada do lote 14",
+      "scope": "artefato da onda W9 criado a pedido do dono (05/10/2026): a onda nao tinha artefato proprio. 6 cards (scoring preditivo, melhor canal, melhor horario, nurture automatico e memoria comercial no Qdrant), todos done no board e sem veredito. Nome do delivery escolhido pelo agente a partir dos temas dos cards; renomeavel.",
+      "at": "2026-10-05T17:25:00+00:00",
+      "production_promotion_authorized": false
+    }
+  ]
+}
