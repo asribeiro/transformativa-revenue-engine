@@ -35,10 +35,19 @@ services:
       - proxy-data-dev:/data
       - proxy-config-dev:/config
       - proxy-log-dev:/var/log/caddy
+    # DEFEITO 7 (achado no pos-deploy, DEPOIS do aceite): o healthcheck nunca passava — o
+    # container ficava "unhealthy" para sempre, sem nada de errado com o servico (medido:
+    # 401 sem credencial, 200 com). Causa: o `wget` do busybox apresentava SNI `127.0.0.1`,
+    # e o Caddy — corretamente — RECUSA handshake de Host/SNI desconhecido (e o item 12 do
+    # proprio verificador prova isso). O healthcheck era vitima do endurecimento. Conserto:
+    # resolver o hostname para o loopback (extra_hosts) e usar o NOME na URL, para o SNI ser
+    # o do site. Um healthcheck que sempre reprova e pior que nao ter: mascara falha real.
+    extra_hosts:
+      - "${PROXY_HOSTNAME}:127.0.0.1"
     healthcheck:
       # O 401 e RESPOSTA ESPERADA (o basic auth esta no lugar); o que reprova e nao
       # responder nada — ou seja, o TLS nao estar de pe.
-      test: ["CMD-SHELL", "wget -q -S -O /dev/null --no-check-certificate --header=\"Host: $$TRE_DEV_HOSTNAME\" https://127.0.0.1/ 2>&1 | grep -qE 'HTTP/1\\.[01] (200|401|403)'"]
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null --no-check-certificate https://$$TRE_DEV_HOSTNAME/ 2>&1 | grep -qE 'HTTP/1\\.[01] (200|401|403)'"]
       interval: 30s
       timeout: 10s
       retries: 5
