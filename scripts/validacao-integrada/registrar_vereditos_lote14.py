@@ -97,6 +97,41 @@ CARDS = [
             "log": "/tmp/tre_lote14/card131_dente.out (dente) + card130_{pass1,pass2}.out (passadas)",
         },
     },
+    {
+        "onda": "W0",
+        "id": "TRE-W0-E01-T03-D03",
+        "title": "DEFEITO [retroativo]: configurador ligava o destino externo mesmo com a prova reprovada",
+        "task": "t_79fc6cab",
+        "evidence": (
+            "Conserto presente em `scripts/backup/configurar-destino-externo.sh`: o `RESULTADO: "
+            "DESTINO_EXTERNO_OK` e a gravacao do `backup.env` estao AMBOS sob `[ \"$FALHAS\" -eq 0 ]`, e "
+            "o arquivo de prova e' removido (`rm -f \"$PROBE\"`) — ou seja, o destino so' e' ligado depois "
+            "da prova de ida e volta (sobe, confere, remove), nao por ter conseguido escrever o arquivo. "
+            "MEDIDO POR MIM (caminho de RECUSA, o que o card exige), em copia isolada com os caminhos "
+            "desviados para /tmp para nao encostar na configuracao real da VPS: com chaves FALSAS -> "
+            "'FALHOU falha ao enviar o arquivo de teste (chaves ou endpoint incorretos?)', "
+            "'PULADO o destino so e ligado no backup depois de uma prova de ida e volta bem-sucedida', "
+            "'backup.env NAO foi alterado' e `RESULTADO: DESTINO_EXTERNO_FALHOU (2 falha(s))`; nenhum "
+            "backup.env nasceu no diretorio. DENTE NA CLASSE EXATA DO DEFEITO: mutando os dois portoes "
+            "para `if true`, as MESMAS chaves falsas passaram a produzir 'OK backup apontado para "
+            "contabo:tre-backup' e `RESULTADO: DESTINO_EXTERNO_OK` — isto e', reproduz o defeito "
+            "original; o portao e' o que separa chave errada de destino 'ligado'. O caminho POSITIVO "
+            "(chaves verdadeiras -> DESTINO_EXTERNO_OK com bucket `tre-backup` lido de volta do Object "
+            "Storage) foi rodado pelo proprio dono no prompt da VPS, como o card declara. OBSERVACAO "
+            "DECLARADA (fora do escopo deste card): uma rodada com chave errada deixa o `rclone.conf` "
+            "escrito (o arquivo de credencial e' gravado ANTES da prova); o `backup.env` — que e' o "
+            "interruptor do destino — permanece intocado."
+        ),
+        "verification": {
+            "verificador": "scripts/backup/configurar-destino-externo.sh (execucao do caminho de recusa) + inspecao do portao",
+            "conserto": "portoes `[ \"$FALHAS\" -eq 0 ]` na gravacao do env e no RESULTADO; `rm -f $PROBE`",
+            "medicao": "chaves falsas -> DESTINO_EXTERNO_FALHOU (2 falha(s)), backup.env NAO alterado",
+            "dente": "MORDE: portoes mutados para `if true` -> mesmas chaves falsas dao DESTINO_EXTERNO_OK (reproduz o defeito)",
+            "isolamento": "copia com ENVFILE e RCLONECONF desviados para /tmp — a configuracao real da VPS nao foi tocada",
+            "caminho_positivo": "rodado pelo dono no prompt da VPS (declarado no card): bucket tre-backup + artefato lido de volta",
+            "log": "/tmp/tre_lote14/d132/ (recusa) e d132m/ (dente)",
+        },
+    },
 ]
 
 

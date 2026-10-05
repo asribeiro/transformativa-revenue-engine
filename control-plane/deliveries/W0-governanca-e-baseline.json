@@ -1399,6 +1399,34 @@
           }
         }
       ]
+    },
+    {
+      "id": "TRE-W0-E01-T03-D03",
+      "title": "DEFEITO [retroativo]: configurador ligava o destino externo mesmo com a prova reprovada",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_79fc6cab",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Conserto presente em `scripts/backup/configurar-destino-externo.sh`: o `RESULTADO: DESTINO_EXTERNO_OK` e a gravacao do `backup.env` estao AMBOS sob `[ \"$FALHAS\" -eq 0 ]`, e o arquivo de prova e' removido (`rm -f \"$PROBE\"`) — ou seja, o destino so' e' ligado depois da prova de ida e volta (sobe, confere, remove), nao por ter conseguido escrever o arquivo. MEDIDO POR MIM (caminho de RECUSA, o que o card exige), em copia isolada com os caminhos desviados para /tmp para nao encostar na configuracao real da VPS: com chaves FALSAS -> 'FALHOU falha ao enviar o arquivo de teste (chaves ou endpoint incorretos?)', 'PULADO o destino so e ligado no backup depois de uma prova de ida e volta bem-sucedida', 'backup.env NAO foi alterado' e `RESULTADO: DESTINO_EXTERNO_FALHOU (2 falha(s))`; nenhum backup.env nasceu no diretorio. DENTE NA CLASSE EXATA DO DEFEITO: mutando os dois portoes para `if true`, as MESMAS chaves falsas passaram a produzir 'OK backup apontado para contabo:tre-backup' e `RESULTADO: DESTINO_EXTERNO_OK` — isto e', reproduz o defeito original; o portao e' o que separa chave errada de destino 'ligado'. O caminho POSITIVO (chaves verdadeiras -> DESTINO_EXTERNO_OK com bucket `tre-backup` lido de volta do Object Storage) foi rodado pelo proprio dono no prompt da VPS, como o card declara. OBSERVACAO DECLARADA (fora do escopo deste card): uma rodada com chave errada deixa o `rclone.conf` escrito (o arquivo de credencial e' gravado ANTES da prova); o `backup.env` — que e' o interruptor do destino — permanece intocado.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/backup/configurar-destino-externo.sh (execucao do caminho de recusa) + inspecao do portao",
+            "conserto": "portoes `[ \"$FALHAS\" -eq 0 ]` na gravacao do env e no RESULTADO; `rm -f $PROBE`",
+            "medicao": "chaves falsas -> DESTINO_EXTERNO_FALHOU (2 falha(s)), backup.env NAO alterado",
+            "dente": "MORDE: portoes mutados para `if true` -> mesmas chaves falsas dao DESTINO_EXTERNO_OK (reproduz o defeito)",
+            "isolamento": "copia com ENVFILE e RCLONECONF desviados para /tmp — a configuracao real da VPS nao foi tocada",
+            "caminho_positivo": "rodado pelo dono no prompt da VPS (declarado no card): bucket tre-backup + artefato lido de volta",
+            "log": "/tmp/tre_lote14/d132/ (recusa) e d132m/ (dente)",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+          }
+        }
+      ]
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
@@ -1514,6 +1542,16 @@
       "at": "2026-10-05T14:00:00+00:00",
       "cards": [
         "t_9f106731"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+      "scope": "lote 14 — onda W0: vereditos gravados com 2 passadas + prova de dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-05T14:00:00+00:00",
+      "cards": [
+        "t_79fc6cab"
       ]
     }
   ]
