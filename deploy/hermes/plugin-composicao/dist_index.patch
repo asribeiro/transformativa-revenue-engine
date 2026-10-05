@@ -1,0 +1,62 @@
+--- a/plugins/kanban/dashboard/dist/index.js	2026-10-05 20:30:54.288460909 +0000
++++ b/plugins/kanban/dashboard/dist/index.js	2026-10-05 20:30:54.292460927 +0000
+@@ -89,35 +89,37 @@
+   // Board column display order; any backend status not listed here renders after these.
+   // CICLO DE ENTREGA (ASR/Transformativa): validation/candidate/human_approval sao
+   // projecao do dashboard a partir do artefato de entrega (backend: plugin_api.py).
+-  const COLUMN_ORDER = ["triage", "todo", "ready", "running", "blocked", "review", "validation", "candidate", "human_approval", "done"];
++  const COLUMN_ORDER = ["triage", "todo", "ready", "running", "blocked", "review", "validation", "candidate", "human_approval", "production", "done"];
+   // English fallback dictionaries — used when the i18n catalog is missing
+   // a key, and as defaults for the get*() helpers below so callers running
+   // outside any React component (where there's no `t`) still get sane text.
+   const FALLBACK_COLUMN_LABEL = {
+-    triage: "Triage",
++    triage: "Triagem",
+     todo: "Backlog",
+-    ready: "Ready",
+-    running: "In Progress",
+-    blocked: "Blocked",
+-    review: "Review",
+-    validation: "Validation",
+-    candidate: "Candidate",
+-    human_approval: "Human Approval",
+-    done: "Done",
+-    archived: "Archived",
++    ready: "Pronto (card)",
++    running: "Em execução",
++    blocked: "Bloqueado",
++    review: "Em revisão",
++    validation: "Validação pendente (entrega)",
++    candidate: "Candidato (entrega)",
++    human_approval: "Aguardando aprovação do dono",
++    production: "Em produção (entrega)",
++    done: "Concluído (card)",
++    archived: "Arquivado",
+   };
+   const FALLBACK_COLUMN_HELP = {
+-    triage: "Raw ideas — a specifier will flesh out the spec",
+-    todo: "Waiting on dependencies or unassigned",
+-    ready: "Dependencies satisfied; assign a profile to dispatch",
+-    running: "Claimed by a worker — in-flight",
+-    blocked: "Worker asked for human input",
+-    review: "Implementation complete — awaiting review",
+-    validation: "Implementation complete — deterministic validation in progress",
+-    candidate: "Validation complete — candidate validation in progress",
+-    human_approval: "Automated validation complete — awaiting human approval",
+-    done: "Completed",
+-    archived: "Archived",
++    triage: "Ideia crua — falta especificação",
++    todo: "Aguardando dependências ou executor",
++    ready: "Dependências OK — falta o motor despachar um executor",
++    running: "Worker rodando agora",
++    blocked: "O worker pediu decisão humana",
++    review: "Card concluído — falta a revisão independente",
++    validation: "PROJEÇÃO do artefato de entrega (não é status do card): engenharia concluída, falta a validação integrada",
++    candidate: "PROJEÇÃO do artefato de entrega: validação integrada OK, falta a validação de candidato",
++    human_approval: "PROJEÇÃO do artefato de entrega: validação automática OK, falta a SUA aprovação",
++    production: "PROJEÇÃO do artefato de entrega: release PROMOVIDO a produção (branch main, versão marcada)",
++    done: "Card encerrado no núcleo",
++    archived: "Fora da visão padrão",
+   };
+   const FALLBACK_DESTRUCTIVE = {
+     done: "Mark this task as done? The worker's claim is released and dependent children become ready.",

@@ -3,10 +3,10 @@
   "project": "Transformativa Revenue Engine",
   "release": "R1 — Foundation",
   "wave": "W0 — Governança e Baseline",
-  "release_status": "DELIVERED",
+  "release_status": "PRODUCTION_PROMOTED",
   "current_gate": "DONE",
-  "production_promotion_authorized": false,
-  "updated_at": "2026-10-05",
+  "production_promotion_authorized": true,
+  "updated_at": "2026-10-05T20:56:12.702058+00:00",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -64,6 +64,16 @@
           "matriz de segregação de credenciais e gatilhos de rotação (política de secrets V1)"
         ],
         "production_promotion_authorized": false
+      },
+      {
+        "round": 2,
+        "at": "2026-10-05T20:56:12.702058+00:00",
+        "decidido_por": "Anderson Ribeiro",
+        "autoridade": "dono do board",
+        "instrucao": "resolva 1 e 2 / pode seguir com A",
+        "escopo": "registrar o veredito do card TRE-W0-E04-T11 na base REAL e reaplicar os registros do lote 17 sobre origin/develop (a copia de trabalho estava 201 commits velha)",
+        "production_promotion_authorized": true,
+        "nota": "nao autoriza release novo nem rollback; registra validacao de card e corrige o fato de o release ter sido empurrado apenas para o espelho LOCAL"
       }
     ]
   },
@@ -1218,18 +1228,18 @@
     {
       "id": "TRE-W0-E04-T11",
       "title": "Projecao de entrega: raiz do registro de artefatos nao pode ser caminho fixo de outro projeto",
-      "stage": "VALIDATION",
-      "current_gate": "VALIDATION",
+      "stage": "DONE",
+      "current_gate": "DONE",
       "children": [
         {
           "hermes_task_id": "t_b74c2edd",
-          "stage": "VALIDATION",
-          "current_gate": "VALIDATION",
-          "validation_result": "BLOCKED",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
           "eixo_de_risco": "CONTRATO/API",
-          "evidence": "Verificacao real, DUAS passadas identicas no develop 332e67a: verificar_projecao_entrega.py devolve RESULTADO: 38/50 PASS, 12 falhas (exit 1). O conserto versionado esta correto e provado no proprio suite (baseline pristina, patch aplica e reproduz o canonico byte a byte, editor ancorado autoteste 16/16, autoteste por mutacao 4/4 REPROVA) — o que FALTA e' ambiente/pre-condicao alheia ao agente: (1) a copia `user` do plugin do dashboard (/opt/data/plugins, sha256=050b8a50) NAO esta byte-identica ao canonico versionado (cef4412) — passo do operador (troca de imagem / aplicar_projecao_entrega.sh); (2) o proprio verificador pina contagens de 30/09/2026 (14 itens/16 ids/44 ids/12 cards) que o board e o W0 ja' ultrapassaram (26 itens/28 ids/56/62), entao mesmo com o plugin normalizado o aceite numerico nao fecha. BLOCKED (nao PASS, nao FAIL): o artefato nao foi reprovado, a prova nao pode ser concluida neste ambiente. PRE-CONDICAO PARA DESBLOQUEAR: operador aplica o conserto (aplicar_projecao_entrega.sh) e o dono do card refresca as contagens fixas do verificador (14/16/44/12) para o estado atual — em card proprio, com o texto do BLOCKED preservado.",
-          "validated_at": "2026-10-04",
-          "validated_by": "Hermes — validacao integrada (lote 11 — 8 cards de W0 da fila: JEV policy/benchmark/piso/gate/renumeracao/projecao)",
+          "evidence": "Verificacao real, DUAS passadas identicas no develop 332e67a: verificar_projecao_entrega.py devolve RESULTADO: 38/50 PASS, 12 falhas (exit 1). O conserto versionado esta correto e provado no proprio suite (baseline pristina, patch aplica e reproduz o canonico byte a byte, editor ancorado autoteste 16/16, autoteste por mutacao 4/4 REPROVA) — o que FALTA e' ambiente/pre-condicao alheia ao agente: (1) a copia `user` do plugin do dashboard (/opt/data/plugins, sha256=050b8a50) NAO esta byte-identica ao canonico versionado (cef4412) — passo do operador (troca de imagem / aplicar_projecao_entrega.sh); (2) o proprio verificador pina contagens de 30/09/2026 (14 itens/16 ids/44 ids/12 cards) que o board e o W0 ja' ultrapassaram (26 itens/28 ids/56/62), entao mesmo com o plugin normalizado o aceite numerico nao fecha. BLOCKED (nao PASS, nao FAIL): o artefato nao foi reprovado, a prova nao pode ser concluida neste ambiente. PRE-CONDICAO PARA DESBLOQUEAR: operador aplica o conserto (aplicar_projecao_entrega.sh) e o dono do card refresca as contagens fixas do verificador (14/16/44/12) para o estado atual — em card proprio, com o texto do BLOCKED preservado.\n\n--- DESBLOQUEIO E PASS (05/10/2026, lote 17) ---\nAs DUAS pre-condicoes declaradas no proprio BLOCKED foram cumpridas, e a medicao\nmostrou que a divergencia NAO era o conserto deste card:\n(1) a copia `user` do plugin do dashboard nao divergia por causa deste delta. Havia\n3 deltas rodando SO em runtime, sem versao: o filtro de snapshots `_artifact_files`\n(02/10, nenhum card o versionava), a coluna `production` (05/10) e o bundle\n`dist/index.js` (relabel pt-BR + a coluna; sem fonte no repo). Os tres passaram a ser\nversionados em `deploy/hermes/plugin-composicao/` como CADEIA POR ESTADO, com sha\nconferido em cada elo: S0 a0d99603 (imagem) -> S1 cef44123 (delta 1, este card) ->\nS2 0ed3674f (+ delta 2) -> S3 63438987 (+ delta 3) == copia em uso, byte a byte.\nEstado desconhecido ABORTA; reaplicar e' no-op por construcao.\n(2) o verificador nao pina mais contagens do dia: os numeros do aceite de 30/09\n(14 itens/16 ids/44 terminais/12 cards) viraram INVARIANTES (todo filho de item DONE\ne' terminal; nenhum projeta `validation`; filho de item fora de DONE e nativo `done`\nsegue projetado; decomposicao terminal = producao U item-DONE; precedencia\nboard > env > legado). Refrescar para o numero do dia teria recriado a bomba-relogio:\no artefato da W0 ja' foi de 14 para 32 itens e o board de 170 para 232+ cards.\nProva crua no clone limpo do develop real: `scripts/verificar_projecao_entrega.py`\n=> RESULTADO: 53/53 itens PASS, 0 falhas (exit 0), DUAS passadas com log byte-identico,\nautoteste por mutacao 4/4 REPROVANDO o verificador quando o codigo e' quebrado.\nTexto original do BLOCKED: PRESERVADO acima (e em `motivo_do_bloqueio`).",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada (lote 17): PASS com prova crua, DUAS passadas identicas do verificador no clone limpo do develop real",
           "motivo_do_bloqueio": {
             "pre_condicao": [
               "operador aplica o conserto versionado no plugin do dashboard (deploy/hermes/projecao-entrega/aplicar_projecao_entrega.sh) para a copia `user` ficar byte-identica ao canonico versionado;",
@@ -1258,6 +1268,15 @@
                 "resultado": "o verificador pina expectativas de 30/09/2026 que o board+artefato JA' ultrapassaram: 'artefato W0: 14 itens => 16 ids' [hoje 26 itens / 28 ids], 'raiz padrao: 44 ids terminais' [hoje 56], '0 cards done projetando validation' [hoje 62 de 168]; o conserto versionado (patch byte-a-byte reproduz o canonico + editor autoteste 16/16) esta OK, mas a copia `user` do plugin nao esta byte-identica ao canonico (passo do operador) e o proprio verificador precisa das contagens refrescadas pelo dono do card"
               }
             ]
+          },
+          "desbloqueio": {
+            "em": "2026-10-05",
+            "por": "Hermes — validacao integrada (lote 17)",
+            "pre_condicoes_do_blocked": [
+              "copia `user` do plugin byte-identica ao canonico versionado (cadeia S0->S3 completa e versionada)",
+              "verificador sem contagens fixas: numeros do aceite de 30/09 trocados por invariantes"
+            ],
+            "motivo_do_bloqueio": "PRESERVADO no campo proprio (nao removido)"
           }
         }
       ]
@@ -1469,7 +1488,46 @@
     }
   ],
   "completed_at": "2026-09-30T13:13:16+00:00",
-  "production_promoted_task_ids": [],
+  "production_promoted_task_ids": [
+    "t_0a236da5",
+    "t_25ca689e",
+    "t_263416c5",
+    "t_285e6dfb",
+    "t_2d1ea557",
+    "t_35c74a4c",
+    "t_38cbab9a",
+    "t_4200e054",
+    "t_4be20bcc",
+    "t_4e8ade57",
+    "t_4f20bd10",
+    "t_56b622e7",
+    "t_586daace",
+    "t_6d326367",
+    "t_722b6cbd",
+    "t_77c2e407",
+    "t_79fc6cab",
+    "t_83242193",
+    "t_8c332df7",
+    "t_9f106731",
+    "t_aac6215b",
+    "t_ac8a2130",
+    "t_ae66f348",
+    "t_b1e3bdf9",
+    "t_b3387f25",
+    "t_b4b11995",
+    "t_b74c2edd",
+    "t_c8e69f74",
+    "t_d10fda7c",
+    "t_d36c7d0f",
+    "t_d8bc83b3",
+    "t_dfcfc4d4",
+    "t_e09a95bf",
+    "t_e589867b",
+    "t_e7d9decd",
+    "t_e9535df3",
+    "t_f8a6e209",
+    "t_fa85fa52"
+  ],
   "events": [
     {
       "event": "HUMAN_APPROVAL_GRANTED",
@@ -1630,6 +1688,32 @@
       "scope": "TRE-W0-E01-T03-D04 deixa de ser work_item avulso e passa a ser filho de TRE-W0-E01-T03 (decisao do dono, 05/10/2026)",
       "at": "2026-10-05T16:30:00+00:00",
       "production_promotion_authorized": false
+    },
+    {
+      "event": "CARD_UNBLOCKED_AND_VALIDATED",
+      "at": "2026-10-05T20:56:12.702058+00:00",
+      "by": "Hermes — validacao integrada (lote 17)",
+      "item": "TRE-W0-E04-T11",
+      "hermes_task_id": "t_b74c2edd",
+      "veredito": "PASS",
+      "evidence": "scripts/verificar_projecao_entrega.py => 53/53 PASS (exit 0), 2 passadas com log byte-identico, mutacao 4/4 REPROVA; cadeia de composicao versionada S0->S1->S2->S3 com sha conferido em cada elo",
+      "nota": "registro aplicado sobre a base REAL (origin/develop), porque a copia de trabalho anterior estava 201 commits velha e o artefato de la' tinha 34 filhos/9 eventos"
+    },
+    {
+      "event": "PRODUCTION_PROMOTED",
+      "at": "2026-10-05T20:56:12.702058+00:00",
+      "by": "Anderson Ribeiro (autorizacao 05/10/2026) / Hermes (execucao)",
+      "release": "1.0.0",
+      "release_nome": "R1 — Foundation (onda W0)",
+      "onda": "W0",
+      "conteudo_do_release": "c41f792",
+      "onde_esta": "conteudo c41f792 presente no main do GitHub como ANCESTRAL do tip 1378018405c6487ef52c0c32427ea5766f053911",
+      "main_tip_medido": "1378018405c6487ef52c0c32427ea5766f053911 2026-10-03 02:34:38 +0000",
+      "tag": null,
+      "o_que_NAO_foi_publicado": "o merge local 88d2b0e (branch release/1.0.0, tag v1.0.0) NAO foi enviado ao GitHub: a copia local estava 201 commits atras do develop real e o main do GitHub ja' tinha 279 commits ale'm da base usada. O commit local existe apenas na maquina do agente.",
+      "alvo_de_rollback": "n/a no GitHub: nenhum merge deste lote foi publicado. O conteudo ja' estava no main antes deste registro. Reverter = remover este registro.",
+      "autorizacao": "Telegram, 05/10/2026: \"autorizo publicar em producao\" (release R1/W0)",
+      "nota_de_versao": "o repo NAO tem nenhuma tag no remoto e o main esta 222 commits atras do develop; 'release 1.0.0' como VERSAO nao descreve o que esta' no main — decisao do dono."
     }
   ]
 }

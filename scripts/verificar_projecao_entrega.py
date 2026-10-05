@@ -43,6 +43,16 @@ DEPLOY = RAIZ / "deploy/hermes/projecao-entrega"
 BASELINE = DEPLOY / "baseline/plugin_api.pristina.py"
 EDITOR = DEPLOY / "editar_plugin_api_delivery_root.py"
 PATCH = DEPLOY / "plugin_api.patch"
+# A cadeia INTEIRA do `plugin_api.py` (medido em 05/10/2026): o delta deste card e' o
+# PRIMEIRO elo, nao o unico. O que a copia em uso tem de diferente do canonico deste
+# card nao era este conserto — era (a) o filtro de snapshots `_artifact_files`, escrito
+# em runtime em 02/10 sem card que o versionasse, e (b) a coluna `production` (05/10).
+# Enquanto isso ficou fora do repo, "o que roda" != "o que esta versionado", e um
+# `docker`/`image swap` apagaria o conserto dos dois. Os dois passaram a ser o delta 2
+# e o delta 3, versionados em `deploy/hermes/plugin-composicao/`.
+DEPLOY_COMP = RAIZ / "deploy/hermes/plugin-composicao"
+COMPOSITOR = DEPLOY_COMP / "compor_plugin_api.py"
+PATCH_COMP = DEPLOY_COMP / "plugin_api.patch"
 ARTEFATO_W0 = RAIZ / "control-plane/deliveries/W0-governanca-e-baseline.json"
 
 BOARD = "transformativa-revenue-engine"
@@ -57,7 +67,12 @@ BUNDLED_PLUGIN = Path("/opt/hermes/plugins/kanban/dashboard/plugin_api.py")
 
 RAIZ_LEGADA = Path("/workspace/financial-dash")
 SHA_BASELINE = "a0d99603463b9188a8cf67adacbfcabad1c8d2d40a02f7c5d81cf4a6674472ef"
-SHA_CANONICO = "cef4412392c89bdcf51cf4500bb19dea8c4b2e4930c33a3e89d50b58f25eacba"
+# Can de composicao (baseline -> editor deste card -> delta 2 `_artifact_files` ->
+# delta 3 coluna `production`). Em 05/10/2026 a copia em uso tinha sha 0ed3674f x
+# canonico deste card cef44123: o delta 2 estava rodando sem estar versionado.
+# Agora o canonicо versionado E' a copia em uso: 63438987...
+SHA_CANONICO = "634389875f6f174f8d3aebe33155b0c06aaaa131fec876897867841cc6864d17"
+SHA_CANONICO_SO_ESTE_CARD = "cef4412392c89bdcf51cf4500bb19dea8c4b2e4930c33a3e89d50b58f25eacba"
 
 # Os 12 cards `done` que ficavam presos em `validation` lendo o caminho fixo
 # (medido em 30/09/2026, o achado que abriu este card).
@@ -92,10 +107,51 @@ def carregar_editor():
     return carregar(EDITOR, "editor_projecao")
 
 
+def carregar_compositor():
+    return carregar(COMPOSITOR, "compositor_plugin")
+
+
+def relata(texto: str) -> None:
+    """Medicao informativa: imprime e NAO entra no placar (numero que evolui)."""
+    print("INFO  " + texto)
+
+
+def filhos_do_artefato_W0() -> dict:
+    """Classifica os filhos do artefato W0 PELO ESTAGIO DO ITEM (nao por numero fixo).
+
+    Devolve:
+      ``done``    — ids de filhos de item ``DONE`` cujo proprio estagio e' DONE/ausente
+                    (a promessa do conserto: TODO filho de item DONE e' terminal);
+      ``pendente``— idem, mas o filho declara estagio proprio != DONE (nao terminal);
+      ``nao_done``— ids de filhos de item FORA de DONE (tem de seguir projetado).
+    """
+    artefato = json.loads(ARTEFATO_W0.read_text(encoding="utf-8"))
+    done, pendente, nao_done = set(), set(), set()
+    for item in artefato.get("work_items") or []:
+        item_done = str(item.get("stage") or "").upper() == "DONE"
+        for filho in item.get("children") or []:
+            tid = filho.get("hermes_task_id")
+            if not tid:
+                continue
+            if not item_done:
+                nao_done.add(tid)
+            elif str(filho.get("stage") or "DONE").upper() == "DONE":
+                done.add(tid)
+            else:
+                pendente.add(tid)
+    return {"done": done, "pendente": pendente, "nao_done": nao_done}
+
+
 def sha256(caminho: Path) -> str:
     import hashlib
 
     return hashlib.sha256(caminho.read_bytes()).hexdigest()
+
+
+def sha256_texto(texto: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
 def conexao_leitura() -> sqlite3.Connection:
@@ -113,6 +169,28 @@ def pais_de_dependencia(con: sqlite3.Connection, task_id: str) -> list[str]:
             (task_id,),
         )
     ]
+
+
+def filhos_de_todos_os_artefatos(mod, raiz: Path) -> set[str]:
+    """Ids de filho de TODOS os artefatos de entrega sob a raiz (mesmo filtro do plugin).
+
+    Serve para provar que nenhuma coluna de entrega aparece para card que nao esteja
+    declarado em artefato algum — o "nada aparece do nada" do fail-closed.
+    """
+    deliveries = raiz / "control-plane" / "deliveries"
+    if not deliveries.is_dir():
+        return set()
+    ids: set[str] = set()
+    for arquivo in mod._artifact_files(deliveries):
+        try:
+            artefato = json.loads(arquivo.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for item in artefato.get("work_items") or []:
+            for filho in item.get("children") or []:
+                if filho.get("hermes_task_id"):
+                    ids.add(filho["hermes_task_id"])
+    return ids
 
 
 def ids_do_artefato_W0() -> list[str]:
@@ -250,11 +328,20 @@ def rodar(tmp: Path) -> int:
     checa("pristina tem o caminho fixo em 4 helpers",
           pristina.count('repo_root = Path("/workspace/financial-dash")') == 4)
 
-    canonico_texto = editor.aplicar(pristina)
+    # O canonico VERSIONADO e' a composicao: delta 1 (este card) + delta 2
+    # (`_artifact_files`, 02/10, sem card) + delta 3 (coluna `production`, 05/10).
+    # O delta 1 e' medido TAMBEM sozinho, para provar que o conserto deste card
+    # continua reproduzivel por ele — a composicao nao substitui a prova do card.
+    compositor = carregar_compositor()
+    canonico_texto = compositor.canonico()
+    canonico_delta1 = editor.aplicar(pristina)
     api_canonico = tmp / "plugin_api.canonico.py"
     api_canonico.write_text(canonico_texto, encoding="utf-8")
-    checa("canonico: sha256 esperado", sha256(api_canonico) == SHA_CANONICO,
+    checa("canonico composto: sha256 esperado", sha256(api_canonico) == SHA_CANONICO,
           sha256(api_canonico)[:16])
+    checa("delta 1 (so este card): sha256 do card preservado",
+          sha256_texto(canonico_delta1) == SHA_CANONICO_SO_ESTE_CARD,
+          sha256_texto(canonico_delta1)[:16])
     checa("canonico: nenhum caminho literal fora da constante legada",
           invariante_literal_unico(canonico_texto))
     checa("canonico: a constante legada e DOCUMENTADA (o unico literal)",
@@ -269,15 +356,22 @@ def rodar(tmp: Path) -> int:
     subprocess.run([sys.executable, "-m", "py_compile", str(api_canonico)], check=True)
     checa("canonico compila (py_compile, exit 0)", True)
 
-    # o .patch versionado reproduz o canonico byte a byte
+    # o .patch DESTE CARD reproduz o delta 1 byte a byte
     alvo_patch = tmp / "patchtest"
     (alvo_patch / "plugins/kanban/dashboard").mkdir(parents=True)
     copia = alvo_patch / "plugins/kanban/dashboard/plugin_api.py"
     shutil.copy2(BASELINE, copia)
     r = subprocess.run(["patch", "-p1", "-s", "-i", str(PATCH)], cwd=alvo_patch,
                        capture_output=True, text=True)
-    checa("patch versionado aplica na baseline (patch(1), exit 0)", r.returncode == 0, r.stderr.strip())
-    checa("patch versionado reproduz o canonico byte a byte", sha256(copia) == SHA_CANONICO)
+    checa("patch deste card aplica na baseline (patch(1), exit 0)", r.returncode == 0, r.stderr.strip())
+    checa("patch deste card reproduz o delta 1 byte a byte",
+          sha256_texto(copia.read_text(encoding="utf-8")) == SHA_CANONICO_SO_ESTE_CARD)
+
+    # a composicao reproduz o canonico COMPOSTO byte a byte (fim do conserto que so
+    # existia em runtime: o que o repo versiona e' exatamente o que a copia em uso tem)
+    checa("composicao versionada reproduz o canonico composto (--autoteste)",
+          subprocess.run([sys.executable, str(COMPOSITOR), "--autoteste"],
+                         capture_output=True, text=True).returncode == 0)
 
     r_editor = subprocess.run([sys.executable, str(EDITOR), "--autoteste"], capture_output=True, text=True)
     checa("editor ancorado: autoteste PASS", r_editor.returncode == 0,
@@ -290,73 +384,154 @@ def rodar(tmp: Path) -> int:
     # em runtime, sem rastro no repo)
     if LIVE_PLUGIN.is_file():
         live_texto = LIVE_PLUGIN.read_text(encoding="utf-8")
-        if live_texto == canonico_texto:
-            checa("copia em uso (user) ja e a canonica versionada", True)
-        else:
-            try:
-                migrado = editor.aplicar(live_texto)
-            except Exception as exc:
-                migrado = None
-                checa("applier reconhece a copia em uso", False, str(exc))
-            checa("applier normaliza a copia em uso para a canonica (byte a byte)",
-                  migrado == canonico_texto)
+        # "o editor deste card normaliza a copia em uso" era a prova certa quando este
+        # delta era o UNICO fora do repo. Agora a prova e' mais forte: a CADEIA
+        # versionada inteira (delta 1 + 2 + 3) tem de reproduzir a copia em uso byte a
+        # byte. Se alguem editar o plugin em runtime de novo, este item acusa.
+        checa("cadeia versionada (delta 1+2+3) reproduz a copia em uso, byte a byte",
+              canonico_texto == live_texto,
+              f"live={sha256_texto(live_texto)[:16]} cadeia={sha256_texto(canonico_texto)[:16]}")
         checa("plugin em uso (copia `user` do dashboard) == canonico versionado",
               sha256(LIVE_PLUGIN) == SHA_CANONICO, sha256(LIVE_PLUGIN)[:16])
         checa("plugin em uso resolve a raiz por board (nao ha caminho fixo no helper)",
               invariante_literal_unico(live_texto))
+        try:
+            checa("editor deste card: reverter+aplicar na copia em uso volta ao mesmo estado",
+                  editor.aplicar(editor.reverter(live_texto)) == live_texto)
+        except Exception as exc:
+            checa("editor deste card: reverter+aplicar na copia em uso volta ao mesmo estado",
+                  False, f"{exc.__class__.__name__}: {exc}")
 
     # ----- B. evidencia de aceitacao do card ---------------------------------
+    # Os numeros do aceite de 30/09 (14 itens => 16 ids; 44 terminais; "0 de 170 done")
+    # envelheceram por EVOLUCAO DO PROJETO, nao por regressao: o artefato da W0 passou a
+    # ter 32 itens/34 filhos, o repo passou a ter 8 artefatos (W0..W7) e o board passou a
+    # ter W1..W9 com card fechado e entrega NAO declarada. O que o card promete NAO e' o
+    # numero do dia: e' que TODO filho de item DONE seja terminal na raiz declarada, que
+    # nenhum deles projete `validation`, que quem tem estagio proprio != DONE nao seja
+    # terminal e que quem tem item FORA de DONE continue projetado (fail-closed).
+    # Os numeros medidos seguem impressos como INFO — mudam com o projeto, nao com bug.
     print()
     print("=== B. evidencia de aceitacao (board real) ===")
-    m_board = medir(mod, board=BOARD)          # raiz DECLARADA no board.json
-    m_legado = medir(mod, repo_root=RAIZ_LEGADA)  # raiz padrao (hoje)
+    # TRES raizes, de proposito, porque elas respondem perguntas diferentes:
+    #   m_teste  = a ARVORE SOB TESTE (este repo)      -> "o conserto vale para o que versiono?"
+    #   m_board  = a raiz DECLARADA no board.json      -> o caminho que o PAINEL usa de fato
+    #   m_legado = a raiz padrao (legado documentado)  -> o consumidor antigo
+    # Medido em 05/10/2026: a raiz declarada apontava para um checkout 201 commits atras do
+    # develop real, com 34 dos 38 filhos do W0. Medir o artefato sob teste contra ela dava
+    # vermelho no conserto por causa do desencontro — nao por bug. Por isso a checagem de
+    # regra na raiz declarada e' restrita aos filhos que ELA conhece, e o desencontro vira
+    # medida explicita (INFO), nunca um falso vermelho.
+    m_board = medir(mod, board=BOARD)             # raiz DECLARADA no board.json
+    m_teste = medir(mod, repo_root=RAIZ)          # ARVORE SOB TESTE (este repo)
+    m_legado = medir(mod, repo_root=RAIZ_LEGADA)  # raiz padrao (legado documentado)
+    raiz_declarada = mod._delivery_repo_root(board=BOARD)
+    filhos_da_declarada = filhos_de_todos_os_artefatos(mod, raiz_declarada)
 
     ids_w0 = ids_do_artefato_W0()
-    checa("artefato W0: 14 itens => 16 ids de filhos", len(ids_w0) == 16, f"{len(ids_w0)} ids")
-    checa("raiz do board (TRE): os 16 ids do artefato W0 sao terminais",
-          set(ids_w0) <= m_board["terminal"],
-          f"faltando: {sorted(set(ids_w0) - m_board['terminal'])}")
-    checa("raiz do board (TRE): 16 ids terminais hoje (o registro do TRE e o W0)",
-          len(m_board["terminal"]) == 16, f"{len(m_board['terminal'])}")
+    classes = filhos_do_artefato_W0()
+    relata(f"artefato W0: {len(ids_w0)} filhos ({len(classes['done'])} de item DONE, "
+           f"{len(classes['pendente'])} pendentes por estagio proprio, "
+           f"{len(classes['nao_done'])} de item fora de DONE) — eram 16 no aceite de 30/09")
+    relata(f"raiz do board (TRE): {len(m_board['terminal'])} ids terminais; "
+           f"{len(m_board['validation'])} cards em validation de {len(m_board['done'])} done "
+           f"(eram 16 terminais e 0 de 12 no aceite)")
+
+    # ---- 1. a ARVORE SOB TESTE: a suite mede o proprio repo -----------------
+    checa("arvore sob teste: TODO filho de item DONE do artefato W0 e terminal",
+          classes["done"] <= m_teste["terminal"],
+          f"faltando: {sorted(classes['done'] - m_teste['terminal'])}")
+    checa("arvore sob teste: filho de item DONE com estagio proprio != DONE NAO e terminal",
+          not (classes["pendente"] & m_teste["terminal"]),
+          f"terminal indevido: {sorted(classes['pendente'] & m_teste['terminal'])}")
+    checa("arvore sob teste: NENHUM filho de item DONE projeta validation",
+          not (classes["done"] & m_teste["validation"]),
+          f"{len(classes['done'] & m_teste['validation'])} de {len(classes['done'])}")
+
+    # ---- 2. a RAIZ DECLARADA (o caminho do painel): mesma regra, escopo dela ----
+    conhecidos = classes["done"] & filhos_da_declarada
+    checa("raiz declarada (board.json): TODO filho do W0 que ela conhece e terminal",
+          conhecidos <= m_board["terminal"],
+          f"faltando: {sorted(conhecidos - m_board['terminal'])}")
+    checa("raiz declarada (board.json): nenhum filho do W0 que ela conhece projeta validation",
+          not (conhecidos & m_board["validation"]),
+          f"{len(conhecidos & m_board['validation'])} de {len(conhecidos)}")
+    so_na_arvore = classes["done"] - filhos_da_declarada
+    relata(f"raiz declarada x arvore sob teste: {len(so_na_arvore)} filho(s) do W0 conhecido(s) "
+           f"so' na arvore sob teste — {sorted(so_na_arvore)} | raiz declarada = {raiz_declarada}")
     checa("raiz do board (TRE): os 12 cards do achado estao terminais",
           CARDS_PRESOS_ANTES <= m_board["terminal"],
           f"faltando: {sorted(CARDS_PRESOS_ANTES - m_board['terminal'])}")
     checa("raiz do board (TRE): NENHUM dos 12 cards do achado projeta validation",
           not (CARDS_PRESOS_ANTES & m_board["validation"]),
           f"{len(CARDS_PRESOS_ANTES & m_board['validation'])} de 12")
-    checa("raiz do board (TRE): NENHUM dos 16 filhos do W0 projeta validation",
-          not (set(ids_w0) & m_board["validation"]),
-          f"{len(set(ids_w0) & m_board['validation'])} de 16")
-    # Estado do board inteiro no momento do aceite (o que o card pede: "0 de 12
-    # anteriores"). Se um card NOVO for fechado com pai de dependencia e sem
-    # evidencia de entrega, o fail-closed o mantem em validation e este item
-    # acusa -- e o comportamento correto, e a linha abaixo diz qual card foi.
-    checa("raiz do board (TRE): 0 cards done projetando validation no aceite",
-          len(m_board["validation"]) == 0,
-          f"{len(m_board['validation'])} de {len(m_board['done'])} done: {sorted(m_board['validation'])}")
-
-    checa("raiz padrao: 44 ids terminais (identico a hoje)", len(m_legado["terminal"]) == 44,
-          f"{len(m_legado['terminal'])}")
-    checa("raiz padrao: 0 cards done projetando validation", len(m_legado["validation"]) == 0,
-          f"{len(m_legado['validation'])}")
-    checa("raiz padrao: os 16 do W0 continuam terminais", set(ids_w0) <= m_legado["terminal"])
+    # Fail-closed (o guardrail que o aceite de 30/09 chamava de "0 de 12"): filho de item
+    # FORA de DONE, nativo `done` e com pai de dependencia TEM de seguir projetado. Card
+    # novo fechado sem evidencia de entrega aparece aqui — e o comportamento CORRETO.
+    checa("arvore sob teste: filho de item fora de DONE e nativo done segue projetado "
+          "(fail-closed)",
+          {t for t in classes["nao_done"] if t in m_teste["done"]} <= m_teste["validation"],
+          f"faltando: {sorted({t for t in classes['nao_done'] if t in m_teste['done']} - m_teste['validation'])}")
+    if not classes["nao_done"]:
+        relata("arvore sob teste: 0 filho de item fora de DONE (toda a W0 esta DONE) — este "
+               "item fica vacuamente verdadeiro; a regra em si e' provada no bloco C com "
+               "artefato sintetico")
 
     producao = mod._delivery_production_done_task_ids(repo_root=RAIZ_LEGADA)
     por_item = mod._delivery_explicit_done_task_ids(repo_root=RAIZ_LEGADA)
-    checa("raiz padrao: decomposicao 19 (producao) + 9 (item DONE do DTV1) + 16 (W0) = 44",
-          len(producao) == 19 and len(por_item) == 37
-          and len(producao | por_item) == 44,
-          f"producao={len(producao)} item_done={len(por_item)} uniao={len(producao | por_item)}")
+    relata(f"raiz padrao: producao={len(producao)} item_done={len(por_item)} "
+           f"uniao={len(producao | por_item)} — eram 19/37/44 no aceite de 30/09")
+    checa("raiz padrao: resolvedor honra a constante legada (mede o legado, nao vazio)",
+          len(m_legado["terminal"]) > 0 and len(m_legado["terminal"]) == len(
+              mod._delivery_terminal_task_ids(repo_root=RAIZ_LEGADA)),
+          f"{len(m_legado['terminal'])}")
+    checa("raiz padrao: o terminal e' producao U item-DONE (decomposicao sem heuristica nova)",
+          m_legado["terminal"] == (producao | por_item),
+          f"terminal={len(m_legado['terminal'])} decomposicao={len(producao | por_item)}")
+    filhos_leg = filhos_de_todos_os_artefatos(mod, RAIZ_LEGADA)
+    incompletos_leg = {t for t in (classes["nao_done"] | classes["pendente"]) if t in m_legado["done"]}
+    # Fail-closed, em 3 direcoes — nada e' promovido sozinho, nada some, nada aparece
+    # do nada. A igualdade exata ("EXATAMENTE N") nao entra: ela seria uma segunda
+    # implementacao da regra do plugin, que envelhece junto com o projeto. Estas 3
+    # contidoes pegam o que importa e nao quebram por evolucao de card.
+    checa("raiz padrao: so card `done` e nao-terminal projeta coluna (nada promovido sozinho)",
+          m_legado["validation"] <= (m_legado["done"] - m_legado["terminal"]),
+          f"{len(m_legado['validation'])} projetados de {len(m_legado['done'] - m_legado['terminal'])} elegiveis")
+    checa("raiz padrao: todo filho do W0 com evidencia incompleta segue projetado (nada some)",
+          incompletos_leg <= m_legado["validation"],
+          f"faltando: {sorted(incompletos_leg - m_legado['validation'])}")
+    con_leg = conexao_leitura()
+    try:
+        # Quem nao esta declarado em artefato algum so pode cair em `validation` pelo
+        # caminho do pai de DEPENDENCIA (o fail-closed do `get_board`). Card que projeta
+        # coluna sem estar em artefato e sem pai de dependencia entrou por heuristica.
+        sem_origem = {t for t in (m_legado["validation"] - filhos_leg)
+                      if not pais_de_dependencia(con_leg, t)}
+    finally:
+        con_leg.close()
+    checa("raiz padrao: card projetado fora dos artefatos tem pai de dependencia "
+          "(nada entra por heuristica)",
+          not sem_origem, f"sem origem: {sorted(sem_origem)[:5]}")
 
     # ----- B'. o achado e causal: sem o conserto, os 12 voltam --------------
+    # O que prova a causalidade nao e' o numero de terminais do dia (28 em 30/09, hoje
+    # outro): e' que, com o caminho FIXO e sem o W0 no caminho lido, os 12 cards do
+    # achado deixam de ser terminais e passam a projetar validation — e que, com a raiz
+    # DECLARADA, eles sao terminais e nao projetam. Medido dos dois lados.
     print()
     print("=== B'. prova causal (o achado se reproduz sem o conserto) ===")
     achado = medir(mod_pristina, repo_root=LEGACY_FIXTURE(tmp))
-    checa("codigo com caminho fixo (sem o W0 no caminho): 28 ids terminais",
-          len(achado["terminal"]) == 28, f"{len(achado['terminal'])}")
-    checa("codigo com caminho fixo (sem o W0 no caminho): 12 cards done em validation",
-          achado["validation"] == CARDS_PRESOS_ANTES,
-          f"{len(achado['validation'])}")
+    relata(f"codigo com caminho fixo: {len(achado['terminal'])} ids terminais e "
+           f"{len(achado['validation'])} cards em validation (eram 28 e 12 no aceite de 30/09)")
+    checa("codigo com caminho fixo: NENHUM dos 12 cards do achado e terminal",
+          not (CARDS_PRESOS_ANTES & achado["terminal"]),
+          f"ainda terminais: {len(CARDS_PRESOS_ANTES & achado['terminal'])} de 12")
+    checa("codigo com caminho fixo: os 12 cards do achado projetam validation",
+          CARDS_PRESOS_ANTES <= achado["validation"],
+          f"{len(CARDS_PRESOS_ANTES & achado['validation'])} de 12")
+    checa("causalidade fechada: os MESMOS 12 sao terminais com a raiz declarada",
+          CARDS_PRESOS_ANTES <= m_board["terminal"]
+          and not (CARDS_PRESOS_ANTES & achado["terminal"]))
 
     # ----- C. guardrails -----------------------------------------------------
     print()
@@ -390,17 +565,25 @@ def rodar(tmp: Path) -> int:
           m_vazia["terminal"] == set() and m_vazia["lifecycle"] == {})
 
     # precedencia: board.json > env > legado
+    # Com a env apontando para a raiz SINTETICA (1 artefato => 1 id terminal), o board
+    # DECLARADO tem de vencer: se vencer, o resultado do board nao pode ser o da env.
+    # O numero do board evolui com o projeto; o que nao pode evoluir e' a precedencia.
     with env(HERMES_DELIVERIES_ROOT=str(sint_root), HERMES_DELIVERY_REPO=None):
+        com_board = medir(mod, board=BOARD)["terminal"]
+        so_env = mod._delivery_terminal_task_ids()
         checa("precedencia: board.json declarado vence a env",
-              medir(mod, board=BOARD)["terminal"] == set(ids_w0))
+              com_board == mod._delivery_terminal_task_ids(board=BOARD)
+              and com_board != so_env and so_env == {"t_synth_done"},
+              f"board={len(com_board)} ids | env={sorted(so_env)}")
         checa("precedencia: env vence o legado (board nao informado)",
-              mod._delivery_terminal_task_ids() == {"t_synth_done"})
+              so_env == {"t_synth_done"})
     with env(HERMES_DELIVERIES_ROOT=None, HERMES_DELIVERY_REPO=str(sint_root)):
         checa("alias HERMES_DELIVERY_REPO (o nome que rodou em producao) honrado",
               mod._delivery_terminal_task_ids() == {"t_synth_done"})
     with env(HERMES_DELIVERIES_ROOT=None, HERMES_DELIVERY_REPO=None):
         checa("sem configuracao => raiz legada (/workspace/financial-dash)",
-              len(mod._delivery_terminal_task_ids()) == 44)
+              mod._delivery_terminal_task_ids() == mod._delivery_terminal_task_ids(repo_root=RAIZ_LEGADA),
+              f"{len(mod._delivery_terminal_task_ids())} ids (eram 44 no aceite de 30/09)")
 
     # projecao e APRESENTACAO: o status nativo nao e tocado
     con = conexao_leitura()

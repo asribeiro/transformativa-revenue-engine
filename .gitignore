@@ -13,5 +13,26 @@ node_modules/
 # Somente o diretorio `data/` da RAIZ e ignorado. Sem a barra inicial, a regra
 # engolia `docs/data/` — e o Data Contract V1.0 ficou sem versionamento por engano.
 /data/
+# Snapshots/backups de artefato de entrega: NUNCA sao versionados (o artefato vigente e'
+# o `deliveries/<id>.json`). Ficam na pasta porque sao o rollback de cada gravacao, e o
+# plugin do dashboard os filtra por `_SNAPSHOT_MARCADORES` desde 02/10/2026 — antes disso
+# um `.bak-*.json` com `current_gate: VALIDATION` estacionava 4 cards na coluna de
+# validacao para sempre. Sem esta regra eles aparecem como untracked e entram num
+# `git add -A` sem ninguem querer.
+control-plane/deliveries/*.bak*
+control-plane/deliveries/*.orig*
+control-plane/deliveries/*.old*
+control-plane/deliveries/*.save*
+control-plane/deliveries/*.swp
+control-plane/deliveries/*.tmp*
+control-plane/deliveries/*~
+# Mesma classe de arquivo (backup datado de runtime) nos registros do JEV.
+hermes/jev/*.bak*
+hermes/jev/*.orig*
+hermes/jev/*.old*
+hermes/jev/*.save*
+hermes/jev/*.swp
+hermes/jev/*.tmp*
+hermes/jev/*~
 *.log
 .DS_Store
