@@ -18,7 +18,15 @@ COMMIT = "2ce808bcfd1b62c2a399b98f0a78240de24db82b"
 AMBIENTE = (
     "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado "
     "(9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; "
-    "dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+    "dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). "
+    "CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): "
+    "no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio "
+    "teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/"
+    "lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara "
+    "TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde "
+    "do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA "
+    "(pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e "
+    "NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
 )
 BY = "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)"
 DATA = "2026-10-05"
@@ -209,6 +217,126 @@ CARDS = [
             "log": "/tmp/tre_lote14/card134_{pass1,pass2}.out (VPS)",
         },
     },
+    # ----- validados em paralelo por 3 subagentes (evidencia conferida na fonte por mim) -----
+    {
+        "onda": "W0",
+        "id": "TRE-W0-E01-T03",
+        "title": "Definir backup e rollback baseline",
+        "task": "t_c8e69f74",
+        "evidence": (
+            "Exigencia literal do card (board): 'procedimento documentado; restore testavel. RUNBOOK: "
+            "backup, restore, rollback.' Os dois lados medidos: (a) PROCEDIMENTO DOCUMENTADO — "
+            "`docs/runbooks/backup-restore-rollback.md` existe no develop publicado (65 KB); (b) RESTORE "
+            "TESTAVEL — duas passadas identicas do verificador da familia `scripts/backup/"
+            "teste-backup-restore.sh` na VPS: `RESULTADO: TESTE_OK (12 itens, 0 falhas)` x2 (exit 0), "
+            "logs em /tmp/tre_lote14/agentA/logs/{pass1,pass2}.out; o diff normalizado e' identico, "
+            "diferindo apenas rotulos volateis declarados (nome do container descartavel, caminho TMPDIR, "
+            "selo tre_dev_<timestamp> e o sha256 do dump, que embute dado de runtime). DENTE QUE MORDE: "
+            "mutando o dump para `--schema-only` numa copia isolada (`backup-tre.sh` mutado e8b44643, "
+            "copia limpa intocada f5fd66cf), o verificador REPROVOU -> `RESULTADO: TESTE_FALHOU (11 itens, "
+            "2 falhas)` (exit 1), nomeando 'FALHOU teste de restore REPROVADO' e 'FALHOU restaurei zero "
+            "linhas em tabelas que tinham dados no backup'; os mesmos itens passam OK na copia limpa. "
+            "LIMITACOES DECLARADAS: (1) o verde do modo descartavel mede o dev VIVO em somente leitura, "
+            "nao uma base hermética (ver CORRECAO DE ESCOPO no campo `ambiente`); (2) o corpo do card cita "
+            "o commit `066dd81` e 'TESTE_OK (9 itens)' — hoje o verificador emite 12 itens no develop "
+            "publicado (evoluiu com lib-ambiente.sh e o modo Odoo), e `066dd81` e' ancestral; (3) o dente "
+            "mede a guarda de capacidade (comparacao de contagens), nao um defeito registrado — este e' um "
+            "card de baseline/definicao. Zero escrita externa: TRE_BACKUP_EXTERNO vazio (manifesto "
+            "'externo: pendente (sem destino configurado)'); baseline da VPS 5/7/0/4."
+        ),
+        "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh (modo descartavel)",
+            "passadas": 2,
+            "medicao": "TESTE_OK (12 itens, 0 falhas) x2, exit 0",
+            "dente": "MORDE: dump --schema-only -> TESTE_FALHOU (11 itens, 2 falhas), 'restaurei zero linhas em tabelas que tinham dados'",
+            "documentado": "docs/runbooks/backup-restore-rollback.md (65 KB) no develop publicado",
+            "commit_medido": "9e638f79 (develop publicado na VPS)",
+            "log": "/tmp/tre_lote14/agentA/logs/{pass1,pass2,dente}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte (grep nos logs do VPS) antes de registrar",
+        },
+    },
+    {
+        "onda": "W2",
+        "id": "TRE-W2-E01-T01",
+        "title": "Instalar Odoo Community (ambiente dev)",
+        "task": "t_d6dc5a4c",
+        "evidence": (
+            "Aceite medido nos quatro criterios homologados: (i) Odoo Community no dev com compose "
+            "versionado — `deploy/compose/dev/odoo.yml` + `deploy/environments/dev-odoo.env` batem byte a "
+            "byte com as copias vivas em /opt/tre/dev/compose/; (ii) versao registrada e reproduzivel — "
+            "imagem `odoo:19.0` pinada, tag==digest sha256:77bac5cd...f85cd, binario 'Odoo Server "
+            "19.0-20260926'; (iii) servico sobe e responde — HTTP 200 em 127.0.0.1:8069/web/login (pagina "
+            "do Odoo, 5948 bytes), container odoo-dev e pg-odoo-dev de pe com restart=unless-stopped, banco "
+            "`odoo_dev` presente e separado do `sales_intelligence` nos dois lados; (iv) nada exposto "
+            "publicamente — Odoo so em loopback (ss 127.0.0.1:8069), pg-odoo-dev sem porta, UFW "
+            "[22/tcp 443/tcp 80/tcp] sem 8069. MEDIDO por `scripts/provision/verificar-odoo-dev.sh` "
+            "(`RESULTADO: ODOO_DEV_OK (19 itens, 0 falhas) versao=19.0 porta=127.0.0.1:8069`), DUAS "
+            "passadas + uma terceira: as TRES byte-identicas (sha256 55df92242d1e...), diff limpo, SEM "
+            "tokens volateis a normalizar. DOIS DENTES QUE MORDEM, em copias isoladas (o alvo versionado "
+            "nunca foi tocado): (1) shim de `docker` interceptando so `docker port odoo-dev` para devolver "
+            "0.0.0.0:8069 -> `RESULTADO: ODOO_DEV_FALHOU (19 itens, 1 falha)` com 'FALHOU odoo-dev publica "
+            "endereco publico' (a mesma prova negativa que o runbook §4 usa); (2) copia do par sem "
+            "ODOO_VERSION -> `RESULTADO: ODOO_DEV_FALHOU (19 itens, 5 falhas)`. LIMITACAO DECLARADA: o "
+            "verificador e' read-only e amarrado aos nomes vivos (pg-odoo-dev, odoo-dev, volume "
+            "pgdata-odoo-dev, banco odoo_dev) — nao existe base descartavel para ele; as passadas medem o "
+            "ambiente dev entregue, que e' o alvo do card. O aceite mede o ambiente vivo (Odoo Up 4 dias), "
+            "nao um install fresco; o rollback+reinstalacao de 01/10/2026 do runbook nao foi reproduzido. "
+            "Nada foi gravado no dev nem em artefato; zero escrita externa."
+        ),
+        "verification": {
+            "verificador": "scripts/provision/verificar-odoo-dev.sh (read-only, contra o dev entregue)",
+            "passadas": 3,
+            "medicao": "ODOO_DEV_OK (19 itens, 0 falhas) versao=19.0 porta=127.0.0.1:8069 — byte-identicas",
+            "dente": "MORDE x2: porta publica simulada -> FALHOU (19/1); ODOO_VERSION removida -> FALHOU (19/5)",
+            "sha_verificador": "7db09de011c9178b71fb79c1a7142f73576c121574ec559e8d23807a1d5126ed",
+            "log": "/tmp/tre_lote14/agentB/{pass1,pass2,pass1b,dente,dente_env}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte (grep nos logs do VPS) antes de registrar",
+        },
+    },
+    {
+        "onda": "W2",
+        "id": "TRE-W2-E01-T02",
+        "title": "Configurar TLS/reverse proxy/security",
+        "task": "t_1acf11f2",
+        "resultado": "BLOCKED",
+        "evidence": (
+            "NAO REGISTRO PASS: o card NAO esta integralmente cumprido. O que esta MEDIDO e' verdadeiro — "
+            "duas passadas identicas de `scripts/provision/verificar-tls-dev.sh` na VPS: `RESULTADO: "
+            "TLS_DEV_OK (28 itens, 0 falhas) hostname=odoo-dev.transformativa.com.br portas=80/443`, "
+            "identicas apos normalizar dois tokens volateis declarados (basename temporario da ancora, "
+            "item 6; marcador X-Forwarded-For, item 16). DENTES QUE MORDEM em copias isoladas do Caddyfile "
+            "servidas por containers proprios (porta 18443/18444, base real intocada): (A) copia SEM "
+            "basic_auth -> `TLS_DEV_FALHOU (28 itens, 1 falha)` com 'FALHOU sem credencial do proxy o Odoo "
+            "FOI servido (200, corpo com pagina do Odoo) — dev exposto sem protecao' (item 11); (B) copia "
+            "SEM hardening headers -> `TLS_DEV_FALHOU (28 itens, 3 falhas)` com HSTS, Referrer-Policy e "
+            "cabecalho Server exposto (item 8). Varredura de fora: 22/80/443 abertas; 8069/5433/8443/2019 "
+            "fechadas. POR QUE BLOCKED: (1) o criterio 'Acesso por HTTPS com certificado valido (sem bypass "
+            "de aviso)' so' e' cumprido contra a ANCORA INTERNA — o certificado no ar e' "
+            "'issuer=CN=Caddy Local Authority' e a chamada HTTPS de fora com a cadeia default falha "
+            "('curl exit=60, ssl_verify_result=20'); (2) `odoo-dev.transformativa.com.br` NAO RESOLVE "
+            "(NXDOMAIN, conferido por mim agora) — e a propria descricao do card reserva ao dono a "
+            "'Decisao do Anderson: dominio, portas e exposicao', que o runbook odoo-dev-tls.md §1.2 "
+            "registra como PENDENTE. EFEITO COLATERAL DO CARD QUE PRECISA DE DECISAO DO DONO: a copia "
+            "OPERACIONAL diverge do repo — /opt/tre/dev/compose/proxy.yml no ar tem um bloco marcado "
+            "'DEFEITO 7' (extra_hosts + healthcheck por hostname) que NAO existe em origin/develop nem na "
+            "branch do card (conferido por mim: vivo=1 ocorrencia, repo=0). LIMITACAO DECLARADA: o "
+            "verificador nao e' redirecionavel para base renomeada (hardcoda proxy-dev/odoo-dev/ufw), "
+            "entao as passadas medem a base dev entregue; no dente, so' os itens 5-12 medem a copia "
+            "mutada. INCIDENTE CORRIGIDO: a primeira tentativa dos mutantes abriu a porta 80 viva por "
+            "SO_REUSEPORT; foi corrigido e os dentes refeitos limpos, e as duas passadas rodaram ANTES de "
+            "existir mutante. Baseline final 5 containers / 7 volumes / 0 dangling / 4 redes."
+        ),
+        "verification": {
+            "verificador": "scripts/provision/verificar-tls-dev.sh",
+            "passadas": 2,
+            "medicao": "TLS_DEV_OK (28 itens, 0 falhas) hostname=odoo-dev.transformativa.com.br portas=80/443",
+            "dente": "MORDE x2: sem basic_auth -> FALHOU (28/1, Odoo servido sem credencial); sem headers -> FALHOU (28/3, HSTS/Referrer-Policy/Server)",
+            "bloqueio": "decisao de dominio do dono PENDENTE — o dominio nao resolve (NXDOMAIN) e o certificado no ar e' CA interna",
+            "divergencia_operacional": "proxy.yml vivo tem bloco 'DEFEITO 7' ausente do repo (vivo=1, repo=0)",
+            "log": "/tmp/tre_lote14/agentC/{pass1,pass2,dente_a,dente_b}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte e conferiu NXDOMAIN e a divergencia do proxy.yml antes de registrar",
+        },
+    },
 ]
 
 
@@ -236,7 +364,7 @@ def main() -> int:
             if card["task"] in existentes:
                 _, c = existentes[card["task"]]
                 c.update(
-                    validation_result="PASS",
+                    validation_result=card.get("resultado", "PASS"),
                     evidence=card["evidence"],
                     current_gate="VALIDATION",
                     validated_at=DATA,
@@ -256,7 +384,7 @@ def main() -> int:
                             "hermes_task_id": card["task"],
                             "stage": "DONE",
                             "current_gate": "VALIDATION",
-                            "validation_result": "PASS",
+                            "validation_result": card.get("resultado", "PASS"),
                             "evidence": card["evidence"],
                             "validated_at": DATA,
                             "validated_by": BY,

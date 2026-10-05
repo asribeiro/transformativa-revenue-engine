@@ -180,7 +180,23 @@
         {
           "hermes_task_id": "t_c8e69f74",
           "stage": "DONE",
-          "evidence": "docs/runbooks/backup-restore-rollback.md — procedimento executavel (segredo fora do backup, restauracao com --confirmo e snapshot previo), provado na VPS Contabo"
+          "evidence": "Exigencia literal do card (board): 'procedimento documentado; restore testavel. RUNBOOK: backup, restore, rollback.' Os dois lados medidos: (a) PROCEDIMENTO DOCUMENTADO — `docs/runbooks/backup-restore-rollback.md` existe no develop publicado (65 KB); (b) RESTORE TESTAVEL — duas passadas identicas do verificador da familia `scripts/backup/teste-backup-restore.sh` na VPS: `RESULTADO: TESTE_OK (12 itens, 0 falhas)` x2 (exit 0), logs em /tmp/tre_lote14/agentA/logs/{pass1,pass2}.out; o diff normalizado e' identico, diferindo apenas rotulos volateis declarados (nome do container descartavel, caminho TMPDIR, selo tre_dev_<timestamp> e o sha256 do dump, que embute dado de runtime). DENTE QUE MORDE: mutando o dump para `--schema-only` numa copia isolada (`backup-tre.sh` mutado e8b44643, copia limpa intocada f5fd66cf), o verificador REPROVOU -> `RESULTADO: TESTE_FALHOU (11 itens, 2 falhas)` (exit 1), nomeando 'FALHOU teste de restore REPROVADO' e 'FALHOU restaurei zero linhas em tabelas que tinham dados no backup'; os mesmos itens passam OK na copia limpa. LIMITACOES DECLARADAS: (1) o verde do modo descartavel mede o dev VIVO em somente leitura, nao uma base hermética (ver CORRECAO DE ESCOPO no campo `ambiente`); (2) o corpo do card cita o commit `066dd81` e 'TESTE_OK (9 itens)' — hoje o verificador emite 12 itens no develop publicado (evoluiu com lib-ambiente.sh e o modo Odoo), e `066dd81` e' ancestral; (3) o dente mede a guarda de capacidade (comparacao de contagens), nao um defeito registrado — este e' um card de baseline/definicao. Zero escrita externa: TRE_BACKUP_EXTERNO vazio (manifesto 'externo: pendente (sem destino configurado)'); baseline da VPS 5/7/0/4.",
+          "validation_result": "PASS",
+          "current_gate": "VALIDATION",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh (modo descartavel)",
+            "passadas": 2,
+            "medicao": "TESTE_OK (12 itens, 0 falhas) x2, exit 0",
+            "dente": "MORDE: dump --schema-only -> TESTE_FALHOU (11 itens, 2 falhas), 'restaurei zero linhas em tabelas que tinham dados'",
+            "documentado": "docs/runbooks/backup-restore-rollback.md (65 KB) no develop publicado",
+            "commit_medido": "9e638f79 (develop publicado na VPS)",
+            "log": "/tmp/tre_lote14/agentA/logs/{pass1,pass2,dente}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte (grep nos logs do VPS) antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
         },
         {
           "hermes_task_id": "t_4e8ade57",
@@ -199,7 +215,7 @@
             "volateis_declarados": "nome do dump (carimbo de tempo) e sha256 do dump",
             "log": "/tmp/tre_lote14/card130_{pass1,pass2,dente}.out",
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
-            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
           }
         },
         {
@@ -219,7 +235,7 @@
             "volateis_declarados": "nome do dump (carimbo de tempo) e sha256 do dump",
             "log": "/tmp/tre_lote14/card131_dente.out (dente) + card130_{pass1,pass2}.out (passadas)",
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
-            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
           }
         },
         {
@@ -239,7 +255,7 @@
             "caminho_positivo": "rodado pelo dono no prompt da VPS (declarado no card): bucket tre-backup + artefato lido de volta",
             "log": "/tmp/tre_lote14/d132/ (recusa) e d132m/ (dente)",
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
-            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
           }
         },
         {
@@ -258,7 +274,7 @@
             "efeitos_externos": "nenhum — medida 100% leitura (rclone cat/lsf)",
             "acoplamento": "a regua deste criterio so' roda no modo --ambiente: card TRE-W1-E06-T01 (t_72672e48)",
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
-            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005)"
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
           }
         }
       ],
