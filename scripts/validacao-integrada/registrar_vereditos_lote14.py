@@ -41,6 +41,8 @@ ARTEFATO = {
     "W5": "W5-scores-e-nba.json",
     "W6": "W6-outbound-e-canais.json",
     "W7": "W7-inbound-e-multicanal.json",
+    "W8": "W8-analytics-e-efetividade.json",
+    "W9": "W9-scoring-preditivo-e-nurture.json",
 }
 
 CARDS = [
@@ -335,6 +337,100 @@ CARDS = [
             "divergencia_operacional": "proxy.yml vivo tem bloco 'DEFEITO 7' ausente do repo (vivo=1, repo=0)",
             "log": "/tmp/tre_lote14/agentC/{pass1,pass2,dente_a,dente_b}.out",
             "evidencia_conferida_por": "Hermes leu os vereditos na fonte e conferiu NXDOMAIN e a divergencia do proxy.yml antes de registrar",
+        },
+    },
+    {
+        "onda": "W8",
+        "id": "TRE-W8-E01-T01",
+        "title": "Funnel dashboard",
+        "task": "t_6cc75a1d",
+        "evidence": (
+            "Exigencia efetiva no comentario do card (o corpo e' stub do plano): `ACEITE_FUNIL_OK (34 itens, "
+            "0 falhas)` + suite offline `24 itens, 0 falhas + 8/8 mutacoes`. MEDIDO no develop publicado "
+            "(9e638f7) E corroborado no commit do card (a5d9af3, cujos funil.py/funil-v1.json/aceite DIFEREM "
+            "do HEAD): `RESULTADO: PASS (34 itens, 0 falhas)` x2 em cada commit, identicas apos normalizar "
+            "so' o nome do container (unico token volatil). DENTE QUE MORDE nos DOIS commits: removendo a "
+            "guarda de versao do SCORE_PRIORITY (contrato §8, defeito 'score sem versao qualifica'), o "
+            "verificador REPROVOU -> `RESULTADO: FALHOU (33 itens, 1 falhas)` + `ACEITE_FUNIL_FALHOU`, com "
+            "'FALHOU score SEM versao nao qualifica: org 3 nao infla o Qualificado 3'. Nota de metodo: a "
+            "suite offline sozinha PASSOU com a mutacao — quem morde e' a assercao E2E semeada no banco. "
+            "ACHADO DE HIGIENE (defeito real, fora do escopo deste card): o aceite irmao "
+            "`scripts/agentes/teste_conversao_segmento_aceite.sh` limpa com `docker rm -f` SEM `-v` em 2 "
+            "pontos (o funil e o efetividade usam `-v`) e VAZA 1 volume anonimo por passada — foi a origem "
+            "dos 3 volumes dangling que eu removi por ID ao fim da leva; baseline de volta a 5/7/0/4."
+        ),
+        "verification": {
+            "verificador": "scripts/agentes/teste_funil_aceite.sh + verificar_funil.py --autoteste",
+            "passadas": 4,
+            "medicao": "RESULTADO: PASS (34 itens, 0 falhas) x2 no develop (9e638f7) e x2 no commit do card (a5d9af3) -> ACEITE_FUNIL_OK",
+            "dente": "MORDE: guarda de versao do SCORE_PRIORITY removida -> FALHOU (33 itens, 1 falhas) + ACEITE_FUNIL_FALHOU",
+            "log": "/tmp/tre_lote14/agentD/logs/{pass1,pass2,dente,a5d9_pass1,a5d9_pass2,a5d9_dente}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+        },
+    },
+    {
+        "onda": "W8",
+        "id": "TRE-W8-E02-T01",
+        "title": "Conversion by segment",
+        "task": "t_0248a568",
+        "evidence": (
+            "Exigencia literal (criterios-de-aceitacao.md §TRE-W8-E02-T01): `ACEITE_CONVERSAO_SEGMENTO_OK` "
+            "(43 itens, 0 falhas, exit 0) em PostgreSQL descartavel + suite offline com 12 dentes. MEDIDO no "
+            "develop publicado (9e638f7): aceite E2E `RESULTADO: PASS (43 itens, 0 falhas)` + "
+            "`ACEITE_CONVERSAO_SEGMENTO_OK` em DUAS passadas com sha256 identico; suite offline "
+            "`AUTOTESTE 12/12 mutacoes detectadas` + `RESULTADO: PASS (34 itens, 0 falhas)` em duas "
+            "passadas com sha256 identico. Contrato conversao-segmento-v1.json sha256 81f1da55... casa com "
+            "o declarado. DENTE QUE MORDE: mutando o casamento do eixo para semelhanca (`.startswith("
+            "chave[:4])`, que reconstroi o defeito original de eixo casando por aproximacao), o offline "
+            "REPROVOU -> `RESULTADO: FALHOU (16 itens, 3 falhas)` e o aceite E2E -> "
+            "`ACEITE_CONVERSAO_SEGMENTO_FALHOU` com 'FALHOU faixa de funcionarios: buckets e contagens a "
+            "mao' (150_299: 7, bom = 6); no codigo limpo esses itens passam OK, entao nao e' falso "
+            "positivo. LIMITACAO DECLARADA: o aceite da copia mutada degradou feio (TypeError no bloco "
+            "Python do passo 7 -> relatou 26 itens em vez de 43) e o reprovo nomeado veio pelo item de "
+            "buckets, nao pela linha de dente — o harness nao degradou limpo, embora o reprovo seja real. "
+            "DEFEITO CONFIRMADO NO PROPRIO ACEITE DESTE CARD: `docker rm -f` sem `-v` em 2 pontos -> vaza "
+            "1 volume anonimo por passada (eu removi os 3 residuos por ID; baseline 5/7/0/4)."
+        ),
+        "verification": {
+            "verificador": "scripts/agentes/teste_conversao_segmento_aceite.sh + verificar_conversao_segmento.py --autoteste",
+            "passadas": 4,
+            "medicao": "PASS (43 itens, 0 falhas) -> ACEITE_CONVERSAO_SEGMENTO_OK x2 (sha identico); offline AUTOTESTE 12/12 + PASS (34 itens, 0 falhas) x2",
+            "dente": "MORDE: eixo casando por semelhanca -> offline FALHOU (16 itens, 3 falhas) e E2E ACEITE_CONVERSAO_SEGMENTO_FALHOU",
+            "defeito_no_aceite": "docker rm -f sem -v (2 pontos) vaza 1 volume anonimo por passada",
+            "log": "/tmp/tre_lote14/agentE/logs/{e02-acc1,e02-acc2,e02-off1,e02-off2,e02-dente-acc,e02-dente-off}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+        },
+    },
+    {
+        "onda": "W8",
+        "id": "TRE-W8-E03-T01",
+        "title": "Score effectiveness",
+        "task": "t_8ba150bc",
+        "evidence": (
+            "Exigencia literal (comentarios 355/357 do card): aceite E2E em PostgreSQL descartavel + suite "
+            "offline com mutacoes que tem de reprovar + REGRESSAO DO PAI (o relatorio funil-v1 nao pode "
+            "mudar). MEDIDO no develop publicado (9e638f7): `RESULTADO: PASS (41 itens, 0 falhas)` + "
+            "`ACEITE_EFETIVIDADE_SCORE_OK` em DUAS passadas BYTE-IDENTICAS (sha256 "
+            "f4d133df5b74638c... identico cru e normalizado — nenhum token volatil divergiu); suite offline "
+            "`PASS (22 itens, 0 falhas)` + `AUTOTESTE 8/8 mutacoes detectadas`; e a regressao do pai medida "
+            "de verdade: 'OK aceite do funil continua verde com o pai estendido (PASS (34 itens, 0 "
+            "falhas))'. DENTE QUE MORDE: mutando a tolerancia da adesao a formula (A4) para aceitar sempre "
+            "(`if True`), o offline REPROVOU -> `FALHOU (21 itens, 1 falhas)` com 'adesao a formula: 9 "
+            "comparaveis, 8 conformes, 1 divergente (1.00 de desvio)' e o E2E -> "
+            "`ACEITE_EFETIVIDADE_SCORE_FALHOU` ('FALHOU suite offline ... AUTOTESTE 7/8'). LIMITACAO "
+            "DECLARADA: medi o develop publicado (HEAD 9e638f7), nao o commit do card (573e349, "
+            "ancestral); o unico delta nos arquivos deste card e' justamente a limpeza do aceite "
+            "(`docker rm -f` -> `docker rm -f -v`), ou seja, no commit do card o aceite VAZAVA 1 volume por "
+            "passada e no develop nao vaza. Sem escrita em artefato/bucket/git."
+        ),
+        "verification": {
+            "verificador": "scripts/agentes/teste_efetividade_score_aceite.sh + verificar_efetividade_score.py --autoteste",
+            "passadas": 2,
+            "medicao": "RESULTADO: PASS (41 itens, 0 falhas) -> ACEITE_EFETIVIDADE_SCORE_OK x2, BYTE-IDENTICAS (sha256 f4d133df...)",
+            "dente": "MORDE: tolerancia da formula forcada -> offline FALHOU (21 itens, 1 falhas); E2E ACEITE_EFETIVIDADE_SCORE_FALHOU",
+            "regressao_do_pai": "aceite do funil segue verde (PASS 34 itens, 0 falhas) com o pai estendido",
+            "log": "/tmp/tre_lote14/agentF/{aceite-pass1,aceite-pass2,dente-offline-mut,aceite-dente-mut}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
         },
     },
 ]
