@@ -90,12 +90,22 @@ Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `ma
   separada — volta à mesa se houver SaaS com marca própria) e IP:porta (bloquearia o webhook). DNS vive no
   **Netlify**; os três registros `A → 169.58.24.102` **ainda não existem**.
 
+- **D4 · Enforcement (05/10/2026) — defesa em profundidade: proteção de branch **e** gate no motor.** `main`
+  e `homolog` só recebem **merge** (push direto é violação) e o motor do board **recusa promover** card sem
+  critérios de aceite fechados e evidência anexada, registrando o sha promovido; um vigia confere depois que
+  `main` só avançou por merge vindo de `homolog` e alerta se não. Cada mecanismo cobre o que o outro não vê:
+  a plataforma impede o push direto (inclusive de um agente desatualizado), o motor verifica a evidência/AC do
+  card — que a proteção de branch não sabe enxergar (ela só vê "tem PR?").
+  **Condição medida:** a proteção de branch exige **GitHub Pro** — o plano atual responde `403: "Upgrade to
+  GitHub Pro or make this repository public to enable this feature."` (repo é **privado**; torná-lo público não
+  é opção). A assinatura é do dono; o token do agente já tem `admin` no repo, então a configuração é mecânica
+  assim que o upgrade existir. Até lá, vale **só** o gate do motor + vigia.
+  Descartadas: só plataforma (não vê evidência) e só disciplina (com repo privado e sem proteção, "sem push
+  direto" vira convenção).
+
 ## Decisões que ainda faltam (para o desenho virar operação)
 
-1. **Enforcement.** Proteger `homolog` e `main` no GitHub (PR obrigatório, sem push direto) e registrar o
-   mapa ambiente↔branch↔aprovação na política (`hermes/policies/human-approval.yaml`) para o portão ser
-   verificável por máquina, não por disciplina. **Alterar a política é decisão do dono.**
-2. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
+1. **Escopo de serviços por ambiente.** Odoo + Postgres + n8n + proxy nos três? A VPS tem 193 GB de disco
    (12 GB em uso) e 11 GB de RAM (≈9 GB disponíveis): cabe, mas convém fixar limites de memória por stack.
 
 
