@@ -203,6 +203,35 @@ CARDS = [
             "nota": "defeito documental retroativo: numero errado em justificativa de filtro, sem efeito no codigo",
         },
     },
+    {
+        "id": "TRE-W2-E05-T01",
+        "title": "Criar tf.process.opportunity",
+        "task": "t_9c91ecce",
+        "evidence": (
+            "Aceite homologado pelo dono (29/09/2026): modelo criado com os campos do contrato, "
+            "oportunidade canonica no Odoo com vinculo a `res.partner`, e teste de criacao, consulta e "
+            "relacao. MEDIDO NO ARTEFATO ENTREGUE: (1) o modelo `tf_process_opportunity.py` declara os "
+            "campos do contrato — `tf_uuid`, `name` (required, indexado), `active`, `company_id`, "
+            "`currency_id`, `stage_id` (crm.stage), `lost_reason_id` (crm.lost.reason) — e "
+            "`partner_id = fields.Many2one('res.partner', ondelete='restrict')`, com o comentario de que "
+            "toda oportunidade canonica pertence a um parceiro; (2) cada criterio tem teste NOMEADO em "
+            "`tests/test_oportunidade_canonica.py`: `test_01_modelo_criado_com_os_campos_do_contrato`, "
+            "`test_04_campos_do_contrato_gravam_e_leem`, `test_05_consulta_por_uuid_e_por_parceiro`, "
+            "`test_06_relacao_com_parceiro_e_restricao_de_exclusao` (mais uuid unico/imutavel/invalido); "
+            "(3) a execucao: `tests/__init__.py` importa `test_oportunidade_canonica` (linha 5), e o "
+            "Odoo roda todo teste importado — o aceite do modulo mediu **0 failed, 0 error(s) of 192 "
+            "tests** no banco descartavel, nas duas passadas do card 126, com os dois arquivos de teste "
+            "inventariados por sha256 pelo proprio harness. Os 6 testes do aceite dedicado do modulo "
+            "(`verificar-modulo-odoo.sh`, card 125) NAO cobrem este card: e' o aceite de 192 que cobre."
+        ),
+        "verification": {
+            "verificador": "scripts/odoo/verificar-views-sales-ai.sh (passo 2 roda a suite do modulo; aceite de 192 testes)",
+            "medicao": "0 failed, 0 error(s) of 192 tests, em dupla descartavel propria, 2 passadas",
+            "modelo": "odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py",
+            "testes": "tests/test_oportunidade_canonica.py (9 testes) importado por tests/__init__.py",
+            "limite_declarado": "o runner nao nomeia cada teste no log; a cobertura dos 9 decorre do import no __init__ + suite completa verde",
+        },
+    },
 ]
 
 
