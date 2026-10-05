@@ -232,6 +232,41 @@ CARDS = [
             "limite_declarado": "o runner nao nomeia cada teste no log; a cobertura dos 9 decorre do import no __init__ + suite completa verde",
         },
     },
+    {
+        "id": "TRE-W2-E07-T01-D01",
+        "title": "DEFEITO [retroativo]: verificador novo das ACLs reincidiu D01+D02 do E03",
+        "task": "t_aaaf1558",
+        "evidence": (
+            "Reincidencia de DUAS classes de defeito do E03 no harness novo das ACLs "
+            "(`scripts/odoo/verificar-acl-modulo.sh`), corrigida no mesmo card. MEDIDO NO ARTEFATO: "
+            "(1) ACEITE: `RESULTADO: ACL_OK (51 itens, 0 falhas)` em DUAS passadas identicas (4 passos: "
+            "instalacao em banco limpo, testes do Odoo, regras lidas no banco, prova negativa "
+            "independente). (2) DENTE: `ACL_DENTE_OK (2 provas, 0 falhas)` — 'dente 1: a regra de "
+            "carteira aberta reprova o aceite' e 'dente 2: a ACL plantada (superficie/escalacao) reprova "
+            "o aceite', com o item de linha de teste reprovado DISPARANDO (item com dente proprio). "
+            "(3) PROVA DA REINCIDENCIA D02 (dente sobrescrevia a evidencia do aceite): rodei o dente com "
+            "o MESMO `TRE_LOG_DIR` do aceite — o sha256 dos `[1-4]-*.log` ficou IDENTICO antes e depois "
+            "(`0c0649358f21cda5`, `9db0cf344015a464`, `393ee73899b2507a`); o modo dente escreve so' em "
+            "`$TRE_LOG_DIR/dente/prova-N` e tem guarda que fotografa o sha256 do aceite e reprova se "
+            "algum arquivo mudar (na rodada com diretorio proprio a guarda avisou 'sem logs de passo do "
+            "aceite ... sem o que proteger', comportamento correto). (4) PROVA DA REINCIDENCIA D01 (grep "
+            "ancorado no inicio da linha): o padrao agora e' `grep -E '(^| )(FAIL|ERROR): [A-Za-z_]'` "
+            "(o log do Odoo 19 vem prefixado por `data pid NIVEL banco logger:`) e, na mutacao, a linha "
+            "'FALHOU 4 linha(s) de teste reprovado(a) no log: ... FAIL: "
+            "TestAclSeguranca.test_03.../test_05...' disparou — exatamente o cenario (4 testes reprovados) "
+            "que a regua antiga imprimia como OK."
+        ),
+        "verification": {
+            "verificador": "scripts/odoo/verificar-acl-modulo.sh (aceite de 4 passos + --prova-de-dente de 2 provas)",
+            "passadas": 2,
+            "dente": "ACL_DENTE_OK (2 provas, 0 falhas) — carteira aberta e ACL plantada reprovam o aceite",
+            "guarda_d02": "sha256 dos logs do aceite identico antes/depois do dente no mesmo TRE_LOG_DIR",
+            "regua_d01": "grep (^| )(FAIL|ERROR): [A-Za-z_] — nao ancorado; acusou as 4 linhas FAIL do dente",
+            "banco_descartavel": "tre_e07t01_acl (mutacoes em tre_e07t01_acl_d1/d2)",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card122_{pass1,pass2,dente,dente2}.out",
+        },
+    },
 ]
 
 
