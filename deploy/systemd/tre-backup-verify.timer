@@ -1,6 +1,6 @@
 [Unit]
 Description=Teste de restore semanal do backup do TRE (domingo 04:00)
-Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+Documentation=file:/opt/tre/prod/repo/docs/runbooks/backup-restore-rollback.md
 
 [Timer]
 OnCalendar=Sun *-*-* 04:00:00

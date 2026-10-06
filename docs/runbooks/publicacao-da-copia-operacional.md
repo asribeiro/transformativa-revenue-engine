@@ -1,4 +1,4 @@
-# Runbook — Publicação da cópia operacional (`/opt/tre/repo`)
+# Runbook — Publicação da cópia operacional (hoje: `/opt/tre/prod/repo`)
 
 **Card:** `t_091cfea9` (DEFEITO F3 do `TRE-W1-E06-T01`) · **Revisão 1.1 (enforcement):** `t_daca4bda`
 · **Revisão 1.2 (staging único por publicação e falha que nomeia a fase):** `t_0f74266d`
@@ -43,7 +43,7 @@ deploy/publicar.sh --conferir                    # confere a cópia contra o com
 |---|---|
 | `--commit <sha\|ref>` | commit a publicar (padrão: `HEAD`, e aí a árvore de trabalho tem de estar limpa) |
 | `--alvo <user@host>` | destino ssh (padrão `root@169.58.24.102`; env `TRE_PUBLICAR_ALVO`) |
-| `--destino <dir>` | diretório da cópia (padrão `/opt/tre/repo`; env `TRE_PUBLICAR_DESTINO`) |
+| `--destino <dir>` | diretório da cópia (padrão `/opt/tre/prod/repo`; env `TRE_PUBLICAR_DESTINO`) |
 | `--dono <user:group>` | dono final da cópia (padrão `tre-deploy:tre-deploy`) |
 | `--chave <arquivo>` | chave ssh (padrão `$HOME/.ssh/id_ed25519_ops`, depois `/opt/data/home/.ssh/id_ed25519_ops`) |
 | `--card <id>` | card que publica (padrão `$HERMES_KANBAN_TASK`) — vai para `.publicado` e para o log |
@@ -77,7 +77,7 @@ PUBLICACAO_FALHOU …          (exit != 0, nada foi escrito no destino)
    o script lê os `ExecStart=` dos units em `deploy/systemd/` e conta quantos alvos **não** estão `100755`
    no commit — `AVISO modo` em cada um, e o número vai para `.publicado` (`execstart_sem_bit`). Com
    `--exigir-modos` a publicação **para** em vez de deixar o systemd morrer com `203/EXEC`.
-3. **Registro no destino** — `/opt/tre/repo/.publicado` (e `.publicado.manifest`, com modo + sha256 de
+3. **Registro no destino** — `/opt/tre/prod/repo/.publicado` (e `.publicado.manifest`, com modo + sha256 de
    cada arquivo):
 
    ```text
@@ -229,7 +229,7 @@ restauração volta a exigir `deploy/publicar.sh --commit <registrado>`.
 ### 5.1 Verificador com dente (prova que reprova)
 
 `deploy/verificar-enforcement.sh` **não** confere se o enforcement existe no código: ele **tenta o
-caminho ad-hoc e exige que ele falhe**, em destino isolado (nunca `/opt/tre/repo`). Ele mede 13 itens:
+caminho ad-hoc e exige que ele falhe**, em destino isolado (nunca a cópia de produção). Ele mede 13 itens:
 publicação pelo caminho único + trava armada; as quatro tentativas ad-hoc (`>>`, `sed -i`, arquivo novo,
 `tar -xz` de árvore alheia) recusadas; conteúdo intacto depois delas; **sabotagem** (com `chattr -i`, como
 o defeito real) que o detector **tem de reprovar** (exit 5, com atribuição do arquivo plantado); e o
@@ -271,7 +271,7 @@ antes de qualquer escrita:
   exatamente assim que a colisão do `tester` aconteceu.
 - **Destino isolado exige artefato isolado.** `$ARTEFATO` é a fonte de verdade do **watchdog da cópia
   compartilhada**: publicar em destino isolado deixando o artefato padrão faria o watchdog de
-  `/opt/tre/repo` **reparar a produção para o commit do ensaio**. Recusado (exit 2) até você isolar
+  a cópia de produção `/opt/tre/prod/repo` **reparar a produção para o commit do ensaio**. Recusado (exit 2) até você isolar
   (`TRE_PUBLICAR_ARTEFATO=<destino>-artefato`).
 
 `PRODUCAO` passou a ser recalculada **depois** do parse dos argumentos: com `--destino` para um ensaio, o
@@ -326,7 +326,7 @@ saídas em `docs/runbooks/backup-restore-rollback.md` §7d e
 
 ## 9. Regra para os próximos cards
 
-- **Nada publica por `tar`/`scp`/`rsync` direto em `/opt/tre/repo`.** Um caminho só: `deploy/publicar.sh`.
+- **Nada publica por `tar`/`scp`/`rsync` direto na cópia de produção (`/opt/tre/prod/repo`).** Um caminho só: `deploy/publicar.sh`.
   Desde a revisão 1.1 isso não depende mais de disciplina: a cópia publicada está **imutável** e escrita
   ad-hoc falha com `Operation not permitted`; se ainda assim algo escapar (um `chattr -i` na mão), o
   watchdog de 2 minutos detecta, alerta e restaura. E **substituir** o commit que a produção executa
@@ -344,7 +344,7 @@ saídas em `docs/runbooks/backup-restore-rollback.md` §7d e
   ```
 
   Foi usar o destino compartilhado como bancada que produziu o `t_091cfea9`, o `203/EXEC` e a recorrência
-  do `t_daca4bda`. Se o seu comando em `/opt/tre/repo` falhar com `Operation not permitted`, **não force
+  do `t_daca4bda`. Se o seu comando na cópia de produção falhar com `Operation not permitted`, **não force
   `chattr -i`**: mudou de lugar o seu ensaio, não a trava.
   Desde a revisão 1.2 as três variáveis andam **juntas**: isolar só o lock (destino compartilhado) é
   **recusado** (exit 2), e destino isolado com o artefato padrão também — este segundo caso faria o
@@ -373,3 +373,32 @@ Commit `44e0d13` (`fix/t_0f74266d-staging`), medido na VPS `vmi3619453` **sempre
   defeito na versão de `3bf5e07` e prova o conserto). O digest que o código novo calcula para o commit
   `719a628` (`d2215645…`, 315 arquivos) é **idêntico** ao que a versão antiga publicou — a semântica do
   manifesto não mudou com o conserto.
+
+---
+
+## Aposentadoria da cópia legada `/opt/tre/repo` (06/10/2026)
+
+Enquanto a produção não existia, `/opt/tre/repo` **era** a cópia operacional — e isso ficou embutido nos
+defaults: `deploy/publicar.sh` (destino e "alvo de produção"), `deploy/watchdog-publicacao.sh` e
+`/etc/tre/backup.env` (`TRE_ENV_DIR`). Com a produção de pé, ela virou um fantasma de **01/10**, apontando
+para um branch de feature (`feature/TRE-W2-E01-T01-F01`) e ainda tratada como produção.
+
+O que mudou (decisão do dono, opção A):
+
+| Antes | Agora |
+|---|---|
+| destino padrão da publicação: `/opt/tre/repo` | **`/opt/tre/prod/repo`** (default versionado no `publicar.sh`) |
+| watchdog vigiava `/opt/tre/repo` com artefato compartilhado | vigia **`/opt/tre/prod/repo`** com artefato próprio (`/opt/tre/.publicacao-artefato-prod`) |
+| `tre-backup.service` executava script **de dentro** da cópia publicada | executa `/usr/local/lib/tre/backup/backup-tre.sh` (local estável, root, fora de publicação) |
+| `TRE_ENV_DIR=/opt/tre/repo/deploy/environments` | **`/opt/tre/prod/repo/deploy/environments`** |
+| cópia legada no disco | `repo.aposentado-20261001` (**nada apagado**) |
+
+**Efeito colateral medido — o ganho maior:** o backup saiu de `BACKUP_OK (1 coberto, 2 pulados)`, com o log
+dizendo *"PULADO ambiente 'prod' nao provisionado"*, para **`BACKUP_OK (3 ambientes cobertos, 0 pulados)`**,
+com `tre_prod_*` no diretório. **A produção estava sem cobertura de backup diária e passou a ter** — no mesmo
+dia em que subiu.
+
+**O defeito de raiz corrigido:** unidades de sistema (`tre-backup.service`, `tre-backup-verify.service`)
+executavam script **de dentro de uma cópia publicada e mutável** — uma publicação com defeito no script
+mudava o comportamento do backup no tick seguinte. Agora o script vive em `/usr/local/lib/tre/backup/` e é o
+que o repo versionado reproduz (`deploy/systemd/*.service`).

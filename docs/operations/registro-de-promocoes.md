@@ -46,3 +46,33 @@ envelhece no commit seguinte e vira afirmação falsa.
 - **Na VPS (autorizado):** apenas a rede `tre-odoo-prod` e o diretório `/etc/tre/odoo-prod` (700 root).
   Nenhum container ou volume de produção.
 - **Pendente:** `homolog` → `main` (release de Produção) exige **aprovação humana registrada**.
+
+## Promoção 4 — `develop` → `homolog` (06/10/2026)
+
+- **Origem:** `develop` = `09e7699` · **destino:** `homolog` = `09e7699` (**fast-forward**: `homolog` era `dbae3e4`).
+- **Delta:** 13 commits, 16 arquivos, +431/-20 — os consertos e registros do dia de Produção: `--ensaio` de
+  verdade nos instaladores de Odoo, defaults do runner de migração (`pg-sales-homolog`/`sales_ai`), política
+  `politica_producao.json`, Autorizações 5 e 6, porta **8071**, a borda passando a servir `tre` e os runbooks
+  de produção com as medições.
+- **Por que promoveu:** o runtime de Produção lê os artefatos **da cópia publicada do ambiente**, e a cópia é
+  publicada do branch do ambiente. Sem esta promoção os consertos do dia (porta 8071, Caddyfile) não chegariam
+  à cópia de produção.
+- **Evidência:** aceites de produção medidos no mesmo dia — banco de vendas 20/0, Odoo 15/0, n8n 44/0 —, ciclo
+  E2E nas duas direções, replay sem duplicata e dente do portão com par antes/depois; card `t_ba84b412`.
+
+## Promoção 5 — `homolog` → `main` (o release de produção) (06/10/2026)
+
+- **Origem:** `homolog` = `09e7699` · **destino:** `main` = **`70b4442`** — **merge commit de dois pais**
+  (`1378018` primeiro pai, `09e7699` segundo), executado como **merge vindo de `homolog`**: ninguém escreve
+  direto em `main` (D4).
+- **Delta:** 266 commits, 269 arquivos, **+60.906 / -479**.
+- **Aprovação humana:** **Autorização 7** em `docs/operations/registro-de-aprovacoes.md` (Telegram, opção
+  **"A"** do dono), commit `99eba3b`. Verificador de aprovação humana: **PASS (18 itens, 0 falhas)**.
+- **Por que promoveu:** a definição do dono — "produção = `main`, com Dev/Homolog/Produção espelhados em
+  branches no GitHub e controlados via Git". Com este merge, `main` passa a ser o conteúdo que a produção
+  **já roda e mediu** (o desvio `ref: homolog` deixa de existir).
+- **Evidência:** o que a produção mediu no dia — banco de vendas `PROD_SALES_OK 20/0`, Odoo `PROD_ODOO_OK 15/0`,
+  n8n `N8N_PROD_OK 44/0`, ciclo E2E nas duas direções, replay sem duplicata, dente do portão com par
+  antes/depois; `docs/runbooks/{banco-de-vendas-prod,odoo-prod,n8n-prod}.md`; card `t_ba84b412` (388-389).
+- **Pendência declarada:** `main` entra **sem CI e sem branch protection** (plano Free) — o freio é o gate do
+  motor + o gancho `pre-push` versionado. `develop` segue à frente por commits de documentação.

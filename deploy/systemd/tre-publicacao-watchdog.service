@@ -1,10 +1,12 @@
 [Unit]
 Description=Watchdog da publicacao versionada da copia operacional do TRE (detecta escrita ad-hoc e repara)
-Documentation=file:/opt/tre/repo/docs/runbooks/publicacao-da-copia-operacional.md
+Documentation=file:/opt/tre/prod/repo/docs/runbooks/publicacao-da-copia-operacional.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
+Environment=TRE_WATCHDOG_DESTINO=/opt/tre/prod/repo
+Environment=TRE_WATCHDOG_ARTEFATO=/opt/tre/.publicacao-artefato-prod
 Type=oneshot
 User=root
 # Roda FORA da copia que vigia (/usr/local/lib/tre, instalado por

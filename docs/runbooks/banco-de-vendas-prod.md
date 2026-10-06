@@ -79,3 +79,22 @@ fechamento: `HTTP 503`, `codigo=aprovacao_ausente`, `ambiente=producao`, CRM int
 
 Sonda reutilizável: `/tmp/sonda-portao-prod.sh` (chave lida do arquivo 600 e entregue ao curl por
 **arquivo de configuração**, nunca por argv; imprime só status HTTP e `codigo`).
+
+### Limpeza da massa de aceite no CRM (06/10/2026, opção A do dono)
+
+A massa de aceite **cria registros de verdade no CRM de produção** (o gerador de fatos usa o ORM e a API
+escreve parceiros). Antes de qualquer demonstração, prever o par **dump + limpeza**:
+
+1. **Dump primeiro** (é o que torna a limpeza reversível): `docker exec pg-odoo-prod pg_dump -U odoo -Fc
+   odoo_prod > /opt/tre/backups/odoo_prod-<UTC>.dump` (+ o banco de vendas, que guarda a trilha). Modo 600.
+2. **Conferir se o módulo reage a exclusão** antes de apagar: se houvesse detector de `unlink`, o evento novo
+   chegaria à fila e a API **recriaria** o parceiro. Aqui **não** há (só `@api.model_create_multi` em
+   `mail_activity`/`calendar_event`/`tf_process_opportunity`).
+3. **Apagar pelo ORM (`unlink`), nunca por SQL**: o Odoo limpa mensagens, seguidores e atividades ligados ao
+   parceiro. Sobraram os ids de sistema `[1, 3, 6]`.
+4. **Medir depois**: fila inalterada (3 `PROCESSED`), trilha inalterada (11 `COMPLETED` — é a evidência que
+   fica), `tre` → 200.
+5. **Resíduo conhecido:** o `crm.lead` do aceite fica órfão (`partner_id = 0`) e precisa de decisão própria.
+
+Backups resultantes: `odoo_prod-20261006T142318Z.dump` (sha256 `2236a5d4…`) e
+`sales_intelligence-20261006T142318Z.dump` (sha256 `ab90cbd3…`), em `/opt/tre/backups` (700, arquivos 600).

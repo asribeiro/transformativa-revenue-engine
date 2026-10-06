@@ -35,8 +35,8 @@
 #   PUBLICACAO_TRAVADA / PUBLICACAO_DESTRAVADA
 set -uo pipefail
 
-DESTINO="${TRE_WATCHDOG_DESTINO:-/opt/tre/repo}"
-ARTEFATO="${TRE_WATCHDOG_ARTEFATO:-/opt/tre/.publicacao-artefato}"
+DESTINO="${TRE_WATCHDOG_DESTINO:-/opt/tre/prod/repo}"
+ARTEFATO="${TRE_WATCHDOG_ARTEFATO:-/opt/tre/.publicacao-artefato-prod}"
 LOG_DIV="${TRE_WATCHDOG_LOG:-/opt/tre/.publicacao-divergencias.log}"
 ARQ_ALERTA="${TRE_WATCHDOG_ALERTA:-/opt/tre/.publicacao-ALERTA}"
 LOCK="${TRE_WATCHDOG_LOCK:-/opt/tre/.publicacao.lock}"

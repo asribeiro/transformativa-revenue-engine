@@ -19,7 +19,7 @@
 set -euo pipefail
 
 ALVO="${TRE_PUBLICAR_ALVO:-root@169.58.24.102}"
-DESTINO="${TRE_PUBLICAR_DESTINO:-/opt/tre/repo}"
+DESTINO="${TRE_PUBLICAR_DESTINO:-/opt/tre/prod/repo}"
 CHAVE="${TRE_SSH_CHAVE:-}"
 if [ -z "$CHAVE" ]; then
   for c in "$HOME/.ssh/id_ed25519_ops" /opt/data/home/.ssh/id_ed25519_ops; do

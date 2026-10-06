@@ -41,7 +41,7 @@ set -euo pipefail
 AUTO="$(cd "$(dirname "${BASH_SOURCE[0]:-publicar.sh}")" 2>/dev/null && pwd)/$(basename "${BASH_SOURCE[0]:-publicar.sh}")"
 
 ALVO="${TRE_PUBLICAR_ALVO:-root@169.58.24.102}"
-DESTINO="${TRE_PUBLICAR_DESTINO:-/opt/tre/repo}"
+DESTINO="${TRE_PUBLICAR_DESTINO:-/opt/tre/prod/repo}"
 DONO="${TRE_PUBLICAR_DONO:-tre-deploy:tre-deploy}"
 CHAVE="${TRE_SSH_CHAVE:-}"
 if [ -z "$CHAVE" ]; then
@@ -64,7 +64,7 @@ REF_DECLARADO="${TRE_PUBLICAR_REF:-}"
 # esta no ar la exige declaracao explicita (--producao / TRE_PUBLICAR_PRODUCAO=1): foi assim, sem
 # querer, que a copia perdeu a correcao do backup (t_daca4bda). Destino de ensaio (TRE_PUBLICAR_DESTINO)
 # nao pede nada.
-ALVO_PRODUCAO="${TRE_PUBLICAR_ALVO_PRODUCAO:-/opt/tre/repo}"
+ALVO_PRODUCAO="${TRE_PUBLICAR_ALVO_PRODUCAO:-/opt/tre/prod/repo}"
 PRODUCAO=0
 PRODUCAO_OK="${TRE_PUBLICAR_PRODUCAO:-0}"
 LOCK_VALIDADE_S=1800
@@ -95,7 +95,7 @@ Opcoes:
   --ref <nome>             rotulo de origem gravado no .publicado (ex.: homolog). Use quando o
                            commit tem mais de um branch: sem ele o rotulo lista todos os nomes.
   --alvo <user@host>       destino ssh (padrao: root@169.58.24.102)
-  --destino <dir>          diretorio da copia operacional (padrao: /opt/tre/repo)
+  --destino <dir>          diretorio da copia operacional (padrao: /opt/tre/prod/repo)
   --dono <user:group>      dono final da copia (padrao: tre-deploy:tre-deploy)
   --chave <arquivo>        chave ssh (padrao: ~/.ssh/id_ed25519_ops)
   --card <id>              card que publica (padrao: $HERMES_KANBAN_TASK)
@@ -113,7 +113,7 @@ Variaveis: TRE_PUBLICAR_DESTINO (copia de teste/isolada), TRE_PUBLICAR_ARTEFATO,
            TRE_PUBLICAR_STAGING_BASE (onde criar o staging unico; padrao: diretorio pai do
            destino), TRE_PUBLICAR_DIFF_DIR (onde gravar o diff completo dos manifestos;
            padrao: $TMPDIR), TRE_PUBLICAR_TRAVA=0 (nao armar), TRE_PUBLICAR_PRODUCAO=1 (= --producao),
-           TRE_PUBLICAR_ALVO_PRODUCAO (destino considerado producao; padrao /opt/tre/repo),
+           TRE_PUBLICAR_ALVO_PRODUCAO (destino considerado producao; padrao /opt/tre/prod/repo),
            TRE_SSH_CHAVE, TRE_PUBLICAR_LOG, TRE_PUBLICAR_LOCK.
            Teste SEMPRE em destino isolado: o destino compartilhado e PRODUCAO e trocar o commit
            dele exige --producao declarado (com a aprovacao registrada). Isolar SO o lock
@@ -170,7 +170,7 @@ fi
 
 # Mesma familia (caminho FIXO compartilhado), achado ao medir o staging: $ARTEFATO e a fonte de
 # verdade do watchdog da copia COMPARTILHADA. Publicar em destino isolado com o artefato padrao
-# faz o watchdog de /opt/tre/repo reparar A PRODUCAO para o commit do ensaio. Fail-closed.
+# faz o watchdog da copia de producao (/opt/tre/prod/repo) reparar A PRODUCAO para o commit do ensaio. Fail-closed.
 if [ "$ACAO" = "publicar" ] && [ "$PRODUCAO" -ne 1 ] && [ "$ARTEFATO" = "$ARTEFATO_PADRAO" ]; then
   echo "PUBLICACAO_FALHOU destino isolado ($DESTINO) com o artefato PADRAO do watchdog" >&2
   echo "                  ($ARTEFATO): o watchdog de $ALVO_PRODUCAO usa esse artefato como" >&2
