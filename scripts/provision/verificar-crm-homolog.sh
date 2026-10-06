@@ -17,7 +17,7 @@ set -u
 
 COMPOSE="${TRE_ODOO_COMPOSE:-/opt/tre/homolog/compose/odoo.yml}"
 ENVFILE="${TRE_ODOO_ENV:-/opt/tre/homolog/compose/odoo.env}"
-YAML="${TRE_CRM_YAML:-/opt/tre/homolog/odoo/crm/funil-transformativa.yaml}"
+YAML="${TRE_CRM_YAML:-/opt/tre/homolog/repo/odoo/crm/funil-transformativa.yaml}"
 BANCO="${TRE_ODOO_BANCO:-odoo_homolog}"
 
 TMP="$(mktemp -d)"

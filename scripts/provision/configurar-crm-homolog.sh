@@ -5,7 +5,7 @@
 # Espelho de scripts/provision/configurar-crm-dev.sh para o ambiente de homologacao.
 # Runbook: docs/runbooks/odoo-homolog.md (secao do funil comercial).
 # Declaracao (fonte unica das etapas, nada de etapa no codigo):
-#   odoo/crm/funil-transformativa.yaml  ->  na VPS: /opt/tre/homolog/odoo/crm/funil-transformativa.yaml
+#   odoo/crm/funil-transformativa.yaml  ->  na VPS: /opt/tre/homolog/repo/odoo/crm/funil-transformativa.yaml
 #
 # Roda NA VPS (precisa de `docker` e da arvore /opt/tre/homolog); o container do Hermes apenas
 # orquestra por SSH (ADR-0008). Nao toca o dev nem a producao: por construcao so opera
@@ -17,15 +17,15 @@
 # Variaveis (opcionais):
 #   TRE_ODOO_COMPOSE  (padrao /opt/tre/homolog/compose/odoo.yml)
 #   TRE_ODOO_ENV      (padrao /opt/tre/homolog/compose/odoo.env)
-#   TRE_CRM_YAML      (padrao /opt/tre/homolog/odoo/crm/funil-transformativa.yaml)
-#   TRE_CRM_ORM       (padrao /opt/tre/homolog/scripts/aplicar_funil_crm.py)
+#   TRE_CRM_YAML      (padrao /opt/tre/homolog/repo/odoo/crm/funil-transformativa.yaml)
+#   TRE_CRM_ORM       (padrao /opt/tre/homolog/repo/scripts/provision/aplicar_funil_crm.py)
 #   TRE_ODOO_BANCO    (padrao odoo_homolog)
 set -euo pipefail
 
 COMPOSE="${TRE_ODOO_COMPOSE:-/opt/tre/homolog/compose/odoo.yml}"
 ENVFILE="${TRE_ODOO_ENV:-/opt/tre/homolog/compose/odoo.env}"
-YAML="${TRE_CRM_YAML:-/opt/tre/homolog/odoo/crm/funil-transformativa.yaml}"
-ORM="${TRE_CRM_ORM:-/opt/tre/homolog/scripts/aplicar_funil_crm.py}"
+YAML="${TRE_CRM_YAML:-/opt/tre/homolog/repo/odoo/crm/funil-transformativa.yaml}"
+ORM="${TRE_CRM_ORM:-/opt/tre/homolog/repo/scripts/provision/aplicar_funil_crm.py}"
 BANCO="${TRE_ODOO_BANCO:-odoo_homolog}"
 EVID="/opt/tre/homolog/evidencias/funil-crm-20261006"
 
