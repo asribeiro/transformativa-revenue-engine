@@ -1,0 +1,255 @@
+--- /tmp/_patch_antes.py	2026-10-05 20:26:02.808182796 +0000
++++ /tmp/_patch_depois.py	2026-10-05 20:26:03.437185563 +0000
+@@ -179,11 +179,68 @@
+     "validation",
+     "candidate",
+     "human_approval",
++    # Promocao de release: item DONE e release PRODUCTION_PROMOTED no artefato.
++    "production",
+     "done",
+ ]
+ 
+ _CARD_SUMMARY_PREVIEW_CHARS = 200
+ 
++# --- RAIZ DO REGISTRO DE ENTREGAS (DECLARADA) -------------------------------
++# Os artefatos de entrega (`<raiz>/control-plane/deliveries/*.json`) vivem no
++# REPOSITORIO do projeto, nao no plugin do dashboard. O plugin so precisa saber
++# ONDE essa raiz esta -- e a resposta depende do board renderizado, porque cada
++# board pertence a um repositorio.
++#
++# Ate 29/09/2026 a resposta era um caminho fixo, literal dentro de cada helper
++# (a raiz do projeto /workspace/financial-dash), o que amarrava a projecao de
++# entrega a UM projeto: o board de qualquer outro repositorio nunca alcancava
++# evidencia terminal e todo card fechado ficava preso na projecao VALIDATION,
++# mesmo com a evidencia ja escrita no repo dele.
++#
++# A raiz agora e DECLARADA, nesta ordem de precedencia (a primeira que existir vence):
++#   1. `delivery_repo` no `board.json` do board renderizado -> a raiz fica
++#      declarada junto do board; e isto que substitui o caminho literal;
++#   2. env `HERMES_DELIVERIES_ROOT` -> override do processo (board ainda nao
++#      declarado, fixtures e testes). `HERMES_DELIVERY_REPO` continua aceito: foi
++#      o nome do override que rodou entre 29/09/2026 e a entrada deste conserto;
++#   3. `_LEGACY_DELIVERIES_ROOT` -> compatibilidade com o unico consumidor que
++#      existia quando a projecao foi escrita.
++#
++# Fail-closed intacto: nada aqui inventa evidencia. Raiz inexistente, sem
++# `control-plane/deliveries/` ou artefato ilegivel => os helpers devolvem vazio e
++# o card nativo `done` com pai de dependencia continua projetado em VALIDATION.
++
++_LEGACY_DELIVERIES_ROOT = Path("/workspace/financial-dash")
++_DELIVERIES_ENV_VARS = ("HERMES_DELIVERIES_ROOT", "HERMES_DELIVERY_REPO")
++
++
++def _delivery_repo_root(board: Optional[str] = None) -> Path:
++    """Raiz do registro de entregas do board (ver bloco acima).
++
++    Resolve apenas ONDE ler. Quem decide se a entrega acabou continuam sendo os
++    campos do artefato, por item, exatamente como antes.
++    """
++    import os
++
++    if board:
++        try:
++            meta_path = kanban_db.board_metadata_path(board)
++            if meta_path.is_file():
++                meta = json.loads(meta_path.read_text()) or {}
++                valor = str(meta.get("delivery_repo") or "").strip()
++                if valor:
++                    return Path(valor).expanduser()
++        except Exception as exc:  # metadado ausente/invalido nunca derruba o board
++            log.warning("delivery_repo invalido no board %s: %s", board, exc)
++
++    for nome in _DELIVERIES_ENV_VARS:
++        env = str(os.environ.get(nome) or "").strip()
++        if env:
++            return Path(env).expanduser()
++
++    return _LEGACY_DELIVERIES_ROOT
++
+ # --- PROJECAO DE ENTREGA (ASR/Transformativa) -------------------------------
+ # Ciclo de entrega do board: validation -> candidate -> human_approval -> done.
+ # Os tres primeiros sao PROJECAO calculada a partir do artefato de entrega
+@@ -194,12 +251,13 @@
+ 
+ def _delivery_production_done_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Return explicitly promoted native Kanban task ids."""
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+     if not deliveries_dir.is_dir():
+@@ -207,7 +265,7 @@
+ 
+     result: set[str] = set()
+ 
+-    for delivery_file in sorted(deliveries_dir.glob("*.json")):
++    for delivery_file in _artifact_files(deliveries_dir):
+         try:
+             delivery = json.loads(delivery_file.read_text())
+         except Exception:
+@@ -229,6 +287,7 @@
+ 
+ def _delivery_explicit_done_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Return task ids whose delivery artifact explicitly states DONE.
+ 
+@@ -244,7 +303,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -253,7 +312,7 @@
+ 
+     result: set[str] = set()
+ 
+-    for delivery_file in sorted(deliveries_dir.glob("*.json")):
++    for delivery_file in _artifact_files(deliveries_dir):
+         try:
+             delivery = json.loads(delivery_file.read_text())
+         except Exception:
+@@ -289,6 +348,7 @@
+ 
+ def _delivery_terminal_task_ids(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> set[str]:
+     """Every kind of explicit evidence that makes a native ``done`` terminal.
+ 
+@@ -297,12 +357,44 @@
+     fail-closed projection in VALIDATION honest.
+     """
+     return _delivery_production_done_task_ids(
+-        repo_root
+-    ) | _delivery_explicit_done_task_ids(repo_root)
++        repo_root, board
++    ) | _delivery_explicit_done_task_ids(repo_root, board)
++
++
++_SNAPSHOT_MARCADORES = (".bak-", ".bak.", ".orig", ".old", "~", ".tmp", ".swp", ".save")
++
++
++def _artifact_files(deliveries_dir: Path) -> list:
++    """Artefatos de entrega vigentes: um por ``delivery_id``, o mais recente.
++
++    Ignora snapshots/backups que estejam na pasta. Medido em 02/10/2026: um
++    `.bak-*.json` com `current_gate: VALIDATION` estacionava 4 cards na coluna de
++    validação para sempre, porque o glob tratava o snapshot como entrega vigente.
++    """
++    import json as _json
++
++    melhores: dict = {}
++    sem_id: list = []
++    for f in sorted(deliveries_dir.glob("*.json")):
++        if any(m in f.name.lower() for m in _SNAPSHOT_MARCADORES):
++            continue
++        try:
++            d = _json.loads(f.read_text())
++        except Exception:
++            continue
++        did = str(d.get("delivery_id") or "").strip()
++        if not did:
++            sem_id.append(f)
++            continue
++        atual = str(d.get("updated_at") or "")
++        if did not in melhores or atual > melhores[did][0]:
++            melhores[did] = (atual, f)
++    return sorted([p for _, p in melhores.values()] + sem_id)
+ 
+ 
+ def _delivery_lifecycle_task_columns(
+     repo_root: Optional[Path] = None,
++    board: Optional[str] = None,
+ ) -> dict[str, str]:
+     """Return presentation-only delivery lifecycle projections.
+ 
+@@ -329,7 +421,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -338,7 +430,7 @@
+ 
+     result: dict[str, str] = {}
+ 
+-    for delivery_file in sorted(deliveries_dir.glob("*.json")):
++    for delivery_file in _artifact_files(deliveries_dir):
+         try:
+             delivery = json.loads(delivery_file.read_text())
+         except Exception:
+@@ -424,7 +516,7 @@
+     return result
+ 
+ 
+-def _delivery_human_approval_task_ids(repo_root: Optional[Path] = None) -> set[str]:
++def _delivery_human_approval_task_ids(repo_root: Optional[Path] = None, board: Optional[str] = None) -> set[str]:
+     """Return Hermes task ids representing deliveries awaiting human approval.
+ 
+     Presentation-only projection.  This MUST NOT create a Hermes status or
+@@ -438,7 +530,7 @@
+     import json
+ 
+     if repo_root is None:
+-        repo_root = Path("/workspace/financial-dash")
++        repo_root = _delivery_repo_root(board)
+ 
+     deliveries_dir = repo_root / "control-plane" / "deliveries"
+ 
+@@ -447,7 +539,7 @@
+ 
+     result: set[str] = set()
+ 
+-    for delivery_file in sorted(deliveries_dir.glob("*.json")):
++    for delivery_file in _artifact_files(deliveries_dir):
+         try:
+             delivery = json.loads(delivery_file.read_text())
+         except Exception:
+@@ -615,8 +707,9 @@
+         # truncated preview, the full text comes from /tasks/:id.
+         summary_map = kanban_db.latest_summaries(conn, [t.id for t in tasks])
+         # Uma leitura do artefato de entrega por request (nao por card).
+-        lifecycle_columns = _delivery_lifecycle_task_columns()
+-        terminal_ids = _delivery_terminal_task_ids()
++        lifecycle_columns = _delivery_lifecycle_task_columns(board=board)
++        terminal_ids = _delivery_terminal_task_ids(board=board)
++        production_ids = _delivery_production_done_task_ids(board=board)
+         for t in tasks:
+             full = summary_map.get(t.id)
+             d = _task_dict(t, latest_summary=(full[:_CARD_SUMMARY_PREVIEW_CHARS] if full else None))
+@@ -653,14 +746,20 @@
+                 if dependency_parents:
+                     projected = "validation"
+ 
++            # Promocao a producao: evidencia terminal mais forte que existe.
++            # Sai da coluna nativa 'done' e ganha a coluna propria -- visivel.
++            if t.status == "done" and t.id in production_ids:
++                projected = "production"
++
+             col = (
+                 projected
+-                if projected in {"validation", "candidate", "human_approval"}
++                if projected in {"validation", "candidate", "human_approval", "production"}
+                 else (t.status if t.status in columns else "todo")
+             )
+             d["delivery_validation"] = col == "validation"
+             d["delivery_candidate"] = col == "candidate"
+             d["delivery_human_approval"] = col == "human_approval"
++            d["delivery_production"] = col == "production"
+ 
+             columns[col].append(d)
+ 

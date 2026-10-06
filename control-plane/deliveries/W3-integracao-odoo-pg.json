@@ -1,0 +1,520 @@
+{
+  "delivery_id": "TRE-W3",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W3 — Integracao Odoo -> PostgreSQL (n8n)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-03",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote RLS/tenant/isolamento"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W3-E04-T01",
+      "title": "Criar reconciliation job (n8n)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_2ee17829",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-reconciliacao.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas) nas 2 passadas. Cobre passo 0/0b/0c/0d (lente estrutural, suite do nucleo, montador e prova de dente) e estados A-G (espelho saudavel OK, E1/E2/E4/I1/P1-P4 e porta unica fora do ar -> INDETERMINADO fail-closed). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+          "verification": {
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-reconciliacao.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
+                "gate": "bash scripts/n8n/verificar-reconciliacao.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: RECONCILIACAO_OK (96 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E03-T01",
+      "title": "Implementar Odoo→PG events",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_85cb2838",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-odoo-eventos.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: EVENTOS_ODOO_PG_OK (85 itens, 0 falhas) nas 2 passadas. Cobre passos A-F (7 eventos Odoo->PG na fila do Odoo, entrega pela porta unica, idempotencia/replay sem duplicata, recusas 422+REFUSED, retry com a porta fora do ar). saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+          "verification": {
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-odoo-eventos.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
+                "gate": "bash scripts/n8n/verificar-odoo-eventos.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: EVENTOS_ODOO_PG_OK (85 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E02-T01",
+      "title": "Implementar outbox consumer n8n",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_ba84b412",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Cobre ciclos 1-4: entrega ponta a ponta (E1/E2 PROCESSED + parceiro no CRM + trilha COMPLETED), recusas nomeadas (E3-E7 DEAD_LETTER/REFUSED), retry transitorio (E8) e teto de tentativas (E9), com contagem das chamadas autenticadas e prova de serializacao do lote. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+          "verification": {
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E02-T02",
+      "title": "Implementar idempotency (dedup por idempotency_key)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_3bde06ab",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E executado na VPS de dev por execucao real: `bash scripts/n8n/verificar-outbox-consumer.sh` (trio DESCARTÁVEL proprio postgres+Odoo+n8n, nomes/portas proprios, --rm), DUAS passadas independentes, exit 0 em ambas. RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) nas 2 passadas. Mesmo harness do T01; cobre o AC9 (dedup por idempotency_key) no ciclo 5: E1 com chave COMPLETED volta a fila -> REPLAY sem nova chamada/linha/escrita no CRM; E7 com chave REFUSED volta a ser entregue. saida das 2 passadas comparada apos normalizar nomes de container/rede/tmp/log e valores volateis embutidos nas medidas (uuid de linha, timestamp e intervalo em ms); as listas de itens OK/FALHOU sao identicas entre as passadas.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+          "verification": {
+            "commit": "391e0d2903c7eb9a04a6b207cc38b9b285de6bb5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): repo em copia descartavel /tmp/tre_e2e_<ts>/repo (git archive de 391e0d2, 11M); trio DESCARTÁVEL proprio por rodada (postgres:16@sha256:1a6ab3f5 + odoo:19.0@sha256:77bac5cd + n8nio/n8n:latest@sha256:6f532d3b) com nomes, portas e rede PROPRIOS (e04t01-*/tre-e03-*/e02t02-*, --rm nos descartaveis); containers do dev (pg-odoo-dev/odoo-dev/pg-sales-dev/proxy-dev/pg-wa-probe) INTOCADOS; nenhuma escrita em sales_intelligence do dev/producao; homolog/prod sem arquivo novo; nenhum segredo em claro.",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "pre-flight de codigo OK (lente/suite do nucleo/montador; no reconciliacao tambem a prova de dente)"
+              },
+              {
+                "gate": "bash scripts/n8n/verificar-outbox-consumer.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: OUTBOX_CONSUMER_OK (97 itens, 0 falhas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E05-T01",
+      "title": "Criar observabilidade de sync",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_0b77a689",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da observabilidade de sincronizacao (TRE-W3-E05-T01) medido por EXECUCAO REAL num trio DESCARTÁVEL proprio (postgres:16 + n8nio/n8n:latest, nomes/banco/rede proprios): o workflow versionado e' o montado agora pelos artefatos versionados (lente estrutural); os estados A..H produzem o veredito atribuivel (pior sinal: A OK, B ATENCAO, C CRITICO por dead-letter SEM motivo, D ATENCAO por dead-letter COM motivo, E/F/G/H CRITICO) e a medicao e' replicada pelos DOIS caminhos (consulta direta no psql x relatorio do workflow no n8n); retrato das duas tabelas IDENTICO antes/depois (somente leitura); ambiente do dev intocado (lista de bancos identica), homolog/prod sem arquivo novo, nenhum segredo em claro no cofre do n8n descartavel.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "3d64b8d48b376a3ed09916d1ae9f947623c89475",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote3/repo (git archive de 3d64b8d); trio DESCARTÁVEL proprio (postgres:16 + n8nio/n8n:latest) com rede/banco/nomes proprios (rede e05t01-<rand>, banco tre_obs_<rand>, --rm), dev/homolog/producao medidos ANTES e DEPOIS; containers do dev INTOCADOS; duas passadas identicas (saida normalizada por nome do banco descartavel/tmp/repo).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/n8n/verificar-observabilidade-sync.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: OBSERVABILIDADE_SYNC_OK (119 itens, 0 falhas) — exit 0 nas 2 passadas independentes (saida identica apos normalizacao do nome do banco descartavel)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T01",
+      "title": "Criar API controlada Odoo",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e0489efc",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da API controlada do Odoo (AC1..AC8) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0, rede/banco/nomes proprios): superficie fechada e declarada (1 rota, so' POST, politica versionada com ambiente unico dev); 0 SQL nos arquivos da API (so' ORM); filtro por campo declarado (campo/operador fora da declaracao recusa); credencial fora do repo/log (auth=bearer, 401 sem token, chave ausente do log/resposta); guarda de ambiente ADR-005; contrato de integracao (idempotency_key na escrita, dry_run nao escreve, correlation_id ecoado); rastro (UMA linha TF_API_AUDIT por chamada, sem token/payload); ambiente de execucao intocado (dev/homolog/prod medidos antes e depois). DUAS passadas identicas (exit 0 em ambas; 75 itens OK cada) e prova de dente 3/3.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t01_api imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_OK (75 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-api-controlada.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T02",
+      "title": "Implementar company upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_cdc21b43",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `empresa_upsert` (AC1..AC8) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada com requer_idempotency_key (mesma porta unica); identidade declarada (sem identificador -> 422 identificador_ausente); upsert idempotente por identidade (0 duplicata medida no banco); ambiguidade -> 409 valor_ambiguo e NADA escrito; semantica de empresa (is_company=true, divergencia -> 422 campo_fixo_divergente); idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005 e UMA linha TF_API_AUDIT por chamada; ambiente intocado. DUAS passadas identicas (exit 0 em ambas; 104 itens OK cada) e prova de dente 3/3 (+2 controles do proprio harness).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_OK (104 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t02_empresa imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_OK (104 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-empresa-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: EMPRESA_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T03",
+      "title": "Implementar contact upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e6e3b0b3",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `contato_upsert` (AC1..AC9) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada com requer_idempotency_key; identidade = `email` (sem valor -> 422 identificador_ausente; `identificador` escalar NAO substitui a identidade por lista); upsert idempotente (1 registro por e-mail depois de N chamadas); ambiguidade -> 409 valor_ambiguo e nada escrito/alterado; semantica de contato (is_company=false, divergencia -> 422 campo_fixo_divergente); idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005 (503 fora da politica, sem escrita); rastro TF_API_AUDIT sem token e SEM DADO PESSOAL; compliance do schema PG e' recusa nomeada (422). DUAS passadas identicas (exit 0 em ambas) e prova de dente 3/3 (+2 controles).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_OK (110 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t03_contato imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_OK (110 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-contato-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: CONTATO_UPSERT_DENTE_OK (3 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T04",
+      "title": "Implementar opportunity upsert",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_8b2ed1b7",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "RESOLVIDO no lote 5. A ancora do dente 3 (`controlador-sem-upsert`) do aceite foi corrigida para o codigo ATUAL: o ramo \"ha' registro casado -> ATUALIZA\" de `_executar_upsert` em controllers/api_controlada.py passou a ser ancorado em `if registros:` (logo abaixo da guarda de ambiguidade `if len(registros) > 1:`), com a MESMA intencao do antigo `if existentes:` (desligar o ramo de atualizacao -> cria sempre -> duplicata). A ancora continua EXATA: mutacao que nao aplica reprova o harness (fail-closed). PROVAS no commit 903424e (copia isolada /tmp/tre_lote5/repo): (1) `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` -> exit 0, `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas)`; o dente 3 reprova o item nomeado 'segunda chamada nao atualizou' com 96 itens medidos; (2) PROVA NEGATIVA da propria reparacao: com a mutacao (`if registros:` -> `if False:`) aplicada A MAO numa copia do modulo, `--apenas-http` -> exit 1, `RESULTADO: OPORTUNIDADE_UPSERT_FALHOU (108 itens, 12 falhas)`, entre elas 'FALHOU segunda chamada nao atualizou' — o aceite REPROVA a mutacao como esperado; (3) DUAS passadas identicas do aceite normal: exit 0 nas duas, 125 itens OK cada, saida BYTE-IDENTICA, `RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)`.\n\n[HISTORICO DO VEREDITO BLOCKED — lote 4, PRESERVADO INTEGRALMENTE]\nNAO APROVADO nesta rodada. O aceite E2E da operacao `oportunidade_upsert` (AC1..AC8) PASSA por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): operacao declarada/versionada (modelo crm.lead, identidade tf_opportunity_id, chave exigida); identidade canonica por UUID; upsert por identidade (N chamadas -> UM registro; atualizacao parcial); fronteira de dono; idempotency_key/dry_run/correlation_id; guarda de ambiente ADR-005; UMA linha TF_API_AUDIT por chamada; ambiente intocado — DUAS passadas identicas (exit 0 em ambas; 125 itens OK cada). MAS a PROVA DE DENTE REPROVOU: `bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente` saiu exit 1 com `RESULTADO: OPORTUNIDADE_UPSERT_DENTE_FALHOU (2 problema(s) em 3 provas)` — o dente 3 (`controlador-sem-upsert`) NAO conseguiu nem aplicar a mutacao: a ancora de texto '            if existentes:' nao existe mais em controllers/api_controlada.py (hoje o controlador usa `if len(existentes) != 1:`), logo a prova NAO mede o que nomeia e o harness falha fechado (MUTACAO_NAO_APLICADA + 'o aceite NAO reprovou com a mutacao'). Defeito do PROPRIO VERIFICADOR (ancora de dente apodrecida apos o fecho do card), nao do aceite. Pela regra do lote ('dente que nao reprova = check que nao vale'), o card NAO recebe PASS.\n\n[PRE-CONDICAO REGISTRADA NO BLOCKED — cumprida no lote 5]\nCorrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 5 — destrava do BLOCKED W3-E01-T04 + agentes W4 + E2E SI)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "903424ee4834ced1648d370b5ceae19bd4e7e8d1",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote5/repo (git archive de 903424ee4834ced1648d370b5ceae19bd4e7e8d1, 11M). Os aceites sobem containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas por aceite (saida normalizada por nome de container/pid/porta/uuid/timestamp; no lote 5 as passadas sairam BYTE-IDENTICAS).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 1, apos conserto da ancora)",
+                "exit": 0,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t04_oportunidade imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA a passada 1 (sha256 A3_pass1==A4_pass2); RESULTADO: OPORTUNIDADE_UPSERT_OK (125 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-oportunidade-upsert.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: OPORTUNIDADE_UPSERT_DENTE_OK (3 provas, 0 falhas): dente 1/2 OK; dente 3 'controlador-sem-upsert' (ancora nova `if registros:`) reprova o item 'segunda chamada nao atualizou' com 96 itens medidos"
+              },
+              {
+                "gate": "PROVA NEGATIVA (mutation aplicada a mao na copia; ESPERA-SE exit != 0)",
+                "exit": 1,
+                "resultado": "mutacao `if registros:` -> `if False:` numa copia do modulo; `--apenas-http` -> RESULTADO: OPORTUNIDADE_UPSERT_FALHOU (108 itens, 12 falhas); entre elas 'FALHOU segunda chamada nao atualizou' — reprovacao esperada da prova negativa"
+              }
+            ]
+          },
+          "pre_condicao_cumprida": "Corrigir a ancora do dente 3 em scripts/odoo/verificar-oportunidade-upsert.sh/--prova-de-dente (ancora 'if existentes:' -> a checagem de identidade atual do controlador), re-rodar `--prova-de-dente` ate DENTE_OK (3 provas) e so entao promover a PASS."
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E01-T05",
+      "title": "Implementar activity create",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_cb615018",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "Aceite E2E da operacao de escrita de negocio `atividade_criar` (AC1..AC9) por EXECUCAO REAL numa dupla DESCARTALVEL propria (postgres:16 + odoo:19.0): superficie fechada com ancora DECLARADA (res_model fixo da politica; res_id obrigatorio -> 422 campo_obrigatorio_ausente; campo fora da declaracao -> 422 campo_nao_declarado); a atividade NASCE no modelo declarado (medido no banco em mail_activity.res_model/res_id); idempotency_key/dry_run/correlation_id registrados na atividade; guarda de ambiente ADR-005 na escrita (503, nada criado); UMA linha TF_API_AUDIT por chamada sem payload; ACL respeitada (recusa 403 nomeada, sem sudo()); lacunas MEDIDAS (o REPLAY da mesma chave ainda cria segunda atividade; ancora crm.lead nao e' servida -> recusa nomeada). DUAS passadas identicas (exit 0 em ambas) e prova de dente 4/4.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+          "eixo_de_risco": "INTEGRACAO",
+          "verification": {
+            "commit": "dab62fd109bfa0cec610f7c43af6b6711253ad77",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): copia isolada /tmp/tre_lote4/repo (git archive de dab62fd109bfa0cec610f7c43af6b6711253ad77, 11M); o aceite sobe containers DESCARTALVEIS proprios (postgres:16 e/ou odoo:19.0) com nomes/banco/rede proprios e --rm na limpeza; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas (saida normalizada por nome de container/pid/porta/uuid/timestamp).",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_e01_t05_atividade imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_OK (119 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-atividade-criar.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ATIVIDADE_CRIAR_DENTE_OK (4 provas + 2 controles do proprio harness, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W3-E06-T01",
+      "title": "Executar E2E Foundation #001",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_fcbe3d7d",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "INTEGRACAO",
+          "evidence": "Aceite E2E 'Foundation #001' (doc 08 §3, passos 1..3 e 11..19 + o sentido Odoo->PG pela porta de ingestao) executado por EXECUCAO REAL num UNICO trio DESCARTALVEL proprio (postgres:16 + odoo:19.0 com o modulo transformativa_sales_ai instalado + n8nio/n8n:latest com os 4 workflows importados) — o mesmo banco, o mesmo n8n e o mesmo Odoo do primeiro ao ultimo passo. Os passos 4..10 (research/scores/tier/NBA/pain) aparecem como 2 linhas DECLARADAS fora do escopo, nunca como OK: PASS aqui significa 'a fundacao fecha o caminho ponta a ponta e nao duplica', NAO o doc 08 §3 inteiro. Passo 0 roda os gates do projeto (estrutura/secret/papeis/contrato) e os 4 aceites de origem em --apenas-codigo; o cenario cobre: organizacao da ACME por UUID canonico (AC2), evento COMPANY_QUALIFIED -> consumidor n8n -> POST /tf/api/v1/empresa_upsert gravando UM res.partner com tf_company_id = UUID (porta unica como unico caminho de escrita, AC3), contato_upsert e atividade_criar pela MESMA porta (AC4), trilha sync_events COMPLETED com o id do Odoo (AC5), ZERO duplicatas por REPLAY do evento e do envelope Odoo->PG (AC6), fail-closed DEAD_LETTER para evento sem event_version SEM chamar a porta (AC7), reconciliacao E04 com 0 divergencia e observabilidade E05 OK na rodada saudavel (AC8), regressao das 4 portas em --apenas-codigo no MESMO run (AC9) e ambiente descartavel com sha256 reconferido e nenhum arquivo em homolog/producao (AC10). DUAS passadas identicas (exit 0 em ambas; 139 itens, 0 falhas, 2 passos DECLARADOS fora do escopo cada; saida normalizada identica, sha256 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0 nas duas) e prova de dente 3/3 (baseline NAO mutado verde + 3 mutacoes nomeadas do consumidor, cada uma reprovando O ITEM ESPERADO). Historico do BLOCKED: o card nasceu como alvo de maior risco do lote 5 e e' fechado aqui sem nenhum registro de BLOCKED anterior.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 6 — E2E Foundation #001 + outbound W6)",
+          "verification": {
+            "commit": "b1cb7f7051d8bf58bdfaf7fcef878437a70574fa",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone isolado /tmp/tre_lote6/repo em b1cb7f7 (bundle git do develop, 14M). Cada aceite sobe containers DESCARTALVEIS proprios (postgres:16 e, no E2E Foundation, tambem odoo:19.0 + n8nio/n8n:latest), com nomes/banco/rede proprios; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas por aceite (saida normalizada por nome de container/rede/pid/porta/uuid/timestamp/hash de fixture aleatoria). Higiene: os descartaveis sao removidos com 'docker rm -f -v' (commit b1cb7f7) — volumes dangling medidos em 1802 antes e 1802 depois da rodada (zero crescimento); nenhum container ficou de pe (docker ps -aq = 5, so' os do dev).",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh --apenas-codigo",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_OK (9 itens, 0 falhas) — gate estrutura OK + regressao das 4 portas (OUTBOX_CONSUMER_OK / EVENTOS_ODOO_PG_OK(28) / RECONCILIACAO_OK(37) / OBSERVABILIDADE_SYNC_OK(3))"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh (passada 1, cenario completo)",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas, 2 passo(s) declarado(s) fora do escopo) banco=tre_e06_e2e banco_si=sales_intelligence imagens=odoo:19.0+postgres:16+n8nio/n8n:latest"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida normalizada BYTE-IDENTICA a passada 1 (sha256 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0 == 25208afb5bdb549d3b0503f1b7ccd472de46f19794a6f2f5e9b7a241da5612d0); RESULTADO: E2E_FOUNDATION_001_OK (139 itens, 0 falhas)"
+              },
+              {
+                "gate": "bash scripts/e2e/verificar-e2e-foundation-001.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: E2E_FOUNDATION_001_DENTE_OK (3/3 dentes cumpridos; juiz conferido; baseline nao mutado verde). DENTE_CUMPRIDO em: sem_validacao_de_envelope (reprova 'evento sem event_version vai para DEAD_LETTER sem chamada'), mapeamento_trocado (reprova 'o parceiro nasceu com o dominio do evento'), sem_consulta_de_trilha (reprova 'repetir o evento NAO duplica')"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:44:52+00:00",
+      "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+      "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_2ee17829",
+        "t_85cb2838",
+        "t_ba84b412",
+        "t_3bde06ab"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "W3_E2E_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:31:05+00:00",
+      "by": "Hermes — E2E W3 (trio descartavel na VPS de dev)",
+      "scope": "E2E da W3 (n8n) em trio descartavel proprio na VPS de dev; 2 passadas independentes por card; evidencia: exit 0",
+      "cards": [
+        "t_2ee17829",
+        "t_85cb2838",
+        "t_ba84b412",
+        "t_3bde06ab"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T16:00:33+00:00",
+      "by": "Hermes — validacao integrada (lote 3 — scores W5 e observabilidade W3)",
+      "scope": "lote 3 — validacao integrada (scores W5 e observabilidade W3)",
+      "cards": [
+        "t_0b77a689"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 4 — prova de dente W5 + NBA + API controlada Odoo)",
+      "scope": "lote 4 — prova de dente dos 6 aceites da W5 + W5-E07/E08 (NBA) + W3-E01 (API controlada Odoo)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T17:13:36+00:00",
+      "cards": [
+        "t_e0489efc",
+        "t_cdc21b43",
+        "t_e6e3b0b3",
+        "t_8b2ed1b7",
+        "t_cb615018"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 5 — destrava do BLOCKED W3-E01-T04 + agentes W4 + E2E SI)",
+      "scope": "lote 5 — destrava do BLOCKED W3-E01-T04 (oportunidade upsert) + agentes W4 (eixo 3) + E2E Sales Intelligence (eixo 2)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T17:55:39+00:00",
+      "cards": [
+        "t_8b2ed1b7",
+        "t_fd3e41f0",
+        "t_d9be7d3c",
+        "t_61a620b4",
+        "t_b4e01433",
+        "t_1a85a424",
+        "t_a32ae24f"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 6 — E2E Foundation #001 + outbound W6)",
+      "scope": "lote 6 — E2E Foundation #001 (W3) + outbound/canais W6 (eixo 2)",
+      "production_promotion_authorized": false,
+      "at": "2026-10-03T18:52:12+00:00",
+      "cards": [
+        "t_fcbe3d7d"
+      ]
+    }
+  ]
+}

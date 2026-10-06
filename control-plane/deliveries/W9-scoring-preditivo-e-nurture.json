@@ -1,0 +1,184 @@
+{
+  "delivery_id": "W9-scoring-preditivo-e-nurture",
+  "project": "TRE",
+  "release": "V1.1.0",
+  "wave": "W9",
+  "release_status": "in_validation",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-05",
+  "human_approval": null,
+  "work_items": [
+    {
+      "id": "TRE-W9-E01-T01",
+      "title": "Score calibration",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_f599bd02",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Exigencia literal (comentario 361 do card): `ACEITE_CALIBRACAO_SCORE_OK` (0 falhas) com gate de volume medido e recusado quando a base nao sustenta, pesos por grade do simplexo (passo 0,05, 1771 vetores), AUC contra Won/Lost, corte ajuste/validacao por sha256 e margem exigida NA VALIDACAO, faixas por Youden recursivo cobrindo 0..100, leitura pura provada por snapshot + transacao READ ONLY, determinismo, sem PII e proposta NAO aplicada (`aplicado: false`, `aprovacao_humana: pendente`). MEDIDO no commit do card (2d6451b): suite offline `VERIFICADOR_CALIBRACAO_PASS (51 itens, 0 falhas)` + `AUTOTESTE 7/7 mutacoes detectadas` em DUAS passadas com sha256 IDENTICO cru; aceite E2E `ACEITE_CALIBRACAO_SCORE_OK (32 itens, 0 falhas)` x2, identicas apos normalizar so' o nome do container e o dir-base. DENTES QUE MORDEM (2 mutacoes independentes no alvo): revertendo a margem -> `VERIFICADOR_CALIBRACAO_FALHOU (50 itens, 1 falhas)` com 'ganho na validacao abaixo da margem (anti-overfitting)'; afrouxando o gate de volume -> `FALHOU (50 itens, 1 falhas)` com motivo nomeado 'CLASSE_LOST_ABAIXO_DO_MINIMO'. LIMITACAO DECLARADA: o aceite foi parametrizado no nome do container (default preservado) por haver agentes paralelos na VPS; a 1a tentativa com nome fora do padrao foi RECUSADA pelo proprio guard (`CONTAINER_NAO_LOCAL_DE_DEV`) — limitacao do setup, nao do artefato. Baseline inicio=fim=5/7/0/4.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/teste_calibracao_score_aceite.sh + verificar_calibracao_score.py --autoteste",
+            "medicao": "ACEITE_CALIBRACAO_SCORE_OK (32 itens, 0 falhas) x2; offline PASS (51 itens, 0 falhas) + AUTOTESTE 7/7 x2",
+            "dente": "MORDE x2 (margem e gate de volume)",
+            "commit_medido": "2d6451b",
+            "log": "/tmp/tre_lote14/agentG/logs/{suite_pass1,aceite_pass1,dente_margem,dente_gate}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E02-T01",
+      "title": "Predictive scoring",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_2821c15b",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Exigencia literal (comentario 368): `ACEITE_PONTUACAO_PREDITIVA_OK` (35 itens, 0 falhas), base insuficiente => exit 6 SEM modelo/avaliacao/previsao, pesos vindos do RELATORIO da calibracao, corte ajuste/validacao igual ao do relatorio (divergente => RECUSA), blocos PAVA monotonicos, bino sem base herdando o bloco anterior. MEDIDO no develop publicado (9e638f7): E2E `ACEITE_PONTUACAO_PREDITIVA OK (35 itens OK, 0 falhas)` x2 BYTE-IDENTICAS (sha256 2c818627...) e offline `VERIFICADOR_PONTUACAO_PASS (66 itens, 0 falhas) + autoteste OK (8/8 dentes)` x2 byte-identicas (0d70cdfa...) — nenhum token volatil precisou de normalizacao. DENTE QUE MORDE: afrouxando o portao de volume (`base_suficiente = True`), o E2E REPROVOU -> `ACEITE_PONTUACAO_PREDITIVA FALHOU (33 itens OK, 2 falhas)` com 'FALHOU coorte abaixo do minimo ABSTEVE (exit 6)' e 'FALHOU abstencao NAO produz modelo nem previsao'; o versionado nao foi tocado. ACHADO DE HIGIENE DECLARADO: o aceite deixa 1 volume anonimo por execucao (3 medidos numa janela de 3 passadas) apesar de o codigo usar `docker rm -f -v` — o subagente removeu os 3 por ID; baseline final medido por mim 5/7/0/4. LIMITACAO: o literal do aceite e' `ACEITE_PONTUACAO_PREDITIVA OK` (com espaco), nao `..._OK` como grafado no card.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/teste_pontuacao_preditiva_aceite.sh + verificar_pontuacao_preditiva.py --autoteste",
+            "medicao": "ACEITE_PONTUACAO_PREDITIVA OK (35 itens, 0 falhas) x2 byte-identicas; offline PASS (66 itens, 0 falhas) + autoteste 8/8 x2",
+            "dente": "MORDE: portao de volume afrouxado -> E2E FALHOU (33 itens OK, 2 falhas)",
+            "achado_higiene": "1 volume anonimo vazado por execucao apesar do `-v` no codigo (3 removidos por ID)",
+            "log": "/tmp/tre_lote14/agentH/logs/{e2e_pass1,e2e_pass2,off_pass1,dente_pass}.log",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E03-T01",
+      "title": "Best channel prediction",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_90b83807",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Exigencia literal (comentario 359): `ACEITE_PREVISAO_CANAL_OK` (0 falhas) com o requisito central 'opt-out e' bloqueio': canal bloqueado por opt_out_email/opt_out_whatsapp/do_not_contact NUNCA e' previsto e o bloqueio e' nomeado na saida. MEDIDO no develop publicado (9e638f7; zero diferenca nos arquivos do card vs o commit f0cc981): offline `RESULTADO: PASS (23 itens, 0 falhas)` + `AUTOTESTE 8/8 mutacoes detectadas` + `VERIFICADOR_PREVISAO_CANAL_PASS` x2 IDÊNTICAS byte-a-byte; E2E `RESULTADO: PASS (42 itens, 0 falhas)` + `ACEITE_PREVISAO_CANAL_OK` x2 (0 linhas divergentes apos normalizar so' o token volatil do TRE_ACEITE_BASE). DENTE QUE MORDE com mutacao INDEPENDENTE das 8 embutidas (do_not_contact sempre falso): offline `RESULTADO: FALHOU (21 itens, 2 falhas)` com 'do_not_contact bloqueia TODOS os canais' e E2E `RESULTADO: FALHOU (38 itens, 4 falhas)` + `ACEITE_PREVISAO_CANAL_FALHOU` (exit 1) — o MESMO aceite passa 42/0 no codigo bom. ACHADO CONFIRMADO NO CODIGO POR MIM: `teste_previsao_canal_aceite.sh` limpa com `docker rm -f` SEM `-v` (0 ocorrencias com `-v`, 2 sem) -> vaza 1 volume anonimo por rodada (o subagente removeu os 4 dele por ID). DESVIO DECLARADO PELO PROPRIO CARD (comentario 363): o aceite entregue NAO reexecuta o aceite do pai (ACEITE_FUNIL_OK), prometido no comentario de abertura; prova integracao por reconciliacao numerica. Baseline final medido por mim: 5/7/0/4.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/teste_previsao_canal_aceite.sh + verificar_previsao_canal.py --autoteste",
+            "medicao": "E2E PASS (42 itens, 0 falhas) -> ACEITE_PREVISAO_CANAL_OK x2; offline PASS (23 itens, 0 falhas) + AUTOTESTE 8/8 x2 byte-identicas",
+            "dente": "MORDE: do_not_contact sempre falso -> offline FALHOU (21, 2) e E2E FALHOU (38, 4)",
+            "defeito_no_aceite": "docker rm -f sem -v (0 com, 2 sem) vaza 1 volume anonimo por rodada",
+            "desvio_do_card": "nao reexecuta o aceite do pai (prometido no comentario de abertura; declarado no 363)",
+            "log": "/tmp/tre_lote14/agentI/logs/{I_off1,I_e2e1,I_dente,I_dente_offline}.log",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E04-T01",
+      "title": "Best timing",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_7722449b",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Duas passadas IDENTICAS (diff vazio, nenhum token volatil): offline `VERIFICADOR_MELHOR_HORARIO_PASS (29 itens, 0 falhas) + autoteste OK (6/6 mutacoes detectadas)` e E2E `ACEITE_MELHOR_HORARIO_001_OK (19 itens, 0 falhas)`, exit 0 nas quatro. DENTE MORDE com DUAS mutacoes independentes no alvo `hermes/analytics/melhor_horario.py`: (a) ignorar o offset do fuso -> `FALHOU (melhor horario v1: 29 itens, 8 falhas)`, primeira linha `V4 fuso -03:00 com virada de dia: sexta 02:00Z = quinta 23:00 local (esperado=2 obtido=0)`; (b) desligar o limite de amostra -> `FALHOU (melhor horario v1: 29 itens, 3 falhas)`, `V17 nenhuma celula com amostra -> ABSTEM (AMOSTRA_INSUFICIENTE)`. Os dois itens passam verdes na copia limpa, entao o dente nao e' falso positivo. A grade completa de 49 celulas, as duas marginais e a abstencao explicita estao medidos. Higiene: o aceite usa `docker rm -f -v` e o baseline fechou inicio == fim == 5/7/0/4. LIMITACAO DECLARADA: a prova negativa vive no autoteste offline — o shell E2E nao tem dente embutido (o proprio script declara); e o E2E semeia fixture SQL 'na forma dos contratos irmaos', entao a cadeia real SMTP/IMAP fica com W6-E07-T01.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/verificar_melhor_horario.py --autoteste (29 itens, 6 mutacoes) + teste_melhor_horario_aceite.sh (19 itens)",
+            "medicao": "offline VERIFICADOR_MELHOR_HORARIO_PASS (29, 0) + autoteste 6/6 x2 identicas; E2E ACEITE_MELHOR_HORARIO_001_OK (19 itens, 0 falhas) x2 identicas",
+            "dente": "MORDE (2 mutacoes independentes): offset ignorado -> FALHOU (29, 8); limite de amostra desligado -> FALHOU (29, 3)",
+            "log": "/tmp/tre_lote15/agentK/logs/{offline_pass1,offline_pass2,e2e_pass1,e2e_pass2,dente_offset,dente_amostra}.log",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E05-T01",
+      "title": "Automated nurture",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_632a199f",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Medido no commit declarado pelo card `cc346c7` (ancestral de develop), na copia isolada. Duas passadas BYTE-IDENTICAS (nenhum token volatil a normalizar): offline `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` com `AUTOTESTE OK (5/5 mutacoes detectadas)` e E2E `ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas)`. DENTE MORDE NAS DUAS CAMADAS com mutacao que reproduz a causa-raiz do requisito central 'NADA ENVIA' (`exige_aprovacao_humana: True` -> `False`, 2 ocorrencias): offline `VERIFICADOR_NUTRICAO_AUTOMATICA_FALHOU (42 itens, 1 falhas)` nomeando 'fila: TODO toque exige aprovacao humana e carrega as condicoes de parada do contrato'; E2E `ACEITE_NUTRICAO_AUTOMATICA_001_FALHOU (32 OK, 4 falhas)` com `P8 NADA ENVIA: todo toque exige aprovacao humana...` (+ cascata B3/B4/G3). Higiene: o aceite usa `docker rm -f -v` e NAO vazou volume; baseline inicio == fim == 5/7/0/4. ACHADO DE HIGIENE DO PROPRIO VERIFICADOR (declarado, nao consertado por estar fora de escopo): o `--autoteste` cria `tempfile.mkdtemp` e NAO limpa — vaza 5 diretorios por execucao (classe diferente do vazamento de volume, ja' cardado). LIMITACAO DE SETUP, nao do artefato: a primeira tentativa de aceite foi RECUSADA pelo guard do pai (`RECUSA CONTAINER_NAO_LOCAL_DE_DEV`, nome de container fora de `pg-(sales|funil|analytics|aceite)*`) — o guard pegou o setup.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/verificar_nutricao_automatica.py --autoteste (42 itens, 5 mutacoes) + teste_nutricao_automatica_aceite.sh (36 itens)",
+            "medicao": "offline VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42, 0) + autoteste 5/5 x2 byte-identicas; E2E ACEITE_NUTRICAO_AUTOMATICA_001_OK (36 itens, 0 falhas) x2 byte-identicas",
+            "dente": "MORDE nos dois niveis: exige_aprovacao_humana desligado -> offline FALHOU (42, 1) e E2E FALHOU (32 OK, 4 falhas)",
+            "achado_higiene": "o --autoteste vaza 5 diretorios temporarios por execucao (tempfile.mkdtemp sem cleanup)",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W9-E06-T01",
+      "title": "Qdrant commercial memory",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_b2c848da",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Medido na copia isolada no commit `ffd5d9e` (ancestral de develop; o componente em HEAD e' byte-identico ao commit, sha256 0bdf0656...). Duas passadas IDENTICAS por sha256 dos logs: offline `VERIFICADOR_MEMORIA_COMERCIAL_PASS (26 itens, 0 falhas)` + `AUTOTESTE 11/11 mutacoes detectadas`; E2E `RESULTADO: PASS (66 itens, 0 falhas)` + `ACEITE_MEMORIA_COMERCIAL_OK`, byte-identico SEM normalizacao (o aceite fixa --agora). DENTE MORDE NAS DUAS CAMADAS com mutacao independente que reverte o defeito #1 do proprio card (leitura por linha em vez de texto inteiro): offline `VERIFICADOR_MEMORIA_COMERCIAL_FALHOU (25 itens, 1 falhas)` (`FONTE_JSON_ILEGIVEL`) e E2E `RESULTADO: FALHOU (28 itens, 13 falhas)` + `ACEITE_MEMORIA_COMERCIAL_FALHOU`; o limpo passa 66/0. Amostra do aceite: 12 documentos, 4 tipos, contagem exata 12, snapshot canonico igual antes/depois (8/3/2/4), sessao READ ONLY recusou escrita, PII em lacuna. Baseline inicio == fim == 5/7/0/4. ACHADO DA MESMA CLASSE JA' CARDADA: `teste_memoria_comercial_aceite.sh` limpar() linha 45 usa `docker rm -f \"$PG\" \"$QD\"` SEM `-v` -> vaza 1 volume anonimo por E2E (quem vaza e' o postgres:16; o qdrant nao tem VOLUME); 3 medidos e removidos por ID. DRIFT COSMETICO declarado: o cabecalho do aceite diz '25 itens + 10 dentes' e o real e' 26 + 11.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/agentes/verificar_memoria_comercial.py --autoteste (26 itens, 11 mutacoes) + teste_memoria_comercial_aceite.sh (66 itens)",
+            "medicao": "offline PASS (26, 0) + 11/11 x2 mesmo sha256; E2E PASS (66, 0) + ACEITE_MEMORIA_COMERCIAL_OK x2 byte-identicas",
+            "dente": "MORDE nas duas camadas: leitura por linha revertida -> offline FALHOU (25, 1) e E2E FALHOU (28, 13)",
+            "achado_higiene": "limpar() sem -v vaza 1 volume anonimo por execucao E2E (arquivo ja' citado no card de conserto t_3148dbbf)",
+            "log": "/tmp/tre_lote16/agentM/logs/{offline_p1,offline_p2,aceite_p1,aceite_p2,aceite_dente}.log",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "DELIVERY_ARTIFACT_CREATED",
+      "by": "Hermes — validacao integrada do lote 14",
+      "scope": "artefato da onda W9 criado a pedido do dono (05/10/2026): a onda nao tinha artefato proprio. 6 cards (scoring preditivo, melhor canal, melhor horario, nurture automatico e memoria comercial no Qdrant), todos done no board e sem veredito. Nome do delivery escolhido pelo agente a partir dos temas dos cards; renomeavel.",
+      "at": "2026-10-05T17:25:00+00:00",
+      "production_promotion_authorized": false
+    }
+  ]
+}

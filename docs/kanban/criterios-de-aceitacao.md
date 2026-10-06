@@ -190,6 +190,21 @@ com o limiar em 0,90; a suíte ganhou a sabotagem `detalhe`. Registrado como **D
 - UFW com regras mínimas documentadas; teste de acesso externo nega o que não deve ser exposto.
 - **Decisão do Anderson:** domínio, portas e exposição.
 
+> **Notas de verificação em dev (card `t_1acf11f2`, executado em 01/10/2026; o critério acima não foi
+> alterado).** Portas e exposição foram **decididas e registradas** pelo executor em dev — `22/80/443`
+> públicas, `8069` e `5432/5433` só em loopback, `fail2ban` mantido (runbook `odoo-dev-tls.md` §1.1) —
+> e ficam **pendentes de ratificação**, como no T01. **HTTPS com certificado válido** foi medido com
+> validação real de cadeia (e com a prova negativa de que sem a âncora o pedido **falha**): em dev a
+> âncora é a **CA interna do proxy**, porque o **domínio ainda não é decidido pelo dono** — medido que
+> `odoo-dev.transformativa.com.br` não resolve, a VPS não tem PTR e a zona está em NS1; criar o
+> registro A exige credencial de DNS, fora da declaração do card. Ligar o certificado público é
+> trocar uma linha do `Caddyfile` + ter o DNS. **Porta administrativa**: o Odoo segue só em loopback e
+> o `/web/database/manager` responde **403** pelo proxy. **Acesso externo**: varredura de fora mostra
+> **3 portas abertas** e nega todo o resto. Aceite `TLS_DEV_OK (28 itens, 0 falhas)` e dente
+> `TLS_DENTE_OK (6 itens, 0 falhas)`. **Achados abertos** (não deste card): a credencial **padrão
+> `admin`/`admin` do Odoo dev aprova** e o cookie de sessão **não leva `Secure`** — ambos a corrigir
+> antes de homologação/produção.
+
 **Test plan:** Chamada externa HTTPS + varredura de portas abertas + `ufw status`; evidência = saída dos três.
 **Rollback:** Reverter regras de proxy/UFW para o estado anterior.
 **Risco:** Alto — exposição de serviço.
@@ -749,3 +764,550 @@ Card da onda W9 que depende da **calibracao** (W9-E01-T01): o objeto aqui **nao*
   e nao persistida (L4); (e) **vies de sucessao** do componente (L5, ultimo valor); (f) alvo e'
   'ganhou x perdeu', nao conversao de proposta (L6); (g) PAVA e' **guloso** (L7, um caminho
   determinista); (h) cobertura parcial quando falta lastro (L8, declarada em `cobertura_pct`).
+## TRE-W7-E01-T01 — Website lead capture
+
+- Submissão do formulário (JSON do contrato `captura-site-v1`) vira cadastro canônico: **1**
+  `organizations` (source `WEBSITE_FORMULARIO`, status `DISCOVERED`), **1** `contacts`, **1**
+  `interactions` (`WEBSITE`/`INBOUND`/`FORMULARIO_SITE`) e **1** trilha `sync_events` (`site:<submission_id>`).
+- **Consentimento é barreira:** sem `consentimento.aceito = true` e base legal no vocabulário, nada é
+  cadastrado — só a trilha `RECUSADO_CONSENTIMENTO` (compliance > volume).
+- **Identidade:** forte (CNPJ → domínio → LinkedIn, ≥ 0,95) reusa a organização; **fraco** (nome+cidade /
+  nome+telefone) vai para `REVIEW_REQUIRED` — fila humana, nunca merge silencioso; nada casando, UUID
+  canônico novo gerado no INSERT.
+- **Idempotência:** reentrega da mesma submissão → `JA_CAPTURADO`, zero linha nova.
+- **Limite de escrita:** só `organizations`, `contacts`, `interactions`, `sync_events`, só por INSERT; a
+  auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar.
+- **Privacidade:** e-mail, telefone e CNPJ mascarados na evidência; `do_not_contact`/`opt_out_*` do
+  formulário gravados como **bloqueio**.
+
+**Test plan:** `python3 scripts/agentes/verificar_captura_site.py --autoteste` (32 itens + 5 dentes) e
+`bash scripts/agentes/teste_captura_site_aceite.sh` (PostgreSQL descartável na VPS, 46 itens).
+**Rollback:** reverter o commit (4 arquivos novos, sem DDL) e remover o container descartável do aceite.
+**Risco:** Médio (dado pessoal de lead entrando; LGPD) — mitigado por opt-in obrigatório, base legal
+declarada, bloqueios gravados e mascaramento; risco de não escrever no Odoo é **declarado** (ver lacuna L1
+do runbook: evento novo exige versão do contrato + aprovação humana).
+## TRE-W7-E02-T01 — Meta lead ingestion
+
+- Webhook sem `X-Hub-Signature-256` válida (HMAC-SHA256 do corpo cru com o app secret) é RECUSADO antes de
+  qualquer chamada à Graph API; o replay da mesma entrega inválida é `JA_INGERIDO` e não derruba a rodada.
+- Lead sem e-mail **e** sem telefone não vira linha em `interactions` (`DADOS_INSUFICIENTES`).
+- Contato desconhecido em `contacts` não inventa organização nem contato (`SEM_VINCULO`, 0 interação).
+- Idempotência por `meta-lead:<page_id>:<leadgen_id>`: replay é `JA_INGERIDO`, sem linha nova e sem nova
+  chamada à Graph API.
+- Escrita restrita a `interactions` e `sync_events`, só INSERT; campo fora do mapa entra apenas pelo nome
+  em `campos_desconhecidos`; `content_summary` não expõe e-mail/telefone em claro.
+- Guardas ADR-005 medidas por exit code: `prod` recusa (4), porta de banco remota recusa (`BANCO_NAO_E_DEV`, 3),
+  Graph fora de loopback recusa (`GRAPH_NAO_E_DEV`, 3), `--ingerir` sem `--confirmo` é DRY_RUN e não grava.
+- Segredos (token/app secret) ausentes de toda saída; se aparecerem na gravação, `SENHA_VAZADA` (exit 5).
+
+**Acceptance:** os oito critérios acima, medidos item a item pelo aceite E2E e pela suíte offline.
+**Test plan:** `python3 scripts/agentes/verificar_ingestao_leads_meta.py --autoteste` (51 itens + 7
+mutações) e `bash scripts/agentes/teste_ingestao_leads_meta_aceite.sh [--prova-de-dente]` (53 itens) na VPS
+do ambiente, com Postgres descartável (`pg-meta-acc`) e stub local da Graph API em loopback.
+**Rollback:** reverter o commit da branch `feature/TRE-W7-E02-T01`; em runtime, `--desfazer <chave>` marca a
+trilha `DESFEITO` por INSERT (trilha imutável, contrato §9).
+**Risco:** Médio — ponta externa e segredo de aplicação; fail-closed na assinatura, idempotência por chave
+única e escrita em 2 tabelas.
+**Componentes afetados:** `hermes/agentes/inbound/ingestao_leads_meta.py` e o contrato
+`meta-lead-ingestion-v1.json` (novos); `scripts/agentes/verificar_ingestao_leads_meta.py`,
+`scripts/agentes/stub-meta-graph-dev.py`, `scripts/agentes/teste_ingestao_leads_meta_aceite.sh` (novos);
+`deploy/environments/dev-meta.env`; `docs/integrations/meta-leads-v1.md`; `docs/runbooks/ingestao-leads-meta.md`;
+`scripts/verificar_estrutura.sh`; tabelas existentes **sem mudança de schema** (`interactions`, `sync_events`;
+somente INSERT).
+## TRE-W7-E03-T01 — Google lead attribution
+
+- **ACCEPTANCE:** a atribuicao nasce de evidencia nomeada (`FORMULARIO_GOOGLE_ADS`, `GCLID_RESOLVIDO`,
+  `GCLID_NAO_RESOLVIDO`, `UTM_SOURCE_GOOGLE`), com a confianca declarada em contrato (0,95 / 0,90 / 0,60 /
+  0,45); sem evidencia o veredito e' `NAO_ATRIBUIDO`/`SEM_IDENTIFICADOR` e **nenhuma** linha em
+  `interactions` (fail-closed). Lead sem e-mail e sem telefone e' recusado; `google_ads_lead_form` sem
+  `campanha_id` e' `FORMULARIO_SEM_CAMPANHA`. Contato desconhecido → `SEM_VINCULO` (nao se inventa
+  organizacao/contato). Idempotencia por `google-lead:<fonte>:<lead_id>`: replay = `JA_INGERIDO` sem
+  linha nova. Escrita restrita a `interactions` e `sync_events`, so INSERT; resumo/assunto sem PII;
+  `ai_confidence` NULL. Guardas ADR-005: dev com banco local + resolvedor em loopback, homolog com
+  aprovacao registrada, prod recusa (exit 4), segredo na saida recusa (exit 5).
+- **TEST:** suíte offline `scripts/inbound/verificar_atribuicao_google.py` (28 itens, `--autoteste` com
+  8/8 dentes) e aceite E2E `scripts/inbound/aceite-atribuicao-google.sh` na VPS do ambiente
+  (PostgreSQL descartavel `pg-google-acc` + stub local do resolvedor de `gclid` em 127.0.0.1) —
+  `ACEITE_GOOGLE_LEADS_001_OK`, 35 itens / 0 falhas + 3/3 dentes.
+- **ROLLBACK:** reverter o commit da branch `feature/TRE-W7-E03-T01` (nada em producao: ADR-005); em
+  runtime `--desfazer <chave>` grava trilha `DESFEITO` (a trilha original nao e' apagada). Sem DDL.
+- **RISK:** medio — decide atribuicao de canal/campanha a partir de ponta externa e escreve em
+  `interactions`/`sync_events`; mitigado por tabela declarada, fail-closed, idempotencia e aceite medido.
+- **Components afetados:** `hermes/inbound/google/atribuicao_google.py` e `atribuicao-google-v1.json`
+  (novos), `hermes/inbound/google/exemplos/` (novos), `scripts/inbound/verificar_atribuicao_google.py`,
+  `scripts/inbound/aceite-atribuicao-google.sh`, `scripts/inbound/stub-google-ads-dev.py` (novos),
+  `docs/architecture/atribuicao-google-v1.md`, `docs/runbooks/atribuicao-google-lead.md`,
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** W6-E07-T01. **Destrava:** W8-E02 (conversao por segmento) e a leitura de canal do
+  funil — sem atribuicao medida, a conversao por canal mede o vazio.
+
+---
+
+## TRE-W7-E04-T01 — LinkedIn AI-assisted workflow
+
+> Cards do doc 11 §W7 trazem só Priority/Depends on; os quatro campos abaixo foram definidos no
+> **início da execução** deste card e registrados aqui (exigência da seção 2 do doc 11).
+
+- **ACCEPTANCE:**
+  - o componente declara o canal `LINKEDIN` e exatamente **três** ações que a máquina pode executar:
+    `PREPARAR_RASCUNHO`, `PEDIR_APROVACAO`, `REGISTRAR_ENGAJAMENTO`;
+  - as **11 ações humanas exclusivas** (`PUBLICAR`, `AGENDAR_PUBLICACAO`, `COMENTAR`, `REAGIR`, `SEGUIR`,
+    `ENVIAR_CONVITE`, `ENVIAR_DM`, `MENCIONAR`, `RESPONDER_COMENTARIO`, `AUTOMACAO_DE_NAVEGADOR`,
+    `USAR_API_DO_LINKEDIN`) **recusam com exit 5** e motivo nomeado, sem nenhuma escrita de efeito;
+  - o rascunho nasce de uma recomendação `PREPARE_LINKEDIN` do NBA (ação do vocabulário do Data
+    Contract) **com evidência lida do banco**: 0 evidência = `SEM_EVIDENCIA` e **nada escrito**;
+  - contato com `do_not_contact` (ou organização com `deleted_at`) = `BLOQUEADO`, nada escrito;
+  - todo texto vira **pedido de aprovação** em `human_approvals` (`action_type` `LINKEDIN_RASCUNHO`),
+    nasce `PENDING`, carrega `recommendation_id`, `texto_hash` e a declaração
+    `publicacao = EXCLUSIVA_DO_HUMANO`; sem `APPROVED` **nada** é entregável ao humano;
+  - a rodada repetida é idempotente (`JA_PEDIDO` / `JA_REGISTRADO`), sem pedido nem interação duplicada;
+  - engajamento recebido entra em `interactions` com `channel='LINKEDIN'`, `direction='INBOUND'` e tipo
+    do vocabulário declarado; inferência só entra **marcada com `ai_confidence`**;
+  - escrita restrita a `human_approvals`, `interactions`, `agent_runs` e `sync_events` (DDL/UPDATE/DELETE
+    recusam) e `prod` **recusa com exit 4** (ADR-005).
+
+- **TEST:** `bash scripts/linkedin/verificar-linkedin-assistido.sh` (o aceite; ~1 min na VPS do
+  ambiente, banco descartável `pg-lk-e04`) + `--prova-de-dente` (**3 mutações** em cópia do módulo,
+  cada uma reprovando o item que nomeia: `publica` → 9.1, `sem-aprovacao` → 7.2, `evidencia` → 5.1) com
+  o controle verde. Medido em 03/10/2026: **70 itens OK / 0 FALHOU** (exit 0) e **3/3 dentes**.
+  Evidência = saída completa com exit code, anexada ao card.
+- **ROLLBACK:** o aceite **não deixa nada** (container `pg-lk-e04` removido no fim; nenhum DDL, nenhuma
+  migration, nenhuma credencial). Reverter = `git revert` do commit do card. O componente **não tem
+  caminho de escrita no LinkedIn**: não há token, nem API, nem navegador para desfazer.
+- **RISK:** **médio** — o canal é de pessoa real e a rede social tem regra própria (o dono nunca é
+  representado por máquina). Mitigado por desenho: a máquina **só prepara e registra**; publicar,
+  comentar, reagir, seguir, convidar, DM, mencionar e responder **recusam por código** (exit 5,
+  auditado), a publicação é declarada `EXCLUSIVA_DO_HUMANO` no próprio pedido, a aprovação humana é
+  obrigatória no meio (ADR-0004) e a saída não carrega segredo. O que **não** está medido (o ato de
+  publicar do humano, o rascunho por LLM) está declarado no runbook §5 — e o que não está medido não
+  vira "OK".
+- **Componentes afetados:** `hermes/agents/linkedin/linkedin_assistido.py` (novo),
+  `hermes/agents/linkedin/linkedin-assistido-v1.json` (novo, contrato/política do componente),
+  `scripts/linkedin/verificar-linkedin-assistido.sh` (novo, o aceite),
+  `docs/runbooks/linkedin-assistido.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+  Tabelas: `human_approvals`, `interactions`, `agent_runs`, `sync_events` — **nenhuma coluna/tabela nova**
+  (mudaria o contrato e exigiria aprovação).
+- **Depends on:** `TRE-W6-E07-T01` (caminho outbound provado ponta a ponta; a aprovação humana e o
+  vocabulário de `human_approvals` vêm do W6-E03). **Destrava:** W8 (analytics do funil multicanal) e a
+  operação assistida do LinkedIn pelo dono.
+## TRE-W7-E05-T01 — WhatsApp engaged-lead workflow
+
+- **ACCEPTANCE:** o lead **que já está na base** que escreve por WhatsApp é registrado e classificado sem
+  que nada seja inventado nem enviado: (1) mensagem inbound válida grava 1 `interactions`
+  (`WHATSAPP`/`INBOUND`/`WHATSAPP_MENSAGEM`, `content_reference = message_id`, `occurred_at =
+  recebido_em`) ligada ao contato/organização resolvidos e 1 trilha `whatsapp:<message_id>` em
+  `sync_events`; (2) identidade pelo **núcleo nacional do telefone** — `+55 …`, `55…` e sem país dão o
+  mesmo núcleo; telefone desconhecido → `SEM_VINCULO` e ambíguo (2+ contatos) → `REVIEW_REQUIRED`, nos
+  dois casos **zero** organização/contato inventado e zero interação; (3) classificação por regra
+  declarada com `OPT_OUT` na ordem 1 — mensagem mista termina em descadastro, não em interesse;
+  (4) `do_not_contact`/`opt_out_whatsapp` na base e `PARAR` classificam `BLOQUEADO_POR_BLOQUEIO`
+  (`NENHUM_FILA_HUMANA`), com a mensagem registrada e a linha de `contacts` **intocada**; (5) janela de
+  atendimento de 24 h: primeira entrada → `RESPOSTA_LIVRE_SUGERIDA`, última entrada 3 dias atrás →
+  `REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA`, sempre proposta e nunca envio (`outbox_events` vazia);
+  (6) idempotência: reentrega da MESMA mensagem → `JA_RECEBIDO`, zero linha nova; (7) escrita restrita a
+  `interactions` + `sync_events` (INSERT apenas, sem DDL/UPDATE/DELETE) e `contacts`/`recommendations`/
+  `outbox_events` inalteradas; (8) telefone do lead ausente da evidência (mascarado); (9) guardas por
+  medição: `prod` exit 4, prefixo de banco remoto em dev → `BANCO_NAO_E_DEV` (exit 3), sem `--confirmo`
+  → `DRY_RUN`; (10) evento inválido (tipo fora do vocabulário, telefone sem DDD, `recebido_em` inválida)
+  RECUSA e não gera interação.
+- **TEST:** suite offline do componente (60 itens) + `--autoteste` com **10 dentes** — cada mutação em
+  cópia do componente tem de reprovar o item que nomeia (`--autoteste`, exit 0) — e aceite
+  `scripts/agentes/teste_whatsapp_lead_aceite.sh` em **PostgreSQL 16 descartável** (`pg-whatsapp-acc`,
+  127.0.0.1) com a migration 0001, 9 eventos de fixture e o cenário de 6 contatos/jornadas: 68 itens,
+  0 falhas, com snapshot das 12 tabelas antes/depois provando o escopo de escrita. Evidência = saída
+  completa com exit code, anexada ao card (`ACEITE_WHATSAPP_LEAD_001_OK`).
+- **ROLLBACK:** o aceite **não deixa nada** (container removido no fim; `--manter` existe só para
+  investigar) e não há DDL nem migration: reverter é `git revert` do commit do card — 5 arquivos novos
+  (`whatsapp_lead.py`, `whatsapp-lead-v1.json`, `verificar_whatsapp_lead.py`,
+  `teste_whatsapp_lead_aceite.sh`, `docs/runbooks/whatsapp-engaged-lead.md`) + apêndices em
+  `criterios-de-aceitacao.md`, `registro-de-execucoes.md`, `CHANGELOG.md` e `scripts/verificar_estrutura.sh`.
+  Nenhum dado de dev a limpar afeta o ambiente em uso.
+- **RISK:** **médio** — o componente fala do canal por onde o lead fala com a empresa e escreve na base
+  canônica. Mitigado por: nada de envio (proposta, nunca mensagem), barreira de descadastro na ordem 1
+  do contrato, bloqueio de contato medido no banco, identidade sem invenção (`SEM_VINCULO`/
+  `REVIEW_REQUIRED`), INSERT apenas e escopo de escrita conferido por snapshot, `prod` recusado, guarda
+  de porta local, `--confirmo` explícito e PII mascarada na evidência. O que **não** está medido
+  (provedor real, janela contra o provedor, envio, mídia, propagação de descadastro para o CRM) está
+  declarado nas lacunas do contrato e no runbook §6.
+- **Components afetados:** `hermes/agentes/inbound/whatsapp_lead.py` (novo),
+  `hermes/agentes/inbound/whatsapp-lead-v1.json` (novo),
+  `scripts/agentes/verificar_whatsapp_lead.py` (novo), `scripts/agentes/teste_whatsapp_lead_aceite.sh` (novo),
+  `docs/runbooks/whatsapp-engaged-lead.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+- **Depends on:** `TRE-W6-E07-T01` (E2E Outbound #002, fechado e medido) — o lead engajado é o que a onda
+  W6 abordou; **Destrava:** `TRE-W8-*` (o canal passa a produzir interação classificada para o funil) e a
+  lacuna de propagação de descadastro já apontada para o `W6-E06`.
+## TRE-W7-E06-T01 — Event lead capture
+
+- A **coleta do evento** (QR / crachá / ficha / lista) em JSON do contrato `captura-evento-v1` vira cadastro
+  canônico: **1** `organizations` (source `EVENTO_CAPTURA`, status `DISCOVERED`), **1** `contacts`, **1**
+  `interactions` (`EVENTO`/`INBOUND`/`CAPTURA_EVENTO`, `occurred_at` = `capturado_em`) e **1** trilha
+  `sync_events` com a chave `evento:<event_id>:<captura_id>`.
+- **Vínculo do evento é barreira:** sem `origem_evento.event_id`, sem `capture_method` no vocabulário ou sem
+  `capturado_em` válido, nada é cadastrado — só a trilha `EVENTO_NAO_DECLARADO`. Lead de evento sem o
+  vínculo do evento é lead sem atribuição (doc 03, Motor 3 — Relationship).
+- **Consentimento é barreira:** opt-in explícito **+** base legal **+** **forma** (`TERMO_DIGITAL`,
+  `FICHA_ASSINADA`, `QR_INSCRICAO`, `LISTA_PRESENCA`), que é a evidência de como o opt-in foi dado no evento;
+  fora do vocabulário → `RECUSADO_CONSENTIMENTO` sem cadastro.
+- **Identidade:** forte (CNPJ → domínio → LinkedIn, ≥ 0,95) reusa a organização; **fraco** (nome+cidade /
+  nome+telefone) vai para `REVIEW_REQUIRED` — fila humana, nunca merge silencioso; nada casando, UUID
+  canônico novo gerado no INSERT.
+- **Idempotência:** reentrega da mesma coleta → `JA_CAPTURADO`, zero linha nova; a **mesma** `captura_id` em
+  **outro** `event_id` é coleta distinta (2 interações / 2 trilhas) — o `event_id` entra na chave.
+- **Limite de escrita:** só `organizations`, `contacts`, `interactions`, `sync_events`, só por INSERT; a
+  auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar.
+- **Privacidade:** e-mail, telefone e CNPJ mascarados na evidência; `do_not_contact`/`opt_out_*` da ficha do
+  evento gravados como **bloqueio**.
+
+**Test plan:** `python3 scripts/agentes/verificar_captura_evento.py --autoteste` (41 itens + 5 dentes) e
+`bash scripts/agentes/teste_captura_evento_aceite.sh` (PostgreSQL descartável na VPS, 60 itens; inclui 3
+dentes de ponta medidos no banco: sem evento, método inventado e sem instante não viram cadastro).
+**Rollback:** reverter o commit (5 arquivos novos, sem DDL) e remover o container descartável do aceite.
+**Risco:** Médio (dado pessoal coletado em evento; LGPD) — mitigado por opt-in obrigatório, base legal e
+forma declaradas, bloqueios gravados e mascaramento; risco de organização duplicada mitigado por
+identificador forte antes do fraco + fila humana; riscos **declarados**: o lead não chega ao Odoo por este
+card (evento novo exige versão do contrato + aprovação humana) e evento **não** é entidade do schema de 12
+tabelas — o vínculo vive no resumo/referência da interação e no payload da trilha (lacuna L3 do contrato).
+## TRE-W8-E02-T01 — Conversion by segment
+
+- **O que e':** **recorte do funil** do card W8-E01-T01 por **eixo de segmentacao declarado**, medindo a
+  conversao de cada segmento contra a base inteira. Componente
+  `hermes/agentes/analytics/conversao_segmento.py` + contrato
+  `hermes/agentes/analytics/conversao-segmento-v1.json`; desenho
+  `docs/architecture/conversao-por-segmento-v1.md`; runbook `docs/runbooks/conversao-por-segmento.md`.
+- **A derivacao do funil e' UMA so' (decisao de arquitetura):** o componente **importa `funil.py`** e usa
+  as MESMAS funcoes de contrato, guarda, leitura pura, resolucao de evidencia, alcance cumulativo,
+  terminal Won/Lost, ramo Nurture e lacunas. Nao existe segunda regra de estagio, ordem, nivel, alcance
+  nem atribuicao — duas copias divergiriam em silencio.
+- **Eixos com vocabulario FECHADO do Data Contract V1:** `faixa_funcionarios` (`employee_band`, doc 03 §5,
+  igualdade exata) e `tier_prioridade` (**tier derivado** da pontuacao vigente — `PRIORITY` com
+  `score_version`, maior `calculated_at`, empate pelo maior `score_value` — aplicada as faixas congeladas
+  do doc 03 §4). Valor fora do vocabulario **nao vira segmento** (`FORA_DO_VOCABULARIO`), valor ausente vai
+  para `SEM_DADO`, e os dois **nao** sao a mesma coisa; `UNKNOWN` e' valor declarado (lacuna L10).
+- **Cobertura declarada, nunca maquiada:** por eixo o relatorio publica `classificadas`, `cobertura_pct`,
+  `sem_dado` e `fora_do_vocabulario`; a soma dos buckets tem de **fechar** com a base
+  (`RECORTE_NAO_FECHA_COM_A_BASE`). Segmento sem organizacao aparece com taxa `null` (nao `0`); segmento
+  abaixo de `amostra_minima` (5) carrega `amostra_pequena: true` — o componente nao elege "vencedor".
+- **Leitura pura onde o mecanismo vale:** SO' `SELECT`, com `default_transaction_read_only = on` em DOIS
+  `-c` (o defeito do `SET` num unico `-c` foi medido e corrigido no W8-E01-T01) e auditoria da fonte que
+  reprova verbo de escrita antes de conectar. `prod` RECUSA por desenho (exit 4, com a recusa herdada do
+  funil tambem medida), `dev` exige porta de banco local e `homolog` exige `--confirmo`.
+- **ACCEPTANCE:** `ACEITE_CONVERSAO_SEGMENTO_OK` — **43 itens, 0 falhas**, exit 0. Cobre: guardas de
+  ambiente com o MOTIVO da recusa (nao so' o codigo); suite offline 34 itens + 12/12 dentes; base semeada
+  com 12 organizacoes conferidas por contagem; **COERENCIA COM O FUNIL** (recorte da base inteira igual ao
+  relatorio do `funil.py` na mesma base em estagios/alcance/conversoes, won/lost/nurture e **lacunas**);
+  buckets e contagens por eixo conferidos a mao; **dentes medidos no banco** (faixa quase identica
+  `150_299X` nao entra em `150_299`; `SEM_DADO` != `FORA_DO_VOCABULARIO`; tier da pontuacao **vigente**
+  (70 recente -> B) e nao da maior historica (95 -> A+); score **sem versao** nao qualifica); conversao e
+  indice vs base a mao (150_299 1/6 = 16,67% indice 66,68; LT_70 1/3 = 33,33% indice 133,32; global 3/12 =
+  25,0%); leitura pura (snapshot das 12 tabelas + transacao READ ONLY recusando escrita); determinismo;
+  saida sem PII e sem organizacao nominal; HTML auto-contido.
+- **TEST:** `python3 scripts/agentes/verificar_conversao_segmento.py --autoteste` e
+  `bash scripts/agentes/teste_conversao_segmento_aceite.sh` (container descartavel
+  `pg-analytics-seg-acc` — nome dentro dos prefixos de dev aceitos pela guarda reusada).
+- **ROLLBACK:** o componente **nao escreve nada** (sem migracao, coluna ou evento). Reverter = reverter os
+  arquivos do commit do card; a base fica intacta. O container do aceite e' descartavel e removido no fim.
+- **RISK:** **baixo** — leitura pura sobre base de dev, saida com contagem/taxa (sem PII) e nenhum ato
+  externo. Riscos **declarados** (viajam no relatorio): L6 o eixo e' a **foto de hoje** (mudar faixa/tier
+  move a organizacao de bucket retroativamente — nao ha historia de segmento no contrato); L7
+  `employee_band` fora do vocabulario congela em lacuna; L8 tier so' existe com pontuacao versionada
+  vigente (a cobertura cai quando nao existe); L9 o contrato nao persiste tier (a faixa e' derivada na
+  leitura, por isso versao + sha256 viajam).
+- **Componentes afetados:** `hermes/agentes/analytics/` (novo: `conversao_segmento.py`,
+  `conversao-segmento-v1.json`), `scripts/agentes/` (novo: `verificar_conversao_segmento.py`,
+  `teste_conversao_segmento_aceite.sh`), `docs/architecture/conversao-por-segmento-v1.md` (novo),
+  `docs/runbooks/conversao-por-segmento.md` (novo), `docs/kanban/criterios-de-aceitacao.md`,
+  `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`, `scripts/verificar_estrutura.sh`.
+- **Depends on:** W8-E01-T01 (funil — base da branch e derivacao reusada). **Destrava:** W8-E03-T01
+  (eficacia dos scores) e W8-E05-T01 (custo de agente) herdam o recorte por eixo.
+## TRE-W8-E04-T01 — Message performance (W8 · Analytics)
+
+- **ACCEPTANCE:** `desempenho-mensagens-v1` lê `sales_intelligence.interactions` por **um SELECT** e devolve,
+  por **variante de texto** (`texto_hash` da referência `envio:<approval_id>:<texto_hash>`) e por **canal
+  normalizado**: enviadas, organizações, respondidas, positivas, negativas, opt-outs, indefinidas, respostas
+  comerciais/descartadas, `taxa_de_resposta`, `taxa_de_interesse`, `taxa_de_opt_out`, tempo médio/mediano de
+  resposta (horas) e a **melhor variante** — só entre as com amostra ≥ `--limite-amostra`. Guardas: `prod`
+  RECUSA exit 4; **somente leitura** (nenhum verbo de escrita no SQL, conferido no componente e no duble);
+  saída **agregada** (sem `organization_id`/`contact_id`/`approval_id`); vocabulário do irmão divergente =
+  `CONTRATO_INCOERENTE` exit 3 (fail-closed).
+- **TEST:** offline `python3 scripts/agentes/verificar_desempenho_mensagens.py --autoteste` →
+  `PASS (48 itens, 0 falhas)` + **7/7 dentes**; E2E `bash scripts/agentes/teste_desempenho_mensagens_aceite.sh`
+  (VPS, PostgreSQL descartável `pg-desemp-acc` + migration 0001) → `ACEITE_DESEMPENHO_MENSAGENS_001_OK`
+  (19 itens, 0 falhas), com contagem das 12 tabelas idêntica antes/depois (prova de somente-leitura) e
+  saída reproduzível (duas rodadas iguais).
+- **ROLLBACK:** remover os artefatos do card (`hermes/analytics/`, `verificar_desempenho_mensagens.py`,
+  `duble_psql_desempenho.py`, `teste_desempenho_mensagens_aceite.sh`). Não há migration nova nem escrita em
+  nenhuma tabela; o container de aceite é descartável e sai no `trap`.
+- **RISK:** (a) canal divergente entre os irmãos (`EMAIL` × `email`) — normalizado na leitura e registrado
+  como defeito de FORMA do dado gravado; (b) sem `delivered`/`opened`/`bounced` no contrato: a taxa é de
+  **resposta**, não de entrega; (c) `campaign_id` é vínculo lógico sem FK/entidade — não se agrupa por
+  campanha; (d) só `EMAIL` é produzido hoje pelo irmão de envio.
+- **Components afetados:** `hermes/analytics/desempenho-mensagens-v1.json` (novo),
+  `hermes/analytics/desempenho_mensagens.py` (novo), `scripts/agentes/duble_psql_desempenho.py` (novo),
+  `scripts/agentes/verificar_desempenho_mensagens.py` (novo),
+  `scripts/agentes/teste_desempenho_mensagens_aceite.sh` (novo), `docs/runbooks/desempenho-de-mensagens.md`
+  (novo), `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** `TRE-W6-E07-T01` (caminho outbound medido ponta a ponta) — fechado. **Destrava:** E02
+  (conversão por segmento), E03 (eficácia dos scores) e E05 (custo de agentes) reusam o mesmo recorte de
+  `interactions`; a análise por variante alimenta o aprendizado de texto do W9.
+- **Lacuna medida (declarada, não escondida):** a análise mede **efeito** (resposta creditada ao envio mais
+  próximo anterior em duas faixas de especificidade), não entrega.
+
+## TRE-W8-E05-T01 — Custo de agentes — W8 / E05 / P2 — Depends on: W8-E01-T01
+
+- **Entrega:** analise de **custo e eficiencia dos agentes** a partir da auditoria de execucao
+  (`sales_intelligence.agent_runs`, dono PostgreSQL — contrato de dados §9), por **agente**, por **modelo**
+  e por **workflow**: execucoes, concluidas/falhas/recusadas/revisao, taxa de falha, tokens, custo total e
+  **custo por execucao concluida** (a metrica de eficiencia: quanto custou cada sucesso), latencia
+  (media/mediana/p95) e organizacoes distintas. Saida em **JSON** + **CSV** + **HTML auto-contido** (painel).
+  Componente `hermes/agentes/analytics/custo_agentes.py` + contrato
+  `hermes/agentes/analytics/custo-agentes-v1.json`; desenho `docs/architecture/custo-agentes-v1.md`;
+  runbook `docs/runbooks/custo-de-agentes.md`. **Leitura pura:** so' `SELECT` sobre UMA tabela, transacao
+  em `READ ONLY` (`-c` separado do `SET` — defeito medido no irmao W8-E01-T01) e auditoria da propria fonte
+  que reprova verbo de escrita antes de conectar. **Coloca-se no mesmo diretorio do card pai**
+  (`hermes/agentes/analytics/`); o irmao W8-E04 ficou em `hermes/analytics/` — divergencia de caminho
+  registrada no desenho, decisao de unificacao e' do dono da estrutura.
+- **NULO NAO E' ZERO (invariante central):** execucao sem `estimated_cost` **nao** entra na soma e **nao**
+  vira `0` — vai para `runs_sem_custo`, a media fica `null` e o grupo sai do ranking. Sem isso, quem menos
+  declara custo seria coroado o mais barato (a metrica mediria a ausencia de dado, nao o custo).
+- **NAO se calcula preco:** o componente nao multiplica token por tarifa e nao tem tabela de precos (a
+  politica de lane PROIBE fixar preco — `hermes/jev/policy_v1_2.yaml`). Ele reporta o `estimated_cost`
+  **gravado** pelo produtor, como **string decimal de 6 casas** (float perderia o valor). Execucao com custo
+  **negativo** e' lacuna e nao entra na soma; custo **zero declarado** conta como declarado.
+- **Vocabulario do dono, nao inventado:** classes `CONCLUIDA`/`FALHA`/`RECUSADA`/`REVISAO` particionam
+  exatamente os status medidos nos 13 irmaos que escrevem a auditoria (`COMPLETED`, `FAILED`, `REJECTED`,
+  `REVIEW_REQUIRED`). **Recusa declarada nao e' falha** e revisao nao e' sucesso: as duas sao medidas
+  separadas. Status fora do vocabulario (ex.: `TIMEOUT`) **nao** vira desfecho — vai para lacuna.
+- **A coluna que nao existe nao se inventa (fail-closed):** o card LE a DDL congelada
+  (`db/migrations/0001_sales_intelligence_v1.sql`, apontada por `artifacts.schema_sql` do contrato de dados)
+  e RECUSA (exit 3) se qualquer coluna da metrica faltar, se `estimated_cost`/`tokens_*` nao existirem ou
+  se o vocabulario estiver incoerente. Latencia invertida (`fim < inicio`) e carimbo incompleto ficam FORA
+  e em lacuna.
+- **Ranking com regra de comparabilidade:** so' entra quem tem amostra suficiente (`concluidas >=
+  limite_amostra`, default 3) **e** declara custo em TODAS as execucoes — grupo com custo parcial tem total
+  subdeclarado e e' nomeado em `agentes_fora_do_ranking` (motivos `SEM_EXECUCOES`, `SEM_CUSTO_DECLARADO`,
+  `CUSTO_NAO_DECLARADO_EM_PARTE`, `AMOSTRA_INSUFICIENTE`).
+- **ACCEPTANCE:** `ACEITE_CUSTO_AGENTES_OK` — **40 itens, 0 falhas**, exit 0. Cobre: guardas de ambiente
+  (`prod` RECUSA exit 4 **antes** de qualquer leitura; dev com porta remota RECUSA; container de dev fora da
+  lista RECUSA); suite offline verde; as metricas **conferidas a mao** sobre base semeada (16 execucoes, 5
+  agentes + 1 orfa: 11 concluidas, 1 falha, 1 recusa, 1 revisao, 2 sem status; custo 0.022400, 0.002036 por
+  execucao com custo, media por sucesso **nula** porque nem todos declaram; tokens 1640/877/2517; latencia
+  57.93/30.0/300.0); **cinco dentes medidos no proprio banco** (custo nulo nao vira zero; status fora do
+  vocabulario nao vira falha; custo negativo nao entra na soma; latencia invertida fica fora; o ranking nao
+  coroa quem nao declara custo — e o mais caro por execucao, `icp_score` 0.004500, fica fora por amostra);
+  **janela por `started_at`** recortando 9 de 16 execucoes; **leitura pura provada por dois caminhos**
+  (snapshot md5 das 12 tabelas antes/depois **e** a transacao `READ ONLY` recusando a escrita de prova, sem
+  deixar linha); **determinismo byte a byte** (sem `--com-carimbo`); saida **sem PII** (nenhum UUID de
+  organizacao, nenhum e-mail) e painel **auto-contido**.
+- **TEST:** `python3 scripts/agentes/verificar_custo_agentes.py --autoteste` (**30 itens + 8 mutacoes**,
+  cada mutacao reprovando um item que o **alvo limpo nao reprova**) e
+  `bash scripts/agentes/teste_custo_agentes_aceite.sh` (PostgreSQL descartavel `pg-custo-acc` na VPS de dev,
+  container removido no fim). Evidencia = saida completa com exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (5 arquivos novos + os docs do card, **sem DDL** e sem migration) e remover
+  o container descartavel do aceite. Nada em homolog/producao; nenhum servico, cron ou credencial tocada.
+- **RISK:** **baixo** — leitura pura sobre base de dev, saida agregada (sem PII), nenhum ato externo. Riscos
+  **declarados** (do dado, nao da operacao): L1 nem todo irmao grava tokens/custo (o custo medido e' o
+  declarado, nunca o do sistema inteiro); L2 nao ha tabela de precos e o produtor aplica a tarifa dele;
+  L3 a unidade (moeda) do `estimated_cost` nao esta declarada no contrato de dados; L4 o vocabulario de
+  `agent_runs.status` vive nos mapas dos irmaos (sem CHECK na DDL); L5 a janela e' por `started_at` e o
+  custo nao se atribui a card do board nem a receita.
+- **Defeito MEDIDO e corrigido no proprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o
+  componente removia `gerado_em` quando `--com-carimbo` nao era passado (para o relatorio ser reproduzivel) e
+  o `emitir_html` lia `relatorio["gerado_em"]` **sem** `.get()` — a rodada real no banco morria com
+  `KeyError: 'gerado_em'` (exit 1) e nenhuma saida era gravada. A suite offline nao pegava porque ali o
+  carimbo sempre existia. Conserto: o HTML tolera a ausencia (`(sem carimbo)`) — e o aceite ganhou o item que
+  exige a saida **byte a byte identica** entre duas rodadas, alem do item 30 da suite, que mede o relatorio
+  **sem** carimbo de ponta a ponta.
+- **Components afetados:** `hermes/agentes/analytics/` (novo: `custo_agentes.py`, `custo-agentes-v1.json`),
+  `scripts/agentes/` (novo: `verificar_custo_agentes.py`, `teste_custo_agentes_aceite.sh`),
+  `docs/architecture/custo-agentes-v1.md` (novo), `docs/runbooks/custo-de-agentes.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`.
+- **Depends on:** W8-E01-T01 (funil — base da branch, fechado e medido). **Nao destrava card nenhum** por si:
+  e' entrega terminal do epico E05 (W8).
+## TRE-W9-E03-T01 — Best channel prediction
+
+Escritos no início da execução (a seção 2 do doc 11 exige os quatro campos e o card nasceu sem eles).
+**Medir canal não é enviar por ele:** o card mede a efetividade histórica de cada canal e prevê o melhor canal
+por organização; quem envia é o caminho de outbound (W6), com a própria política de compliance.
+
+- **PRÉ-CONDIÇÃO `dados multicanal` (não é card, doc 11):** forma testável declarada no contrato —
+  **≥ 2 canais** com `base_suficiente` (≥ 3 organizações abordadas por canal) e **≥ 4 organizações** com
+  interação registrada. Abaixo disso o relatório sai com `pre_condicao_dados_multicanal.atendida=false`,
+  `previsao_emitida=false`, a lista `faltando` (exigido × obtido) e `previsoes=[]` — **não prevê**. A medição por
+  canal continua publicada (é ela que mostra o que falta).
+- **ACCEPTANCE:** `ACEITE_PREVISAO_CANAL_OK` (0 falhas) — pré-condição medida na base; efetividade por canal
+  (organizações abordadas, outbound, respostas INBOUND classificadas, taxa de resposta, avanço no endpoint
+  `Reunião`, lift contra a taxa-base, Won/Lost e `base_suficiente`); **opt-out é bloqueio**:
+  `do_not_contact` bloqueia todos os canais e `opt_out_email`/`opt_out_whatsapp` bloqueiam o canal
+  correspondente — canal bloqueado **nunca** aparece como previsto e o motivo é nomeado na saída; previsão por
+  organização com taxa, `amostra_do_canal` e desempate **declarado** (taxa → resposta própria → interação
+  própria → `preferred_channel` → ordem do vocabulário); canal fora do vocabulário e organização sem canal
+  elegível em **lacuna nomeada**, nunca em chute; leitura pura provada por snapshot das 12 tabelas **e** pelo
+  mecanismo `READ ONLY`; determinismo (mesmo `hash_do_relatorio`); saída sem PII; dashboard HTML auto-contido;
+  **integração com o pai** (o avanço por canal fecha com `Reunião.alcancadas` do relatório do funil, sem segunda
+  verdade para o alcance).
+- **TEST:** `python3 scripts/agentes/verificar_previsao_canal.py --autoteste` (**23 itens + 8 mutações**) e
+  `bash scripts/agentes/teste_previsao_canal_aceite.sh` (PostgreSQL descartável `pg-analytics-canal` na VPS de dev
+  vmi3619453, container removido no fim). Evidência = saída completa com exit code, anexada ao card.
+- **ROLLBACK:** reverter o commit (componente, contrato, suíte, aceite e docs — arquivos **novos**, **sem DDL**,
+  sem migration, sem cron, sem credencial) e remover o container descartável do aceite. Nenhum artefato de card
+  anterior é alterado (`funil.py` é apenas importado, não modificado). Nada em homolog/produção.
+- **RISK:** **médio** — leitura pura sobre base de dev, saída com contagem e UUID (sem PII), nenhum ato externo,
+  nenhum envio. Riscos **declarados**: (a) **prior de canal da coorte, não personalização por contato** — amostra
+  por organização é pequena (lacuna L4); (b) **associação não é causa** — a v1 mede separação com
+  `base_suficiente`, não efeito causal (lacuna L2); (c) o Data Contract V1 **não congela vocabulário de
+  `interactions.channel`** — o vocabulário é declarado no contrato do componente e canal novo cai em lacuna até
+  ser declarado (lacuna L1); (d) `LINKEDIN` **não tem coluna de opt-out** no schema: o bloqueio vem de
+  `do_not_contact` e a ausência é declarada (lacuna L3); (e) coorte acumulada, sem comparação entre safras
+  (lacuna L5); (f) a previsão **não é ato** — virar `recommendations` exige versão nova do contrato de dados +
+  approval (lacuna L7).
+- **Defeito MEDIDO e corrigido no próprio card (DETECTADO POR: aceite, antes de qualquer entrega):** o bloco de
+  números conferidos à mão do aceite chamava `O(i)` sobre uma **string** de formatação (`O = "000000%02d-..."`),
+  o que derrubava o bloco com `TypeError: 'str' object is not callable` — e o aceite, que contava apenas as
+  linhas `OK`/`FALHOU` impressas, **fechou PASS sem executar os 5 itens seguintes** (opt-out como bloqueio,
+  `do_not_contact`, lacunas nomeadas, contrato/dependência). Conserto: `def O(i)` + **item que exige o bloco
+  inteiro rodando até o fim** (`bloco ... rodou ate' o fim (exit 0)`, medido pelo exit code do heredoc). Sem
+  esse item, um bloco que morre no meio passa por suíte verde — o defeito era a **prova**, não o componente.
+  Remedição depois do conserto: **`ACEITE_PREVISAO_CANAL_OK`, 42 itens, 0 falhas**.
+- **Lacunas declaradas (7, viajam no relatório):** L1 vocabulário de canal não congelado no Data Contract;
+  L2 associação ≠ causa; L3 `LINKEDIN` sem coluna de opt-out própria; L4 prior de coorte, não personalização;
+  L5 coorte acumulada; L6 canal ≠ mensagem (`response_category` diz que houve resposta classificada, não a
+  qualidade); L7 previsão não é ato.
+## TRE-W9-E04-T01 — Best timing (melhor horário de contato)
+
+- **ACCEPTANCE:** `hermes/analytics/melhor_horario.py` + contrato `hermes/analytics/melhor-horario-v1.json`
+  entregam, por **janela (dia da semana × faixa horária) no fuso declarado (`America/Sao_Paulo`, offset fixo
+  `-03:00`)**, as métricas de resposta do recorte: enviadas, organizações, respondidas, positivas, negativas,
+  opt-outs, indefinidas, respostas comerciais/descartadas, `taxa_de_resposta`, `taxa_de_interesse`,
+  `taxa_de_opt_out`, tempo médio/mediano de resposta (horas), `amostra_suficiente` e a **melhor janela** —
+  só entre as com **amostra ≥ `--limite-amostra`**; **grade completa de 49 células** (7 dias × 7 faixas,
+  inclusive vazias com taxa `null`), soma das células **e** das duas marginais igual ao total lido, e
+  `melhor_janela_motivo` explícito (`AMOSTRA_INSUFICIENTE`/`SEM_ENVIOS`). A atribuição resposta→envio é a
+  **do card irmão W8-E04-T01** (o componente importa `desempenho_mensagens.py`; não há segunda regra).
+  Guardas: `prod` RECUSA exit 4 (ADR-005); **somente leitura** (nenhum verbo de escrita no SQL, guarda
+  herdada do irmão); saída **agregada** por célula (sem `organization_id`/`contact_id`/`approval_id`);
+  grade com buraco/sobreposição, fuso ilegível ou vocabulário do dono divergente = **fail-closed** exit 3.
+- **TEST:** offline `python3 scripts/agentes/verificar_melhor_horario.py --autoteste` →
+  `VERIFICADOR_MELHOR_HORARIO_PASS (29 itens, 0 falhas) + autoteste OK (6/6 mutações detectadas)`;
+  E2E `bash scripts/agentes/teste_melhor_horario_aceite.sh` (VPS, PostgreSQL descartável `pg-timing-acc` +
+  migration 0001) → `ACEITE_MELHOR_HORARIO_001_OK` (19 itens, 0 falhas), com virada de dia medida
+  (sexta 02:00Z = quinta 23:00 local), fechamento da grade e **coerência medida com o irmão de desempenho**
+  na mesma base (totais idênticos), contagem das tabelas idêntica antes/depois e saída reproduzível.
+- **ROLLBACK:** remover os artefatos do card (`hermes/analytics/melhor-horario-v1.json`,
+  `hermes/analytics/melhor_horario.py`, `scripts/agentes/verificar_melhor_horario.py`,
+  `scripts/agentes/teste_melhor_horario_aceite.sh`, `docs/runbooks/melhor-horario.md`). Não há migration nova,
+  nenhuma escrita em tabela e nenhum serviço de pé; o container de aceite é descartável e sai no `trap`.
+- **RISK:** (a) fuso é **offset declarado fixo** — horário de verão/segundo fuso exige versão nova do contrato;
+  (b) a grade cobre **24 h** porque o Data Contract V1 não declara expediente comercial (não se inventa
+  horário comercial); (c) a leitura é **histórica, não preditiva** — com poucos envios por célula o resultado
+  correto é `AMOSTRA_INSUFICIENTE`; (d) `contacts` não tem fuso do contato: usa-se o do remetente; (e) só
+  `EMAIL` é produzido hoje pelo irmão de envio, então a grade não separa canal nesta versão.
+- **Components afetados:** `hermes/analytics/melhor-horario-v1.json` (novo),
+  `hermes/analytics/melhor_horario.py` (novo), `scripts/agentes/verificar_melhor_horario.py` (novo),
+  `scripts/agentes/teste_melhor_horario_aceite.sh` (novo), `docs/runbooks/melhor-horario.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`. Reuso (não alterado): `hermes/analytics/desempenho_mensagens.py`,
+  `hermes/analytics/desempenho-mensagens-v1.json`, `scripts/agentes/duble_psql_desempenho.py`.
+- **Depends on:** pré-condição do doc 11 — *histórico de interações* (existente: `sales_intelligence.interactions`
+  com `envio:` gravado pelo W6-E04 e `response_category` pelo W6-E05; medido no W6-E07 e no W8-E04-T01).
+  **Destrava:** `TRE-W9-E05-T01` (Automated nurture) na decisão de *quando* nutrir.
+- **Lacuna medida (declarada, não escondida):** o card mede o **horário observado** de desfecho, não uma
+  previsão por lead; "best timing" aqui é melhor janela **com amostra**, e base pequena abstém.
+
+
+## TRE-W9-E05-T01 — Automated nurture (W9 · Inteligencia Avancada)
+
+- **ACCEPTANCE:** `hermes/agentes/analytics/nutricao_automatica.py` + contrato
+  `hermes/agentes/analytics/nutricao-automatica-v1.json` entregam a FILA de proximos toques de nurture por
+  organizacao, derivada dos DOIS relatorios dos pais: canal = `canal_previsto` do `previsao-canal-v1`
+  (W9-E03-T01), janela = `melhor_janela` (dia x faixa) e fuso do `melhor-horario-v1` (W9-E04-T01) — canal e
+  horario NAO sao remedidos. Cadencia declarada de 4 passos (0/4/11/25 dias) com `due_at_utc` calculado
+  (ancora = primeira ocorrencia do dia da janela a partir da referencia; cada passo avanca o intervalo e
+  volta ao dia-alvo, nunca no passado e monotonico por organizacao) e fila ordenada por
+  (due_at, canal, organizacao). Fail-closed: sem `previsao_emitida` do pai OU sem `melhor_janela` o plano
+  ABSTEM por inteiro (`PLANO_ABSTIDO`, `fila=[]`, lista `faltando`). **NADA ENVIA**: todo toque carrega
+  `exige_aprovacao_humana: true` + as condicoes de parada (opt-out/do_not_contact, resposta positiva com
+  handoff humano, resposta negativa, avanco no funil, `max_toques`). Guardas: `prod` RECUSA exit 4 (ADR-005)
+  antes de ler entrada; `homolog` exige `--confirmo`; o componente **nao tem porta de banco** (nenhum SQL,
+  nenhuma escrita) e a auditoria de codigo reprova statement de escrita; PII ausente (so' UUID, canal,
+  janela e datas).
+- **TEST:** offline `python3 scripts/agentes/verificar_nutricao_automatica.py --autoteste` →
+  `VERIFICADOR_NUTRICAO_AUTOMATICA_PASS (42 itens, 0 falhas)` + **AUTOTESTE OK (5/5 mutacoes)**; E2E
+  `bash scripts/agentes/teste_nutricao_automatica_aceite.sh` (VPS, PostgreSQL descartavel
+  `pg-analytics-nurture-acc` + migration 0001) → `ACEITE_NUTRICAO_AUTOMATICA_001_OK` (36 itens, 0 falhas),
+  com regressao das duas suites offline dos pais, 7 organizacoes previstas → 28 toques, abstencao medida,
+  reproducibilidade (mesmo `hash_do_plano`) e contagem das 12 tabelas identica antes/depois; portao de
+  estrutura `PASS (0 falhas)`.
+- **ROLLBACK:** reverter o commit — arquivos novos (`nutricao_automatica.py`,
+  `nutricao-automatica-v1.json`, `verificar_nutricao_automatica.py`,
+  `teste_nutricao_automatica_aceite.sh`, `docs/architecture/nutricao-automatica-v1.md`,
+  `docs/runbooks/nutricao-automatica.md`), uma secao em criterios/registro/CHANGELOG e o bloco do portao.
+  ZERO migration, ZERO escrita, ZERO cron, ZERO credencial; container descartavel sai no `trap`.
+- **RISK:** BAIXO-MEDIO — o componente nao abre banco e nao escreve; o risco real e' de POLITICA (cadencia e
+  condicoes de parada DECLARADAS, nao medidas) e de INTERPRETACAO (o plano e' pedido, nao ato: por isso
+  `exige_aprovacao_humana` e' obrigatorio e o prod recusa). Limites declarados: janela global e canal de
+  coorte (sem segmentacao), sem avaliacao do estagio do funil na derivacao, sem materializacao/agendamento e
+  sem deduplicacao entre rodadas.
+- **Components afetados:** `hermes/agentes/analytics/nutricao-automatica-v1.json` (novo),
+  `hermes/agentes/analytics/nutricao_automatica.py` (novo),
+  `scripts/agentes/verificar_nutricao_automatica.py` (novo),
+  `scripts/agentes/teste_nutricao_automatica_aceite.sh` (novo),
+  `docs/architecture/nutricao-automatica-v1.md` (novo), `docs/runbooks/nutricao-automatica.md` (novo),
+  `docs/kanban/criterios-de-aceitacao.md`, `docs/operations/registro-de-execucoes.md`, `CHANGELOG.md`,
+  `scripts/verificar_estrutura.sh`. Reuso (nao alterado): `previsao_canal.py`/`previsao-canal-v1.json`
+  (W9-E03-T01) e `melhor_horario.py`/`melhor-horario-v1.json` (W9-E04-T01).
+- **Depends on:** `TRE-W9-E03-T01` (melhor canal previsto) e `TRE-W9-E04-T01` (melhor janela) — ambos
+  medidos e fechados. **Destrava:** nada nesta onda (P3, ultima peca do E05); a execucao dos toques e' do
+  caminho de outbound com aprovacao humana (W6).
+- **Lacuna medida (declarada, nao escondida):** o card entrega o PLANO do nurture, nao o nurture em execucao
+  — materializar/agendar exige contrato novo + aprovacao (doc 12 §10).
+
+## TRE-W9-E06-T01 — Qdrant commercial memory
+
+- A pré-condição do card ("corpus comercial estável") é MEDIDA na base canônica, não presumida: piso
+  declarado no contrato (10 documentos, 3 tipos com base, mínimo por tipo) e `faltando` nomeado quando não
+  atende. Abaixo do piso a memória NÃO é publicada e **nada** é escrito no Qdrant (nem a coleção nasce).
+- A indexação é idempotente por id determinístico (UUIDv5 de coleção+tabela+id de origem): duas rodadas
+  mantêm contagem e `hash_do_relatorio`; conteúdo alterado na origem ATUALIZA o mesmo ponto.
+- A busca é determinística (score desc, desempate por id), com filtro declarado (`tipo`,
+  `organization_id`) e piso de score; consulta sem correspondência devolve lista vazia.
+- Privacidade: payload FECHADO (nove campos declarados, nenhum de contato), `contacts` nunca lida e
+  documento com padrão de PII (e-mail/telefone/CNPJ/CPF) vira lacuna `PII_SUSPEITA`, fora da coleção.
+- Fonte de verdade é o PostgreSQL: leitura pura provada por snapshot das tabelas e pelo mecanismo
+  `READ ONLY`; o Qdrant é memória derivada e reconstruível (`--recriar --confirmo`).
+- Guardas ADR-005: `prod` RECUSA (exit 4), Qdrant remoto RECUSA em dev, `homolog` exige `--confirmo` e
+  dimensão divergente RECUSA sem escrever.
+- Determinismo do relatório (relógio e estado do Qdrant fora do hash) e HTML auto-contido.
+- Suíte offline verde com prova de dente (autoteste por mutação).
+
+**ACCEPTANCE:** `ACEITE_MEMORIA_COMERCIAL_OK` (66 itens, 0 falhas) — pré-condição atendida medida na base
+(12 documentos, 4 tipos com base) e recusada na base magra (1 documento → `faltando` com 6 itens, 0
+coleções criadas); 12 pontos indexados numa coleção com a dimensão do contrato; payload fechado (9 campos)
+e **nenhum** e-mail/padrão de PII nos pontos (a linha com e-mail virou lacuna `PII_SUSPEITA`); idempotência
+(12 → 12, mesmo hash) e `UPDATE` na origem mudando o `conteudo_sha256` do MESMO ponto; busca com piso
+(0,42 na `OBJECAO` de preço e 0,49 na `DOR`, ruído 0,00), filtro por tipo, determinismo e hashes
+diferentes por consulta; snapshot das tabelas igual antes/depois e escrita recusada pelo `READ ONLY`;
+`DIMENSAO_DIVERGENTE` recusando sem escrever e `--recriar --confirmo` reconstruindo os 12 pontos.
+
+**TEST:** `python3 scripts/agentes/verificar_memoria_comercial.py --autoteste` (**26 itens + 11 mutações**)
+e `bash scripts/agentes/teste_memoria_comercial_aceite.sh` na VPS de dev, com **Qdrant descartável**
+(`qdrant/qdrant:v1.12.4` em 127.0.0.1:6339) e **PostgreSQL descartável** (`pg-memoria-comercial` +
+migration 0001 + base semeada). Evidência = saída completa com exit code, anexada ao card; containers
+removidos no fim.
+
+**ROLLBACK:** `--recriar --confirmo` reindexa a memória do zero a partir da fonte canônica; rollback total
+= remover a coleção (`DELETE /collections/memoria_comercial_v1`), remover o container descartável e
+reverter o commit (arquivos novos, sem DDL e sem migration). O PostgreSQL canônico não é tocado — leitura
+pura — e nada em homolog/produção depende da coleção.
+
+**RISK:** **médio** — primeiro armazenamento vetorial do projeto (infra nova, só em dev) e provedor de
+embedding local declarado. Riscos **declarados**: (a) a busca é **lexical** e sofre **colisão de hash**
+(L2) — o piso de score troca recall por precisão e consulta com um único token em comum pode não voltar;
+(b) nenhum agente consome a memória ainda (L3); (c) a janela temporal do funil não é aplicada (L4);
+(d) o volume do Qdrant **não** entra no backup do produto (L5) — perder a coleção custa reindexação;
+(e) caso/playbook vive em `recommendations`/`pain_hypotheses` (L1), não há tabela dedicada de playbook.
+Risco de dado: **baixo** (leitura pura na fonte, payload fechado, PII descartada).

@@ -41,7 +41,7 @@ ok()  { ITENS=$((ITENS + 1)); echo "OK     $*"; }
 ko()  { ITENS=$((ITENS + 1)); FALHAS=$((FALHAS + 1)); echo "FALHOU $*"; }
 morrer() { echo "$*"; echo "RESULTADO: FIXTURE_FALHOU"; exit 1; }
 
-limpar() { docker rm -f "$BASE" >/dev/null 2>&1; }
+limpar() { docker rm -f -v "$BASE" >/dev/null 2>&1; }
 trap limpar EXIT
 
 if [ -z "$PREFIXO" ]; then
@@ -91,7 +91,7 @@ esperar_postgres() {  # <nome> <usuario> <banco>
 }
 
 # ------------------------------------------------------------------ linha de base
-docker rm -f "$BASE" >/dev/null 2>&1
+docker rm -f -v "$BASE" >/dev/null 2>&1
 if docker run -d --name "$BASE" -e POSTGRES_PASSWORD="$SENHA" -e POSTGRES_USER=tre \
      -e POSTGRES_DB=sales_intelligence "$IMAGEM" >/dev/null 2>&1; then
   ok "container descartavel de linha de base criado"

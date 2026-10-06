@@ -1,0 +1,122 @@
+{
+  "nome": "nutricao-automatica-v1",
+  "versao": "nutricao-automatica-v1",
+  "card": "TRE-W9-E05-T01",
+  "onda": "W9",
+  "epico": "E05",
+  "titulo": "Nurture automatizado — plano dos proximos toques (organizacao, canal e janela), com aprovacao humana; NUNCA envia",
+  "status": "PROPOSTA_A_HOMOLOGAR",
+  "papel": "PLANEJAR o nurture: consumir a previsao de CANAL (TRE-W9-E03-T01) e a medicao de JANELA (TRE-W9-E04-T01) e derivar, de forma deterministica, a fila de proximos toques por organizacao — quem, por qual canal, em que dia x faixa e quando — com cadencia declarada, condicoes de parada e aprovacao humana obrigatoria. NAO envia, NAO agenda e NAO grava.",
+  "componente": {
+    "arquivo": "hermes/agentes/analytics/nutricao_automatica.py",
+    "modo": "PLANEJAMENTO PURO sobre os relatorios dos pais (nenhuma conexao de banco: o componente nao abre porta de banco, nao executa SQL e nao tem porta de banco na linha de comando)",
+    "nao_faz": [
+      "NAO envia nada: nao dispara e-mail, WhatsApp nem LinkedIn, nao cria outbox_event, nao cria human_approvals e nao chama o caminho de outbound — cada toque da fila viaja com `exige_aprovacao_humana: true` e e' um PEDIDO, nunca um ato",
+      "NAO escreve: nenhuma tabela, nenhuma coluna, nenhum arquivo de metrica, nenhum DDL. O componente nao abre banco: a unica entrada e' o JSON dos pais + o proprio contrato (auditoria de codigo reprova verbo de escrita)",
+      "NAO remede o canal: o canal de cada organizacao e' o `canal_previsto` do relatorio `previsao-canal-v1` (card W9-E03-T01), consumido como dono da previsao — o componente nao rodeia a regra de desempate nem reimplementa a leitura de `interactions`",
+      "NAO remede o horario: a janela e' a `melhor_janela` do relatorio `melhor-horario-v1` (card W9-E04-T01) e o fuso e' o DECLARADO por aquele contrato — o componente nao le tzdata do sistema nem negocia offset",
+      "NAO contorna opt-out: organizacao cujos canais estao bloqueados NAO aparece nas previsoes do pai (canal bloqueado nunca e' previsto) e, portanto, nao entra na fila; o bloqueio por `do_not_contact`/`opt_out_*` viaja na entrada e e' repetido como condicao de parada",
+      "NAO inventa base: sem `previsao_emitida` do pai OU sem `melhor_janela` (AMOSTRA_INSUFICIENTE/SEM_ENVIOS) o plano ABSTEM por inteiro (`plano_emitido=false`, `fila=[]`, lista `faltando`) — nunca se escolhe canal/janela com base de brinquedo",
+      "NAO personaliza por contato nem avalia estagio do funil: a unidade e' a organizacao e a parada por avanco/por resposta e' CONDICAO DECLARADA por toque (lacuna L4), a ser checada pelo caminho de aprovacao/envio",
+      "NAO agenda de verdade: `due_at_utc` e' uma DATA CALCULADA no relatorio, nao um cron, nao um evento de calendario e nao uma linha em tabela; materializar exige contrato novo + aprovacao (governanca do Data Contract)"
+    ]
+  },
+  "fonte_da_verdade": [
+    "hermes/agentes/analytics/previsao-canal-v1.json + relatorio `previsao-canal-v1` (card TRE-W9-E03-T01) — DONO do canal previsto por organizacao, das previsoes e da lista de canais bloqueados",
+    "hermes/analytics/melhor-horario-v1.json + relatorio `melhor-horario-v1` (card TRE-W9-E04-T01) — DONO da melhor janela (dia x faixa) e do fuso declarado (offset fixo)",
+    "11_KANBAN_DE_IMPLEMENTACAO.md §W9 `TRE-W9-E05-T01 — Automated nurture` (Priority P3; Depends on W9-E03-T01, W9-E04-T01) — a secao 2 do doc 11 exige ACCEPTANCE/TEST/ROLLBACK/RISK: declarados neste contrato, em docs/kanban/criterios-de-aceitacao.md e no card",
+    "docs/data/DATA_CONTRACT_V1.md §9 (compliance: opt-out e' bloqueio) e §10 (mudanca de contrato exige aprovacao) — o plano NAO materializa nada",
+    "ADR-005 — nada nasce em producao: o componente RECUSA o ambiente prod (exit 4)"
+  ],
+  "pre_condicao": {
+    "nome": "duas camadas medidas (canal e janela)",
+    "natureza": "condicao do mundo real: o nurture so' tem o que planejar se o canal e o horario tiverem sido MEDIDOS com base suficiente",
+    "forma_testavel": "o plano so' e' emitido se `previsao-canal-v1.pre_condicao_dados_multicanal.atendida` for true E houver previsoes E `melhor-horario-v1.melhor_janela` nao for null",
+    "quando_nao_atendida": "o relatorio SAI com `veredito=PLANO_ABSTIDO`, `plano_emitido=false`, `fila=[]`, `por_organizacao=[]` e a lista `faltando` nomeando a camada que faltou — fail-closed, sem chute"
+  },
+  "entradas": {
+    "canal": {
+      "versao_exigida": "previsao-canal-v1",
+      "relatorio": "relatorio `previsao-canal-v1` (JSON gerado pelo card W9-E03-T01)",
+      "contrato_do_dono": "hermes/agentes/analytics/previsao-canal-v1.json",
+      "campos_usados": [
+        "versao",
+        "pre_condicao_dados_multicanal {atendida, faltando}",
+        "previsoes[] {organization_id, canal_previsto, amostra_do_canal, canais_bloqueados}",
+        "resumo {organizacoes_com_previsao, distribuicao_das_previsoes}",
+        "resumo {endpoint_principal}",
+        "hash_do_relatorio"
+      ],
+      "regra": "versao diferente da exigida RECUSA (DEPENDENCIA_INCOERENTE, exit 3): consumir um relatorio de outra versao seria medir outra coisa"
+    },
+    "horario": {
+      "versao_exigida": "melhor-horario-v1",
+      "relatorio": "relatorio `melhor-horario-v1` (JSON gerado pelo card W9-E04-T01)",
+      "contrato_do_dono": "hermes/analytics/melhor-horario-v1.json",
+      "campos_usados": [
+        "versao",
+        "melhor_janela {dia, faixa} e melhor_janela_motivo",
+        "fuso {nome, offset_utc}",
+        "grade {dias[], faixas[] {nome, de, ate}}"
+      ],
+      "regra": "versao diferente da exigida RECUSA (DEPENDENCIA_INCOERENTE, exit 3); fuso ilegivel RECUSA (FUSO_INVALIDO, exit 3) — o offset e' lido, nunca presumido"
+    }
+  },
+  "politica": {
+    "unidade": "organization",
+    "passos": [
+      { "passo": 1, "intervalo_dias": 0, "rotulo": "toque_imediato" },
+      { "passo": 2, "intervalo_dias": 4, "rotulo": "reforco_curto" },
+      { "passo": 3, "intervalo_dias": 11, "rotulo": "reforco_medio" },
+      { "passo": 4, "intervalo_dias": 25, "rotulo": "reabertura" }
+    ],
+    "max_toques": 4,
+    "regra_da_cadencia": "a ANCORA e' a primeira ocorrencia do dia-alvo a partir da referencia (no mesmo dia SO' se a faixa ainda nao comecou), na hora de inicio da faixa, no fuso declarado pelo pai do horario; o passo N sai de `ancora + intervalo_dias` e volta para a proxima ocorrencia do dia-alvo — o toque nunca cai no passado e a fila e' monotona",
+    "regra_do_due": "due_local = ancora + intervalo_dias, avancado por `(indice(dia_alvo) - weekday(due)) % 7` dias, com hora = faixa.de; due_at_utc = due_local - offset; ancora = referencia local avancada por `(indice(dia_alvo) - weekday(referencia local)) % 7` (mais 7 dias se o dia e' o mesmo e a faixa ja' comecou)",
+    "ordem_da_fila": ["due_at_utc asc", "canal asc", "organization_id asc"],
+    "condicoes_de_parada": [
+      "opt_out/de_contato: `do_not_contact` ou `opt_out_*` do contato — bloqueio, nao preferencia (dono: Data Contract §9 / card W9-E03-T01); o toque nao acontece",
+      "resposta_positiva: retorno com `response_category` de interesse — sai do nurture e vira handoff humano (dono: W6-E05)",
+      "resposta_negativa: retorno negativo — entra em espera, nao em cadencia automatica",
+      "avanco_no_funil: organizacao alcancou o endpoint principal declarado pelo pai do canal — sai do nurture (decisao humana, nao automacao)",
+      "max_toques: atingido `max_toques` sem resposta, a organizacao sai da fila (nada de toque infinito)"
+    ],
+    "exige_aprovacao_humana": true,
+    "quem_executa": "o caminho de outbound com Human Approval (W6): este card entrega o PEDIDO de toque, nunca o envio"
+  },
+  "guardas": {
+    "ambiente": "prod e' RECUSA por desenho (exit 4, ADR-005) ANTES de ler contrato/relatorios; homolog exige --confirmo; dev e' o ambiente do harness",
+    "sem_banco": "o componente NAO tem porta de banco: nenhuma conexao, nenhum SQL, nenhum DDL. A auditoria de codigo (tokenize, ignorando comentario e string) reprova verbo de escrita — ESCRITA_NO_CODIGO exit 3",
+    "reuso": "canal e janela vem dos relatorios dos pais; o componente nao reimplementa leitura de `interactions` nem a regra de desempate do canal — sha256 dos dois contratos dos pais viaja no relatorio",
+    "fail_closed": "relatorio ausente/ilegivel/versao errada, fuso ilegivel, contrato incoerente (passos fora de ordem, `max_toques` != numero de passos, `exige_aprovacao_humana` false) RECUSAM com exit 3 antes de emitir qualquer fila",
+    "pii": "a saida carrega o UUID canonico da organizacao e a janela; nenhum e-mail, telefone, nome, dominio nem id de aprovacao e' lido ou emitido (o componente nem le `contacts`)",
+    "segredo": "se valor de TRE_NURTURE_TOKEN, TRE_CANAL_TOKEN, TRE_PREVISAO_CANAL_TOKEN ou TRE_TIMING_TOKEN aparecer na evidencia, a rodada RECUSA (SENHA_VAZADA, exit 5)"
+  },
+  "saida": {
+    "json": "relatorio com versao, card, ambiente, veredito (PLANO_EMITIDO|PLANO_ABSTIDO), referencia_temporal, gerado_em, contrato (versao + sha256), dependencias (versao + sha256 de cada pai), pre_condicoes (atendida + faltando), politica, janela (dia, faixa, faixa_de, fuso, offset_utc), fila[] (organization_id, passo, rotulo, canal, dia, faixa, intervalo_dias, due_at_utc, due_at_local, motivo, exige_aprovacao_humana, condicoes_de_parada), por_organizacao[], resumo, lacunas, lacunas_declaradas, hash_do_plano",
+    "html": "pagina auto-contida (uma unica string, CSS inline, nenhum recurso externo, nenhum script) com as pre-condicoes, a janela escolhida e a fila por organizacao",
+    "determinismo": "mesma entrada (mesmos relatorios, mesma referencia e mesmos contratos) produz o MESMO relatorio e o MESMO `hash_do_plano`; `gerado_em` e a unica diferenca e NAO entra no hash",
+    "privacidade": "nada de PII na saida; somente UUID, canal, dia, faixa e datas",
+    "aprovacao": "todo item da fila carrega `exige_aprovacao_humana: true` — e' a marca de que o plano nao se executa sozinho"
+  },
+  "vereditos": {
+    "PLANO_EMITIDO": "as duas camadas responderam: a fila de toques foi derivada com canal, janela e due_at calculados",
+    "PLANO_ABSTIDO": "canal ou janela sem base/ausente: nenhuma fila, motivo nomeado em `faltando` (nao se inventa plano)",
+    "RECUSADA": "prod, contrato/dependencia incoerente, relatorio ausente/ilegivel ou verbo de escrita no codigo: nada emitido, motivo declarado"
+  },
+  "lacunas_declaradas": [
+    "L1: o plano NAO executa nem agenda: `due_at_utc` e' data CALCULADA no relatorio. Materializar (tabela de toques, cron, outbox, evento de calendario) exige versao nova do contrato de dados + aprovacao humana (doc 12 §10)",
+    "L2: o plano NAO avalia o estado atual da organizacao no funil nem a ultima interacao por toque — a parada por avanco/por resposta e' CONDICAO DECLARADA carregada em cada toque, checada por quem executa; avaliar na DERIVACAO exige o desfecho por organizacao no contrato de entrada (o relatorio do canal so' o carrega por canal)",
+    "L3: janela unica para toda a fila (a `melhor_janela` do pai e' global, nao por organizacao/canal) e canal unico por organizacao (a previsao do pai e' prior de coorte): o plano nao tem segmentacao por setor, porte nem safra",
+    "L4: a cadencia (4 passos / 0-4-11-25 dias) e' POLITICA DECLARADA, nao medida: nao ha teste A/B nem resposta observada por passo nesta v1 — a base do projeto e' pequena e inventar cadencia 'otima' seria chute",
+    "L5: `due_at` respeita apenas dia da semana x faixa: feriado, ausencia do contato e fuso do destinatario nao entram (o pai mede o fuso do remetente, declarado)",
+    "L6: o plano assume que o canal previsto ainda e' elegivel no momento do toque: se um opt-out chegar depois, quem executa e' que barra (condicao de parada #1) — o plano nao e' revalidado por este componente",
+    "L7: sem deduplicacao entre rodadas: rodar duas vezes com a mesma referencia produz o mesmo plano (deterministico), mas nao ha historico de toques ja pedidos/executados — isso e' o item de materializacao L1"
+  ],
+  "aceite_do_card": {
+    "acceptance": "ver docs/kanban/criterios-de-aceitacao.md#TRE-W9-E05-T01 (AC/TEST/ROLLBACK/RISK declarados no inicio da execucao, como exige a secao 2 do doc 11)",
+    "test": "suite offline com autoteste por mutacao (scripts/agentes/verificar_nutricao_automatica.py) + aceite E2E em PostgreSQL descartavel na VPS (scripts/agentes/teste_nutricao_automatica_aceite.sh)",
+    "rollback": "reverter o commit: arquivos novos (componente, contrato, verificador, aceite, docs) + uma secao em criterios/registro/CHANGELOG + bloco do portao de estrutura; ZERO migration, ZERO cron, ZERO credencial, ZERO escrita",
+    "risk": "BAIXO-MEDIO: o componente nao abre banco e nao escreve nada; o risco real e' de POLITICA (cadencia e condicoes de parada sao declaradas, nao medidas) e de INTERPRETACAO (o plano e' pedido, nao ato — por isso `exige_aprovacao_humana` e' obrigatorio e o prod recusa)"
+  }
+}

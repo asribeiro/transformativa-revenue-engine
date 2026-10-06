@@ -1,0 +1,429 @@
+{
+  "delivery_id": "TRE-W1",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W1 — Nucleo de dados (PostgreSQL / Sales Intelligence)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-05",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote 1 (dados, dedup, credencial, migracao)"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W1-E04-T01",
+      "title": "Implementar deduplicacao strong identifiers",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_595dc9be",
+          "stage": "DONE",
+          "validation_result": "PASS",
+          "evidence": "motor scripts/dedup/deduplicar_organizacoes.py (CNPJ -> dominio -> LinkedIn) com suite sintetica offline",
+          "current_gate": "DONE",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/dedup/teste_dedup_sintetico.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_DEDUP_SINTETICO_OK (7 itens, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E04-T01-D04",
+      "title": "DEFEITO: verificador de estrutura imprimia PASS com metade dos checks como codigo morto",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_967965f0",
+          "stage": "DONE",
+          "validation_result": "PASS",
+          "evidence": "correcao do verificador: o resumo/exit saiu do meio do script e o fim deixou de ser inalcancavel",
+          "current_gate": "DONE",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 1, offline)",
+          "eixo_de_risco": "ISOLAMENTO (integridade da medicao)",
+          "verification": {
+            "commit": "1378018405c6487ef52c0c32427ea5766f053911",
+            "ambiente": "clone limpo (scratch) em origin/develop; sem banco, rede, credencial, producao ou runtime vivo (portoes offline; duas passadas identicas)",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/verificar_estrutura.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (0 falhas), 386 linhas OK; ultimo bloco (pontuacao-preditiva) presente -> fim do script nao esta morto"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E05-T01-D01",
+      "title": "DEFEITO: migration 0001 registrada em dev diverge do arquivo do repo e trava o runner",
+      "stage": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_39838c5b",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "registro em public.tre_schema_migrations realinhado (opcao 1 do dono, 30/09) e CONFIRMADO no dev vivo: sha256 do registro (0484a3701b8c85243e5bc92c…) == sha256 do arquivo db/migrations/0001_sales_intelligence_v1.sql; o runner --somente-checar PULA a versao por ser o MESMO sha (MIGRACAO_OK, exit 0). Duas passadas identicas.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/aplicar_migracoes.sh dev --somente-checar",
+                "exit": 0,
+                "resultado": "RESULTADO: MIGRACAO_OK (--somente-checar; 0 aplicada(s)/pendente(s), 1 pulada(s), 4 itens, 0 falhas) — 2 passadas identicas"
+              },
+              {
+                "gate": "bash scripts/db/estado_do_ambiente.sh dev",
+                "exit": 0,
+                "resultado": "registro 0001 | 0484a3701b8c85243e5bc92c… == arquivo do repo (iguais); 12 tabelas | 30 indices — 2 passadas identicas"
+              }
+            ]
+          }
+        }
+      ],
+      "current_gate": "DONE"
+    },
+    {
+      "id": "TRE-W1-E05-T01",
+      "title": "Criar database test suite (schema, constraints, isolamento)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_c7281fce",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "suite de banco unica (scripts/db/suite_banco.sh) medida no dev em modo --somente-leitura (respeita o mandato read-only desta rodada: a etapa 4 dedup ambiente roda em varredura --detectar e NAO escreve em sales_intelligence). AC1 (schema x contrato), AC2 (isolamento na forma reformulada) e AC3 (exit code confiavel) verdes; o teste de isolamento roda tambem isolado e independente.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/suite_banco.sh dev --somente-leitura",
+                "exit": 0,
+                "resultado": "RESULTADO: SUITE_OK (69 itens, 0 falhas) — 2 passadas identicas"
+              },
+              {
+                "gate": "bash scripts/db/teste_isolamento_clientes.sh dev",
+                "exit": 0,
+                "resultado": "RESULTADO: ISOLAMENTO_OK (5 itens, 0 falhas) — 2 passadas identicas"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E05-T01-D02",
+      "title": "AC2 (tenant/RLS) nao testavel contra o Data Contract V1.0 — decisao de requisito",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e340c29b",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "decisao do dono (30/09/2026, opcao A) registrada: isolamento FISICO — um banco por cliente; AC2 reformulado para a forma testavel 'nao existem dois clientes no mesmo banco'. A forma reformulada esta MEDIDA em dev (teste_isolamento_clientes.sh) e a decisao aparece no Data Contract e no registro de aprovacoes. Tenant/RLS como dimensao de 1a classe fica para o V2.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/teste_isolamento_clientes.sh dev",
+                "exit": 0,
+                "resultado": "RESULTADO: ISOLAMENTO_OK (5 itens, 0 falhas) — o AC2 reformulado medido contra o V1.0 — 2 passadas identicas"
+              },
+              {
+                "gate": "grep decisao em docs/data/DATA_CONTRACT_V1.md + docs/operations/registro-de-aprovacoes.md",
+                "exit": 0,
+                "resultado": "decisao opcao A (isolamento fisico, um banco por cliente) registrada em 30/09/2026"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E01-T01",
+      "title": "Schema em dev por migration versionada — revisao independente",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_2cc57d80",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "revisao independente do E01-T01 reproduzida: a migration e versionada e o runner aplica/pula em dev sem inventar estado; o banco sales_intelligence tem as 12 tabelas previstas (medidas no banco); deploy/environments/dev.env declara o par ambiente -> container/banco/usuario SEM segredo; o verificador de contrato nao foi afrouxado (26 itens PASS).",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+          "verification": {
+            "commit": "393bc457a951a1e0bf77089b96e4b033be4ddc35",
+            "ambiente": "VPS Contabo vmi3619453 (dev): container pg-sales-dev / banco sales_intelligence / usuario sales_ai; scripts lidos da copia isolada /tmp/verif-393bc45 (git archive de 393bc45, nunca a copia operacional); verificacoes read-only (suite em --somente-leitura; ACL em duplas descartaveis que se removem); duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/estado_do_ambiente.sh dev",
+                "exit": 0,
+                "resultado": "12 tabelas | 30 indices; registro da migration 0484a370… == arquivo do repo — 2 passadas identicas"
+              },
+              {
+                "gate": "python3 scripts/verificar_contrato_dados.py",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (26 itens, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E02-T01",
+      "title": "Criar tabelas core",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_d9cb5755",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "As 12 tabelas core do contrato nascem da propria migration 0001 congelada, e o fixture de smoke (db/fixtures/smoke_dev.sql) carrega de forma IDEMPOTENTE com contagem por tabela conferida. O verificador de fixture REPROVA linha a mais e linha a menos (dentes), e o rollback e reversivel; a aplicacao roda em container PostgreSQL DESCARTALVEL proprio, sem tocar nenhum ambiente real.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); container PostgreSQL DESCARTALVEL proprio com nome/prefixo unico (--rm), aplicando a migration 0001 congelada; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/teste-fixture-smoke.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_OK (12 itens, 0 falhas); verificador APROVA alvo integro (20 itens OK, 12 tabelas) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E03-T01",
+      "title": "Criar constraints e índices",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_49e8e2e3",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O alvo nasce da propria migration congelada e tem exatamente os 30 indices do contrato (12 PK + 15 CREATE INDEX + 3 UNIQUE) e as PK/FK/UNIQUE item a item. O verificador de constraints e indices tem DENTE: 7 mutacoes proibidas pelo contrato (DROP/RENAME de indice, coluna errada, DROP de FK/UNIQUE/PK, indice a mais) reprovam o alvo e, desfeita a mutacao, ele volta a aprovar. Roda em container PostgreSQL DESCARTALVEL proprio.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "MIGRACAO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); container PostgreSQL DESCARTALVEL proprio com nome/prefixo unico (--rm), aplicando a migration 0001 congelada; containers do dev (pg-sales-dev/pg-odoo-dev/odoo-dev/proxy-dev/pg-wa-probe) INTOCADOS; nada escrito em sales_intelligence do dev/producao; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/teste-constraints-indices.sh",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_OK (18 itens, 0 falhas); alvo integro 16 itens OK/30 indices; 7 mutacoes REPROVADAS e reversiveis — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E04-T02",
+      "title": "Implementar entity_match_confidence",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_430ba4cc",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O campo entity_match_confidence e calculado, classificado por faixa e PERSISTIDO e lido DE VOLTA do banco no registro auditado do merge (sync_events) e na pendencia da fila humana (human_approvals): 0,94 na faixa REVISAO_HUMANA e 0,95 na faixa de MERGE_AUTOMATICO, coerentes com o limiar do contrato (0,95); o campo canonico == alias do E04-T01. As 4 sabotagens (persistencia, coerencia, limiar, detalhe) reprovam a suite (dentes). O cenario usa container PostgreSQL DESCARTALVEL proprio com override declarado de dev.env — a escrita em sales_intelligence do dev e vedada nesta rodada.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "DADO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); cenario medido em container PostgreSQL DESCARTALVEL proprio (trv-ent-*, --rm) com OVERRIDE DECLARADO de deploy/environments/dev.env apontando para o container descartavel (a escrita em sales_intelligence do dev e vedada nesta rodada); containers do dev INTOCADOS; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/dedup/teste_entity_match_confidence.sh dev",
+                "exit": 0,
+                "resultado": "RESULTADO: TESTE_ENTITY_MATCH_CONFIDENCE_OK (22 itens, 0 falhas); CENARIO_OK (21 itens); TESTE_DEDUP_AMBIENTE_OK (4 itens) — exit 0 nas 2 passadas independentes"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E01-T01-EXEC",
+      "title": "Criar database/schema Sales Intelligence (execucao)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_969affa7",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "O schema sales_intelligence existe de fato no dev (12 tabelas | 30 indices, medidos em leitura) e o registro da migration 0001 em public.tre_schema_migrations bate com o arquivo do repo; o verificador de constraints/indices passa READ-ONLY contra o alvo real (16 itens) e o verificador do contrato de dados passa offline (26 itens). Nenhuma DDL em producao; nenhuma escrita no dev nesta medicao. Item distinto do TRE-W1-E01-T01 (revisao independente, t_2cc57d80) para nao sobrescrever o veredito ja gravado.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+          "eixo_de_risco": "MIGRACAO",
+          "verification": {
+            "commit": "ec97374e40c3f50f7b0803afb264ab9c64cf1469",
+            "ambiente": "VPS Contabo vmi3619453 (dev), copia isolada /tmp/tre_val/repo (tar de ec97374); medicao READ-ONLY contra o dev real (container pg-sales-dev, banco sales_intelligence, usuario sales_ai): estado_do_ambiente.sh + verificar_constraints_indices.py (somente SELECT) + verificar_contrato_dados.py offline; nenhuma escrita no dev; duas passadas identicas",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/db/estado_do_ambiente.sh dev",
+                "exit": 0,
+                "resultado": "12 tabelas | 30 indices no schema sales_intelligence; registro da migration 0001 == arquivo do repo — 2 passadas identicas"
+              },
+              {
+                "gate": "python3 scripts/db/verificar_constraints_indices.py --banco 'docker exec pg-sales-dev psql -U sales_ai -d sales_intelligence'",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (16 itens, 0 falhas) — leitura pura, sem DDL/DML"
+              },
+              {
+                "gate": "python3 scripts/verificar_contrato_dados.py",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (26 itens, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W1-E06-T01",
+      "title": "Testar backup/restore (contra o banco real do ambiente dev)",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_72672e48",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Ciclo completo de backup/restore rodado contra o banco REAL do ambiente dev, na VPS, em container descartavel apenas para o RESTORE (producao recusada pelo proprio script, ADR-005). DUAS passadas identicas no modo `--ambiente dev`: `RESULTADO: TESTE_OK (14 itens, 0 falhas)` (o modo descartavel tem 12; os 2 a mais sao exatamente os do ambiente). Os itens medidos, todos OK: 'origem e o container do ambiente dev: pg-sales-dev (nenhum container descartavel de origem)'; 'postgres do ambiente dev responde (16.15)'; 'origem tem conteudo real: 12 tabelas em sales_intelligence (amostra: 4 linhas)'; 'backup do ambiente dev concluido (BACKUP_OK)'; 'sha256 do dump confere com o manifesto'; 'manifesto registra a origem real do ambiente (pg-sales-dev)'; 'manifesto registra o envio externo (externo: enviado (contabo:tre-backup/prova-l14))'; 'teste de restore APROVADO (RESTORE_OK)'; 'contagens conferidas linha a linha na restauracao'; 'reverificacao do dump bom segue APROVADA'; e 'container do ambiente intacto (mesmo Id e StartedAt antes/depois do ciclo)'. DENTE 1 (embutido no verificador, morde): 'teste negativo: dump truncado foi REPROVADO, como devia (8 falha(s) apontada(s))'. DENTE 2 (meu, o que o header do script promete — 'nunca cai para container descartavel em silencio'): apontando TRE_PG_SERVICO para um container inexistente, o teste REPROVOU -> `RESULTADO: TESTE_FALHOU`, 'container de origem pg-que-nao-existe NAO existe no ambiente dev — o modo ambiente nao cai para container descartavel', e ZERO containers descartaveis foram criados. Essa rodada FECHA a regua do card 133 (o criterio 'manifesto registra externo: enviado' so roda neste modo). EFEITOS EXTERNOS: um artefato de prova no prefixo `prova-l14/` do bucket (autorizado pelo dono) — lido de volta ('servico: pg-sales-dev', 'externo: enviado') e REMOVIDO em seguida; os artefatos da rotina diaria nao foram tocados. ANOMALIA DE MODELAGEM DECLARADA: o artefato `W1-dados-e-dedup.json` tem 10 work_items e NENHUM item E06, enquanto W2..W7 todos tem um `E06-T01` — este card existe no board mas nao tinha casa no artefato da propria onda; foi registrado aqui como work_item novo (mesmo tratamento dado aos 4 cards de defeito do W0).",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/backup/teste-backup-restore.sh --ambiente dev",
+            "passadas": 2,
+            "medicao": "TESTE_OK (14 itens, 0 falhas) x2 — origem = container real pg-sales-dev, sem container descartavel de origem",
+            "dente": "MORDE x2: (a) dump truncado reprovado com 8 falhas (embutido); (b) container do ambiente inexistente -> TESTE_FALHOU sem fallback",
+            "adr005": "container do ambiente intacto (mesmo Id e StartedAt antes/depois); producao recusada pelo script",
+            "efeitos_externos": "artefato de prova no prefixo prova-l14/ (autorizado) — removido com rclone purge; rotina diaria intocada",
+            "baseline_vps": "5 containers / 7 volumes / 0 dangling / 4 redes",
+            "fecha": "TRE-W0-E01-T03-D04 (t_586daace) — criterio 'externo: enviado' medido de verdade",
+            "log": "/tmp/tre_lote14/card134_{pass1,pass2}.out (VPS)",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:23:41+00:00",
+      "by": "Hermes — validacao integrada (lote 1, offline)",
+      "scope": "lote 1 — validacao integrada offline",
+      "cards": [
+        "t_595dc9be",
+        "t_967965f0",
+        "t_39838c5b"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:44:52+00:00",
+      "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+      "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_39838c5b",
+        "t_c7281fce",
+        "t_e340c29b",
+        "t_2cc57d80"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T15:45:55+00:00",
+      "by": "Hermes — validacao integrada (lote 2 — nucleo de dados e credenciais)",
+      "scope": "lote 2 — validacao integrada (nucleo de dados e credenciais)",
+      "cards": [
+        "t_d9cb5755",
+        "t_49e8e2e3",
+        "t_430ba4cc",
+        "t_969affa7"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+      "scope": "lote 14 — onda W1: vereditos gravados com 2 passadas + prova de dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-05T14:00:00+00:00",
+      "cards": [
+        "t_72672e48"
+      ]
+    }
+  ]
+}

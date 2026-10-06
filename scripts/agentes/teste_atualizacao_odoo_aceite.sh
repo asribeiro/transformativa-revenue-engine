@@ -36,7 +36,7 @@ veredito() {
 }
 limpar() {
   [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null
-  docker rm -f "$PG" >/dev/null 2>&1
+  docker rm -f -v "$PG" >/dev/null 2>&1
 }
 trap limpar EXIT
 
@@ -52,7 +52,7 @@ PIN=dev
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
 
 echo "== 1. PostgreSQL descartavel + migration 0001 =="
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD="$PIN" -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container $PG subiu" $?
 PRONTO=1

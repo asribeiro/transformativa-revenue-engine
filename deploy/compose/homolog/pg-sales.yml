@@ -1,0 +1,51 @@
+# Banco de VENDAS (`sales_intelligence`) do ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
+#
+# É o banco que sustenta o ciclo E2E deste ambiente: a fila (`outbox_events`), a trilha
+# (`sync_events`) e as tabelas do contrato, criadas/migradas por
+# `scripts/db/aplicar_migracoes.sh homolog`.
+#
+# Regras que este arquivo carrega (e que o verificador cobra item a item):
+#   * nenhum segredo aqui: `POSTGRES_*` vêm de /etc/tre/homolog-sales/pg.env (600, na VPS, fora do
+#     artefato publicado) — política de secrets V1 (docs/operations/gestao-de-secrets.md);
+#   * nenhuma porta publica: o banco fala SÓ pela rede interna `tre-odoo-homolog`, onde vivem o
+#     Odoo, o n8n e o banco de vendas deste ambiente. Banco de vendas acessível da rua é card de
+#     segurança, não default;
+#   * volume próprio (`pgdata-sales-homolog`): dado de vendas não se mistura com o filestore/banco
+#     do Odoo nem com o banco de vendas do dev;
+#   * versao e digest são OBRIGATÓRIOS e vêm do par não-secreto versionado
+#     (deploy/environments/homolog-sales.env): sem ele `docker compose config` FALHA em vez de
+#     subir "a última de hoje" — a identidade do que está no ar é o digest registrado lá.
+#
+# Uso na VPS (a partir da cópia do ambiente em /opt/tre/homolog/compose/):
+#   docker compose --env-file /opt/tre/homolog/compose/pg-sales.env -f /opt/tre/homolog/compose/pg-sales.yml up -d
+#
+# ORDEM OBRIGATÓRIA (armadilha medida duas vezes neste projeto): o segredo
+# (/etc/tre/homolog-sales/pg.env) tem de existir ANTES de qualquer `docker compose config` — o
+# `env_file` é resolvido na validação e o comando falha com "env file not found".
+name: tre-sales-homolog
+
+services:
+  pg-sales-homolog:
+    image: ${PG_SALES_IMAGEM:?defina PG_SALES_IMAGEM em deploy/environments/homolog-sales.env}:${PG_SALES_VERSAO:?defina PG_SALES_VERSAO em deploy/environments/homolog-sales.env}
+    container_name: pg-sales-homolog
+    restart: unless-stopped
+    env_file:
+      - /etc/tre/homolog-sales/pg.env
+    volumes:
+      - pgdata-sales-homolog:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - odoo-homolog
+
+volumes:
+  pgdata-sales-homolog:
+    name: pgdata-sales-homolog
+
+networks:
+  odoo-homolog:
+    name: tre-odoo-homolog
+    external: true

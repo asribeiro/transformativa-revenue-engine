@@ -43,7 +43,7 @@
 #   bash scripts/n8n/verificar-reconciliacao.sh --manter         (nao limpa o trio no fim)
 # Variaveis: TRE_WORKFLOW, TRE_MODULO_DIR, TRE_BANCO, TRE_BANCO_SI, TRE_IMAGEM,
 #            TRE_IMAGEM_PG, TRE_IMAGEM_N8N, TRE_LOG_DIR, TRE_PG_USER, TRE_DEV_PG_CT,
-#            TRE_MANTER_BANCO.
+#            TRE_DEV_PG_USER, TRE_MANTER_BANCO.
 #
 # Saida: um item por linha (OK/FALHOU) e o resumo
 #   RESULTADO: RECONCILIACAO_OK|FALHOU (...); exit 0 = cumprido, 1 = falhou, 2 = uso errado.
@@ -75,6 +75,10 @@ ID_WORKFLOW="${TRE_ID_WORKFLOW:-TRERECONCILIA01}"
 BANCO_SI="${TRE_BANCO_SI:-sales_intelligence}"
 LOG_DIR="${TRE_LOG_DIR:-/tmp/verificacao-reconciliacao}"
 DEV_PG_CT="${TRE_DEV_PG_CT:-pg-odoo-dev}"
+# O dono do `pg-odoo-dev` e' o USUARIO DO PROPRIO DEV (`POSTGRES_USER=odoo`), nao o usuario do banco
+# descartavel (`TRE_PG_USER`, default `tre`): medir o dev com `tre` da' `FATAL: role "tre" does not
+# exist`, as duas pontas ficam vazias e `[ "" = "" ]` fechava OK sem medir nada (defeito D01).
+DEV_PG_USER="${TRE_DEV_PG_USER:-odoo}"
 MANTER="${TRE_MANTER_BANCO:-0}"
 SUFIXO="$$$RANDOM"
 BANCO="${TRE_BANCO:-tre_reconc_$SUFIXO}"
@@ -121,6 +125,18 @@ info()      { printf 'INFO  %s\n' "$*"; }
 cabecalho() { printf '\n=== %s ===\n' "$*"; }
 limpar()    { printf '%s' "$1" | tr -d '[:space:]'; }
 podar()     { printf '%s' "$1" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'; }
+# Bancos do PostgreSQL do DEV, medidos DE VERDADE: devolve a lista (e rc 0) so' quando o container
+# esta' de pe, o psql responde com o USUARIO DO PROPRIO DEV e a consulta traz linha. Vazio nao e'
+# medicao — quem chama fecha FALHOU nomeado, nunca OK (`"" = ""` era o defeito D01).
+medir_bancos_do_dev() {
+    local saida
+    [ "$(docker inspect -f '{{.State.Running}}' "$DEV_PG_CT" 2>/dev/null)" = "true" ] || return 1
+    saida="$(docker exec "$DEV_PG_CT" psql -U "$DEV_PG_USER" -d postgres -tAc \
+        'select string_agg(datname, chr(44) || chr(32) order by datname) from pg_database' 2>/dev/null)" || return 1
+    saida="$(podar "$saida")"
+    [ -n "$saida" ] || return 1
+    printf '%s' "$saida"
+}
 resumo() {
     if [ "$FALHAS" -eq 0 ]; then
         echo "RESULTADO: RECONCILIACAO_OK ($ITENS itens, 0 falhas) banco=$BANCO imagens=$IMAGEM+$IMAGEM_PG+$IMAGEM_N8N workflow=$WORKFLOW"
@@ -282,13 +298,12 @@ if printf '%s' "$BANCO" | grep -qE '^tre_[a-z0-9_]+$' && ! printf '%s' "$BANCO" 
 else
     falhou "nome de banco fora do padrao descartavel (^tre_[a-z0-9_]+$): $BANCO"; resumo
 fi
-DEV_PG_ANTES="nao_medido"
-if [ "$(docker inspect -f '{{.State.Running}}' "$DEV_PG_CT" 2>/dev/null)" = "true" ]; then
-    DEV_PG_ANTES="$(docker exec "$DEV_PG_CT" psql -U "$PG_USER" -d postgres -tAc \
-        'select string_agg(datname, chr(44) || chr(32) order by datname) from pg_database' 2>/dev/null)"
-    info "instancia do dev ($DEV_PG_CT) ANTES: ${DEV_PG_ANTES:-nao_medido}"
+DEV_PG_ANTES=""
+if DEV_PG_ANTES="$(medir_bancos_do_dev)"; then
+    info "instancia do dev ($DEV_PG_CT) ANTES: $DEV_PG_ANTES (usuario $DEV_PG_USER)"
 else
-    info "container $DEV_PG_CT do dev nao esta de pe — conferencia 'nao tocou o dev' fica sem medicao"
+    DEV_PG_ANTES=""
+    info "instancia do dev ($DEV_PG_CT) NAO MEDIDA antes (container parado ou psql sem resposta para o usuario $DEV_PG_USER) — o item de fecho FALHA nomeado, medicao vazia nao vira OK"
 fi
 printf 'FASE_GUARDAS_OK\n'
 
@@ -349,8 +364,8 @@ limpeza() {
         info "--manter: trio preservado (containers $PG_TMP/$API_CT, rede $NET_TMP, diretorio $DESC_DIR)"
         return 0
     fi
-    docker rm -f "$API_CT" >/dev/null 2>&1
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     [ -n "$N8N_HOME" ] && rm -rf "$N8N_HOME"
     docker network rm "$NET_TMP" >/dev/null 2>&1
     [ -n "$DESC_DIR" ] && rm -rf "$DESC_DIR"
@@ -655,13 +670,17 @@ if diff -q "$LOG_DIR/sha256-antes.txt" "$LOG_DIR/sha256-depois.txt" >/dev/null 2
 else
     falhou "os artefatos sob teste MUDARAM durante o aceite (ver $LOG_DIR/sha256-depois.txt)"
 fi
-DEV_PG_DEPOIS="nao_medido"
-if [ "$(docker inspect -f '{{.State.Running}}' "$DEV_PG_CT" 2>/dev/null)" = "true" ]; then
-    DEV_PG_DEPOIS="$(docker exec "$DEV_PG_CT" psql -U "$PG_USER" -d postgres -tAc \
-        'select string_agg(datname, chr(44) || chr(32) order by datname) from pg_database' 2>/dev/null)"
+DEV_PG_DEPOIS=""
+DEV_PG_DEPOIS="$(medir_bancos_do_dev)" || DEV_PG_DEPOIS=""
+# Fail-closed: sem as DUAS medicoes nao se afirma "intocada". Antes desta correcao (D01) o aceite
+# comparava duas pontas vazias (`[ "" = "" ]`) e imprimia OK sem ter medido nada.
+if [ -z "$DEV_PG_ANTES" ] || [ -z "$DEV_PG_DEPOIS" ]; then
+    falhou "instancia do dev ($DEV_PG_CT) NAO MEDIDA com o usuario $DEV_PG_USER (antes=${DEV_PG_ANTES:-vazio} depois=${DEV_PG_DEPOIS:-vazio}) — sem as duas medicoes nao se afirma INTOCADA"
+elif [ "$DEV_PG_ANTES" = "$DEV_PG_DEPOIS" ]; then
+    ok "instancia do dev INTOCADA (mesmos bancos antes e depois, medidos com $DEV_PG_USER): $DEV_PG_ANTES"
+else
+    falhou "a instancia do dev mudou: antes=$DEV_PG_ANTES depois=$DEV_PG_DEPOIS"
 fi
-[ "$DEV_PG_ANTES" = "$DEV_PG_DEPOIS" ] && ok "instancia do dev INTOCADA (mesmos bancos antes e depois)" \
-    || falhou "a instancia do dev mudou: antes=${DEV_PG_ANTES:-?} depois=${DEV_PG_DEPOIS:-?}"
 # Segredo se mede por VALOR, nao por vocabulario: procurar a palavra "chave"/"token" acusa o proprio
 # codigo do job (o comentario em pt-BR diz "chave") e o NOME da credencial, que e' declarado de
 # proposito. O valor da chave desta rodada esta' no arquivo 600 do descartavel (`chave.txt`, padrao

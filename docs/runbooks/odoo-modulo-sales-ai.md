@@ -80,6 +80,15 @@ bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh --prova-de-dente
 TRE_LOG_DIR=/opt/tre/dev/evidencias/<card>/logs bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh
 ```
 
+`--prova-de-dente` pode ser rodado com o **mesmo** `TRE_LOG_DIR` do aceite: o dente escreve
+em `$TRE_LOG_DIR/dente/` e não toca os logs do aceite (§5.1).
+
+A cópia de onde esses comandos rodam é **publicada a partir de um commit** e tem registro ao lado do
+arquivo: antes de usar, `cat /opt/tre/dev/scripts/odoo/.publicado` (commit, blob, sha256) e
+`sha256sum /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` — o mecanismo e a medição da rodada de
+consolidação estão na **§11**. Não sincronize essa cópia por `tar`/cópia ad-hoc: foi assim que cópias já
+publicadas foram revertidas em silêncio (§11 e runbook `publicacao-da-copia-operacional.md`).
+
 O verificador, em ordem: **guardas** (docker, as duas imagens com os digests medidos, `openssl`,
 módulo em disco, nome de banco descartável; e mede o estado do dev **antes**) → **dupla
 descartável** (rede própria, `postgres:16` com senha gerada na hora, `odoo:19.0` com
@@ -98,7 +107,7 @@ banco=tre_e03_t01_modulo imagens=odoo:19.0+postgres:16`**, **exit 0**.
 |---|---|
 | **1 instalação em banco limpo** | banco **não existia** (dropado antes) → criado pelo Odoo do zero; `odoo --init exit 0`; 554 linhas de log, **0 ERROR/CRITICAL**, `'Modules loaded.'` presente; `ir_module_module.state = installed`; `latest_version = 19.0.1.0.0` == manifesto; `license = LGPL-3` == manifesto; dependências gravadas `base crm` == declaradas; todas instaladas; 0 módulo pendurado |
 | **2 teste do Odoo** | `odoo -u transformativa_sales_ai --test-enable exit 0`; `odoo.tests.result: 0 failed, 0 error(s) of 6 tests when loading database 'tre_e03_t01_modulo'`; 0 linha `FAIL:`/`ERROR:`; sem `'At least one test failed...'`; módulo segue `installed` |
-| **3 desinstalação** | `odoo shell` + ORM → `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled`; estado no banco `uninstalled`; **0 resquício** em `ir_model_data`/`ir_ui_view`/`ir_model_fields` e 0 tabela com prefixo do módulo |
+| **3 desinstalação** | `odoo shell` + ORM → `DESINSTALACAO_OK estado_antes=installed estado_depois=uninstalled`; estado no banco `uninstalled`; **0 resquício** em `ir_model_data`/`ir_ui_view`/`ir_model_fields` e 0 tabela com prefixo do módulo — atenção: **esta medição é anterior ao defeito D03** e os três termos por *nome de pacote* mediam 0 mesmo com o módulo instalado; a régua corrigida (derivada do que o módulo registra) e a medição de agora estão na **§10** |
 | **4 reinstalação (idempotência)** | `odoo --init` (2ª vez) **exit 0**, 0 ERROR/CRITICAL, módulo `installed` de novo com `latest_version = 19.0.1.0.0` |
 | **limpeza / dev intocado** | banco descartável, `postgres` descartável, rede descartável e diretório de configuração removidos; **instância do dev com os mesmos 4 bancos antes e depois** (`odoo_dev, postgres, template0, template1`); `homolog`/`prod` com **0 arquivo** |
 
@@ -117,7 +126,9 @@ Scripts do aceite (também iguais nos dois lados): `verificar-modulo-odoo.sh 72d
 ## 5. Provas negativas — o aceite tem dentes
 
 `bash /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh --prova-de-dente` →
-**`RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`**, **exit 0**. Cada prova roda numa
+**`RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`**, **exit 0** — esta é a medição do card do
+E03; o defeito D03 acrescentou a **prova de dente 3** (resquício plantado): hoje são **3 provas**
+(`MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`), ver §10. Cada prova roda numa
 **cópia** do módulo (o módulo real não é tocado) e espera **reprovação**:
 
 | Prova | Mutação | Resultado medido |
@@ -127,6 +138,57 @@ Scripts do aceite (também iguais nos dois lados): `verificar-modulo-odoo.sh 72d
 
 O dente 2 mostra também que **o exit code do comando do Odoo reflete teste reprovado**
 (`exit 1`) — o item de exit code não é decorativo.
+
+### 5.1 Logs do aceite × logs do dente (defeito `TRE-W2-E03-T01-D02`, consertado em 01/10/2026)
+
+O modo `--prova-de-dente` **não escreve no diretório do aceite**: cada prova usa um
+diretório próprio (`$TRE_LOG_DIR/dente/prova-1`, `.../prova-2`) e os `.out` do dente ficam
+em `$TRE_LOG_DIR/dente/`. Rodar a bateria inteira (aceite → dente) com o **mesmo**
+`TRE_LOG_DIR` deixa os 4 logs do aceite intactos — medido: `sha256` idêntico antes e depois
+das provas, e os 4 arquivos seguindo com o banco do aceite (`tre_e03_t01_modulo`), enquanto
+o log do dente (`logs/dente/prova-2/2-teste.log`) cita o banco mutado.
+
+Isso não era verdade antes do conserto: o sub-run do dente herdava o `TRE_LOG_DIR` do
+chamador **por ambiente** e usava os mesmos nomes de passo, então encadear aceite → dente
+sobrescrevia `1-instalacao.log` e `2-teste.log` do aceite com a execução mutada e a
+evidência bruta do aceite passava a existir só no console. Reproduzido com o script anterior
+(`72d00aa1…`), aceite (51/51, exit 0) seguido de `--prova-de-dente` no mesmo diretório:
+`1-instalacao.log` ficou com **547** referências ao banco `tre_e03_t01_modulo_dente` e
+`2-teste.log` com **33** (os passos 3 e 4, que o dente não executa, seguiam do aceite).
+
+Além do diretório próprio, o dente ganhou uma **guarda fail-closed**: antes das provas ele
+fotografa o `sha256` dos `[1-4]-*.log` do aceite e, no fim, imprime
+`OK logs de passo do aceite intactos depois das provas (N arquivo(s) com sha256 identico)`
+ou reprova o dente com `FALHOU o modo dente mexeu nos logs de passo do aceite …`. O controle
+negativo (cópia do script com o caminho compartilhado de volta) é medido e registrado no
+card `t_5c4fc7ac` / `docs/operations/registro-de-execucoes.md`.
+
+### 5.2 As duas formas de chamada (defeito `TRE-W2-E03-T01-D04`, consertado em 01/10/2026)
+
+O cabeçalho do script documenta a chamada pelo **nome**, de dentro do diretório do script
+(`bash verificar-modulo-odoo.sh --prova-de-dente`). O modo de dente era o **único** que re-invocava
+o próprio arquivo — e fazia isso com `"$0"`: chamado por nome simples, `$0` é um nome **sem
+diretório**, que não está no `PATH`, e a re-invocação morria com
+
+```
+verificar-modulo-odoo.sh: line 103: verificar-modulo-odoo.sh: command not found
+FALHOU dente 1: versao mutada NAO reprovou — o item de versao nao tem dente
+```
+
+ou seja: as duas provas eram acusadas de **não ter dente** (`MODULO_ODOO_DENTE_FALHOU (2 prova(s)
+sem dente)`, exit 1) quando o que falhou foi a **invocação** — *fail-closed*, mas com diagnóstico
+falso e alarmante (diz que o aceite é oco justamente para quem foi ler os dentes). A bateria do E03
+não pegou porque chama por **caminho absoluto**, forma em que `$0` resolve.
+
+Conserto: o script resolve o próprio caminho em `EU="$(readlink -f "$0")"` (usado também para
+derivar `AQUI`) e **toda** re-invocação usa `bash "$EU" --…`. Sub-run **sem** linha `RESULTADO:`
+passou a ser reportado como **falha de invocação**, com contador próprio
+(`…, N falha(s) de invocacao`) — nunca como "item sem dente"; sem caminho resolvido o modo reprova
+antes de qualquer prova. Medido nas **duas formas** (VPS, 01/10/2026): `bash verificar-modulo-odoo.sh
+--prova-de-dente` (cwd = diretório do script) e `bash /caminho/absoluto/…/verificar-modulo-odoo.sh
+--prova-de-dente` → `RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** nas duas.
+Controle negativo (re-invocação apontada para caminho inexistente) → `2 falha(s) de invocacao` e
+**0** "prova(s) sem dente". Evidência e controles no card `t_025f9a2a`.
 
 ## 6. Rollback
 
@@ -219,3 +281,171 @@ dele existir.
 - **Ratificação da versão do Odoo (19.0)** pelo Anderson: herdada de `TRE-W2-E01-T01`.
 - **Homologação**: estágio 7 é do Anderson; este runbook entrega a evidência, não a aprovação.
   A verificação independente (estágio 6) é do perfil `tester`.
+
+## 10. Defeito D03 — a régua do resquício media pelo nome do **pacote** (`TRE-W2-E03-T01-D03`, card `t_9e402411`)
+
+Defeito encontrado durante a execução do card `TRE-W2-E05-T01` (`t_9c91ecce`), medindo o banco **com o
+primeiro modelo do módulo instalado** — o card do E03, que não tinha modelo nenhum, media "0 resquício"
+verdadeiro **por vacuidade**. Corrigido e remedido em 01/10/2026.
+
+**Sintoma (medido, com o módulo instalado):** os termos dos dois itens de resquício do **passo 3**
+mediam
+
+| termo da régua antiga | com o módulo instalado |
+|---|---|
+| `ir_model_data where module = '<módulo>'` | **17** (tem superfície: mede) |
+| `ir_ui_view where model like '<módulo>%'` | **0** — código morto |
+| `ir_model_fields where name like '<módulo>%'` | **0** — código morto |
+| `information_schema.tables where table_name like '<módulo>_%'` | **0** — código morto (a tabela do modelo é `tf_process_opportunity`) |
+
+… enquanto a superfície **real** do módulo era **1 tabela** (`tf_process_opportunity`, 14 colunas),
+**1 modelo** em `ir_model`, **15 campos** em `ir_model_fields` e 17 registros de `ir_model_data`. O
+passo 3 é o **rollback declarado** do card: aceitar como prova um item que não pode acusar enfraquece
+a garantia de limpeza.
+
+**Consequência medida (é o que fecha o defeito):** com o banco sujo de propósito — desinstalação real
+seguida do plantio do modelo (`ir_model`), da tabela do modelo, de um campo e de uma view, **nada com
+`ir_model_data` do módulo** — o verificador de antes (`72d00aa1…`) imprimiu `MODULO_ODOO_OK (51 itens,
+0 falhas)`, **exit 0**, com os dois itens de resquício em `OK`; o corrigido (`fa1f69f2…`) imprimiu
+`MODULO_ODOO_FALHOU (51 itens, 2 falha(s))`, **exit 1**:
+
+```
+FALHOU 3 resquicio(s) do modulo no banco depois da desinstalacao (ir_model_data=0 modelo(s)=1 campo(s)=1 view(s)=1)
+FALHOU 1 tabela(s) dos modelos do modulo sobreviveram a desinstalacao: tf_process_opportunity
+```
+
+**Causa raiz:** a régua foi escrita com o nome do **pacote** (`$MODULO`) — e em Odoo o nome da
+**tabela** é o nome do **modelo**; campo e view também nunca carregam o nome do módulo.
+
+**Correção (`scripts/odoo/verificar-modulo-odoo.sh`):** o passo 3 passa a **capturar a superfície
+enquanto o módulo está instalado** — antes de desinstalar, porque depois o `ir_model_data` do módulo
+já não existe e a régua ficaria vazia (seria a vacuidade de novo) — e mede o resquício contra **essas
+entidades**:
+
+- **modelos próprios** = `ir_model_data (module = <módulo>, model = 'ir.model')` **menos** os modelos
+  compartilhados com outro módulo (mesmo critério que o Odoo usa para decidir se apaga o modelo na
+  desinstalação). O filtro não é decorativo: medido em `odoo_dev` (leitura read-only) no módulo do core
+  `crm`, são **22** entradas `ir.model` em `ir_model_data`, das quais **11 compartilhadas**
+  (`calendar.event`, `crm.lead`, `crm.team`, `crm.team.member`, `digest.digest`,
+  `ir.config_parameter`, `mail.activity`, `res.config.settings`, `res.partner`, `res.users`,
+  `utm.campaign`) — sem o filtro a régua acusaria
+  `res.partner` de resquício em qualquer módulo que estenda o parceiro;
+- **tabelas** = existência **medida** em `information_schema` para cada modelo próprio (nome derivado
+  do modelo, não suposto): `1 tabela` no E05, `tf_process_opportunity`;
+- **campos e views** = `ir_model_fields` / `ir_ui_view` com `model` nos modelos próprios.
+
+A superfície medida vai impressa em **INFO** (item sem superfície não prova nada) e os dois itens
+passaram a dizer o que medem. **Limite declarado:** ACLs, regras e constraints que não tenham
+`ir_model_data` do módulo não entram nesta régua.
+
+**Prova de dente (3ª):** `--prova-de-dente` ganhou o **dente 3** — um desinstalador que desinstala de
+verdade e **planta** o resquício (modelo + tabela + campo + view) logo depois; o sub-run tem de
+reprovar os **dois** itens de resquício e o dente confere isso item a item. Medido:
+`RESULTADO: MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, **exit 0**, com o dente 3 em
+`MODULO_ODOO_FALHOU (51 itens, 2 falha(s))` — **só** os dois itens de resquício (o passo 4 segue
+`OK`) — e `RESQUICIO_PLANTADO modelos=tf.process.opportunity` no log do plantio. Em módulo que **não
+declara `models/`** (o caso do E03 base) o dente 3 sai **explícito** como `NAO APLICAVEL` — não como
+`OK` silencioso, e não como falha de um módulo que legitimamente não registra entidade nenhuma.
+
+**Medições desta correção (VPS `vmi3619453`, dupla descartável própria, 01/10/2026):**
+
+| alvo | resultado |
+|---|---|
+| aceite com o módulo do E05 (tem modelo), régua corrigida | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — superfície medida: 17 dados, 1 modelo, 1 tabela, 15 campos, 0 views |
+| aceite com o módulo base do E03 (sem modelo) | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — superfície **0/0/0/0/0 impressa** (vacuidade visível, não silenciosa) |
+| aceite com o módulo do E05, régua **antiga** (`72d00aa1…`) | `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0 — diff item a item contra o corrigido: **só os dois itens de resquício mudam**; o total segue **51 itens** (sem falso negativo) |
+| cenário com resquício plantado: régua antiga × corrigida | `MODULO_ODOO_OK (51 itens, 0 falhas)` × `MODULO_ODOO_FALHOU (51 itens, 2 falhas)` — acima |
+| `--prova-de-dente` | `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, exit 0 |
+| `verificar_estrutura.sh` / `secret_scan.sh` / `verificar_papeis.sh` no head corrigido | `PASS` / `PASS` / `PASS`, exit 0 |
+
+**Rastreio:** defeito aberto pelo card `t_9c91ecce` (`TRE-W2-E05-T01`) como pré-requisito do card
+`t_c536ce86` (`TRE-W2-E03-T01`); card do defeito `t_9e402411`. Evidência bruta em
+`/opt/tre/dev/evidencias/t_9e402411/`: `aceite-e05.out`, `aceite-e03.out`, `antes-limpo.out`,
+`dente.out`, `compara-antes-depois.out` e os `logs-*/`; sonda `baterias/d03/probe-d03.sh` e comparação
+`baterias/d03/compara-antes-depois-d03.sh` (orquestração, só na VPS). Verificação independente é do
+perfil `tester`.
+
+**Aprendizado (vale para os próximos módulos com modelo — E04, E07 — e para qualquer limpeza entre
+ambientes):** régua de resquício tem de ser derivada do que o módulo **registra**
+(modelos/tabelas/campos/views), nunca do nome do pacote — e medida **antes** da limpeza, senão a
+própria régua é apagada junto com o que ela deveria acusar.
+
+## 11. Publicação única do verificador consolidado (`TRE-W2-E03-T01-D05`, card `t_de461d14`)
+
+Os consertos dos quatro defeitos do **mesmo arquivo** (`scripts/odoo/verificar-modulo-odoo.sh`) nasceram
+em branches paralelas sobre `fe26aa5` e **não** foram publicados por nenhum deles — cada um declarou de
+propósito que a publicação da cópia operacional tem de ser **uma só**, depois de consolidados (§3, e o
+motivo: três publicações parciais da mesma base, em paralelo, fazem cada uma reverter a outra). Enquanto
+isso não acontecesse, `/opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` seguia no **blob do defeito**
+`72d00aa1…` e quem rodasse o aceite pela forma documentada continuava avaliando o item morto do D01
+(“OK” com teste reprovado no log).
+
+**Consolidação (`fix/TRE-W2-E03-T01-D05`, commit `3da9f2f`, empurrado para `origin`).** Base `f773d3c`
+(D04, que já contém `c389223`/D02 no histórico) + merge de `ebd90fd` (D01) + merge de `9054c61` (D03).
+Um único conflito de conteúdo, no bloco do `--prova-de-dente`; resolução:
+
+- **contadores:** os três contadores do D02/D04 (`DENTE_FALHAS`, `GUARDA_FALHAS`, `INVOCACAO_FALHAS`)
+  convivem com o `DENTE_PROVAS` do D03; o resumo final do modo de dente usa **os três** e o total de
+  provas — `MODULO_ODOO_DENTE_OK ($DENTE_PROVAS provas, 0 falhas)` e, na reprovação,
+  `$DENTE_FALHAS prova(s) sem dente de $DENTE_PROVAS, $GUARDA_FALHAS falha(s) na guarda dos logs do
+  aceite, $INVOCACAO_FALHAS falha(s) de invocacao`;
+- **dente 3 × defeito do D04:** o dente 3 do D03 re-invocava o próprio arquivo por `"$0"` — a **terceira**
+  ocorrência do defeito do D04 (medida também pelo revisor do D03 no blob antigo: é pré-existente).
+  Passou a `bash "$EU"`, e o seu log foi para `$TRE_LOG_DIR/dente/prova-3` (o `.out` do plantio também
+  saiu do diretório do aceite), mantendo a disciplina do D02: **o modo de dente não escreve nada dentro
+  do diretório do aceite**;
+- `bash -n` OK; os demais artefatos do E03 não foram tocados.
+
+**Publicação na cópia operacional do dev.** O conteúdo publicado vem do **commit** (nunca de uma árvore
+de trabalho, de uma pasta de evidência ou de uma cópia de card — foram exatamente essas sincronizações
+ad-hoc que reverteram cópia publicada em outros cards). O caminho versionado do projeto
+(`deploy/publicar.sh`) espelha a **árvore inteira** de um commit em um diretório e não sabe publicar
+**um arquivo** dentro de `/opt/tre/dev/scripts/odoo/` sem apagar os vizinhos (a cópia do dev não é
+espelho de árvore de commit: ela guarda a `bateria-e03t01.sh` de orquestração). Por isso a publicação
+foi feita em dois passos, os dois registrados:
+
+```bash
+# 1) materializa o commit na VPS pelo caminho versionado, em destino ISOLADO (nunca /opt/tre/repo, que e producao)
+TRE_PUBLICAR_DESTINO=/opt/tre/.publicacao-t_de461d14 \
+TRE_PUBLICAR_LOCK=/opt/tre/.publicacao-t_de461d14.lock \
+TRE_PUBLICAR_LOG=/opt/tre/.publicacoes-t_de461d14.log \
+TRE_PUBLICAR_ARTEFATO=/opt/tre/.artefato-t_de461d14 TRE_PUBLICAR_TRAVA=0 \
+    bash deploy/publicar.sh --commit 3da9f2f --card t_de461d14
+#   -> PUBLICACAO_OK digest=9e1bedc2e2ad5d19b26948498c9e389b20304006dd72e5e8ca1c7ca382d5f438 arquivos=322
+
+# 2) instala O ARQUIVO do artefato publicado (modo do git) e registra a publicacao ao lado dele
+install -m 755 /opt/tre/.publicacao-t_de461d14/scripts/odoo/verificar-modulo-odoo.sh \
+                /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh
+```
+
+O registro fica em `/opt/tre/dev/scripts/odoo/.publicado` — `commit 3da9f2f`, blob `44913fd8…`,
+sha256 `bf63fdf4…`, modo `755`, autor (card), data e o artefato de origem —, de modo que qualquer um
+pode dizer **qual commit** roda naquela cópia e conferir o conteúdo:
+
+```bash
+sha256sum /opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh   # bf63fdf4…  == git rev-parse 3da9f2f:scripts/odoo/verificar-modulo-odoo.sh
+```
+
+Antes da publicação: `72d00aa1…` (blob do defeito, mtime 12:46). Depois: `bf63fdf4…` (= blob
+`44913fd8…` do commit), modo `755`, 44.499 bytes.
+
+**Medição a partir da cópia publicada** (não da branch), 01/10/2026, VPS `vmi3619453`:
+
+| prova | resultado |
+|---|---|
+| aceite completo (4 passos) | `RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas)`, **exit 0** — passo 2 com `0 failed, 0 error(s) of 6 tests`, passos 1/3/4 e limpeza todos `OK` |
+| `--prova-de-dente` na **forma documentada** (nome simples, `cd` no diretório do script) | `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** (é a prova do D04) + `OK logs de passo do aceite intactos depois das provas (4 arquivo(s) com sha256 identico)` (prova do D02) |
+| `--prova-de-dente` por **caminho absoluto** (§3) | `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0** |
+| `--prova-de-dente` na forma documentada com módulo que **declara `models/`** (E05) | `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`, **exit 0** — dente 3 exercitado (`RESQUICIO_PLANTADO modelos=tf.process.opportunity`, sub-run `MODULO_ODOO_FALHOU (51 itens, 2 falhas)`) |
+| controle negativo do D01: cópia do módulo **com teste que falha** | `FALHOU 1 linha(s) de teste reprovado(a) no log: … FAIL: TestModuloBase.test_99_controle_d05` e `RESULTADO: MODULO_ODOO_FALHOU (51 itens, 3 falhas)`, **exit 1** — o padrão do verificador casa **1** linha no log enquanto o padrão morto do defeito casa **0** |
+| `verificar_estrutura.sh` / `secret_scan.sh` / `verificar_papeis.sh` no commit consolidado | `PASS (0 falhas)` / `PASS (nenhum segredo versionado)` / `PASS (0 falhas)`, exit 0 nos três |
+| ambiente | dupla descartável própria por rodada; **instância do dev intacta** (mesmos 4 bancos: `odoo_dev, postgres, template0, template1`), `homolog`/`prod` sem arquivo, **0** container/rede `e03t01-*` residual, `/opt/tre/repo` (produção) **não tocada** |
+
+**Evidência bruta:** `/opt/tre/dev/evidencias/t_de461d14/` — `1-aceite-copia-operacional.out`,
+`2-dente-copia-operacional.out`, `3-controle-negativo-verificador.out`, `4-verificadores-do-projeto.out`,
+`antes-verificar-modulo-odoo.sh` (o blob do defeito, guardado), `logs/`, `logs-abs/`, `logs-dente3/`,
+`logs-controle/` e os quatro runners (`rodada{1,2,3,4}-*.sh`).
+
+**Rastreio:** card `t_de461d14` (D05, criado pela revisão do D01 `t_578a4e4d`); defeitos consolidados
+`t_578a4e4d` (D01), `t_5c4fc7ac` (D02), `t_9e402411` (D03) e `t_025f9a2a` (D04). Verificação independente
+é do perfil `tester`; homologação é do Anderson.

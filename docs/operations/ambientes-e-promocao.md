@@ -1,0 +1,255 @@
+# Ambientes e promoção (Dev → Homolog → Produção)
+
+Decisão do dono, 05/10/2026. Este documento é a fonte do mapa **ambiente ↔ branch ↔ promoção**.
+Substitui o modelo "candidate por release" que vinha do `financial-dash`, onde a homologação era um
+ambiente por release.
+
+## Mapa
+
+| ambiente | branch (GitHub) | diretório na VPS | compose | quem promove | evidência exigida |
+|---|---|---|---|---|---|
+| **Dev** | `develop` | `/opt/tre/dev` | `deploy/compose/dev/` | Hermes (é onde o card é executado) | critérios de aceite do próprio card |
+| **Homolog** | `homolog` | `/opt/tre/homolog` (no ar: Odoo 19.0 + Postgres 16, `127.0.0.1:8070`) | `deploy/compose/homolog/` | **Hermes promove sozinho** | AC do card cumpridos + **evidência crua anexada no card do kanban** |
+| **Produção** | `main` | `/opt/tre/prod` | `deploy/compose/prod/` | **Hermes prepara e envia para aprovação humana**; só depois do "aprovado" registrado é que promove | AC cumpridos **em Homolog** + evidências anexadas no card + registro de aprovação (quem, quando, o quê) |
+
+O fluxo em uma frase: **o card nasce e é validado em Dev; Hermes sobe para Homolog com a evidência no card;
+Homolog é revalidado e, só então, Hermes pede a aprovação humana para o `main`.**
+
+## Fluxo detalhado
+
+1. **Dev** — o motor despacha o card; a execução roda em Dev (`develop`). O fechamento exige os critérios de
+   aceite do card **e a evidência crua anexada** (`kanban_complete(artifacts=[...])` — todos os paths têm de
+   existir, 1 fantasma zera a lista inteira).
+2. **Promoção Dev → Homolog (Hermes, sem humano)** — permitida **mediante evidência anexada no card** de que
+   os AC foram cumpridos. Passos: merge `develop` → `homolog`, deploy da stack Homolog, e **registro do
+   commit promovido + a evidência no card**. Se a evidência não estiver no card, a promoção não acontece.
+3. **Revalidação em Homolog** — os AC são medidos **no ambiente Homolog** (não basta ter passado em Dev:
+   ambiente diferente, dado diferente, segredo diferente). A evidência dessa passada também vai para o card.
+4. **Homolog → Produção (exige humano)** — Hermes monta o pedido de aprovação com: o que muda (commits), o
+   que foi medido em Homolog (evidência), o risco e o alvo de rollback; envia ao dono; **espera**. A
+   aprovação é registrada em `docs/operations/registro-de-aprovacoes.md` (quem, quando, o que, evidência) e no
+   artefato de entrega. Só com esse registro Hermes faz o merge `homolog` → `main` e o deploy em Produção.
+5. **Produção** — o que está em `main` **e** implantado na stack de Produção.
+
+## Invariantes (o que o desenho proíbe)
+
+- **Ninguém escreve direto em `main`**: só entra por merge vindo de `homolog`. Push direto e merge que não
+  passou por Homolog são violação, não atalho.
+- **`homolog` só recebe merge vindo de `develop`.**
+- **Promover não é aprovar.** A promoção para Homolog é automática (com evidência); a passagem para Produção
+  é sempre humana — é o que a política `hermes/policies/human-approval.yaml` já exige
+  (`promocao de release para producao` e `rollback em producao` estão em `exige_aprovacao`).
+- **Rollback é por ambiente.** Rollback em Produção exige aprovação humana; em Homolog/Dev não.
+- **Identidade por ambiente**: cada stack carrega o SHA do commit implantado e o nome do ambiente. "Produção
+  no ar" é uma afirmação que se prova por ancestralidade (`git merge-base --is-ancestor`) + rótulo do
+  container, nunca por "eu empurrei".
+- **Segredo não entra no repo**: no repositório ficam só os pares não-secretos
+  (`deploy/environments/<ambiente>-*.env`); os segredos vivem em `/etc/tre/<serviço>-<ambiente>/` na VPS,
+  modo 600 (`docs/operations/gestao-de-secrets.md`).
+- **Backup por ambiente** (`/opt/tre/<ambiente>/backups`), com o vigia externo já existente.
+
+## O que já existe (medido em 05/10/2026)
+
+- **Dev**: provisionado e no ar. Containers `proxy-dev` (Caddy), `odoo-dev`, `pg-odoo-dev`, `pg-sales-dev`,
+  `pg-wa-probe`; rede `tre-odoo-dev`; volumes `odoo-data-dev`, `pgdata-odoo-dev`, `pgdata-sales-dev`,
+  `proxy-*-dev`. Compose em `/opt/tre/dev/compose/` (cópia de `deploy/compose/dev/`).
+- **Convenção de provisionamento já estabelecida** (replicar para os outros dois ambientes):
+  `deploy/compose/<ambiente>/`, `deploy/environments/<ambiente>-*.env`,
+  `scripts/provision/*-<ambiente>.sh` (`instalar-*`, `verificar-*`, `remover-*`), runbooks em
+  `docs/runbooks/` (ex.: `odoo-dev-tls.md`, `provisionamento-contabo.md`).
+- **Homolog e Produção**: existem apenas como esqueleto na VPS — `/opt/tre/homolog` e `/opt/tre/prod` têm
+  6 diretórios e **zero arquivos** (`compose`, `odoo`, `pg`, `n8n`, `backups`). Nenhum container de
+  Homolog/Produção existe, nem parado.
+- **Branches no GitHub**: `develop`, `main` e dezenas de `feature/*` e `fix/*`. **Não existe `homolog`.**
+- **`main` está 222 commits atrás de `develop`** e o repositório **não tem nenhuma tag**.
+- **Sem CI** (`.github/workflows` não existe) e sem proteção de branch: hoje nada impede um push direto no
+  `main`.
+
+## Decisões tomadas
+
+- **D1 · Unidade de promoção (05/10/2026) — bloco de cards com AC fechados.** Um release é um **conjunto
+  declarado de cards** com critérios de aceite fechados; a versão segue a data (`AAAA.MM.N`) e é marcada com
+  **tag no `main`**. Descartadas: **por onda** (W0 = 38 cards, W3 = 64 commits — grande demais para revalidar
+  em Homolog, e rollback grosseiro) e **por card** (dissolve a noção de versão: como `homolog` muda antes de o
+  humano aprovar, o "aprovado" ficaria ambíguo; e exigiria suíte amarrada a cada merge, que não existe sem CI).
+  Consequência de desenho: existe **um pacote de evidência por release**, montado das evidências anexadas nos
+  cards que entram nele.
+
+- **D2 · Tamanho do primeiro release (05/10/2026) — fatia de valor ponta a ponta, pequena.** O primeiro
+  release cobre o **caminho crítico** (base: proxy/TLS + Odoo + Postgres, mais um funil real de captura de
+  lead → CRM) e existe para **provar o processo com carga leve** (merge em `homolog` → deploy → revalidação →
+  pedido de aprovação → registro), não para entregar valor. Descartadas: **W0–W2** (primeiro release já com
+  carga média: se falhar, o diagnóstico é caro justo na primeira volta) e **W0–W9 completo** (revalidar 9
+  ondas não cabe em janela e a aprovação humana viraria carimbo de fé sobre ~170 evidências).
+- **D3 · Domínios por ambiente (05/10/2026) — `tre.transformativa.com.br` (canônico, Produção),
+  `homolog.tre.transformativa.com.br` e `dev.tre.transformativa.com.br`.** Espelha a convenção da casa
+  (`candidate.finance.transformativa.com.br` = ambiente como subdomínio do produto). Os três stacks convivem
+  no IP da VPS (`169.58.24.102`) e o roteamento é por hostname, com certificado por nome. `dev.` e `homolog.`
+  ficam atrás de **basic auth**; o canônico é público (é ele que atende o webhook dos canais, que exige HTTPS
+  com domínio válido). Descartadas: prefixo no primeiro nível (`tre-dev.…`), domínio próprio do produto (marca
+  separada — volta à mesa se houver SaaS com marca própria) e IP:porta (bloquearia o webhook). DNS vive no
+  **Netlify**; os três registros `A → 169.58.24.102` **ainda não existem**.
+
+- **D4 · Enforcement (05/10/2026) — defesa em profundidade: proteção de branch **e** gate no motor.** `main`
+  e `homolog` só recebem **merge** (push direto é violação) e o motor do board **recusa promover** card sem
+  critérios de aceite fechados e evidência anexada, registrando o sha promovido; um vigia confere depois que
+  `main` só avançou por merge vindo de `homolog` e alerta se não. Cada mecanismo cobre o que o outro não vê:
+  a plataforma impede o push direto (inclusive de um agente desatualizado), o motor verifica a evidência/AC do
+  card — que a proteção de branch não sabe enxergar (ela só vê "tem PR?").
+  **Condição medida:** a proteção de branch exige **GitHub Pro** — o plano atual responde `403: "Upgrade to
+  GitHub Pro or make this repository public to enable this feature."` (repo é **privado**; torná-lo público não
+  é opção). A assinatura é do dono; o token do agente já tem `admin` no repo, então a configuração é mecânica
+  assim que o upgrade existir. Até lá, vale **só** o gate do motor + vigia.
+  Descartadas: só plataforma (não vê evidência) e só disciplina (com repo privado e sem proteção, "sem push
+  direto" vira convenção).
+
+- **D5 · Escopo de serviços por ambiente (05/10/2026) — o MESMO conjunto nos três** (proxy + Odoo +
+  Postgres + n8n), com **limite de memória por stack** e `n8n` sem workers no Dev. Razão: Homolog existe para
+  detectar a diferença entre ambientes; conjunto diferente homologa só o que alguém lembrou de replicar.
+  Descartadas: ambientes enxutos (quebraria a paridade justamente no n8n, o serviço mais provável de quebrar
+  em Produção) e serviços de apoio compartilhados (um Postgres para três: economiza pouco e acopla — um
+  restart derruba os três, e um teste pesado em Dev degrada Produção).
+
+## Plano de execução (em ordem)
+
+Dependências do dono marcadas com **[DONO]**. Nada aqui autoriza release: promover para `main` continua
+exigindo aprovação humana registrada.
+
+1. **Branch `homolog`** — criar a partir de `develop` (hoje não existe). Sem ele, nada promove.
+2. **[DONO] Registros DNS** — `tre`, `dev.tre` e `homolog.tre` → `169.58.24.102` no painel do Netlify (ou
+   token do Netlify para o agente criar). Sem isso, Homolog/Produção só sobem com CA local e o webhook dos
+   canais não fecha.
+3. **Provisionar Homolog** — `deploy/compose/homolog/`, `deploy/environments/homolog-*.env`,
+   `scripts/provision/*-homolog.sh` (espelhando o que já existe para dev), `mem_limit` por serviço, `n8n` sem
+   workers, segredos em `/etc/tre/<serviço>-homolog/` (600). Fecha com a sonda de TLS e um E2E do funil **em
+   Homolog**.
+4. **Provisionar Produção** — mesmo formato em `deploy/compose/prod/`, mesmos limites.
+5. **Gate no motor + vigia de auditoria** (parte B de D4) — o motor passa a recusar promoção de card sem AC
+   fechados e evidência anexada, registrando o sha; o vigia confere que `main` só avançou por merge vindo de
+   `homolog`. É script que roda a cada 5 min: entra com dry-run e janela declarada, nunca às cegas.
+6. **[DONO] GitHub Pro** (parte A de D4) — assinatura. Com o upgrade feito, os rulesets de `homolog` e `main`
+   são configurados por API (o token do agente já tem `admin` no repo).
+7. **Política** — registrar o mapa ambiente↔branch↔aprovação em `hermes/policies/human-approval.yaml`:
+   promoção Dev→Homolog não exige humano; `homolog`→`main` exige; rollback em Produção exige.
+8. **Primeiro release** (D2) — declarar o bloco de cards do caminho crítico; promover para Homolog com a
+   evidência anexada nos cards; revalidar em Homolog; montar o pedido de aprovação humana; aprovado, promover
+   para `main` com **tag de versão por data**.
+
+## Perguntas em aberto do desenho (não bloqueiam os passos 1, 3 e 5)
+
+- Quem cria os **registros DNS** (passo 2): o dono no painel, ou token do Netlify para o agente.
+- O **upgrade para GitHub Pro** (passo 6) entra agora ou depois do primeiro release?
+
+
+## Pendências de forma (não bloqueiam o desenho)
+
+- `homolog` precisa ser criado a partir de `develop` (`main` deve continuar sendo o ramo de Produção).
+- Ao provisionar Homolog/Produção: mesmos três scripts por ambiente (`instalar`/`verificar`/`remover`) e o
+  mesmo runbook de TLS — a assimetria entre ambientes é o que produz "funciona em Dev e quebra em Homolog".
+
+### Complemento da D5 — proxy de borda único (confirmado pelo dono, 05/10/2026)
+
+Cada stack **não** tem o seu próprio proxy: só **um** processo pode segurar 80/443 na VPS, e o Let's
+Encrypt valida cada nome pela porta 80. Desenho confirmado: **um proxy de borda** (Caddy) termina o TLS dos
+três hostnames e roteia por hostname para o Odoo interno de cada stack. Cada ambiente mantém **seu** Odoo,
+**seu** Postgres e **seu** n8n, isolados, com limite de memória — o que é compartilhado é só a borda.
+Mesmo padrão que a casa já usa no `financial-dash` (proxy compartilhado com hostname por ambiente).
+
+Medido em 05/10/2026: `dev.tre`, `homolog.tre` e `tre` já resolvem para `169.58.24.102`, mas o handshake
+falha (`tlsv1 alert internal error`) porque caem no bloco de catch-all `:443 { tls internal }` do proxy do
+Dev. O nome que o Dev **usa hoje** é `odoo-dev.transformativa.com.br`, com **certificado público
+Let's Encrypt** (emitido 05/10 17:04) e `basic_auth` ativo — prova de que o caminho de TLS público funciona.
+**Proxy de borda NO AR desde 05/10/2026** (container `proxy-edge`, `network_mode: host`, o único dono de
+80/443; o `proxy-dev` ficou parado como rollback, com volumes e certificado intactos). Medido de fora:
+os quatro nomes com certificado público Let's Encrypt válido (até 03/01/2027) e redirect HTTP->HTTPS;
+`dev.tre` e `odoo-dev` respondem `401` (basic auth) e servem a página de login do Odoo; o gerenciador de
+bases responde `403` (bloqueado na borda); `tre` responde `503` "produção ainda não provisionada" — de
+propósito, porque nome que resolve e responde isso é melhor que erro de TLS, que parece defeito de
+infraestrutura. Handover de 80/443 durou ~10 s (duas tentativas de 5 s) e o rollback é um comando.
+
+Lacuna da D5 **fechada em dev e homolog (06/10/2026)**: o n8n passou a existir provisionado como serviço de
+cada ambiente — `n8n-dev` (127.0.0.1:5680) e `n8n-homolog` (127.0.0.1:5681), imagem **`n8nio/n8n:2.41.5` pinada
+por digest** (`sha256:6f532d3b819c…`, que é exatamente a versão do `:latest` desta VPS e a que as suítes de n8n
+do projeto exercitaram), estado em bind mount (`/opt/tre/<env>/n8n/home`, dono `1000:1000`), chave de
+criptografia em `/etc/tre/n8n-<env>/n8n.env` (600 root, gerada na VPS) e entrada na rede interna do Odoo do
+ambiente (é por ela que o webhook é chamado e a API é alcançada). Cada ambiente tem instalador e verificador
+próprios (`scripts/provision/{instalar,verificar}-n8n-<env>.sh`): **44 itens, 0 falhas** nos dois, mais **3
+provas de dente** por mutação em cópia. Runbooks: `docs/runbooks/n8n-dev.md` e `docs/runbooks/n8n-homolog.md`.
+A Produção recebe o mesmo serviço quando for provisionada (`N8N_PORTA_LOCAL=5682`, já reservada).
+
+Nota de infraestrutura gratuita: **não** foi preciso GitHub Pro para começar a travar. O repo já usa
+`core.hooksPath = scripts/hooks` (ganchos versionados, com um `pre-commit` que barra segredo). Foi somado um
+`scripts/hooks/pre-push` que recusa push direto em `main`, deleção de `develop`/`homolog`/`main` e qualquer
+push que ande para trás nesses dois. Instalado no clone compartilhado (vale para todos os worktrees) e
+testado. A trava da plataforma (ruleset no GitHub) continua exigindo Pro e fica **adiada**; sem ela, quem
+usar `--no-verify` (ou um clone sem o gancho) contorna o portão.
+
+### Estado medido em 06/10/2026 — Homolog
+
+Provisionado e verificado. Stack própria: `pg-odoo-homolog` + `odoo-homolog`, banco `odoo_homolog`, volume
+`pgdata-odoo-homolog`, rede `tre-odoo-homolog`, Odoo em `127.0.0.1:8070` (loopback — quem expõe é a borda).
+Evidência: `scripts/provision/verificar-odoo-homolog.sh` na VPS, **15 itens, 0 falhas**; e de fora,
+`https://homolog.tre.transformativa.com.br/web/login` com certificado Let's Encrypt válido servindo a página
+de login do Odoo (o gerenciador de bases responde 403 na borda). Digest da imagem **idêntico** ao do dev
+(`odoo@sha256:77bac5cd…`) — ambiente que roda imagem diferente não homologa nada. O dev foi medido antes e
+depois: `odoo-dev` com o **mesmo `StartedAt`** (01/10), ou seja, não foi tocado.
+
+O que Homolog **ainda não tem**, declarado: o banco de vendas que existe no dev (`sales_intelligence`); e o
+n8n — já provisionado — **sem workflows importados** (os JSONs versionados e os montadores existem, e as
+suítes os validam em stacks descartáveis; importar para o serviço persistente é o próximo passo funcional). O par `deploy/environments/homolog.env` deixa o trio `TRE_PG_*` ausente
+**de propósito**: apontar para o container do dev faria o backup de homolog gravar artefato com o banco do dev.
+
+Cópia de código de homolog: `/opt/tre/homolog/repo` no commit **fbf5bb1** (branch `homolog`, o mesmo que está
+no GitHub), publicada pelo caminho único (`deploy/publicar.sh`) com destino, artefato e lock **isolados** para
+não confundir o watchdog da cópia compartilhada. A primeira promoção `develop` → `homolog` **foi feita em
+06/10/2026** (fast-forward de `3252bba`; 13 arquivos, +921/-1, **nenhum arquivo de aplicação**), com evidência
+em `docs/operations/registro-de-promocoes.md` e comentário no card `t_1acf11f2`.
+
+### Estado medido em 06/10/2026 — Dev (o ciclo E2E está ligado)
+
+O Dev é o primeiro ambiente com o ciclo completo girando. O que passou a existir:
+
+- **Cópia de código própria:** `/opt/tre/dev/repo`, publicada do `develop` com destino, artefato e trava
+**isolados**. Antes o `odoo-dev` montava `/opt/tre/repo` — a cópia **compartilhada**, que o `publicar.sh`
+hoje recusa sobrescrever sem `--producao` mais aprovação registrada. Isto é: o Dev executava código que não
+era o dele, e o portão de publicação foi o que revelou o acoplamento.
+- **Módulo `transformativa_sales_ai` instalado** em `odoo_dev`. A migração `db/migrations/0001_*` **já estava
+aplicada** (schema `sales_intelligence`, 12 tabelas) — a recon anterior olhou só o schema `public` e
+concluiu errado; a checagem correta é `aplicar_migracoes.sh dev --somente-checar`.
+- **Porta única preparada:** `tf.api.ambiente=dev` (com `tf.api.aprovacao` e `tf.api.politica` vazios, ou seja,
+política do próprio módulo), usuário de integração e chave em `/etc/tre/dev-ciclo/chave-api.txt` (600).
+- **n8n com os dois workflows importados** (`TREodooEventos1`, `TREOUTBOXCONSUM1`) e as três credenciais no
+cofre do próprio serviço; `TRE_API_BASE` no par do ambiente — nenhum host fica escrito no artefato do
+workflow.
+- **Ciclo ligado nos dois sentidos**, com dedup por chave provado (replay sem duplicata) e recusa com nome;
+comandos de ligar/desligar e a evidência crua em `docs/runbooks/n8n-dev.md` § 7.
+
+Pendências declaradas deste ciclo: o `pg-sales-dev` foi conectado à rede `tre-odoo-dev` **em tempo de
+execução** (o container nasceu avulso, sem rótulos de compose) — versionar essa stack é card próprio; e a UI
+do n8n continua fora da borda.
+
+### Estado medido em 06/10/2026 — Homolog funcional (paridade com o Dev, uma diferença de desenho)
+
+Homolog deixou de ser só espelho de código. O que passou a existir:
+
+- **Banco de vendas próprio e versionado desde o berço** (o do dev nasceu avulso, sem compose — corrigir isso
+  é card próprio): `deploy/compose/homolog/pg-sales.yml` + par `homolog-sales.env` + instalador e verificador.
+  `pg-sales-homolog` roda PostgreSQL 16 no **mesmo digest do dev**, com volume próprio, sem porta publicada,
+  só na rede `tre-odoo-homolog`. Verificador: **20 itens, 0 falhas**, com prova de dente.
+  O par `deploy/environments/homolog.env` passou a declarar o trio `TRE_PG_*` apontando para **este** banco
+  (antes ficava ausente de propósito, para não apontar para o do dev).
+- **Migração aplicada** com o **mesmo sha256 do dev** (`0484a370…`): schema idêntico é o que permite comparar.
+- **Módulo `transformativa_sales_ai` instalado** em `odoo_homolog`; porta única preparada com
+  `tf.api.ambiente=homologacao` (o nome canônico deste ambiente é `homologacao`, **não** `homolog`) e chave
+  própria em `/etc/tre/homolog-ciclo/`.
+- **n8n com credenciais e workflows importados** (ids do contrato) e as duas agendas publicadas; cron do
+  módulo ativo.
+
+**A diferença, que é de desenho e não de instalação:** escrita em Homolog está trancada. A política do módulo
+declara `ambientes_permitidos: ["dev"]` e `homologacao`/`producao` exigem **aprovação humana**
+(`AMBIENTES_COM_APROVACAO`). Medido: o consumidor entrega, a API recusa com motivo nomeado
+(`recusa_da_api:ambiente_nao_permitido`) e a trilha grava `REFUSED`. Destrancar exige duas decisões do dono —
+política que permita `homologacao` e uma aprovação válida — e **não** foi feito por ato automático.
+
+Ingestão (CRM → n8n → PostgreSQL) funciona e é autônoma nos dois ambientes. Detalhe em
+`docs/runbooks/banco-de-vendas-homolog.md` e `docs/runbooks/n8n-homolog.md` § 7.

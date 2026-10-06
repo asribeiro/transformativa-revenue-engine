@@ -39,7 +39,7 @@ FALHAS=0
 ok() { ITENS=$((ITENS + 1)); echo "OK    $*"; }
 ko() { ITENS=$((ITENS + 1)); FALHAS=$((FALHAS + 1)); echo "FALHOU $*"; }
 
-limpar() { docker rm -f "$SERVICO" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"; }
+limpar() { docker rm -f -v "$SERVICO" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"; }
 trap limpar EXIT
 
 echo "=================================================================="

@@ -2,6 +2,11 @@
 # Aceite TRE-W0-E01-T01: confere a estrutura obrigatória do repositorio.
 set -u
 FALHAS=0
+# Opcao C (ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md`): COBERTOS acumula os
+# arquivos que este verificador COBRE — isto e', aqueles sobre os quais ele afirma "existe E esta
+# versionado". A descoberta automatica do fim do script compara esta lista com a arvore versionada
+# das AREAS_DE_ARTEFATO: o que nao estiver aqui nem no arquivo de isencoes REPROVA (fail-closed).
+COBERTOS=""
 DIRS="docs/architecture docs/data docs/integrations docs/business docs/testing docs/operations docs/adr \
 docs/runbooks docs/releases docs/kanban db/migrations db/tests odoo/addons/transformativa_sales_ai \
 n8n/workflows n8n/contracts hermes/agents hermes/prompts hermes/policies hermes/jev/routing \
@@ -19,6 +24,7 @@ if [ "$ADR" -ge 6 ]; then echo "OK    ADRs iniciais ($ADR)"; else echo "FALHOU A
 # e o Data Contract V1 foi commitado sem os proprios documentos — este check teria pego.
 for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
          db/migrations/0001_sales_intelligence_v1.sql CHANGELOG.md; do
+  COBERTOS="$COBERTOS $f"
   if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
     echo "OK    versionado  $f"
   else
@@ -26,6 +32,59 @@ for f in docs/data/DATA_CONTRACT_V1.md docs/data/data_contract_v1.json \
     FALHAS=$((FALHAS+1))
   fi
 done
+# Artefatos do modulo Odoo do Sales AI (TRE-W2-E03-T01, E04-T01, E04-T02 e E05-T01) existem E estao
+# versionados. A cobertura e' por DIRETORIO (o que existe na arvore tem de estar no `git ls-files`),
+# nao arquivo a arquivo, de proposito: os cards paralelos acrescentam arquivo ao MESMO modulo e a lista
+# reescrita a cada card ja' colidiu na integracao (o `__init__.py` do modulo). Sem isto o aceite do card
+# pode passar na VPS por arquivo que nunca entrou no repo.
+# DEFEITO CORRIGIDO (card t_5cad1689, revisao independente do TRE-W2-E04-T01): o card registrou os
+# artefatos no runbook mas nao aqui, e os 6 arquivos novos ficaram fora do gate (grep = 0 em 3b0eac3).
+# NOTA DE INTEGRACAO: este bloco fica aqui, longe do bloco do E05-T01 no fim do arquivo, para que a
+# integracao dos cards paralelos junte linhas em vez de conflitar (hotspot declarado no card).
+MODULO_ODOO="odoo/addons/transformativa_sales_ai"
+FERRAMENTAS_ODOO="scripts/odoo"
+ARTEFATOS_ODOO=$(find "$MODULO_ODOO" "$FERRAMENTAS_ODOO" -type f \
+                     \( -name '*.py' -o -name '*.sh' -o -name '*.md' -o -name '*.xml' -o -name '*.csv' \) \
+                     ! -path '*__pycache__*' 2>/dev/null | sort)
+N_ARTEFATOS_ODOO=$(printf '%s\n' "$ARTEFATOS_ODOO" | grep -c .)
+# Guarda do proprio gate (licao do D04): lista vazia/curta faz o laco abaixo nao olhar nada e ainda
+# imprimir PASS. Medido: 14 arquivos no TRE-W2-E04-T01 (11 no E05-T01, 8 no modulo base E03-T01).
+if [ "$N_ARTEFATOS_ODOO" -lt 5 ]; then
+  echo "FALHOU artefatos do modulo Odoo: apenas $N_ARTEFATOS_ODOO arquivo(s) em $MODULO_ODOO + $FERRAMENTAS_ODOO (diretorio ausente, find quebrado ou arvore incompleta) — o gate nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $ARTEFATOS_ODOO; do
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+# Script de ferramenta tem de estar executavel nos DOIS lados: no disco (e' o que a VPS executa) e no
+# indice do git (e' o que um checkout novo restaura) — a classe do defeito t_22c27625 (203/EXEC).
+N_SH_ODOO=$(printf '%s\n' "$ARTEFATOS_ODOO" | grep -c '\.sh$')
+if [ "$N_SH_ODOO" -lt 1 ]; then
+  echo "FALHOU nenhum script .sh em $FERRAMENTAS_ODOO — o check de bit de execucao nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $(printf '%s\n' "$ARTEFATOS_ODOO" | grep '\.sh$'); do
+  MODO_GIT=$(git ls-files -s -- "$f" 2>/dev/null | awk '{print $1}')
+  if [ -x "$f" ] && [ "$MODO_GIT" = "100755" ]; then echo "OK    executavel $f (disco + git $MODO_GIT)"
+  else echo "FALHOU sem bit de execucao $f (disco: $([ -x "$f" ] && echo x || echo -) ; git: ${MODO_GIT:-ausente})"; FALHAS=$((FALHAS+1)); fi
+done
+# O runbook do card e' artefato como os outros (a cobertura por diretorio do modulo nao alcanca docs/).
+# Tambem por DIRETORIO, e nao por arquivo: cada card do modulo tem o SEU runbook, e exigir o arquivo de
+# um card reprovaria a arvore do outro — medido: exigir `res-partner-campos-dedup.md` fazia o fix
+# aplicado sozinho sobre o TRE-W2-E05-T01 reprovar (`FALHOU ausente ...`), que e' a colisao que este
+# bloco existe para nao repetir.
+RUNBOOKS=$(find docs/runbooks -type f -name '*.md' 2>/dev/null | sort)
+N_RUNBOOKS=$(printf '%s\n' "$RUNBOOKS" | grep -c .)
+if [ "$N_RUNBOOKS" -lt 5 ]; then
+  echo "FALHOU runbooks: apenas $N_RUNBOOKS arquivo(s) em docs/runbooks (diretorio ausente ou find quebrado) — o gate nao olharia nada"
+  FALHAS=$((FALHAS+1))
+fi
+for f in $RUNBOOKS; do
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+
 # DEFEITO CORRIGIDO (TRE-W1-E04-T01, achado por leitura do proprio verificador): aqui existia
 # `echo "---" ; if FALHAS==0 -> PASS e exit`. Esse `exit` no MEIO do script matava todo o resto
 # do arquivo: os blocos de artefato versionado (backup/T03, JEV policy, dedup, processo de
@@ -36,6 +95,7 @@ done
 for f in scripts/backup/backup-tre.sh scripts/backup/verificar-backup.sh \
          scripts/backup/restore-tre.sh scripts/backup/teste-backup-restore.sh \
          docs/runbooks/backup-restore-rollback.md deploy/systemd/tre-backup.timer; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -43,6 +103,7 @@ done
 
 # Artefatos da JEV Decision Policy V1 (E04-T01) existem E estao versionados
 for f in hermes/jev/policy_v1.yaml docs/architecture/jev-decision-policy-v1.md scripts/verificar_jev_policy.py; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -51,6 +112,7 @@ done
 # Artefatos da deduplicacao strong identifiers (TRE-W1-E04-T01) existem E estao versionados
 for f in scripts/dedup/deduplicar_organizacoes.py scripts/dedup/teste_dedup_sintetico.sh \
          scripts/dedup/teste_dedup_ambiente.sh docs/runbooks/deduplicacao-strong-identifiers.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -58,6 +120,7 @@ done
 
 # Artefatos do campo entity_match_confidence (TRE-W1-E04-T02) existem E estao versionados
 for f in scripts/dedup/teste_entity_match_confidence.sh docs/data/entity-match-confidence.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -70,6 +133,7 @@ done
 # Artefatos da suite de teste do banco (TRE-W1-E05-T01) existem E estao versionados
 for f in scripts/db/suite_banco.sh scripts/db/teste_isolamento_clientes.sh \
          scripts/db/teste_tenant_rls.sh docs/runbooks/suite-de-teste-do-banco.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -82,6 +146,7 @@ done
 # Processo de defeitos (card -> defeito -> correcao -> liberacao) versionado
 for f in docs/kanban/processo-de-defeitos.md scripts/kanban/abrir-defeito.sh \
          scripts/kanban/fechar-defeito.sh scripts/kanban/listar-defeitos.sh; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -91,10 +156,24 @@ for f in scripts/kanban/abrir-defeito.sh scripts/kanban/fechar-defeito.sh script
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
 
+# Artefatos da publicacao versionada da copia operacional (DEFEITO F3 do TRE-W1-E06-T01) existem
+# E estao versionados. A publicacao e o unico caminho de escrita em /opt/tre/repo: o script tem de
+# estar no git (senao a proxima publicacao o apaga) e executavel no indice.
+for f in deploy/publicar.sh docs/runbooks/publicacao-da-copia-operacional.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in deploy/publicar.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
 # Artefatos do Odoo Community em dev (TRE-W2-E01-T01) existem E estao versionados
 for f in deploy/compose/dev/odoo.yml deploy/environments/dev-odoo.env \
          scripts/provision/instalar-odoo-dev.sh scripts/provision/verificar-odoo-dev.sh \
          scripts/provision/remover-odoo-dev.sh docs/runbooks/odoo-dev.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -161,9 +240,11 @@ for f in odoo/addons/transformativa_sales_ai/__manifest__.py \
          scripts/odoo/preparar_api_teste.py docs/runbooks/odoo-api-controlada.md \
          docs/runbooks/odoo-oportunidade-upsert.md \
          docs/runbooks/odoo-atividade-criar.md \
+         scripts/odoo/teste-dente-confere.sh \
          docs/runbooks/odoo-modulo-sales-ai.md docs/runbooks/odoo-oportunidade-canonica.md \
          docs/runbooks/odoo-acl-seguranca.md docs/runbooks/res-partner-campos-dedup.md \
          docs/runbooks/odoo-crm-lead-sales-ai.md docs/runbooks/odoo-views-sales-ai.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -176,7 +257,7 @@ for f in scripts/odoo/verificar-modulo-odoo.sh scripts/odoo/verificar-acl-modulo
          scripts/odoo/verificar-res-partner.sh scripts/odoo/verificar-views-sales-ai.sh \
          scripts/odoo/verificar-api-controlada.sh scripts/odoo/testar_motor_api.py \
          scripts/odoo/verificar-empresa-upsert.sh scripts/odoo/verificar-contato-upsert.sh \
-         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh; do
+         scripts/odoo/verificar-oportunidade-upsert.sh scripts/odoo/verificar-atividade-criar.sh scripts/odoo/teste-dente-confere.sh scripts/n8n/conferir_ingest_estrutural.py scripts/n8n/montar_workflow_ingest.py scripts/n8n/mutar_workflow_ingest.py scripts/n8n/verificar-odoo-eventos.sh scripts/odoo/conferir_eventos_no_contrato.py scripts/odoo/gerar_fatos_e_enviar.py scripts/odoo/preparar_remetente_eventos.py; do
   if [ -x "$f" ]; then echo "OK    executavel $f"
   else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
 done
@@ -205,6 +286,33 @@ for f in n8n/contracts/outbox-consumer.v1.json n8n/codigo/nucleo-outbox-consumer
          scripts/n8n/conferir_contrato_e_workflow.py scripts/n8n/testar_nucleo_consumidor.js \
          scripts/n8n/mutar_workflow.py scripts/n8n/preparar_massa_ambigua.py \
          scripts/n8n/verificar-outbox-consumer.sh docs/runbooks/n8n-outbox-consumer.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+# Artefatos do fluxo de eventos Odoo -> PG (TRE-W3-E03-T01) existem E estao versionados: o workflow
+# do n8n e' artefato DERIVADO (contrato + nucleo + SQL + construtor) e o modulo Odoo ganhou
+# models/data/tests de evento. Sem estes arquivos o aceite do card pode passar na VPS por arquivo
+# que nunca entrou no repo. Lista levantada por MEDICAO da cobertura — opcao C, ADR
+# `docs/architecture/cobertura-do-verificador-de-estrutura.md` (card t_c77ca273): antes deste
+# conserto o verificador imprimia PASS mesmo com qualquer um destes 20 fora da arvore versionada
+# (dos quais 17 sao os citados no card; a medicao achou tambem os dois SQL e o workflow de n8n).
+for f in odoo/addons/transformativa_sales_ai/data/ir_cron_tf_eventos.xml \
+         odoo/addons/transformativa_sales_ai/models/eventos_calendar_event.py \
+         odoo/addons/transformativa_sales_ai/models/eventos_crm_lead.py \
+         odoo/addons/transformativa_sales_ai/models/eventos_mail_activity.py \
+         odoo/addons/transformativa_sales_ai/models/tf_evento_outbox.py \
+         odoo/addons/transformativa_sales_ai/tests/test_eventos_odoo_pg.py \
+         n8n/codigo/nucleo-ingest-eventos.js n8n/contracts/odoo-events-ingest.v1.json \
+         n8n/sql/ingerir-evento.sql n8n/sql/registrar-recusa.sql \
+         n8n/workflows/TRE-odoo-events-ingest.json \
+         scripts/n8n/conferir_ingest_estrutural.py scripts/n8n/montar_workflow_ingest.py \
+         scripts/n8n/mutar_workflow_ingest.py scripts/n8n/testar_nucleo_ingest.js \
+         scripts/n8n/verificar-odoo-eventos.sh \
+         scripts/odoo/conferir_eventos_no_contrato.py scripts/odoo/gerar_fatos_e_enviar.py \
+         scripts/odoo/preparar_remetente_eventos.py \
+         docs/runbooks/odoo-eventos-para-pg.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -240,6 +348,18 @@ for f in n8n/contracts/reconciliation-job.v1.json n8n/codigo/nucleo-reconciliaca
          scripts/n8n/massa-observabilidade.sql scripts/n8n/ler_resultado_n8n.py \
          scripts/n8n/normalizar_medicao.py scripts/n8n/verificar-observabilidade-sync.sh \
          docs/runbooks/observabilidade-sync.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+
+# Achados da PROPRIA descoberta automatica (opcao C): artefatos de ondas ANTERIORES que tambem
+# estavam fora da rede — o mesmo furo de cobertura, achado por medicao, nao por sorte. Entram na
+# cobertura (nao sao isencao): sao artefatos de card de verdade e a ausencia deles tem de reprovar.
+for f in odoo/addons/transformativa_sales_ai/models/mail_activity.py \
+         docs/runbooks/aplicar-migracoes.md docs/runbooks/gate-jev-do-dispatch.md \
+         docs/runbooks/massa-de-smoke-dev.md docs/runbooks/provisionamento-contabo.md; do
+  COBERTOS="$COBERTOS $f"
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
@@ -481,6 +601,16 @@ for f in hermes/integracoes/titan/smtp_titan.py hermes/integracoes/titan/titan-s
          scripts/integracoes/sink-smtp-dev.py scripts/integracoes/verificar_smtp_titan.py \
          scripts/integracoes/teste_smtp_titan_aceite.sh scripts/integracoes/mutar_smtp_titan.py \
          deploy/environments/dev-smtp.env docs/integrations/titan-smtp-v1.md docs/runbooks/titan-smtp.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+
+# Backup/restore do Odoo (TRE-W2-E01-T01-F01): os artefatos existem, estao versionados e
+# os que sao chamados direto (ou por outro script) tem bit de execucao. O par do ambiente
+# tem de carregar o trio do Odoo — sem ele `backup-tre.sh` pula o Odoo em silencio.
+for f in scripts/backup/verificar-odoo.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/backup-tre.sh scripts/backup/verificar-ultimo-backup.sh; do
   if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
   elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
   else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
@@ -859,6 +989,993 @@ if [ -f scripts/agentes/teste_pontuacao_preditiva_aceite.sh ]; then
     fi
   done
 fi
+
+
+# --- card TRE-W7-E01-T01 (captura de lead do site) ---------------------------------------------------
+# O componente existe E esta' versionado, com o contrato fechado, a barreira de consentimento declarada,
+# a guarda de producao e o portao do entregavel (suite + aceite).
+for arquivo in hermes/agentes/inbound/captura_site.py hermes/agentes/inbound/captura-site-v1.json \
+               scripts/agentes/verificar_captura_site.py scripts/agentes/teste_captura_site_aceite.sh \
+               docs/runbooks/captura-de-lead-do-site.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E01-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E01-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f hermes/agentes/inbound/captura_site.py ]; then
+  if grep -q 'auditar_fonte()' hermes/agentes/inbound/captura_site.py \
+     && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/inbound/captura_site.py \
+     && grep -q 'PRODUCAO_RECUSADA' hermes/agentes/inbound/captura_site.py \
+     && grep -q 'BANCO_NAO_E_DEV' hermes/agentes/inbound/captura_site.py; then
+    echo "OK    captura_site.py: auditoria de fonte, sem DDL e com guardas de prod/dev"
+  else
+    echo "FALHOU card TRE-W7-E01-T01: componente sem auditoria de fonte / com DDL / sem guardas"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agentes/inbound/captura-site-v1.json ]; then
+  python3 - <<'PY' || { echo "FALHOU card TRE-W7-E01-T01: contrato sem a barreira de consentimento"; FALHAS=$((FALHAS+1)); }
+import json, sys
+c = json.load(open("hermes/agentes/inbound/captura-site-v1.json", encoding="utf-8"))
+obrig = c["submissao"]["campos_obrigatorios"]
+vocab = c["vocabulario"]
+ok = ("consentimento.aceito" in obrig and "consentimento.legal_basis" in obrig
+      and "RECUSADO_CONSENTIMENTO" in vocab["status_trilha"]
+      and float(c["identificadores"]["limiar_de_merge_automatico"]) == 0.95
+      and c["lacunas"])
+sys.exit(0 if ok else 1)
+PY
+fi
+if [ -f scripts/agentes/teste_captura_site_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_captura_site_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E01-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q '127.0.0.1\|loopback' scripts/agentes/teste_captura_site_aceite.sh \
+     || ! grep -q 'TRE_AMBIENTE=dev' scripts/agentes/teste_captura_site_aceite.sh \
+     || ! grep -q 'RECUSADO_CONSENTIMENTO' scripts/agentes/teste_captura_site_aceite.sh; then
+    echo "FALHOU card TRE-W7-E01-T01: aceite sem as pontas locais/guarda de ambiente/barreira de consentimento"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+python3 scripts/agentes/verificar_captura_site.py >/dev/null 2>&1 \
+  && echo "OK    suite do componente verde (verificar_captura_site.py)" \
+  || { echo "FALHOU card TRE-W7-E01-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
+
+
+# --- card TRE-W7-E02-T01 (ingestao de leads Meta) ----------------------------------------------------
+for arquivo in hermes/agentes/inbound/ingestao_leads_meta.py \
+               hermes/agentes/inbound/meta-lead-ingestion-v1.json \
+               scripts/agentes/verificar_ingestao_leads_meta.py \
+               scripts/agentes/stub-meta-graph-dev.py \
+               scripts/agentes/teste_ingestao_leads_meta_aceite.sh \
+               deploy/environments/dev-meta.env \
+               docs/integrations/meta-leads-v1.md \
+               docs/runbooks/ingestao-leads-meta.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E02-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E02-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+ACEITE_META=scripts/agentes/teste_ingestao_leads_meta_aceite.sh
+if [ -f "$ACEITE_META" ]; then
+  if ! bash -n "$ACEITE_META" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E02-T01: $ACEITE_META nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # As pontas externas so' em loopback e as guardas de ambiente medidas no aceite.
+  for marca in 127.0.0.1 GRAPH_NAO_E_DEV BANCO_NAO_E_DEV "--ambiente prod" assinatura; do
+    if ! grep -q -e "$marca" "$ACEITE_META"; then
+      echo "FALHOU card TRE-W7-E02-T01: aceite sem a marca obrigatoria '$marca'"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+# O ambiente de dev nao carrega segredo: token/app secret vem do host (ADR-005).
+if grep -qE '^TRE_META_(ACCESS_TOKEN|APP_SECRET)=.+$' deploy/environments/dev-meta.env; then
+  echo "FALHOU dev-meta.env carrega valor em TRE_META_ACCESS_TOKEN/TRE_META_APP_SECRET"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    dev-meta.env sem token/app secret versionado"
+fi
+
+
+
+# --- card TRE-W7-E03-T01 (atribuicao de lead do Google) ----------------------------------------------
+# Componente + contrato versionados, aceite com as pontas em loopback e suíte offline com dentes.
+ACEITE_GOOGLE="scripts/inbound/aceite-atribuicao-google.sh"
+for arquivo in hermes/inbound/google/atribuicao_google.py hermes/inbound/google/atribuicao-google-v1.json \
+               "$ACEITE_GOOGLE" scripts/inbound/verificar_atribuicao_google.py \
+               scripts/inbound/stub-google-ads-dev.py docs/runbooks/atribuicao-google-lead.md \
+               docs/architecture/atribuicao-google-v1.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_GOOGLE" ]; then
+  if ! bash -n "$ACEITE_GOOGLE" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E03-T01: $ACEITE_GOOGLE nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Sem resolvedor em loopback e sem guarda de producao o aceite nao mede o que promete.
+  for exigencia in '127.0.0.1' 'TRE_AMBIENTE=prod' 'pg-google-acc' 'GCLID_NAO_RESOLVIDO'; do
+    if ! grep -q "$exigencia" "$ACEITE_GOOGLE"; then
+      echo "FALHOU card TRE-W7-E03-T01: aceite sem '$exigencia'"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+# O contrato tem de declarar a tabela de atribuicao e as lacunas (o que nao e' medido fica escrito).
+for exigencia in '"tabela_de_atribuicao"' '"lacunas"' '"SEM_IDENTIFICADOR"' '"FORMULARIO_SEM_CAMPANHA"'; do
+  if ! grep -q "$exigencia" hermes/inbound/google/atribuicao-google-v1.json; then
+    echo "FALHOU card TRE-W7-E03-T01: contrato sem $exigencia"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+# Auditoria de fonte com o espaco declarado como pedaco proprio: o padrao antigo ("DE" + "LETE FROM")
+# avaliava para DELETEFROM e nunca casaria DELETE FROM (buraco medido nesta onda).
+if ! grep -q '" FROM"' hermes/inbound/google/atribuicao_google.py; then
+  echo "FALHOU card TRE-W7-E03-T01: auditoria de fonte sem o padrao com espaco separado"
+  FALHAS=$((FALHAS+1))
+fi
+
+
+
+# --- card TRE-W7-E04-T01 (LinkedIn AI-assisted workflow) ---------------------------------------------
+# O aceite do canal LinkedIn assistido: versionado, bash valido, banco descartavel e as guardas que
+# fazem o card ter sentido (a maquina NAO publica, NAO comenta, NAO reage, NAO manda DM).
+ACEITE_LK="scripts/linkedin/verificar-linkedin-assistido.sh"
+CONTRATO_LK="hermes/agents/linkedin/linkedin-assistido-v1.json"
+MODULO_LK="hermes/agents/linkedin/linkedin_assistido.py"
+for arquivo in "$ACEITE_LK" "$CONTRATO_LK" "$MODULO_LK" docs/runbooks/linkedin-assistido.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_LK" ]; then
+  if ! bash -n "$ACEITE_LK" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E04-T01: $ACEITE_LK nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de medir as acoes humanas exclusivas e a guarda de prod, e nao pode ter ponta de rede.
+  for marca in "tentar-publicar" "tentar-acao" "--ambiente prod" "pg-lk-e04" "SEM_EVIDENCIA" "CONTATO_BLOQUEADO"; do
+    if ! grep -q -- "$marca" "$ACEITE_LK"; then
+      echo "FALHOU card TRE-W7-E04-T01: aceite sem a marca obrigatoria ($marca)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  if grep -qE "linkedin\.com|[[:space:]]curl[[:space:]]" "$MODULO_LK"; then
+    echo "FALHOU card TRE-W7-E04-T01: modulo com caminho de rede para o LinkedIn"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f "$CONTRATO_LK" ] && ! grep -q '"maquina_proibidas"' "$CONTRATO_LK"; then
+  echo "FALHOU card TRE-W7-E04-T01: contrato sem as acoes humanas exclusivas declaradas"
+  FALHAS=$((FALHAS+1))
+fi
+
+
+# --- card TRE-W7-E05-T01 (WhatsApp engaged-lead workflow) -------------------------------------------
+# O componente existe E esta' versionado, com o contrato fechado (vocabulario, regras e janela), a
+# barreira de descadastro declarada, a guarda de producao e o portao do entregavel (suite + aceite).
+for arquivo in hermes/agentes/inbound/whatsapp_lead.py hermes/agentes/inbound/whatsapp-lead-v1.json \
+               scripts/agentes/verificar_whatsapp_lead.py scripts/agentes/teste_whatsapp_lead_aceite.sh \
+               docs/runbooks/whatsapp-engaged-lead.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f hermes/agentes/inbound/whatsapp_lead.py ]; then
+  if grep -q 'auditar_fonte()' hermes/agentes/inbound/whatsapp_lead.py \
+     && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/inbound/whatsapp_lead.py \
+     && grep -q 'PRODUCAO_RECUSADA' hermes/agentes/inbound/whatsapp_lead.py \
+     && grep -q 'BANCO_NAO_E_DEV' hermes/agentes/inbound/whatsapp_lead.py \
+     && ! grep -qE 'INSERT INTO[^"]*contacts|INSERT INTO[^"]*outbox_events' hermes/agentes/inbound/whatsapp_lead.py; then
+    echo "OK    whatsapp_lead.py: auditoria de fonte, sem DDL, guardas de prod/dev e escrita so' nas 2 tabelas"
+  else
+    echo "FALHOU card TRE-W7-E05-T01: componente sem auditoria de fonte / com DDL / sem guardas / fora do escopo"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agentes/inbound/whatsapp-lead-v1.json ]; then
+  python3 - <<'PY' || { echo "FALHOU card TRE-W7-E05-T01: contrato sem a barreira de descadastro/janela"; FALHAS=$((FALHAS+1)); }
+import json, sys
+c = json.load(open("hermes/agentes/inbound/whatsapp-lead-v1.json", encoding="utf-8"))
+vocab = c["vocabulario"]
+regras = c["regras"]
+opt_out = [r for r in regras if str(r.get("categoria")).upper() == "OPT_OUT"]
+ok = (
+    "recebido_em" in c["evento"]["campos_obrigatorios"]
+    and sorted(c["escrita"]["tabelas"]) == ["interactions", "sync_events"]
+    and int(c["janela_de_atendimento"]["minutos"]) > 0
+    and len(opt_out) == 1 and int(opt_out[0]["ordem"]) == 1
+    and "BLOQUEADO_POR_BLOQUEIO" in vocab["status_trilha"]
+    and "REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA" in vocab["proximo_passo"]
+    and c["lacunas"]
+)
+sys.exit(0 if ok else 1)
+PY
+fi
+if [ -f scripts/agentes/teste_whatsapp_lead_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_whatsapp_lead_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q '127.0.0.1\|loopback' scripts/agentes/teste_whatsapp_lead_aceite.sh \
+     || ! grep -q 'TRE_AMBIENTE=dev' scripts/agentes/teste_whatsapp_lead_aceite.sh \
+     || ! grep -q 'PARAR' scripts/agentes/teste_whatsapp_lead_aceite.sh; then
+    echo "FALHOU card TRE-W7-E05-T01: aceite sem as pontas locais/guarda de ambiente/dente de descadastro"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+python3 scripts/agentes/verificar_whatsapp_lead.py >/dev/null 2>&1 \
+  && echo "OK    suite do componente verde (verificar_whatsapp_lead.py)" \
+  || { echo "FALHOU card TRE-W7-E05-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
+
+
+# --- card TRE-W7-E06-T01 (captura de lead coletado em evento) ----------------------------------------
+# O componente existe E esta' versionado, com o contrato fechado (vinculo do evento + forma do consentimento),
+# a guarda de producao e o portao do entregavel (suite + aceite).
+for arquivo in hermes/agentes/inbound/captura_evento.py hermes/agentes/inbound/captura-evento-v1.json \
+               scripts/agentes/verificar_captura_evento.py scripts/agentes/teste_captura_evento_aceite.sh \
+               docs/runbooks/captura-de-lead-de-evento.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W7-E06-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W7-E06-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f hermes/agentes/inbound/captura_evento.py ]; then
+  if grep -q 'auditar_fonte()' hermes/agentes/inbound/captura_evento.py \
+     && ! grep -qE '^[[:space:]]*(CREATE|ALTER|DROP|TRUNCATE)[[:space:]]' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'PRODUCAO_RECUSADA' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'BANCO_NAO_E_DEV' hermes/agentes/inbound/captura_evento.py \
+     && grep -q 'EVENTO_NAO_DECLARADO' hermes/agentes/inbound/captura_evento.py; then
+    echo "OK    captura_evento.py: auditoria de fonte, sem DDL, guardas de prod/dev e barreira do evento"
+  else
+    echo "FALHOU card TRE-W7-E06-T01: componente sem auditoria de fonte / com DDL / sem guardas"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+if [ -f hermes/agentes/inbound/captura-evento-v1.json ]; then
+  python3 - <<'PY' || { echo "FALHOU card TRE-W7-E06-T01: contrato sem a barreira do evento/consentimento"; FALHAS=$((FALHAS+1)); }
+import json, sys
+c = json.load(open("hermes/agentes/inbound/captura-evento-v1.json", encoding="utf-8"))
+obrig = c["coleta"]["campos_obrigatorios"]
+vocab = c["vocabulario"]
+ok = ("origem_evento.event_id" in obrig and "origem_evento.capture_method" in obrig
+      and "origem_evento.capturado_em" in obrig
+      and "consentimento.aceito" in obrig and "consentimento.legal_basis" in obrig
+      and "consentimento.forma" in obrig
+      and "EVENTO_NAO_DECLARADO" in vocab["status_trilha"]
+      and "RECUSADO_CONSENTIMENTO" in vocab["status_trilha"]
+      and vocab["channel"] == ["EVENTO"]
+      and float(c["identificadores"]["limiar_de_merge_automatico"]) == 0.95
+      and c["lacunas"])
+sys.exit(0 if ok else 1)
+PY
+fi
+if [ -f scripts/agentes/teste_captura_evento_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_captura_evento_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W7-E06-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q '127.0.0.1\|loopback' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'TRE_AMBIENTE=dev' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'RECUSADO_CONSENTIMENTO' scripts/agentes/teste_captura_evento_aceite.sh \
+     || ! grep -q 'EVENTO_NAO_DECLARADO' scripts/agentes/teste_captura_evento_aceite.sh; then
+    echo "FALHOU card TRE-W7-E06-T01: aceite sem as pontas locais/guarda de ambiente/barreiras do canal"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+python3 scripts/agentes/verificar_captura_evento.py >/dev/null 2>&1 \
+  && echo "OK    suite do componente verde (verificar_captura_evento.py)" \
+  || { echo "FALHOU card TRE-W7-E06-T01: suite do componente nao passa"; FALHAS=$((FALHAS+1)); }
+
+
+# --- card TRE-W8-E02-T01 (Conversao por segmento) -----------------------------------------------------
+CONTRATO_SEG="hermes/agentes/analytics/conversao-segmento-v1.json"
+COMPONENTE_SEG="hermes/agentes/analytics/conversao_segmento.py"
+for arquivo in "$COMPONENTE_SEG" "$CONTRATO_SEG" scripts/agentes/verificar_conversao_segmento.py \
+               scripts/agentes/teste_conversao_segmento_aceite.sh \
+               docs/architecture/conversao-por-segmento-v1.md docs/runbooks/conversao-por-segmento.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E02-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E02-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_SEG" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_SEG" \
+       scripts/agentes/verificar_conversao_segmento.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Os eixos tem de bater com o vocabulario do contrato de dados E os estagios com os do funil: quem
+  # decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_SEG" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: --conferir recusou (eixo x contrato de dados x funil)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O recorte NAO pode reimplementar o funil: a derivacao e' importada.
+  if ! grep -q '^import funil' "$COMPONENTE_SEG"; then
+    echo "FALHOU card TRE-W8-E02-T01: componente nao importa o funil (segunda regra de funil?)"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'SEM_DADO' 'FORA_DO_VOCABULARIO'; do
+    if ! grep -q -F "$marca" "$CONTRATO_SEG"; then
+      echo "FALHOU card TRE-W8-E02-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_conversao_segmento_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_conversao_segmento_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E02-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_CONVERSAO_SEGMENTO_OK' scripts/agentes/teste_conversao_segmento_aceite.sh; then
+    echo "FALHOU card TRE-W8-E02-T01: aceite sem o marcador ACEITE_CONVERSAO_SEGMENTO_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+
+# --- card TRE-W8-E04-T01 (analise de desempenho de mensagens) ---------------------------------------
+# Contrato + componente + duble + verificador + aceite existem E estao versionados; o aceite e' bash
+# valido, usa container DESCARTavel e cobre as guardas de ambiente (prod recusado) e de leitura.
+ACEITE_DESEMP="scripts/agentes/teste_desempenho_mensagens_aceite.sh"
+for arquivo in \
+  hermes/analytics/desempenho-mensagens-v1.json \
+  hermes/analytics/desempenho_mensagens.py \
+  scripts/agentes/duble_psql_desempenho.py \
+  scripts/agentes/verificar_desempenho_mensagens.py \
+  "$ACEITE_DESEMP" \
+  docs/runbooks/desempenho-de-mensagens.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_DESEMP" ]; then
+  if ! bash -n "$ACEITE_DESEMP" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E04-T01: $ACEITE_DESEMP nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Container descartavel do aceite (nada nasce em ambiente existente) e guarda de prod medida.
+  if ! grep -q 'pg-desemp-acc' "$ACEITE_DESEMP" || ! grep -q 'ambiente prod' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Somente leitura e' medida: contagem das tabelas antes/depois tem de estar no aceite.
+  if ! grep -q 'ANTES' "$ACEITE_DESEMP" || ! grep -q 'DEPOIS' "$ACEITE_DESEMP"; then
+    echo "FALHOU card TRE-W8-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode carregar verbo de escrita no caminho de leitura.
+if [ -f "hermes/analytics/desempenho_mensagens.py" ]; then
+  if ! grep -q 'afirmar_somente_leitura' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de somente-leitura"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/desempenho_mensagens.py; then
+    echo "FALHOU card TRE-W8-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+
+# --- card TRE-W8-E05-T01 (Custo de agentes) ------------------------------------------------------------
+CONTRATO_CUSTO="hermes/agentes/analytics/custo-agentes-v1.json"
+COMPONENTE_CUSTO="hermes/agentes/analytics/custo_agentes.py"
+for arquivo in "$COMPONENTE_CUSTO" "$CONTRATO_CUSTO" scripts/agentes/verificar_custo_agentes.py \
+               scripts/agentes/teste_custo_agentes_aceite.sh docs/architecture/custo-agentes-v1.md \
+               docs/runbooks/custo-de-agentes.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W8-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W8-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CUSTO" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CUSTO" scripts/agentes/verificar_custo_agentes.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # As colunas lidas tem de existir na DDL congelada e o vocabulario de status tem de estar coerente:
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CUSTO" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: --conferir recusou (colunas divergem da DDL ou vocabulario incoerente)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Leitura pura e nulo-nao-e-zero declarados: o contrato do componente tem de carregar as marcas.
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' \
+               'runs_sem_custo' 'tokens_input' 'estimated_cost'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CUSTO"; then
+      echo "FALHOU card TRE-W8-E05-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_custo_agentes_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_custo_agentes_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W8-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_CUSTO_AGENTES_OK' scripts/agentes/teste_custo_agentes_aceite.sh; then
+    echo "FALHOU card TRE-W8-E05-T01: aceite sem o marcador ACEITE_CUSTO_AGENTES_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+
+# --- card TRE-W9-E03-T01 (Previsao do melhor canal — efetividade por canal + opt-out como bloqueio) --------
+CONTRATO_CANAL="hermes/agentes/analytics/previsao-canal-v1.json"
+COMPONENTE_CANAL="hermes/agentes/analytics/previsao_canal.py"
+for arquivo in "$COMPONENTE_CANAL" "$CONTRATO_CANAL" scripts/agentes/verificar_previsao_canal.py \
+               scripts/agentes/teste_previsao_canal_aceite.sh docs/architecture/previsao-de-canal-v1.md \
+               docs/runbooks/previsao-de-canal.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E03-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E03-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_CANAL" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_CANAL" \
+       scripts/agentes/verificar_previsao_canal.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Vocabulario de canal e minimos da pre-condicao sao LIDOS do contrato e a dependencia (funil) e' conferida:
+  # quem decide e' o proprio componente (`--conferir`), nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_CANAL" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: --conferir recusou (contrato de dados ou dependencia do funil divergem)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O desfecho NAO pode ser reimplementado: o componente tem de consumir o alcance do funil (W8-E01-T01).
+  if ! grep -q "alcance_por_organizacao" "$COMPONENTE_CANAL"; then
+    echo "FALHOU card TRE-W9-E03-T01: componente nao consome o alcance por organizacao do funil"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'RECUSA por desenho (exit 4)' 'READ ONLY' 'lacunas_declaradas' 'base_suficiente' 'dados_multicanal' 'opt_out'; do
+    if ! grep -q -F "$marca" "$CONTRATO_CANAL"; then
+      echo "FALHOU card TRE-W9-E03-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_previsao_canal_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_previsao_canal_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ACEITE_PREVISAO_CANAL_OK' scripts/agentes/teste_previsao_canal_aceite.sh; then
+    echo "FALHOU card TRE-W9-E03-T01: aceite sem o marcador ACEITE_PREVISAO_CANAL_OK"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A prova do aceite nao pode fechar sem rodar: todo bloco Python tem de ter o item de exit code.
+  for bloco in RC_ASSERT RC_INTEG RC_PRIV; do
+    if ! grep -q "$bloco" scripts/agentes/teste_previsao_canal_aceite.sh; then
+      echo "FALHOU card TRE-W9-E03-T01: aceite sem a guarda de bloco $bloco (prova que morre em silencio)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
+
+# --- card TRE-W9-E04-T01 (melhor horario de contato) --------------------------------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o aceite e' bash valido, usa
+# container DESCARTavel, cobre as guardas de ambiente (prod recusado) e de leitura, e o componente tem de
+# MANTER os guardrails herdados do irmao (somente leitura + prod recusado) em vez de reimplementa-los.
+ACEITE_TIMING="scripts/agentes/teste_melhor_horario_aceite.sh"
+for arquivo in \
+  hermes/analytics/melhor-horario-v1.json \
+  hermes/analytics/melhor_horario.py \
+  scripts/agentes/verificar_melhor_horario.py \
+  "$ACEITE_TIMING" \
+  docs/runbooks/melhor-horario.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E04-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E04-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$ACEITE_TIMING" ]; then
+  if ! bash -n "$ACEITE_TIMING" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E04-T01: $ACEITE_TIMING nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'pg-timing-acc' "$ACEITE_TIMING" || ! grep -q 'ambiente prod' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem o container descartavel ou sem a guarda de prod"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'ANTES' "$ACEITE_TIMING" || ! grep -q 'DEPOIS' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a prova de somente-leitura (contagens antes/depois)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite tem de medir a coerencia com o irmao de desempenho (atribuicao unica), nao apenas roda-lo.
+  if ! grep -q 'desempenho_mensagens.py' "$ACEITE_TIMING"; then
+    echo "FALHOU card TRE-W9-E04-T01: aceite sem a coerencia medida com o irmao de desempenho"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+# O componente NAO pode reimplementar a regra do irmao: a atribuicao e a guarda de leitura vem dele.
+if [ -f "hermes/analytics/melhor_horario.py" ]; then
+  if ! grep -q 'import desempenho_mensagens as irmao' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente nao reusa o irmao (atribuicao seria uma segunda regra)"
+    FALHAS=$((FALHAS+1))
+  fi
+  if ! grep -q 'PROD_RECUSADO' hermes/analytics/melhor_horario.py; then
+    echo "FALHOU card TRE-W9-E04-T01: componente sem a guarda de ambiente (prod recusado)"
+    FALHAS=$((FALHAS+1))
+  fi
+fi
+
+
+# --- card TRE-W9-E05-T01 (Nurture automatizado — plano de toques, nunca envio) -------------------------
+# Contrato + componente + verificador + aceite existem E estao versionados; o componente compila, o
+# contrato e' conferido pelo PROPRIO componente (`--conferir`) e o aceite e' bash valido com container
+# DESCARTavel. O nurture NAO tem porta de banco: a guarda de escrita (auditoria de codigo) tem de existir.
+CONTRATO_NURTURE="hermes/agentes/analytics/nutricao-automatica-v1.json"
+COMPONENTE_NURTURE="hermes/agentes/analytics/nutricao_automatica.py"
+ACEITE_NURTURE="scripts/agentes/teste_nutricao_automatica_aceite.sh"
+for arquivo in "$COMPONENTE_NURTURE" "$CONTRATO_NURTURE" scripts/agentes/verificar_nutricao_automatica.py \
+               "$ACEITE_NURTURE" docs/architecture/nutricao-automatica-v1.md docs/runbooks/nutricao-automatica.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E05-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E05-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_NURTURE" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_NURTURE" \
+       scripts/agentes/verificar_nutricao_automatica.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Quem decide se contrato e dependencia estao coerentes e' o proprio componente, nao um grep deste portao.
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 "$COMPONENTE_NURTURE" --ambiente dev --conferir >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: --conferir recusou (contrato, pais ou guarda de escrita)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O plano CONSOME os dois pais (canal e janela) em vez de remedir; e' pedido, nunca envio; e recusa prod.
+  for marca in 'previsao-canal-v1' 'melhor-horario-v1' 'exige_aprovacao_humana' 'NAO_ENVIA' \
+               'PROD_RECUSADO' 'auditar_proprio_codigo' 'porta de banco'; do
+    if ! grep -q -F "$marca" "$COMPONENTE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: componente sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  for marca in 'RECUSA por desenho (exit 4' 'NUNCA envia' 'exige_aprovacao_humana' 'lacunas_declaradas' \
+               'pre_condicao' 'porta de banco' 'condicoes_de_parada'; do
+    if ! grep -q -F "$marca" "$CONTRATO_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f "$ACEITE_NURTURE" ]; then
+  if ! bash -n "$ACEITE_NURTURE" >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E05-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  # O aceite mede a CADEIA: regressao dos dois pais, container descartavel e leitura pura antes/depois.
+  for marca in 'ACEITE_NUTRICAO_AUTOMATICA_001_OK' 'VERIFICADOR_PREVISAO_CANAL_PASS' 'VERIFICADOR_MELHOR_HORARIO_PASS' \
+               'pg-analytics-nurture-acc' 'PLANO_ABSTIDO' 'ANTES' 'DEPOIS'; do
+    if ! grep -q -F "$marca" "$ACEITE_NURTURE"; then
+      echo "FALHOU card TRE-W9-E05-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
+
+# --- card TRE-W9-E06-T01 (Memoria comercial em Qdrant — memoria derivada, reconstruivel) ----------------
+CONTRATO_MEMORIA="hermes/memoria/memoria-comercial-v1.json"
+COMPONENTE_MEMORIA="hermes/memoria/memoria_comercial.py"
+for arquivo in "$COMPONENTE_MEMORIA" "$CONTRATO_MEMORIA" scripts/agentes/verificar_memoria_comercial.py \
+               scripts/agentes/teste_memoria_comercial_aceite.sh docs/architecture/memoria-comercial-v1.md \
+               docs/runbooks/memoria-comercial.md; do
+  if [ ! -f "$arquivo" ]; then
+    echo "FALHOU card TRE-W9-E06-T01: arquivo ausente ($arquivo)"
+    FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$arquivo" >/dev/null 2>&1; then
+    echo "OK    versionado $arquivo"
+  else
+    echo "FALHOU card TRE-W9-E06-T01: nao versionado $arquivo"
+    FALHAS=$((FALHAS+1))
+  fi
+done
+if [ -f "$COMPONENTE_MEMORIA" ]; then
+  if ! PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile "$COMPONENTE_MEMORIA" \
+       scripts/agentes/verificar_memoria_comercial.py >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E06-T01: componente ou verificador nao compila"
+    FALHAS=$((FALHAS+1))
+  fi
+  # A fonte canonica e' leitura pura e a memoria e' derivada: o mecanismo tem de estar no codigo.
+  for marca in "default_transaction_read_only" "auditar_fonte" "uuid5" "DIMENSAO_DIVERGENTE" \
+               "QDRANT_NAO_E_DEV" "PII_SUSPEITA" "extrair_json"; do
+    if ! grep -q -F "$marca" "$COMPONENTE_MEMORIA"; then
+      echo "FALHOU card TRE-W9-E06-T01: componente sem $marca (mecanismo da leitura pura / guarda)"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+  # Nome de tabela vive no CONTRATO, nao no codigo (o prefixo do schema aparece uma vez, como guarda).
+  if [ "$(grep -c -E 'interactions|pain_hypotheses|recommendations' "$COMPONENTE_MEMORIA")" != "0" ]; then
+    echo "FALHOU card TRE-W9-E06-T01: nome de tabela literal no componente (tem de vir do contrato)"
+    FALHAS=$((FALHAS+1))
+  fi
+  # Pre-condicao e guardas declaradas no contrato (fail-closed e ADR-005).
+  for marca in 'corpus comercial estavel' 'payload_fechado' 'local-deterministico-v1' \
+               'RECUSA por desenho (exit 4' 'READ ONLY' 'PII_SUSPEITA'; do
+    if ! grep -q -F "$marca" "$CONTRATO_MEMORIA"; then
+      echo "FALHOU card TRE-W9-E06-T01: contrato sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+if [ -f scripts/agentes/teste_memoria_comercial_aceite.sh ]; then
+  if ! bash -n scripts/agentes/teste_memoria_comercial_aceite.sh >/dev/null 2>&1; then
+    echo "FALHOU card TRE-W9-E06-T01: aceite nao e' bash valido"
+    FALHAS=$((FALHAS+1))
+  fi
+  for marca in 'ACEITE_MEMORIA_COMERCIAL_OK' 'VERIFICADOR_MEMORIA_COMERCIAL_PASS' \
+               'qdrant/qdrant:v1.12.4' 'READ ONLY'; do
+    if ! grep -q -F "$marca" scripts/agentes/teste_memoria_comercial_aceite.sh; then
+      echo "FALHOU card TRE-W9-E06-T01: aceite sem a marca $marca"
+      FALHAS=$((FALHAS+1))
+    fi
+  done
+fi
+
+
+         scripts/backup/verificar-ultimo-backup.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/teste-rotina-ambiente.sh \
+# Artefatos da publicacao versionada da copia operacional (DEFEITO F3 do TRE-W1-E06-T01) existem
+# E estao versionados. A publicacao e o unico caminho de escrita em /opt/tre/repo: o script tem de
+# estar no git (senao a proxima publicacao o apaga) e executavel no indice.
+for f in deploy/publicar.sh docs/runbooks/publicacao-da-copia-operacional.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in deploy/publicar.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+
+
+# Verificador da CLASSE do D04-D01 (t_37db9564) existe E esta versionado: ponteiro de commit
+# citado em doc de registro (`scripts/verificar_ponteiros_de_registro.py`) e o teste de dente
+# dele. O defeito `t_5cad1689` ja mostrou o custo de artefato fora deste verificador de estrutura:
+# doc de registro com commit que nao se alcanca por ref nenhuma passava em todo mundo.
+for f in scripts/verificar_ponteiros_de_registro.py scripts/teste_ponteiros_de_registro.sh; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+if [ -x scripts/teste_ponteiros_de_registro.sh ]; then echo "OK    executavel scripts/teste_ponteiros_de_registro.sh"
+else echo "FALHOU sem permissao de execucao scripts/teste_ponteiros_de_registro.sh"; FALHAS=$((FALHAS+1)); fi
+
+# Artefatos do TLS/reverse proxy em dev (TRE-W2-E01-T02) existem E estao versionados
+for f in deploy/compose/dev/Caddyfile deploy/compose/dev/proxy.yml deploy/environments/dev-proxy.env \
+         scripts/provision/instalar-proxy-dev.sh scripts/provision/verificar-tls-dev.sh \
+         scripts/provision/remover-proxy-dev.sh scripts/provision/prova-de-dente-tls-dev.sh \
+         docs/runbooks/odoo-dev-tls.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/provision/instalar-proxy-dev.sh scripts/provision/verificar-tls-dev.sh \
+         scripts/provision/remover-proxy-dev.sh scripts/provision/prova-de-dente-tls-dev.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+# Mesma regra do par do Odoo: o par do proxy nao carrega segredo. O hash do basic auth e
+# credencial-adjacente: se ele aparecer aqui, o basic auth do dev esta versionado.
+if grep -qiE '(passwd|password|senha|hash)[[:space:]]*=[[:space:]]*[^[:space:]#]' deploy/environments/dev-proxy.env 2>/dev/null; then
+  echo "FALHOU deploy/environments/dev-proxy.env carrega valor de senha/hash (segredo nao vai para o artefato)"
+  FALHAS=$((FALHAS+1))
+else
+  echo "OK    par do proxy sem valor de senha/hash"
+fi
+
+# Artefatos do CRM basico / funil comercial em dev (TRE-W2-E02-T01) existem E estao versionados
+for f in odoo/crm/funil-transformativa.yaml scripts/provision/configurar-crm-dev.sh \
+         scripts/provision/verificar-crm-dev.sh scripts/provision/reverter-crm-dev.sh \
+         scripts/provision/aplicar_funil_crm.py scripts/provision/desfazer_funil_crm.py \
+         scripts/provision/repor_etapas_padrao_crm.py docs/runbooks/odoo-crm-dev.md; do
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f (arquivo existe mas nao esta no git — ignorado pelo .gitignore?)"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/provision/configurar-crm-dev.sh scripts/provision/verificar-crm-dev.sh \
+         scripts/provision/reverter-crm-dev.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+for f in scripts/backup/verificar-odoo.sh scripts/backup/lib-ambiente.sh \
+         scripts/backup/backup-tre.sh scripts/backup/verificar-ultimo-backup.sh; do
+  if [ -x "$f" ]; then echo "OK    executavel $f"
+  else echo "FALHOU sem permissao de execucao $f"; FALHAS=$((FALHAS+1)); fi
+done
+if grep -q '^TRE_ODOO_PG_SERVICO=' deploy/environments/dev.env 2>/dev/null; then
+  echo "OK    trio do Odoo declarado em deploy/environments/dev.env"
+else
+  echo "FALHOU deploy/environments/dev.env nao declara TRE_ODOO_PG_SERVICO (o backup pularia o Odoo em silencio)"
+  FALHAS=$((FALHAS+1))
+fi
+if grep -q 'RESTORE_ODOO_OK' scripts/backup/verificar-odoo.sh 2>/dev/null; then
+  echo "OK    verificador do Odoo devolve veredito RESTORE_ODOO_OK/RESTORE_ODOO_FALHOU"
+else
+  echo "FALHOU scripts/backup/verificar-odoo.sh sem veredito (verificador sem resposta binaria e carimbo)"
+  FALHAS=$((FALHAS+1))
+fi
+
+# ============================================================================
+# OPCAO C — ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md` (decisao do dono,
+# Anderson Ribeiro, 02/10/2026, registrada em `docs/operations/registro-de-aprovacoes.md`):
+#   1. DESCOBERTA AUTOMATICA — os artefatos sao enumerados da arvore versionada
+#      (`git ls-files` nas AREAS_DE_ARTEFATO), nao de lista fixa;
+#   2. ISENCOES DECLARADAS — arquivo versionado `$ARQ_ISENCOES`, uma linha por isencao com
+#      `padrao | justificativa | responsavel | data`; isencao SEM justificativa e' INVALIDA;
+#   3. FAIL-CLOSED — arquivo versionado na area que nao esta nem coberto (listas acima) nem isento
+#      REPROVA, nomeando o arquivo e dizendo como cobrir ou como isentar.
+# Limite declarado: a descoberta vale para as AREAS_DE_ARTEFATO abaixo. Area nova entra por edicao
+# explicita aqui, na mesma revisao de onda das isencoes (Risco 2 do ADR).
+AREAS_DE_ARTEFATO="odoo/addons/transformativa_sales_ai n8n scripts/n8n scripts/odoo docs/runbooks scripts/estrutura"
+ARQ_ISENCOES="scripts/estrutura/isencoes.txt"
+PADROES=(); JUSTIFICATIVAS=(); RESPONSAVEIS=(); DATAS=()
+COBERTOS="$COBERTOS $ARQ_ISENCOES"
+if git ls-files --error-unmatch "$ARQ_ISENCOES" >/dev/null 2>&1; then
+  echo "OK    versionado $ARQ_ISENCOES"
+else
+  echo "FALHOU nao versionado $ARQ_ISENCOES (a opcao C exige o arquivo de isencoes NO git)"
+  FALHAS=$((FALHAS+1))
+fi
+if [ -f "$ARQ_ISENCOES" ]; then
+  while IFS= read -r linha || [ -n "$linha" ]; do
+    case "$linha" in
+      ''|'#'*) continue ;;
+    esac
+    padrao="${linha%%|*}"; resto="${linha#*|}"
+    justificativa="${resto%%|*}"; resto="${resto#*|}"
+    responsavel="${resto%%|*}"; data="${resto#*|}"
+    padrao="$(printf '%s' "$padrao" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    justificativa="$(printf '%s' "$justificativa" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    responsavel="$(printf '%s' "$responsavel" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    data="$(printf '%s' "$data" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    invalida=""
+    [ "$(printf '%s' "$linha" | tr -cd '|' | wc -c)" -ne 3 ] \
+      && invalida="exige 3 separadores '|' (padrao | justificativa | responsavel | data)"
+    [ -z "$invalida" ] && [ -z "$padrao" ] && invalida="padrao vazio"
+    [ -z "$invalida" ] && [ -z "$justificativa" ] && invalida="sem justificativa"
+    [ -z "$invalida" ] && [ -z "$responsavel" ] && invalida="sem responsavel"
+    [ -z "$invalida" ] && [ -z "$data" ] && invalida="sem data"
+    [ -z "$invalida" ] && case "$padrao" in *')'*|*'('*|*'!'*|*';'*|*'&'*|*'$'*|*'`'*) invalida="padrao com caractere reservado do shell" ;; esac
+    if [ -n "$invalida" ]; then
+      echo "FALHOU isencao invalida em $ARQ_ISENCOES ($invalida): $linha"
+      FALHAS=$((FALHAS+1)); continue
+    fi
+    PADROES+=("$padrao"); JUSTIFICATIVAS+=("$justificativa")
+    RESPONSAVEIS+=("$responsavel"); DATAS+=("$data")
+  done < "$ARQ_ISENCOES"
+fi
+# ---------------------------------------------------------------------------
+# Cobertura declarada — artefatos de ondas POSTERIORES a 02/10/2026.
+# Decisao do dono (Anderson Ribeiro, 04/10/2026, Telegram): COBRIR (existe + versionado),
+# nao isentar. Sao artefatos de card de verdade; a ausencia deles tem de reprovar. Agrupados
+# por area so' para o bloco ficar legivel — a checagem e' a mesma das outras listas.
+# ---------------------------------------------------------------------------
+# docs/runbooks (46)
+for f in docs/runbooks/agente-automation-fit.md \
+         docs/runbooks/agente-contact-research.md \
+         docs/runbooks/agente-icp-score.md \
+         docs/runbooks/agente-pain-hypothesis.md \
+         docs/runbooks/agente-research.md \
+         docs/runbooks/agente-scout.md \
+         docs/runbooks/agente-signal.md \
+         docs/runbooks/aprovacao-humana.md \
+         docs/runbooks/atribuicao-google-lead.md \
+         docs/runbooks/atualizacao-odoo-respostas.md \
+         docs/runbooks/buying-signal-score.md \
+         docs/runbooks/calibracao-do-score.md \
+         docs/runbooks/captura-de-lead-de-evento.md \
+         docs/runbooks/captura-de-lead-do-site.md \
+         docs/runbooks/conversao-por-segmento.md \
+         docs/runbooks/custo-de-agentes.md \
+         docs/runbooks/desempenho-de-mensagens.md \
+         docs/runbooks/e2e-foundation-001.md \
+         docs/runbooks/e2e-outbound-002.md \
+         docs/runbooks/e2e-sales-intelligence.md \
+         docs/runbooks/e2e-scoring-nba.md \
+         docs/runbooks/efetividade-do-score.md \
+         docs/runbooks/envio-outbound.md \
+         docs/runbooks/funil.md \
+         docs/runbooks/gerador-abordagem.md \
+         docs/runbooks/ingestao-leads-meta.md \
+         docs/runbooks/linkedin-assistido.md \
+         docs/runbooks/melhor-horario.md \
+         docs/runbooks/memoria-comercial.md \
+         docs/runbooks/n8n-outbox-consumer.md \
+         docs/runbooks/n8n-reconciliacao.md \
+         docs/runbooks/next-best-action.md \
+         docs/runbooks/nutricao-automatica.md \
+         docs/runbooks/observabilidade-sync.md \
+         docs/runbooks/odoo-crm-dev.md \
+         docs/runbooks/odoo-dev-tls.md \
+         docs/runbooks/pontuacao-preditiva.md \
+         docs/runbooks/previsao-de-canal.md \
+         docs/runbooks/publicacao-da-copia-operacional.md \
+         docs/runbooks/respostas-ingestao.md \
+         docs/runbooks/score-data-quality.md \
+         docs/runbooks/score-priority.md \
+         docs/runbooks/score-tiering.md \
+         docs/runbooks/titan-imap.md \
+         docs/runbooks/titan-smtp.md \
+         docs/runbooks/whatsapp-engaged-lead.md; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/codigo (3)
+for f in n8n/codigo/nucleo-outbox-consumer.js \
+         n8n/codigo/nucleo-reconciliacao.js \
+         n8n/codigo/observabilidade-sync.js; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/contracts (3)
+for f in n8n/contracts/observabilidade-sync.v1.json \
+         n8n/contracts/outbox-consumer.v1.json \
+         n8n/contracts/reconciliation-job.v1.json; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/sql (8)
+for f in n8n/sql/ler-pendentes.sql \
+         n8n/sql/ler-trilha.sql \
+         n8n/sql/observabilidade-sync-dead-letters.sql \
+         n8n/sql/observabilidade-sync.sql \
+         n8n/sql/reconciliacao-origem.sql \
+         n8n/sql/reconciliacao-pendentes.sql \
+         n8n/sql/registrar-replay.sql \
+         n8n/sql/registrar-resultado.sql; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# n8n/workflows (3)
+for f in n8n/workflows/TRE-observabilidade-sync.json \
+         n8n/workflows/TRE-outbox-consumer.json \
+         n8n/workflows/TRE-reconciliation.json; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# scripts/n8n (21)
+for f in scripts/n8n/conferir_contrato_e_workflow.py \
+         scripts/n8n/conferir_observabilidade.py \
+         scripts/n8n/conferir_reconciliacao.py \
+         scripts/n8n/ler_resultado_n8n.py \
+         scripts/n8n/ler_resultado_reconciliacao.py \
+         scripts/n8n/massa-observabilidade.sql \
+         scripts/n8n/massa-reconciliacao.sql \
+         scripts/n8n/montar_workflow.py \
+         scripts/n8n/montar_workflow_observabilidade.py \
+         scripts/n8n/montar_workflow_reconciliacao.py \
+         scripts/n8n/mutar_reconciliacao.py \
+         scripts/n8n/mutar_workflow.py \
+         scripts/n8n/mutar_workflow_observabilidade.py \
+         scripts/n8n/normalizar_medicao.py \
+         scripts/n8n/preparar_massa_ambigua.py \
+         scripts/n8n/testar_nucleo_consumidor.js \
+         scripts/n8n/testar_nucleo_reconciliacao.js \
+         scripts/n8n/testar_observabilidade_sync.js \
+         scripts/n8n/verificar-observabilidade-sync.sh \
+         scripts/n8n/verificar-outbox-consumer.sh \
+         scripts/n8n/verificar-reconciliacao.sh; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+# scripts/odoo (1)
+for f in scripts/odoo/massa_reconciliacao.py; do
+  COBERTOS="$COBERTOS $f"
+  if [ ! -f "$f" ]; then echo "FALHOU ausente $f"; FALHAS=$((FALHAS+1))
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "OK    versionado $f"
+  else echo "FALHOU nao versionado $f"; FALHAS=$((FALHAS+1)); fi
+done
+TOTAL_AREA=0; TOTAL_ISENTO=0; TOTAL_NAO_COBERTO=0
+while IFS= read -r -d '' f; do
+  TOTAL_AREA=$((TOTAL_AREA+1))
+  case " $COBERTOS " in *" $f "*) continue ;; esac
+  isento=""
+  i=0; NP=${#PADROES[@]}
+  while [ "$i" -lt "$NP" ]; do
+    case "$f" in ${PADROES[$i]}) isento="$i"; break ;; esac
+    i=$((i+1))
+  done
+  if [ -n "$isento" ]; then
+    TOTAL_ISENTO=$((TOTAL_ISENTO+1))
+    echo "OK    isento $f (isencao '${PADROES[$isento]}', ${RESPONSAVEIS[$isento]}, ${DATAS[$isento]}: ${JUSTIFICATIVAS[$isento]})"
+  else
+    TOTAL_NAO_COBERTO=$((TOTAL_NAO_COBERTO+1))
+    echo "FALHOU nao coberto $f — artefato versionado nas AREAS_DE_ARTEFATO sem cobertura no verificador e sem isencao."
+    echo "      COBRIR: acrescente '$f' a lista do bloco correspondente deste script;"
+    echo "      ISENTAR: acrescente em $ARQ_ISENCOES a linha '$f | <justificativa> | <responsavel> | <DD/MM/AAAA>'."
+    FALHAS=$((FALHAS+1))
+  fi
+done < <(git ls-files -z -- $AREAS_DE_ARTEFATO)
+echo "OK    descoberta de artefatos (opcao C): $TOTAL_AREA versionados nas areas, $TOTAL_ISENTO isentos, $TOTAL_NAO_COBERTO nao cobertos"
+echo "OK    isencoes declaradas: ${#PADROES[@]} (revisao obrigatoria na abertura de onda)"
 
 echo "---"
 if [ "$FALHAS" -eq 0 ]; then echo "RESULTADO: PASS (0 falhas)"; exit 0; else echo "RESULTADO: FALHOU ($FALHAS)"; exit 1; fi

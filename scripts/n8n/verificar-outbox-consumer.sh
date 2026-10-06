@@ -474,8 +474,8 @@ limpeza() {
         info "--manter: trio preservado (containers $PG_TMP/$API_CT, rede $NET_TMP, diretorio $N8N_HOME)"
         return 0
     fi
-    docker rm -f "$API_CT" >/dev/null 2>&1
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     [ -n "$N8N_HOME" ] && rm -rf "$N8N_HOME"
     docker network rm "$NET_TMP" >/dev/null 2>&1
     [ -n "$DESC_DIR" ] && rm -rf "$DESC_DIR"

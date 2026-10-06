@@ -73,11 +73,17 @@ ssh -i ~/.ssh/id_ed25519_ops root@169.58.24.102 \
     'cat > /opt/tre/dev/cards/t_adee6ad7/docs/data/data_contract_v1.json' < docs/data/data_contract_v1.json
 
 # na VPS (sempre a partir de ARQUIVO — nunca por stdin, ver armadilha do `docker compose run`)
-bash /opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh                    # aceite
-bash /opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh --apenas-contrato   # so' AC2
-bash /opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh --prova-de-dente    # 3 dentes
-TRE_LOG_DIR=/opt/tre/dev/evidencias/t_adee6ad7/logs-round2 \
-    bash /opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh
+#    As TRÊS variáveis de caminho vão juntas (export, não prefixo de um comando só): o modo dente
+#    reexecuta o próprio verificador para o baseline e para cada mutação, e quando contrato,
+#    conferidor ou medidor não estão em disco ele **recusa de cara** (fail-closed) dizendo o que
+#    exportar — antes do conserto do §9 esse erro de ambiente virava "prova de dente" verde.
+export TRE_MODULO_DIR=/opt/tre/dev/cards/t_adee6ad7/modulos/transformativa_sales_ai
+export TRE_CONTRATO=/opt/tre/dev/cards/t_adee6ad7/docs/data/data_contract_v1.json
+export TRE_LOG_DIR=/opt/tre/dev/evidencias/t_adee6ad7/logs-round2
+V=/opt/tre/dev/cards/t_adee6ad7/scripts/odoo/verificar-res-partner.sh
+bash "$V"                      # aceite completo (contrato + 5 passos)
+bash "$V" --apenas-contrato    # so' AC2 (modulo x contrato congelado)
+bash "$V" --prova-de-dente     # baseline nao mutado (exige verde) + 3 mutacoes
 ```
 
 ## 4. Aceite — TEST PLAN medido (01/10/2026, VPS `vmi3619453`, rodada final no commit `a569ece`)
@@ -115,15 +121,24 @@ com o defeito F1/F2, ver §6 — e a **rodada 2** (`…-round2.out`), que mediu 
 ## 5. Provas negativas — o aceite tem dentes
 
 `bash verificar-res-partner.sh --prova-de-dente` →
-**`RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`**, **exit 0** (rodada final:
-`prova-de-dente-final.out`). Cada prova roda numa **cópia** do módulo (o módulo real não é tocado) e
-espera **reprovação**:
+**`RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`**, **exit 0** — medido depois do conserto do
+§9, com o verificador sha256 `4c9056ee…` (`/opt/tre/evid-t_e1f62fae/r-c-dentes.out`). Antes de
+qualquer mutação o modo dente roda o **caminho não mutado (baseline)** — contrato + passo 1 + passo 2,
+o superconjunto dos caminhos que os 3 dentes medem — e **exige verde**: sem baseline verde ele termina
+em `RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, `exit 1`. Cada prova
+roda numa **cópia** do módulo (o módulo real não é tocado) e só conta como dente quando a saída traz a
+**assinatura de falha própria** daquela mutação (o texto que só ela produz) **e** chegou ao passo que
+ela mede:
 
-| Prova | Mutação | Resultado medido |
-|---|---|---|
-| **Dente 1** | `index=True` retirado do `tf_cnpj` (cópia) | `FALHOU dedup.strong "cnpj" -> tf_cnpj NAO esta indexado` → `RES_PARTNER_FALHOU (13 itens, 1 falha)`, exit 1 |
-| **Dente 2** | `tf_domain` renomeado para `tf_dominio` (cópia) | `FALHOU dedup.strong "domain" -> campo tf_domain AUSENTE` + ordem divergente → `RES_PARTNER_FALHOU`, exit 1 |
-| **Dente 3** | teste plantado que falha (`test_99_prova_de_dente`) | `odoo --test-enable exit 1`; `1 failed` no relatório; `FALHOU 1 linha(s) de teste reprovado(a) no log: … FAIL: TestResPartnerDedup.test_99_prova_de_dente`; `FALHOU rodei 8 teste(s) … (esperado 7)` → `RES_PARTNER_FALHOU (29 itens, 4 falhas)`, exit 1 |
+| Prova | Mutação | Caminho medido | Assinatura de falha exigida | Resultado medido |
+|---|---|---|---|---|
+| **Baseline** | **nenhuma** (módulo real) | contrato + passo 1 + passo 2 (`--apenas-instalacao-e-teste`) | — (tem de medir **verde**; sem isto não existe prova de dente) | `RESULTADO: RES_PARTNER_OK (29 itens, 0 falhas)`, **exit 0** |
+| **Dente 1** | `index=True` retirado do `tf_cnpj` (cópia) | contrato (`--apenas-contrato`) | `tf_cnpj NAO esta indexado` | `FALHOU dedup.strong "cnpj" -> tf_cnpj NAO esta indexado` → `CONTRATO_RES_PARTNER_FALHOU (9 itens, 1 falha(s))` e `RES_PARTNER_FALHOU (13 itens, 1 falha(s))`, **exit 1** |
+| **Dente 2** | `tf_domain` renomeado para `tf_dominio` (cópia) | contrato (`--apenas-contrato`) | `campo tf_domain AUSENTE em res.partner` | `FALHOU dedup.strong "domain" -> campo tf_domain AUSENTE em res.partner` + ordem divergente → `CONTRATO_RES_PARTNER_FALHOU (9 itens, 2 falha(s))` e `RES_PARTNER_FALHOU (13 itens, 1 falha(s))`, **exit 1** |
+| **Dente 3** | teste plantado que falha (`test_99_prova_de_dente`) | testes do Odoo (`--apenas-instalacao-e-teste`) | `1 failed, 0 error(s) of` **e** `rodei 8 teste` | `FALHOU odoo --test-enable exit 1`; `1 failed, 0 error(s) of 13 tests`; `FALHOU 1 linha(s) de teste reprovado(a) … FAIL: TestResPartnerDedup.test_99_prova_de_dente`; `FALHOU rodei 8 teste(s) de TestResPartnerDedup (esperado 7)` → `RES_PARTNER_FALHOU (29 itens, 4 falha(s))`, **exit 1** |
+
+As contagens da revisão independente (`tester`, rodada 1) estão **preservadas**: dente 1 `9/1`,
+dente 2 `9/2`, dente 3 `1 failed` + suite `8 != 7`.
 
 Provas negativas adicionais do conferidor de contrato (rodadas fora do verificador, mesma classe de
 mutação): contrato com um forte a mais (`telefone`) → `FALHOU dedup.strong "telefone" -> campo
@@ -197,3 +212,96 @@ docker run --rm -i --network <rede> -v <conf>:/etc/odoo/odoo.conf:ro \
 - **Verificação independente** (estágio 6) é do perfil `tester`; **ratificação da versão do Odoo
   (19.0)** e **homologação** (estágio 7) seguem com o Anderson. Este runbook entrega evidência, não
   aprovação.
+
+## 9. Cobertura de gate deste card — defeito `t_5cad1689` (fechado)
+
+A revisão independente (estágio 6, perfil `tester`) achou que este card registrou os 6 arquivos novos
+no runbook (`AFFECTED COMPONENTS`) mas **não** em `scripts/verificar_estrutura.sh`: no commit `3b0eac3`
+o `grep` pelos caminhos do card dava **0**, porque o bloco que existia ali cobria só os 8 arquivos do
+`TRE-W2-E03-T01`. Era **deriva de cobertura de gate** (risco de aceite falso futuro), **não** falha
+viva: os 6 arquivos estavam versionados e os 3 scripts `100755` no git.
+
+Conserto na branch `fix/TRE-W2-E04-T01-D01` (commit `80b64a8`, nascida de `3b0eac3`): o verificador
+passa a cobrir **por diretório** — todo `*.py/*.sh/*.md/*.xml/*.csv` de
+`odoo/addons/transformativa_sales_ai` + `scripts/odoo` tem de estar versionado (14 arquivos hoje); todo
+`*.sh` de `scripts/odoo` tem de estar executável **no disco e `100755` no índice do git**; todo
+`docs/runbooks/*.md` versionado; e três guardas do próprio gate (lista vazia/curta reprova). Cobertura
+por diretório, e não arquivo a arquivo, é deliberada: `E04-T02` e `E05-T01` acrescentam arquivo ao
+**mesmo** módulo e editam o **mesmo** arquivo de verificador. O bloco do `TRE-W2-E03-T01` não foi
+reescrito.
+
+Medido: verificador verde (`PASS (0 falhas)`, exit 0) e cada dente reprovando de verdade — `git rm
+--cached` de `models/res_partner.py`, arquivo novo fora do git, `chmod -x`, `100644` no índice do git,
+`git rm --cached` deste runbook e árvore sem o módulo (`FALHOU (83)`, exit 1). Conferência de
+integração com os dois cards paralelos: `scripts/verificar_estrutura.sh` **nunca conflita** (o merge
+aplica o arquivo automaticamente, nos dois) e o gate fica `PASS (0 falhas)` na árvore integrada; o
+controle com a ponta do card de origem **sem** o conserto tem exatamente os mesmos conflitos — o
+conserto não acrescenta conflito nenhum. Detalhe bruto na entrada `TRE-W2-E04-T01-D01` de
+`docs/operations/registro-de-execucoes.md` (01/10/2026).
+## 10. Defeito D1 — o modo `--prova-de-dente` dava verde sem medir (achado da revisão independente)
+
+**Achado** pela revisão independente do card irmão `TRE-W2-E04-T02` (perfil `tester`, 01/10/2026,
+observação O6: *"o harness de dente do IRMÃO E04-T01 (`verificar-res-partner.sh`) usa o mesmo critério
+('qualquer `RES_PARTNER_FALHOU` = dente OK') e cai na mesma classe"*), registrado no card de defeito
+`t_e1f62fae` (registro **retroativo**: a origem já estava `done`). Reproduzido por mim **antes** de
+consertar, com o artefato como aprovado (sha256 `1bc9e1b8ab34b5a4397862c0678b4c217b65bdb5558f362ee4022b856742abfd`),
+no comando exato do card:
+
+```
+$ TRE_CARTAO_DIR=/opt/tre/nao-existe TRE_LOG_DIR=<dir meu> bash verificar-res-partner.sh --prova-de-dente
+FALHOU modulo ausente em /tmp/dente-e04t01-XXXXXX/m1 (__manifest__.py nao encontrado)
+RESULTADO: RES_PARTNER_FALHOU (6 itens, 1 falha(s)) …
+OK    dente 1: campo de dedup sem indice reprova o aceite
+… (dentes 2 e 3 iguais, todos morrendo na GUARDA) …
+RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas) modulo=transformativa_sales_ai
+EXIT_A=0
+```
+
+**Causa raiz:** o julgamento de cada dente era `printf '%s' "$Dx" | grep -q 'RESULTADO: RES_PARTNER_FALHOU'`
+— aceitava **qualquer** reprovação, inclusive a que vem das **guardas do ambiente**, antes de
+qualquer medição. Não havia **baseline** (caminho não mutado medido verde antes das mutações) nem
+**assinatura de falha** por dente. O aceite em si sempre foi fail-**CLOSED** (o que falhava aberto era
+só o modo dente — e é ele que o TEST PLAN do card promete).
+
+**Conserto** (mesmo padrão já medido e aprovado no `TRE-W2-E04-T02`, card `t_d3bd6660` rodada 2 —
+reusado, não inventado), todo ele em `scripts/odoo/verificar-res-partner.sh`:
+
+1. **baseline obrigatório:** antes de qualquer mutação o modo dente roda o caminho NAO mutado
+   (`--apenas-instalacao-e-teste`: contrato + passo 1 + passo 2, superconjunto dos caminhos dos 3
+   dentes) e **exige verde**; sem baseline verde ele termina em
+   `RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, `exit 1`;
+2. **assinatura de falha por dente** (o texto que só aquela mutação produz; mais de uma exigida,
+   separadas por `;;`) em vez de "qualquer FALHOU";
+3. dente cuja saída **abortou numa guarda** ou **não chegou ao passo** que ele mede é **reprovado**;
+4. as guardas de **arquivo** (contrato/conferidor/medidor) passaram a ser as **primeiras** — o comando
+   recusa de cara, sem subir nada, dizendo o que exportar;
+5. as provas de dente passaram a reexecutar o próprio script por caminho **absoluto** (`SELF`, com
+   `bash "$SELF"`) em vez de `"$0"` — mesma classe do defeito D04 do verificador de estrutura.
+
+**Medido depois, na VPS do dev** (evidência bruta: `/opt/tre/evid-t_e1f62fae/`, módulo sob teste
+**idêntico por sha256** ao commit `3b0eac3` — `models/res_partner.py 37a93372…`,
+`tests/test_res_partner_dedup.py 76c10063…`, 9 arquivos; só o verificador mudou, `4c9056ee…`):
+
+| Bloco | Comando | Resultado | exit |
+|---|---|---|---|
+| **A — antes** | artefato `1bc9e1b8…`, `TRE_CARTAO_DIR=/opt/tre/nao-existe` | `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)` — verde **sem medir** | **0** (`r-a-antes.out`) |
+| **B — depois** | artefato novo, **mesmo** comando do card | `FALHOU artefato ausente: /opt/tre/nao-existe/docs/data/data_contract_v1.json — sem contrato nao ha confronto: exporte TRE_CONTRATO=…` + `RESULTADO: RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)` | **1** (`r-b-nao-resolvido.out`) |
+| **B2 — depois** | artefatos resolvem, `TRE_MODULO_DIR` inexistente | `FALHOU modulo ausente em /opt/tre/nao-existe/modulos/… (__manifest__.py nao encontrado)` → `RES_PARTNER_FALHOU (11 itens, 1 falha(s))` → `RES_PARTNER_DENTE_FALHOU (baseline nao medido …)` | **1** (`r-b2-modulo-ausente.out`) |
+| **C — depois** | ambiente completo (`TRE_MODULO_DIR` + `TRE_CONTRATO` + `TRE_LOG_DIR`) | baseline `RES_PARTNER_OK (29 itens, 0 falhas)` + dentes `13/1`, `13/1`, `29/4` (assinaturas do §5) → `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)` | **0** (`r-c-dentes.out`) |
+| **D — aceite** | `bash verificar-res-partner.sh` | `RES_PARTNER_OK (64 itens, 0 falhas)` (64 linhas OK, 0 FALHOU; runner `0 failed, 0 error(s) of 13 tests`) | **0** (`r-d-aceite.out`) |
+| **E — regressão** | `verificar-modulo-odoo.sh` (E03-T01) contra este módulo | `MODULO_ODOO_OK (51 itens, 0 falhas)` | **0** (`r-e-regressao.out`) |
+| **F — fail-closed** | aceite completo com o contrato fora de disco | `RES_PARTNER_FALHOU (1 itens, 1 falha(s))` na guarda de arquivo, **sem subir nada** | **1** (`r-f-aceite-contrato-ausente.out`) |
+| **G — dente do dente** | `confere_dente` extraído do artefato (`controle-confere_dente.frag`, sha256 `5daa75a5…`, 26 linhas) alimentado com saídas **reais** | g1 saída real do dente 1 → **OK**; g2 mesma saída com a assinatura de **outro** dente → reprovado; g3 a saída do **falso-verde** do artefato antigo (aborto de guarda) → reprovado; g4 saída real **sem** o passo medido → reprovado; g5 saída **verde** do aceite → reprovado; g6 saída real do dente 3 com a assinatura do dente 1 → reprovado → `CONTROLE_JULGAMENTO_OK (5 provas negativas, 0 falso-OK)` | **0** (`r-g-controle-julgamento.out`) |
+
+**Verificadores do projeto** (worktree do commit, depois das edições): `verificar_estrutura.sh` →
+`PASS (0 falhas)` RC=0 · `secret_scan.sh` → `PASS` RC=0 · `verificar_papeis.sh` → `PASS (0 falhas)`
+RC=0 · `verificar_contrato_dados.py` → `PASS (26 itens, 0 falhas)` RC=0.
+
+**O que não foi tocado (medido ao fim da bateria):** a instância do dev com **os mesmos 4 bancos**
+(`odoo_dev, postgres, template0, template1`); `/opt/tre/{homolog,prod}` com **0 arquivo**; **0** arquivo
+novo em `/opt/tre/repo`; **nenhum** container/rede `e04t01-*` residual; o módulo sob teste **não** foi
+editado (só o verificador, o runbook, o `CHANGELOG` e o registro de execuções).
+
+**Escopo do conserto:** só o artefato deste card. Fica **fora** daqui o `grep -cE '^(FAIL|ERROR): '`
+herdado em `scripts/odoo/verificar-modulo-odoo.sh` (E03-T01) — já tem card próprio da classe
+(`t_578a4e4d`, consertado) —, views/ACL (E06/E07) e a publicação na cópia operacional.

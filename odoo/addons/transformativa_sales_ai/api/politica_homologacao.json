@@ -1,0 +1,231 @@
+{
+  "versao": "1.4.0-homologacao",
+  "descricao": "Politica da API controlada (POST /tf/api/v1/<operacao>) do modulo transformativa_sales_ai. BASE CONSOLIDADA da onda W3-E01: card TRE-W3-E01-T01 (a porta unica), TRE-W3-E01-T02 (a escrita de NEGOCIO da empresa, `empresa_upsert`), TRE-W3-E01-T03 (a escrita de NEGOCIO do contato comercial, `contato_upsert`), TRE-W3-E01-T04 (a escrita de NEGOCIO da oportunidade canonica, `oportunidade_upsert`) e TRE-W3-E01-T05 (a escrita de NEGOCIO da atividade comercial, `atividade_criar`). A reconciliacao das escritas na MESMA forma de identidade (`campos_de_identidade`, a lista ordenada que nasceu no E01-T02) e' do card E01-T05: as levas foram construidas em ramos paralelos e a declaracao do E01-T04 nasceu na forma singular (`campo_de_identidade`); o motor aceita as DUAS formas (a singular e' do E01-T01), mas a politica em vigor declara UMA so' — quem ampliar o vocabulario da escrita e' o card TRE-W3-E02-T02. Tudo o que a API pode tocar esta declarado aqui, campo a campo: fora da declaracao a resposta e' recusa (nunca descarte em silencio). As demais operacoes de negocio (dedup por chave, reprocesso, eventos) entram por card proprio, com vocabulario declarado.\n\nVARIANTE DO AMBIENTE HOMOLOGACAO (derivada, 06/10/2026). Derivada de api/politica_api.json versao 1.4.0 sem tocar em 'operacoes', 'esquema' nem 'padroes': o que muda e' SO 'ambientes_permitidos', que passa a trazer exclusivamente 'homologacao' (privilegio minimo — este arquivo e' a politica DAQUELE ambiente, apontada pelo parametro tf.api.politica; nao serve para o dev). Escrita em 'homologacao' continua exigindo aprovacao humana valida em tf.api.aprovacao (AMBIENTES_COM_APROVACAO, ADR-005), aprovada por Anderson Ribeiro com validade 2026-10-15 (card t_e0489efc; docs/operations/registro-de-aprovacoes.md). Vencida a validade a escrita fecha sozinha: fail-closed, sem ato de operador.",
+  "ambientes_permitidos": [
+    "homologacao"
+  ],
+  "operacoes": [
+    {
+      "nome": "sistema_capacidades",
+      "tipo": "leitura",
+      "descricao": "Capacidades declaradas desta versao da API: versao da politica, operacoes e seus tipos/modelos. Nao acessa nenhum modelo de negocio — serve de sonda de saude para o consumidor (n8n) e para o verificador provar o caminho declarado ponta a ponta.",
+      "fonte": "capacidades",
+      "limite_de_registros": 1,
+      "operadores_de_dominio": [
+        "="
+      ],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": true,
+      "somente_leitura": true
+    },
+    {
+      "nome": "crm_registros_ler",
+      "tipo": "leitura",
+      "descricao": "Leitura controlada dos registros de CRM que o contrato da' ao Odoo (doc 12 §1): parceiro comercial (`res.partner`) e oportunidade/lead (`crm.lead`). Somente os campos declarados, somente nos campos de filtro declarados, com teto de registros. E' a primitiva das operacoes de leitura da integracao (eventos Odoo->PG e reconciliacao, cards TRE-W3-E03-T01/TRE-W3-E04-T01).",
+      "modelos": {
+        "res.partner": {
+          "campos": [
+            "id",
+            "name",
+            "active",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_company_id",
+            "tf_priority_score",
+            "write_date"
+          ],
+          "campos_de_filtro": [
+            "id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_company_id",
+            "write_date"
+          ],
+          "campos_de_ordem": [
+            "id",
+            "write_date"
+          ]
+        },
+        "crm.lead": {
+          "campos": [
+            "id",
+            "name",
+            "active",
+            "tf_opportunity_id",
+            "tf_priority_score",
+            "tf_icp_score",
+            "tf_automation_fit_score",
+            "tf_buying_signal_score",
+            "tf_data_quality_score",
+            "tf_score_version",
+            "tf_priority_tier",
+            "tf_next_best_action",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_sync_at",
+            "tf_last_event_type",
+            "write_date"
+          ],
+          "campos_de_filtro": [
+            "id",
+            "tf_opportunity_id",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_event_type",
+            "write_date"
+          ],
+          "campos_de_ordem": [
+            "id",
+            "write_date"
+          ]
+        }
+      },
+      "limite_de_registros": 200,
+      "operadores_de_dominio": [
+        "=",
+        "!=",
+        "in",
+        ">",
+        ">=",
+        "<",
+        "<="
+      ],
+      "requer_idempotency_key": false,
+      "aceita_dry_run": true,
+      "somente_leitura": true,
+      "leitura_de_arquivados": true,
+      "leitura_de_arquivados_por_que": "a leitura declarada e' de registros ATIVOS por padrao (comportamento do ORM do Odoo). O campo `active` esta' declarado nos modelos, o que so' tem sentido se o chamador puder ver o estado ARQUIVADO: sem esta declaracao, o job de reconciliacao veria 'espelho ausente' onde o espelho esta' arquivado, e mandaria criar de novo o que ja' existe. Quem pede e' o chamador (`parametros.incluir_arquivados: true`), e a operacao DECLARA que aceita o pedido — pedir em operacao que nao declara e' recusa nomeada (422 `parametro_nao_declarado`), nunca silencio"
+    },
+    {
+      "nome": "empresa_upsert",
+      "tipo": "escrita",
+      "descricao": "Espelha a empresa pesquisada do sales_intelligence no espelho operacional do CRM (card TRE-W3-E01-T02): cria o parceiro-empresa na primeira vez e ATUALIZA nas seguintes, sem duplicar. Identidade pelos identificadores do contrato — `tf_company_id` (UUID canonico `organizations.id`, `canonical_ids.odoo_map`) primeiro, depois os fortes de dedup na ordem do contrato §5 (CNPJ -> dominio -> LinkedIn Company URL). Se a uniao dos registros casados pelos identificadores presentes tiver mais de um registro, a operacao RECUSA (409 `valor_ambiguo`): ambiguidade e' reportada, nunca resolvida por heuristica (contrato §5 / doc 06 §8). `is_company` e' valor fixo declarado — a operacao e' de EMPRESA e nao cria parceiro-pessoa. A dedup por `idempotency_key` (retry/replay) e' do card TRE-W3-E02-T02.",
+      "modelos": {
+        "res.partner": {
+          "campos": [
+            "name",
+            "is_company",
+            "tf_company_id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url",
+            "tf_priority_score"
+          ],
+          "campos_obrigatorios": [
+            "name"
+          ],
+          "campos_de_identidade": [
+            "tf_company_id",
+            "tf_cnpj",
+            "tf_domain",
+            "tf_linkedin_url"
+          ],
+          "valores_fixos": {
+            "is_company": true
+          },
+          "acao": "upsert"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    },
+    {
+      "nome": "contato_upsert",
+      "tipo": "escrita",
+      "descricao": "Espelha o CONTATO COMERCIAL (pessoa) do sales_intelligence no espelho operacional do CRM (card TRE-W3-E01-T03): cria o parceiro-pessoa na primeira vez e ATUALIZA nas seguintes, sem duplicar. Dono do contato: o Odoo (contrato §2 e `canonical_ids.odoo_map`: `contacts.id` <-> `res.partner` via `odoo_partner_id`, coluna do lado PostgreSQL). Identidade pelo identificador natural que EXISTE NOS DOIS LADOS e e' indexado pelo contrato §4: `email` (`contacts(email)` de um lado, `res.partner.email` do outro). Consequencias declaradas: (a) contato SEM e-mail nao entra por esta operacao — a resposta e' `identificador_ausente` (422), nunca identidade inventada; (b) mais de um parceiro com o mesmo e-mail -> 409 `valor_ambiguo`, nada escrito nem alterado (ambiguidade e' reportada, nunca resolvida por heuristica — contrato §5 / doc 06 §8). O mapa canonico da V1 NAO da' UUID de contato do lado Odoo (o UUID de `contacts.id` chega ao parceiro por `odoo_partner_id`, que e' coluna do PostgreSQL), entao a operacao nao tem UUID para casar: criar um campo espelho `tf_contact_id` em `res.partner` seria acrescentar linha ao mapa canonico do contrato (§3), ato de contrato com aprovacao registrada (governanca §10), nao decisao deste card. `is_company` e' valor fixo declarado — a operacao e' de PESSOA e nao cria parceiro-empresa; o valor fixo tambem e' aplicado quando o registro ja' existe, e por isso um parceiro-empresa que case por e-mail e' reescrito como pessoa (risco residual registrado no runbook do card: restringir a identidade a pessoas exigiria declarar escopo de identidade, que o contrato V1 nao define). FRONTEIRA DE ESCOPO declarada (contrato §9): `do_not_contact`, `opt_out_email`, `opt_out_whatsapp`, `preferred_channel` e `legal_basis` sao do schema do PostgreSQL (`contacts`) e NAO sao campos deste modelo — envia-los e' recusa nomeada (422 `campo_nao_declarado`), nunca 'ignorado em silencio'. `first_name`/`last_name`/`department`/`seniority`/`decision_role`/`whatsapp` e os scores de contato (`influence`/`contactability`/`relationship`) tambem NAO sao espelhados por esta operacao: o contrato V1 nao define coluna de espelho para eles no Odoo, e inventa-la seria mudanca de contrato. `function` e' o espelho de `contacts.job_title` e `phone` o de `contacts.phone`. A deduplicacao por `idempotency_key` (retry/replay) e' do card TRE-W3-E02-T02: aqui a chave e' exigida, validada e registrada, e a garantia de 'nao duplicar' vem da IDENTIDADE declarada.",
+      "modelos": {
+        "res.partner": {
+          "campos": [
+            "name",
+            "email",
+            "is_company",
+            "function",
+            "phone"
+          ],
+          "campos_obrigatorios": [
+            "name"
+          ],
+          "campos_de_identidade": [
+            "email"
+          ],
+          "valores_fixos": {
+            "is_company": false
+          },
+          "acao": "upsert"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    },
+    {
+      "nome": "oportunidade_upsert",
+      "tipo": "escrita",
+      "descricao": "Espelha a OPORTUNIDADE CANONICA do sales_intelligence no CRM (card TRE-W3-E01-T04): cria o lead na primeira vez e ATUALIZA nas seguintes, sem duplicar. Identidade pelo UUID canonico da oportunidade (`crm.lead.tf_opportunity_id`, contrato §3 e `canonical_ids.odoo_map`), gerado pelo produtor do fato ANTES de qualquer chamada externa — casa pelo ID, nunca por nome (nome nao e identidade). FRONTEIRA DE DONO (contrato §2): o PostgreSQL e' dono de empresa/sinais/research/scores; o ODOO e' dono de estagio, valor, won/lost, atividade, reuniao e proposta. Por isso esta operacao declara SO o espelho de inteligencia (scores, vocabulario de proxima melhor acao, rastreio de sincronizacao) e os campos de apresentacao (`name`, `type`, `partner_id`) — os campos de dono do Odoo (ex.: `stage_id`, `expected_revenue`, `probability`, `date_deadline`) NAO estao declarados: envia-los e' recusa nomeada (422 `campo_nao_declarado`), nunca 'ignorado em silencio'. `tf_priority_tier` tambem NAO e' escrevivel: e' derivado de `tf_priority_score` (compute store do TRE-W2-E04-T02) e acompanha o score sozinho. A deduplicacao por `idempotency_key` (retry/replay) e' do card TRE-W3-E02-T02: aqui a chave e' exigida, validada e registrada, e a garantia de 'nao duplicar' vem da IDENTIDADE canonica.",
+      "modelos": {
+        "crm.lead": {
+          "campos": [
+            "name",
+            "type",
+            "partner_id",
+            "tf_opportunity_id",
+            "tf_priority_score",
+            "tf_icp_score",
+            "tf_automation_fit_score",
+            "tf_buying_signal_score",
+            "tf_data_quality_score",
+            "tf_score_version",
+            "tf_next_best_action",
+            "tf_correlation_id",
+            "tf_idempotency_key",
+            "tf_last_sync_at",
+            "tf_last_event_type"
+          ],
+          "campos_obrigatorios": [
+            "name"
+          ],
+          "acao": "upsert",
+          "campos_de_identidade": [
+            "tf_opportunity_id"
+          ]
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    },
+    {
+      "nome": "atividade_criar",
+      "tipo": "escrita",
+      "descricao": "Cria a ATIVIDADE comercial (`mail.activity`) na ancora declarada — doc 12 §1 (a atividade e' do Odoo) e doc 08 §3 passo 15 do E2E #001 (empresa -> contato -> atividade). A acao e' `criar`: a atividade nasce uma vez por CHAMADA e nao ha' registro anterior a casar — quem garante 'nao duplicar' e' o motor de dedup por `idempotency_key` (card TRE-W3-E02-T02); por isso esta e' a unica escrita da leva que NAO declara `campos_de_identidade`, e a suite pura cobra a regra POR ACAO (identidade so' para quem casa registro). A ANCORA e' valor FIXO declarado (`valores_fixos.res_model`): o chamador NAO escolhe o modelo-alvo — divergencia e' recusa nomeada (422 `campo_fixo_divergente`), e `res_id` e' obrigatorio. A ancora declarada e' `res.partner`, o documento que EXISTE no fluxo de fundacao do E2E #001 (doc 08 §3 passos 13..15: a atividade entra depois de empresa e contato, quando ainda NAO existe lead); atividade ancorada em `crm.lead` NAO e' servida por esta versao — recusa nomeada, nunca atividade no lugar errado. LACUNA DECLARADA e roteada: aceitar um CONJUNTO declarado de ancoras exige vocabulario novo no mecanismo de valor fixo, e o dono do vocabulario da escrita e' o card TRE-W3-E02-T02, nao este. `activity_type_id`, `date_deadline` e `user_id` sao declarados mas NAO obrigatorios: o modelo tem default para os tres, e exigir do consumidor externo o id interno de `mail.activity.type` seria identidade por suposicao (contrato §5). Os campos de rastreio `tf_idempotency_key` e `tf_correlation_id` ficam REGISTRADOS na atividade criada (alem da trilha TF_API_AUDIT), padrao do E04-T02 em `crm.lead`. TRADUCAO DA ANCORA (medida no Odoo 19): `res_model` e' campo related-readonly em `mail.activity` — o ORM DESCARTA em silencio o valor do chamador e o INSERT reprova na CHECK `mail_activity_check_res_id_is_set_if_model`; por isso o modulo resolve o NOME declarado para `res_model_id` no `create` (`models/mail_activity.py`), traduzindo, nunca ignorando.",
+      "modelos": {
+        "mail.activity": {
+          "campos": [
+            "res_model",
+            "res_id",
+            "activity_type_id",
+            "summary",
+            "date_deadline",
+            "user_id",
+            "tf_idempotency_key",
+            "tf_correlation_id"
+          ],
+          "campos_obrigatorios": [
+            "res_id"
+          ],
+          "valores_fixos": {
+            "res_model": "res.partner"
+          },
+          "acao": "criar"
+        }
+      },
+      "requer_idempotency_key": true,
+      "aceita_dry_run": true
+    }
+  ],
+  "esquema": "1",
+  "padroes": {
+    "idempotency_key": "^[A-Za-z0-9._:-]{8,128}$",
+    "limite_maximo_de_registros": 200
+  }
+}

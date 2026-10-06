@@ -23,6 +23,25 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   (`aplicado: false`, `exige_versao_nova: true`, `aprovacao_humana: pendente`), determinismo por
   `hash_do_relatorio`, saida sem PII e HTML auto-contido. Suite offline **66 itens + 8 dentes**;
   aceite de ponta **34 itens** em PostgreSQL descartavel na VPS de dev.
+- **Memória comercial em Qdrant** (`TRE-W9-E06-T01`) — componente `hermes/memoria/memoria_comercial.py`
+  (`memoria-comercial-v1`) + contrato declarativo `hermes/memoria/memoria-comercial-v1.json`: MEDE a
+  estabilidade do corpus comercial na base canônica `sales_intelligence` em **leitura pura** e, só quando a
+  pré-condição do card ("corpus comercial estável") é atendida, **DERIVA** a memória semântica (documentos
+  do corpus com vetor) para uma coleção do Qdrant e responde à **busca por semelhança** com filtro
+  declarado. O Qdrant é memória **derivada** — a fonte de verdade continua sendo o PostgreSQL e a coleção é
+  reconstruível (`--recriar --confirmo`). Receitas do corpus (mensagem outbound, objeção/resposta inbound,
+  dor/hipótese, contexto/playbook) são **lidas do contrato**, nunca literais no código; documento sem
+  texto, sem origem ou com padrão de PII (e-mail/telefone/CNPJ/CPF) vira **lacuna nomeada** e fica fora da
+  coleção. Idempotência por id determinístico (UUIDv5 de coleção+tabela+origem): reindexar não duplica e
+  conteúdo alterado **atualiza o mesmo ponto**. Payload **fechado** (9 campos, nenhum de contato) e
+  `contacts` nunca lida. Provedor de embedding **local declarado** (`local-deterministico-v1`, 256
+  posições, L2, sem rede) — nome de modelo externo e preço **não** moram no contrato. Guardas ADR-005:
+  `prod` recusa (exit 4), Qdrant remoto recusado em dev, `homolog` exige `--confirmo`, dimensão divergente
+  recusada sem escrever. Evidência: suíte **26 itens + 11 mutações** e aceite na VPS de dev com Qdrant
+  descartável (`qdrant/qdrant:v1.12.4`) e PostgreSQL descartável → **`ACEITE_MEMORIA_COMERCIAL_OK`, 66
+  itens, 0 falhas**. Defeitos medidos e corrigidos no card: leitura do array JSON multi-linha do `psql`
+  (parse por linha pegava fragmento) e ruído de colisão do hash a 64 posições (0,19 em consulta sem
+  correspondência) → dimensão 256 com piso 0,20 (ruído 0,00; sobreposição real 0,42/0,49).
 
 - **Calibração do score** (`TRE-W9-E01-T01`) — componente `hermes/agentes/analytics/calibracao_score.py`
   (`calibracao-score-v1`) + contrato declarativo `hermes/agentes/analytics/calibracao-score-v1.json`:
@@ -51,6 +70,34 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   limites das faixas ao **valor observado** (em vez dos cortes) abria buraco entre faixas justamente onde a
   base é esparsa (43,40 → 47,75). Conserto: os limites saem dos cortes, e um item de suíte reprova a versão
   antiga (a lacuna só aparece com valor esparso — o defeito não aparecia na fixture densa).
+- **Previsão do melhor canal** (`TRE-W9-E03-T01`) — componente `hermes/agentes/analytics/previsao_canal.py`
+  (`previsao-canal-v1`) + contrato declarativo `hermes/agentes/analytics/previsao-canal-v1.json`: **mede** a
+  efetividade histórica de cada canal declarado e **prevê** o melhor canal por organização, sem enviar nada.
+  Lê a base canônica de `sales_intelligence` (leitura pura, transação `READ ONLY`) e cruza, por organização, a
+  **trilha de canal** de `interactions` (abordagens OUTBOUND, respostas INBOUND classificadas, taxa de resposta)
+  com o **desfecho no funil** obtido de `alcance_por_organizacao` do `funil.py` (card W8-E01-T01, importado — o
+  alcance não é reimplementado). Entrega: **pré-condição `dados multicanal` medida** (≥ 2 canais com base
+  suficiente e ≥ 4 organizações com interação; não atendida ⇒ `previsao_emitida=false`, `previsoes=[]` e a lista
+  `faltando` — fail-closed, não prevê com base de brinquedo); **efetividade por canal** (organizações abordadas,
+  outbound, respostas, taxa de resposta, avanço no endpoint `Reunião`, **lift** contra a taxa-base, Won/Lost e
+  `base_suficiente`); **ranking de canais elegíveis**; e **previsão por organização** com `amostra_do_canal` e
+  desempate **declarado** (taxa → resposta própria → interação própria → `preferred_channel` → ordem do
+  vocabulário). **Opt-out é bloqueio, não preferência** (contrato §9): `do_not_contact` bloqueia todos os canais,
+  `opt_out_email`/`opt_out_whatsapp` bloqueiam o canal correspondente, e canal bloqueado **nunca** aparece como
+  previsto — aparece com o motivo, contado em lacuna. O vocabulário de canal é **lido** do contrato (o Data
+  Contract V1 não congela valores de `interactions.channel`), valor fora da lista cai em lacuna nomeada e nada é
+  mapeado por semelhança. Saída em **JSON** + **HTML auto-contido**; sete lacunas declaradas (vocabulário em
+  aberto, associação ≠ causa, LinkedIn sem coluna de opt-out, prior de coorte e não personalização, coorte
+  acumulada, canal ≠ mensagem, a previsão não é ato) viajam no relatório.
+
+### Fixed
+
+- **Aceite da previsão de canal — prova que fechava sem rodar** (`TRE-W9-E03-T01`, detectado pelo próprio
+  aceite antes da entrega): o bloco de números conferidos à mão chamava `O(i)` sobre uma string de formatação e
+  morria com `TypeError: 'str' object is not callable`; como o instrumento contava apenas as linhas `OK`/`FALHOU`
+  impressas, ele **fechou PASS (34 itens) sem executar os 5 itens seguintes**. Conserto: `def O(i)` e um item
+  que exige cada bloco rodando **até o fim** (medido pelo exit code do heredoc) — sem ele, bloco que morre no
+  meio passa por suíte verde. Remedido: `ACEITE_PREVISAO_CANAL_OK`, 42 itens, 0 falhas.
 
 ## [W8 — Analytics] — 03/10/2026
 
@@ -101,7 +148,57 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   conferidos à mão e 3 dentes de ponta medidos no banco); portão de estrutura PASS. Docs:
   `docs/architecture/funil-v1.md`, `docs/runbooks/funil.md`.
 
+- **Conversão por segmento v1** (`TRE-W8-E02-T01`) — componente
+  `hermes/agentes/analytics/conversao_segmento.py` (`conversao-segmento-v1`) + contrato
+  `hermes/agentes/analytics/conversao-segmento-v1.json`: **recorta o funil do card W8-E01-T01** por **eixo
+  de segmentação declarado** e mede a conversão de cada segmento contra a base inteira. **A derivação do
+  funil é uma só:** o componente **importa `funil.py`** e usa as mesmas funções de contrato, guarda,
+  leitura pura, resolução de evidência, alcance cumulativo, terminal Won/Lost e ramo Nurture — não existe
+  segunda implementação de estágio, ordem, alcance nem atribuição (o aceite exige igualdade item a item
+  entre o recorte da base inteira e o relatório do `funil.py` na mesma base). Dois eixos, com vocabulário
+  **fechado** vindo do Data Contract V1: `faixa_funcionarios` (`employee_band`, doc 03 §5) e
+  `tier_prioridade` (**tier derivado** da pontuação vigente — `PRIORITY` com `score_version`, maior
+  `calculated_at`, empate pelo maior valor — aplicada às faixas congeladas do doc 03 §4). Valor fora do
+  vocabulário **não vira segmento** (bucket `FORA_DO_VOCABULARIO`), valor ausente vai para `SEM_DADO` (e
+  são coisas diferentes), a soma dos buckets **fecha** com a base (`RECORTE_NAO_FECHA_COM_A_BASE`),
+  cobertura é publicada por eixo e segmento abaixo de `amostra_minima` (5) é marcado `amostra_pequena` —
+  o componente não elege vencedor. Saída em JSON + HTML auto-contido, com `taxa_conversao_pct`,
+  `indice_vs_base_pct`, won/lost/nurture e os estágios do recorte. Medição: suíte offline
+  (`scripts/agentes/verificar_conversao_segmento.py --autoteste`) **34 itens, 0 falhas + 12/12 mutações**;
+  aceite `ACEITE_CONVERSAO_SEGMENTO_OK` **43 itens, 0 falhas** em PostgreSQL descartável na VPS de dev
+  (`pg-analytics-seg-acc`), com os números conferidos à mão e o dente de faixa quase idêntica ao
+  vocabulário (`150_299X` não entra em `150_299`); portão de estrutura PASS. Docs:
+  `docs/architecture/conversao-por-segmento-v1.md`, `docs/runbooks/conversao-por-segmento.md`.
+- **Custo de agentes v1** (`TRE-W8-E05-T01`) — componente `hermes/agentes/analytics/custo_agentes.py`
+  (`custo-agentes-v1`) + contrato declarativo `hermes/agentes/analytics/custo-agentes-v1.json`: lê a
+  auditoria de execução de agente (`sales_intelligence.agent_runs`, dono PostgreSQL, contrato §9) e deriva,
+  por **agente**, por **modelo** e por **workflow**, execuções, concluídas/falhas/recusadas/revisão, taxa de
+  falha, tokens, custo total e **custo por execução concluída** (quanto custou cada sucesso), latência
+  (média/mediana/p95) e organizações distintas; sai em **JSON** + **CSV** + **HTML auto-contido**.
+  **Invariante central — nulo não é zero:** execução sem `estimated_cost` não entra na soma e não vira `0`
+  (vai para `runs_sem_custo`, a média fica `null` e o grupo sai do ranking); sem isso quem menos declara
+  custo seria coroado o mais barato. O componente **não calcula preço** (a política de lane proíbe fixar
+  preço): reporta o `estimated_cost` gravado, como string decimal de 6 casas, e trata custo negativo como
+  lacuna. O vocabulário de status é o dos 13 irmãos que escrevem a auditoria
+  (`COMPLETED`/`FAILED`/`REJECTED`/`REVIEW_REQUIRED`) — **recusa declarada não é falha** e status fora do
+  vocabulário não vira desfecho. A coluna que não existe **não se inventa**: o card lê a DDL congelada e
+  RECUSA (exit 3) se a coluna da métrica faltar. Leitura pura (`SELECT` único, `READ ONLY` em `-c` separado,
+  auditoria da fonte antes de conectar); `prod` recusado por desenho (exit 4). Medição: suíte offline
+  (`scripts/agentes/verificar_custo_agentes.py --autoteste`) **30 itens, 0 falhas + 8/8 mutações**; aceite
+  `ACEITE_CUSTO_AGENTES_OK` **40 itens, 0 falhas** em PostgreSQL descartável na VPS de dev (métricas
+  conferidas à mão, 5 dentes medidos no banco, janela por `started_at`, leitura pura por snapshot das 12
+  tabelas **e** pela transação `READ ONLY`, determinismo byte a byte); portão de estrutura PASS. Docs:
+  `docs/architecture/custo-agentes-v1.md`, `docs/runbooks/custo-de-agentes.md`.
+
 ### Fixed
+
+- **Relatório sem carimbo de tempo quebrava o HTML** (defeito medido pelo aceite do `TRE-W8-E05-T01`,
+  **DETECTADO POR:** aceite, antes de qualquer entrega): o componente removia `gerado_em` quando
+  `--com-carimbo` não era passado (para a saída ser reproduzível) e o `emitir_html` lia
+  `relatorio["gerado_em"]` **sem** `.get()` — a rodada real no banco morria com `KeyError: 'gerado_em'`
+  (exit 1) e nenhuma saída era gravada. A suíte offline não pegava porque ali o carimbo sempre existia. O
+  HTML passou a tolerar a ausência (`(sem carimbo)`), o aceite ganhou o item que exige a saída **byte a byte
+  idêntica** entre duas rodadas e a suíte o item 30, que mede o relatório **sem** carimbo de ponta a ponta.
 
 - **`SET default_transaction_read_only` num único `-c` NÃO vale** (defeito medido pelo aceite do
   `TRE-W8-E01-T01`, **DETECTADO POR:** aceite, antes de qualquer entrega): com
@@ -110,6 +207,218 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   componente passou a emitir **dois `-c`** (`SET` e depois a consulta) e o aceite ganhou o item que
   injeta a escrita e exige `cannot execute INSERT in a read-only transaction`; a escrita recusada também
   não pode deixar linha.
+## [W7 — Inbound] — 03/10/2026
+
+### Added
+
+- **Captura de lead do site v1** (`TRE-W7-E01-T01`) — componente `hermes/agentes/inbound/captura_site.py`
+  (`captura-site-v1`) + contrato `hermes/agentes/inbound/captura-site-v1.json`: recebe a submissão do
+  formulário já normalizada em JSON, trata **consentimento como barreira** (sem opt-in explícito e base
+  legal declarada, nada é cadastrado — só trilha `RECUSADO_CONSENTIMENTO`), resolve a identidade da
+  empresa por **identificador forte** (CNPJ → domínio → LinkedIn, confiança ≥ 0,95) antes do **fraco**
+  (nome+cidade / nome+telefone), que vai para `REVIEW_REQUIRED` — nunca merge silencioso (Data Contract V1
+  §5) —, grava `organizations`/`contacts`/`interactions` (canal `WEBSITE`, direção `INBOUND`, tipo
+  `FORMULARIO_SITE`) com UUID canônico no próprio INSERT e a trilha de idempotência
+  `site:<submission_id>` em `sync_events`, e mascara e-mail/telefone/CNPJ na evidência. Escrita só por
+  INSERT nas 4 tabelas; auditoria da própria fonte recusa DDL/UPDATE/DELETE antes de conectar. Guardas:
+  dev exige porta de banco local (`docker exec -i pg-* psql`), `prod` recusa (exit 4), `homolog` exige
+  aprovação registrada, escrever exige `--confirmo` (senão `DRY_RUN`). Medição: suite offline
+  `VERIFICADOR_CAPTURA_SITE_PASS (32 itens + 5 dentes)` e aceite em PostgreSQL descartável
+  `ACEITE_CAPTURA_SITE_001_OK (46 itens, 0 falhas)`. Docs: `docs/runbooks/captura-de-lead-do-site.md`.
+  **Lacuna declarada:** o lead não é escrito no Odoo por este card — o vocabulário de eventos PG → Odoo do
+  contrato V1 não tem evento de lead capturado e o consumidor de outbox é fail-closed; criar `event_type`
+  novo exige nova versão do contrato + aprovação humana (doc 12/ADR-0004).
+- **Ingestão de leads Meta/Instagram v1** (`TRE-W7-E02-T01`) — componente
+  `hermes/agentes/inbound/ingestao_leads_meta.py` (`meta-lead-ingestion-v1`) + contrato
+  `hermes/agentes/inbound/meta-lead-ingestion-v1.json`: recebe as entregas CRUAS do webhook de Lead Ads do
+  Meta (objeto `page`, campo `leadgen`), **valida a assinatura HMAC-SHA256** (`X-Hub-Signature-256`,
+  `compare_digest`) ANTES de qualquer chamada externa, busca o lead pelo primitivo de LEITURA da Graph API
+  (`GET /<versao>/{leadgen_id}`, token no cabeçalho, retry limitado a 2 tentativas e sem retry em erro
+  definitivo), normaliza o `field_data` pelo mapa declarado do contrato e grava a interação em
+  `sales_intelligence.interactions` (+ trilha de idempotência em `sync_events`), que é a evidência que a
+  onda W7/W8 consome. Guardas medidas: `prod` recusa (exit 4), dev exige Graph em loopback e banco em
+  container local, homolog exige aprovação humana registrada + lista de páginas, `--confirmo` obrigatório
+  para escrever, escrita restrita a `interactions`/`sync_events` (só INSERT) e segredo conferido na
+  gravação (`SENHA_VAZADA`, exit 5); PII fora do texto livre (`content_summary` mascara e-mail/telefone) e
+  campo fora do mapa registrado apenas pelo nome em `campos_desconhecidos`. Medição: suite offline 51 itens
+  0 falhas + 7 mutações cada uma reprovando o item que nomeia; aceite E2E `ACEITE_META_LEADS_001_OK`
+  **53 itens 0 falhas** em Postgres descartável (`pg-meta-acc`) com **webhooks assinados de verdade**
+  (incluindo assinatura errada e entrega inválida repetida) e stub local da Graph API; prova de dente
+  reprovando exatamente o item 5.8; portão de estrutura PASS. Stub de dev:
+  `scripts/agentes/stub-meta-graph-dev.py`. Docs: `docs/integrations/meta-leads-v1.md`,
+  `docs/runbooks/ingestao-leads-meta.md`.
+
+### Fixed
+
+- **`TRE-W7-E02-T01`** — defeito MEDIDO na rodada 1 do aceite: a trilha de "entrega sem lead" (assinatura
+  inválida/entrega vazia) era escrita com INSERT cru e o replay esbarrava no UNIQUE de
+  `sync_events.idempotency_key`, abortando a rodada inteira (`BANCO_RECUSOU`, exit 3). Correção: esses dois
+  caminhos passam por `ja_ingerido` (replay ⇒ `JA_INGERIDO`) e o `gravar_trilha(..., sem_conflito=True)`
+  usa `ON CONFLICT (idempotency_key) DO NOTHING`. Detectado pelo próprio aceite (item 4.7b, criado para a
+  entrega inválida repetida).
+## [W7 — Inbound/Multicanal] — 03/10/2026
+
+### Added
+
+- **Atribuicao de lead do Google v1** (`TRE-W7-E03-T01`) — componente
+  `hermes/inbound/google/atribuicao_google.py` (`google-lead-attribution-v1`) + contrato
+  `hermes/inbound/google/atribuicao-google-v1.json`: atribui um lead vindo do Google (formulario de
+  Lead Ads do Google Ads, ou formulario do site com `gclid`/`utm_*`) por **tabela declarada** — evidencia
+  `FORMULARIO_GOOGLE_ADS` (0,95), `GCLID_RESOLVIDO` (0,90), `GCLID_NAO_RESOLVIDO` (0,60),
+  `UTM_SOURCE_GOOGLE` (0,45) — e grava em `sales_intelligence.interactions` + trilha de idempotencia em
+  `sync_events` (envelope de atribuicao no `request_payload`). Sem evidencia nomeada o veredito e'
+  `NAO_ATRIBUIDO`/`SEM_IDENTIFICADOR` e **nada** e' gravado: fail-closed, nao se inventa canal/campanha.
+  `gclid` resolvido pela porta declarada da Ads API (loopback em dev, stub no aceite); contato
+  desconhecido → `SEM_VINCULO` sem inventar organizacao; escrita restrita a 2 tabelas e so INSERT;
+  resumo/assunto sem PII; guardas ADR-005 (`prod` recusa exit 4, segredo exit 5).
+- Suíte offline `scripts/inbound/verificar_atribuicao_google.py` (28 itens + autoteste 8/8 por mutacao)
+  e aceite E2E `scripts/inbound/aceite-atribuicao-google.sh` (PostgreSQL descartavel `pg-google-acc` +
+  stub local do resolvedor de `gclid`) medido na VPS do ambiente: `ACEITE_GOOGLE_LEADS_001_OK`
+  (35 itens / 0 falhas) com 3/3 dentes. Runbook `docs/runbooks/atribuicao-google-lead.md` e arquitetura
+  `docs/architecture/atribuicao-google-v1.md`, com as **lacunas declaradas** (Ads API real, outbox de
+  lead inbound e criacao de organizacao/contato ficam fora deste card).
+
+### Fixed
+
+- **Auditoria de fonte que nao via `DELETE FROM`** (`TRE-W7-E03-T01`, achado): o padrao herdado do
+  W6-E05 (`"DE" + "LETE FROM"`) avalia para `DELETEFROM` (sem espaco) e nunca casaria o comando real; o
+  novo componente declara o espaco como pedaco proprio e a suíte prova os dois lados. O mesmo padrao
+  permanece no componente do W6-E05 — registrado como achado no runbook deste card.
+- **Faixa de docstring lida por contagem de aspas** (`TRE-W7-E03-T01`): duas docstrings de uma linha
+  seguidas desalinham a regra "linha que comeca com aspas liga/desliga" e fazem o texto declarado ser
+  lido como codigo (falso positivo de `UPDATE`). A faixa agora vem do `ast`.
+## [W7 — Multicanal · LinkedIn assistido] — 03/10/2026
+
+### Added
+
+- **LinkedIn AI-assisted workflow v1** (`TRE-W7-E04-T01`, W7/E04) — componente
+  `hermes/agents/linkedin/linkedin_assistido.py` (`linkedin-assistido-v1`) + contrato/política
+  `hermes/agents/linkedin/linkedin-assistido-v1.json`: workflow **assistido** do canal LinkedIn (Motor 2,
+  doc 03 §1) em que a máquina **só prepara e registra** — `PREPARAR_RASCUNHO` a partir da recomendação
+  `PREPARE_LINKEDIN` do NBA **com evidência lida do banco** (0 evidência = `SEM_EVIDENCIA`, nada escrito),
+  `PEDIR_APROVACAO` em `human_approvals` (`action_type` `LINKEDIN_RASCUNHO`, `PENDING`, com
+  `recommendation_id`, `texto_hash` e `publicacao = EXCLUSIVA_DO_HUMANO`) e `REGISTRAR_ENGAJAMENTO` em
+  `interactions` (`channel='LINKEDIN'`, `direction='INBOUND'`, inferência **marcada** com `ai_confidence`).
+  **Quem publica é o humano, fora do sistema.** Escrita restrita a `human_approvals`, `interactions`,
+  `agent_runs` e `sync_events` (DDL/UPDATE/DELETE recusam; `prod` recusa exit 4 — ADR-005); idempotência
+  por id determinístico (`JA_PEDIDO`) e por chave de `sync_events` (`JA_REGISTRADO`); guardas de contato
+  (`do_not_contact`/`deleted_at` → `BLOQUEADO`) e `--desfazer` que **marca**, não apaga.
+- `scripts/linkedin/verificar-linkedin-assistido.sh` — o aceite do card: banco descartável `pg-lk-e04`,
+  massa de 3 organizações (com/sem evidência/contato bloqueado) e **70 itens** cobrindo preparo,
+  aprovação, entrega ao humano, idempotência, guardas e **a recusa das 11 ações humanas exclusivas**
+  (exit 5), com `--prova-de-dente` de 3 mutações.
+- `docs/runbooks/linkedin-assistido.md` — runbook com as **lacunas declaradas** (o ato de publicar do
+  humano, o rascunho por LLM, a leitura do LinkedIn e o vínculo com o Odoo não são medidos aqui).
+
+### Fixed
+
+- **`psql` sem `-q` mascarava `INSERT ... ON CONFLICT DO NOTHING`**: o tag `INSERT 0 0` no stdout fazia
+  a reclamação de idempotência ser lida como escrita e o mesmo engajamento entrava duas vezes
+  (defeito medido na rodada 1 do aceite). Correção: `-q` + guarda fail-closed que só aceita id UUID.
+- **Chave achatada do contrato de dados**: `vocabularies` usa chaves literais
+  (`"human_approvals.status"`), não aninhadas — a leitura aninhada devolvia lista vazia e todos os
+  status pareciam fora do vocabulário (defeito medido no item 1.7).
+- **Foto da guarda de escrita tirada antes da massa** do aceite acusava o próprio insumo (item 11.3).
+
+### Security
+
+- Nenhuma credencial, token ou API do LinkedIn no repositório: o componente **não tem caminho de rede**
+  (medido por `grep`: 0 referência a `linkedin.com`/`requests`/`urllib`/`selenium`/`playwright`).
+- Regra do dono preservada por código: **não publica, não comenta, não reage, não segue, não convida,
+  não manda DM, não menciona e não responde** em nome dele — 11 ações recusadas por desenho (exit 5).
+## [W7 — Inbound / Multicanal] — 03/10/2026
+
+### Added
+
+- **WhatsApp engaged-lead workflow v1** (`TRE-W7-E05-T01`) — componente
+  `hermes/agentes/inbound/whatsapp_lead.py` (`whatsapp-lead-v1`) + contrato `whatsapp-lead-v1.json`:
+  recebe a mensagem INBOUND de WhatsApp já normalizada (o webhook do provedor é do n8n — lacuna L2),
+  resolve a identidade pelo **núcleo nacional do telefone** (11 dígitos; `+55`/`55`/sem país dão o mesmo
+  núcleo) contra `contacts.whatsapp` e `contacts.phone`, classifica por regra declarada com `OPT_OUT` na
+  ordem 1 (descadastro vence o interesse) e grava a interação `WHATSAPP`/`INBOUND`/`WHATSAPP_MENSAGEM` +
+  a trilha `whatsapp:<message_id>` em `sync_events` (INSERT apenas). **Nunca envia**: outbound de canal é
+  ação L1 com aprovação humana — a saída é uma PROPOSTA (`proximo_passo`) calculada pela **janela de
+  atendimento** do provedor (24 h desde a última entrada do contato): dentro da janela
+  `RESPOSTA_LIVRE_SUGERIDA`, fora dela `REENGAJAMENTO_COM_TEMPLATE_APROVACAO_HUMANA`; `do_not_contact`,
+  `opt_out_whatsapp` e descadastro classificam `BLOQUEADO_POR_BLOQUEIO` (`NENHUM_FILA_HUMANA`) — a
+  mensagem continua registrada porque o fato aconteceu, e `contacts` fica intocada (dono operacional é o
+  Odoo; propagação é `W6-E06`). Telefone desconhecido → `SEM_VINCULO`, ambiguidade → `REVIEW_REQUIRED`:
+  identidade não se inventa. Medição: suite offline **60 itens, 0 falhas** + **10 dentes** (cada mutação
+  reprovando o item que nomeia), aceite em Postgres descartável na VPS
+  **ACEITE_WHATSAPP_LEAD_001_OK (68 itens, 0 falhas)**, portão de estrutura PASS. Docs:
+  `docs/runbooks/whatsapp-engaged-lead.md`.
+
+### Fixed
+
+- **Trilha duplicada por mensagem** (defeito medido na rodada 1 do aceite de `TRE-W7-E05-T01`):
+  `gravar_interacao` gravava a trilha em `sync_events` e o núcleo gravava de novo — a chave
+  `whatsapp:<message_id>` é UNIQUE, o segundo INSERT estourava e a mensagem terminava em RECUSA com a
+  interação já gravada. Agora quem grava a trilha é só o núcleo (`gravar_trilha`), com o status do
+  veredito; dente `D9`.
+- **Porta de banco lendo só a última linha do JSON** (defeito medido na rodada 1 do aceite de
+  `TRE-W7-E05-T01`): o `psql` quebra o valor agregado em várias linhas (`json_agg` com 2+ linhas sai como
+  `[{"…"}, \n {"…"}]`), então toda leitura com 2+ resultados caía em `BANCO_RESPOSTA_INVALIDA` — foi o
+  caso do telefone ambíguo, que existe para ir a `REVIEW_REQUIRED`. A porta passou a ler o DOCUMENTO
+  JSON, reunindo as linhas; dente `D10`.
+
+### Security
+
+- Nada em produção (ADR-005): `prod` recusado por medição (exit 4), dev exige porta de banco em
+  container local, escrita exige `--confirmo`. O aceite roda 100% em `127.0.0.1` com container
+  descartável; telefone do lead mascarado na evidência (item medindo 0 ocorrências cruas);
+  `outbox_events` vazia (nenhum evento de envio criado) e `contacts` intocada.
+- **Captura de lead de evento v1** (`TRE-W7-E06-T01`) — componente `hermes/agentes/inbound/captura_evento.py`
+  (`captura-evento-v1`) + contrato `hermes/agentes/inbound/captura-evento-v1.json` (coletado em evento —
+  doc 03, Motor 3 "Relationship"): recebe a coleta do evento (QR/crachá/ficha/lista) já normalizada em JSON,
+  trata o **vínculo do evento como barreira** (sem `origem_evento.event_id`, sem `capture_method` no
+  vocabulário ou sem `capturado_em` válido a coleta é recusada com `EVENTO_NAO_DECLARADO` — lead de evento
+  sem o vínculo do evento é lead sem atribuição), trata **consentimento como barreira** (opt-in explícito +
+  base legal + **forma** do opt-in: `TERMO_DIGITAL`/`FICHA_ASSINADA`/`QR_INSCRICAO`/`LISTA_PRESENCA`),
+  resolve a identidade da empresa por **identificador forte** (CNPJ → domínio → LinkedIn, confiança ≥ 0,95)
+  antes do **fraco** (nome+cidade / nome+telefone), que vai para `REVIEW_REQUIRED` — nunca merge silencioso
+  (Data Contract V1 §5) —, grava `organizations`/`contacts`/`interactions` (canal `EVENTO`, direção
+  `INBOUND`, tipo `CAPTURA_EVENTO`, `occurred_at` = `capturado_em`) com UUID canônico no próprio INSERT e a
+  trilha de idempotência `evento:<event_id>:<captura_id>` em `sync_events` (o `event_id` entra na chave: o
+  mesmo lead em dois eventos são duas coletas legítimas e ficam distintas), e mascara e-mail/telefone/CNPJ na
+  evidência. Escrita só por INSERT nas 4 tabelas; auditoria da própria fonte recusa DDL/UPDATE/DELETE antes
+  de conectar. Guardas: dev exige porta de banco local (`docker exec -i pg-* psql`), `prod` recusa (exit 4),
+  `homolog` exige aprovação registrada, escrever exige `--confirmo` (senão `DRY_RUN`). Medição: suite offline
+  `VERIFICADOR_CAPTURA_EVENTO_PASS (46 itens + 5 dentes)` e aceite em PostgreSQL descartável
+  `ACEITE_CAPTURA_EVENTO_001_OK (60 itens, 0 falhas)`. Docs: `docs/runbooks/captura-de-lead-de-evento.md`.
+  **Lacunas declaradas:** o lead do evento não é escrito no Odoo por este card (o vocabulário de eventos
+  PG → Odoo do contrato V1 não tem evento de lead capturado e o consumidor de outbox é fail-closed; criar
+  `event_type` novo exige nova versão do contrato + aprovação humana — doc 12/ADR-0004) e as 12 tabelas core
+  **não têm entidade de evento**: o vínculo do evento vive no resumo/referência da interação e no payload da
+  trilha — nada é inventado como coluna.
+- **Análise de desempenho de mensagens v1** (`TRE-W8-E04-T01`) — componente
+  `hermes/analytics/desempenho_mensagens.py` (`desempenho-mensagens-v1`) + contrato
+  `hermes/analytics/desempenho-mensagens-v1.json`: lê `sales_intelligence.interactions` por **um SELECT**
+  (somente leitura) e devolve, por **variante de texto** (`texto_hash` de
+  `envio:<approval_id>:<texto_hash>`) e por **canal normalizado**: enviadas, respondidas, positivas,
+  negativas, opt-outs, indefinidas, respostas comerciais/descartadas, `taxa_de_resposta`,
+  `taxa_de_interesse`, `taxa_de_opt_out`, tempo médio e mediano de resposta (horas) e a **melhor variante**
+  — somente entre as com amostra ≥ `--limite-amostra` (default 5). O crédito é do **envio mais próximo
+  anterior**, em duas faixas de especificidade (mesmo contato > escopo da organização), para que a resposta
+  não seja contada duas vezes nem medida em cima de um envio ofuscado. As classes de resposta **particionam**
+  o vocabulário do card irmão (`ingestao-respostas-v1.json`): `AUTO_RESPOSTA`/`BOUNCE`/`RUIDO` são medidas
+  como **descarte**, nunca somadas como resposta de lead; `OPT_OUT` tem taxa própria. Guardas: `prod` RECUSA
+  exit 4 (ADR-005), nenhum verbo de escrita no SQL, saída **agregada** (sem
+  `organization_id`/`contact_id`/`approval_id`) e `CONTRATO_INCOERENTE` exit 3 quando o vocabulário do irmão
+  diverge (fail-closed).
+- **Duble de porta de banco para medição offline** (`scripts/agentes/duble_psql_desempenho.py`) — responde a
+  consulta de leitura com o mesmo `WHERE` e **recusa** qualquer statement de escrita (exit 42), registrando
+  cada chamada.
+- **Runbook** `docs/runbooks/desempenho-de-mensagens.md` — uso, regras declaradas, medição e as lacunas.
+
+### Changed
+
+- **`interactions.channel` normalizado na leitura** (`TRE-W8-E04-T01`) — o card irmão de envio grava
+  `EMAIL` e o de ingestão grava `email`; a análise normaliza (trim + caixa alta) e registra a divergência de
+  FORMA do dado gravado como lacuna (o contrato não fixa vocabulário para essa coluna).
+
+### Fixed
+
+- (nada nesta onda até aqui)
 
 ## [W6 — Outbound] — 02/10/2026
 
@@ -376,6 +685,153 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   etapas reprovadas; desvio reprova a suíte). A guarda tem prova negativa: com o registro da migration
   divergido no alvo descartável, a suíte sai com exit 1, aponta a etapa e o resumo **não** pode dizer `OK` —
   `SUITE_DENTE_OK (19 itens, 0 falhas)`.
+- **Publicação versionada da cópia operacional** (`t_091cfea9`, DEFEITO F3 do `TRE-W1-E06-T01`) —
+  `deploy/publicar.sh` passa a ser o **único** caminho de escrita em `/opt/tre/repo`: publica um
+  **commit** (nunca a árvore de trabalho) por `git archive` → staging → `rsync -a --delete`, com o modo
+  vindo do índice do git; grava o commit em uso em `/opt/tre/repo/.publicado` (+ `.publicado.manifest`
+  com modo/sha256 de cada arquivo), recusa árvore suja (só passa com `--permitir-arvore-suja`, que
+  registra o desvio), aceita **uma publicação por vez** (`/opt/tre/.publicacao.lock`), avisa quando outro
+  card publicou antes, mantém o histórico em `/opt/tre/.publicacoes.log` e confere depois do `rsync` que
+  o `digest` da cópia é o do commit (senão falha com exit 6). Antes de publicar, confere os `ExecStart=`
+  dos units contra o modo do commit e **conta/registra** os alvos sem bit (`AVISO modo`; `--exigir-modos`
+  vira exit 4) — a publicação deixa de recriar o `203/EXEC` por acidente. `deploy/publicar.sh
+  --conferir` compara a cópia com o commit registrado arquivo a arquivo **e modo a modo**, devolvendo
+  `PUBLICACAO_DIVERGENTE` (exit 5) com o diff quando alguém reescreveu a cópia por fora do caminho único;
+  `docs/runbooks/publicacao-da-copia-operacional.md` é o runbook (comando, guardas, rollback do código
+  publicado e o que o caminho não faz).
+
+- **Enforcement do caminho único da cópia operacional — trava de imutabilidade, artefato do commit e
+  watchdog de 2 min** (`t_daca4bda`, recorrência do defeito do `t_091cfea9`) — o `deploy/publicar.sh`
+  **detectava** a escrita ad-hoc (`--conferir`, exit 5), mas ninguém o rodava: bastou um card em execução
+  ressincronizar a cópia por `tar` ad-hoc para o `.publicado` continuar dizendo o commit consertado
+  enquanto a árvore em disco voltava ao estado **pré-correção**. Agora:
+  (i) **`chattr +i`** na cópia publicada — escrita ad-hoc falha com `Operation not permitted` em vez de
+  sobrescrever em silêncio (`--travar`/`--destravar`; `--sem-trava` só para ensaio; `deploy/publicar.sh` é
+  o único que desarma, e só durante a troca);
+  (ii) **artefato do commit** em `/opt/tre/.publicacao-artefato` (`commit.tar` com o modo do git +
+  `modos.txt` + `manifesto` + `commit`/`digest`, `root:root` 700 **fora** da cópia) — fail-closed: se o
+  artefato gravado não conferir com o commit, a publicação para antes de trocar qualquer coisa;
+  (iii) **`deploy/watchdog-publicacao.sh`** (novo; roda na VPS, sem git e sem o checkout) confere a cópia
+  contra o manifesto do commit registrado a cada 2 min
+  (`deploy/systemd/tre-publicacao-watchdog.{service,timer}`), **atribui** a divergência (alterado /
+  plantado / removido, com mtime e se é posterior à publicação), grava `/opt/tre/.publicacao-ALERTA` e
+  `/opt/tre/.publicacao-divergencias.log` e, com `--reparar`, **restaura a cópia a partir do artefato** e
+  rearma a trava (registrado em `.publicacoes.log` como `card=watchdog-reparo`);
+  (iv) `deploy/instalar-watchdog-publicacao.sh` instala os **bytes da cópia publicada** em
+  `/usr/local/lib/tre` (sha256 conferido dos dois lados) — o watchdog sobrevive à cópia quebrada;
+  (v) **guarda de produção:** o destino compartilhado é produção (alvo do `ExecStart=` dos timers), então
+  **substituir** o commit que está no ar exige `--producao` declarado (`TRE_PUBLICAR_PRODUCAO=1`) — sem
+  isso a publicação para com `PUBLICACAO_FALHOU` (exit 2) **antes de escrever qualquer coisa**; publicar o
+  mesmo commit (reparo) ou em destino de ensaio passa direto, e a declaração fica em `.publicado`
+  (`producao_declarado`);
+  (vi) **publicação com UMA conexão SSH** (`ControlMaster`, `ControlPersist=30` em `R()`): a publicação
+  faz ~25 chamadas remotas e, com uma conexão TCP por chamada, a rodada de publicações de 22:2x–22:4xZ
+  fez a VPS responder `Connection refused` na porta 22 **para o IP de origem inteiro** (todos os cards)
+  por ~12 min, com o host de pé e **sem reboot** — assinatura de penalidade por fonte
+  (`PerSourcePenalties`)/`fail2ban`, agravada pelas retentativas;
+  (vii) **idade do lock deixou de ser inventada:** com o `stat -c %Y` ilegível, `AGORA - 0` virava
+  "~56 anos" (`idade 1790808317s`, medido pelo card `t_c7281fce`) e a publicação **derrubava o lock vivo**
+  de outra (fail-open). Agora a idade sai do mtime e, se não for medível, do `inicio` que o próprio lock
+  grava; **sem idade confiável não derruba o lock** (`PUBLICACAO_FALHOU`, exit 3, nada escrito);
+  (viii) **`deploy/verificar-enforcement.sh`** — verificador com dente: tenta o caminho ad-hoc em
+  destino isolado e **exige que falhe** (4 caminhos recusados, conteúdo intacto, sabotagem reprovada pelo
+  detector com exit 5, reparo restaurando e rearmando) e **reprova quando o guard está desligado**
+  (`TRE_ENF_SEM_TRAVA=1` -> `VERIFICADOR_ENFORCEMENT_FALHOU … falhas=7`, exit 1) — verificador que passa
+  por construção não vale (D04 do TRE-W0-E04-T01);
+  (ix) **lock registra `destino=`** e o watchdog só se cala para lock de publicação **para o destino que
+  ele vigia** — antes, um card publicando em destino isolado com o lock padrão cegava a conferência da
+  produção (medido: 2 ciclos com a cópia real divergente);
+  (x) **cópia correta e destravada é rearmada no ciclo** (`trava=rearmada`) — publicação por versão antiga
+  do `publicar.sh` deixava a janela aberta para o ad-hoc.
+  Runbook `docs/runbooks/publicacao-da-copia-operacional.md` revisão 1.1 (§5 enforcement, §9 destino
+  isolado).
+
+### Changed
+
+- **AC2 do E05 passou a ser medido na forma reformulada — "não existem dois clientes no mesmo banco"**
+  (`TRE-W1-E05-T01`, decisão do dono `A` de 30/09/2026, card `t_e340c29b`; isolamento **físico**, um banco
+  por cliente) — a etapa 5 da suíte deixa de ser `tenant/RLS` (forma antiga: "consulta sem filtro de tenant
+  devolve vazio ou erro", **não decidível** contra o Data Contract V1.0, que não tem dimensão de cliente) e
+  passa a medir o que é medível no ambiente atual: **0 dimensão de cliente/tenant no schema**, **1 base de
+  aplicação na instância do alvo** e **1 base provisionada (`pg-*`) servindo o schema no host**. A barreira
+  do critério passa a ser de **provisionamento**, não de schema — declarado em
+  `docs/data/DATA_CONTRACT_V1.md` e em `docs/runbooks/suite-de-teste-do-banco.md` §4/§8. O medidor é
+  `scripts/db/teste_isolamento_clientes.sh` (novo, com `--prova-de-dente`); `scripts/db/teste_tenant_rls.sh`
+  fica **versionado como instrumento do V2** (não wired na suíte) para o dia em que houver multi-cliente no
+  mesmo banco. `scripts/verificar_estrutura.sh` passa a exigir o artefato novo (versionado e executável).
+- **Régua de aceite do E05 passou a registrar a reformulação do AC2** (`TRE-W1-E05-T01`, 30/09/2026) — a
+  revisão independente mostrou que `docs/kanban/criterios-de-aceitacao.md` continuava com a forma antiga do
+  2º critério ("consulta sem filtro de tenant"), **sem nota**, enquanto o entregue media a forma nova: pelo
+  documento que governa o fechamento (*"card cujo critério não bater não fecha"*), o entregue não batia com o
+  critério homologado. A seção `TRE-W1-E05-T01` da régua ganhou **nota datada** com a decisão do dono (opção
+  A, card `t_e340c29b`, `docs/operations/registro-de-aprovacoes.md`) e o **texto vigente** — "não existem
+  dois clientes no mesmo banco" —, declarando ainda que a forma antiga foi medida e devolvida ao requisito
+  (`NAO_TESTAVEL`, exit 3). Junto: `scripts/db/teste_tenant_rls.sh` (instrumento do V2) passou a usar a
+  **mesma superfície de detector** do teste vigente (`~*`, token `tenant|cliente|client` em qualquer
+  posição), para não haver duas definições de "coluna de cliente" no repo.
+
+### Fixed
+
+- **A rotina de backup cobria zero ambientes e saía `BACKUP_OK`; o verificador aprovava sem backup nenhum**
+  (`TRE-W1-E06-T01-F2`, card `t_1b2ab418`; era o achado "trio `TRE_PG_*`") — `backup-tre.sh` procurava
+  `pg-dev`/`pg-homolog`/`pg-prod` e lia o trio de variáveis globais que o `EnvironmentFile` do unit não
+  declara, embora o dev real seja `pg-sales-dev` (`sales_ai`), declarado em `deploy/environments/dev.env`
+  — arquivo que nenhum timer lia. Medido no defeito: `PULADO` nos três ambientes, exit 0, **nenhum artefato**;
+  o `tre-backup-verify.service` também aprovava (`VERIFICACAO_OK`) porque procurava o mesmo prefixo
+  `tre_dev_*` que a rotina nunca produzia. Corrigido com a resolução do trio **por ambiente**
+  (`scripts/backup/lib-ambiente.sh`, novo, usado pela rotina e pela verificação): variável por ambiente
+  (`TRE_PG_SERVICO_<AMBIENTE>`) → `$TRE_ENV_DIR/<ambiente>.env` → variável global **só** em chamada de um
+  ambiente → convenção `pg-<ambiente>`; `TRE_ENV_DIR=/opt/tre/repo/deploy/environments` no `backup.env`.
+  Ambiente **declarado** cujo container não existe agora **falha** (exit 1, `BACKUP_FALHOU`), `todos` sem
+  nenhum ambiente coberto devolve `BACKUP_SEM_AMBIENTE` (nunca `BACKUP_OK`), e a verificação reprova
+  ambiente provisionado sem backup. Prova medida **sob o usuário do timer**:
+  `systemctl start tre-backup.service` → `Result=success`, `ExecMainStatus=0`, `RESULTADO: BACKUP_OK
+  (todos; 1 coberto, 2 pulados)` e artefato `tre_dev_*` com `servico: pg-sales-dev`/`externo: enviado`;
+  `tre-backup-verify.service` → `RESTORE_OK (11 itens)` restaurado do artefato que a rotina acabou de
+  produzir + `VERIFICACAO_OK`. Teste hermético versionado `scripts/backup/teste-rotina-ambiente.sh`
+  (`TESTE_OK`, 55 itens, 0 falhas) com regressão contra os scripts anteriores (antes: `BACKUP_OK` com
+  **0 artefatos**; depois: artefato criado). Detalhes e evidência em
+  `docs/runbooks/backup-restore-rollback.md` §7f.
+- **Teste de isolamento entre clientes: catálogo mudo virava "0 coluna" (verde falso) e o detector só via
+  nomes terminando em `tenant|cliente|client`** (`TRE-W1-E05-T01`, os 2 itens de medição da revisão
+  independente) — medido por ela em alvo descartável e **reproduzido aqui nos dois artefatos, lado a lado**:
+  com `organizations.tenant_uuid` presente, o artefato anterior imprimia `dimensao de cliente/tenant no
+  schema: 0` e fechava `ISOLAMENTO_OK (5 itens)`, **exit 0**; com a leitura do catálogo falhando, **exit 0**
+  também (verde falso). Correções: `leitura()` passou a devolver falha (exit != 0) e o item 3 exige **número**
+   — leitura vazia/erro vira `NAO_TESTAVEL` (exit 3, nunca verde) com a causa impressa (no item 4, leitura que
+  falha **reprova**); o detector passou a cobrir o token em qualquer posição, **case-insensitive**
+  (`tenant_uuid`, `conta_Cliente`), e a superfície que fica **fora** dele (outra grafia, ex. `customer_id`)
+  está declarada no runbook §8 — quem a pega é a **etapa 1** (contrato, `sobram=[...]`). O dente do AC2 ganhou
+  3 casos novos (2 grafias de co-locação + catálogo ilegível): `ISOLAMENTO_DENTE_OK (26 itens, 0 falhas)`,
+  exit 0, contra `17 itens` antes. Sem falso positivo no contrato: **0** colunas casam na base dev (as 203
+  colunas do schema foram conferidas).
+- **Veredito do item 5 (provisionamento) dizia mais do que a medição cobria** (`TRE-W1-E05-T01`, 3º item da
+  revisão independente) — o item mede `docker ps` filtrando a **convenção de nome `pg-*`**, mas o texto
+  afirmava "o provisionamento nao co-loca clientes". O texto passou a declarar exatamente o que é medido
+  (uma base pela convenção, nenhuma **segunda** base provisionada; provisionamento fora da convenção **não é
+  medido** por este item) e a saída ganhou linha **informativa** com os containers de pé fora da convenção que
+  servem o schema — nunca escondidos, nunca contados. Medido no dente: um container fora da convenção
+  (`e05r3-probe`) servindo o schema aparece no informativo e o item permanece `OK`. Limite documentado no
+  runbook §8.
+- **`--faixas` se contradizia quando o limiar do contrato não era 0,95** (`TRE-W1-E04-T02-D02`, defeito medido
+  na revisão independente do T02) — a linha de detalhe do comando tinha os **nomes das faixas fixos no código**
+  enquanto as decisões eram calculadas: com o contrato em 0,90 o próprio comando imprimia
+  `MERGE_AUTOMATICO [0.90, 1.00] -> MERGE` na tabela e "0,94 cai em REVISAO_HUMANA" na linha de detalhe, com
+  exit 0 — o artefato que prova o critério 2 se contradizendo. Corrigido extraindo `linha_detalhe_faixas()`,
+  derivada de `faixa_de_confianca()` (a mesma fonte que decide o merge). O teste do projeto deixou de asserir
+  a string constante (que era a evidência do critério) e passa a comparar com a saída do **próprio modelo**,
+  inclusive numa cópia com o limiar em 0,90, onde tabela e linha de detalhe têm de se mover juntas; a suíte
+  ganhou a sabotagem `detalhe` (`--sabotar detalhe` → `TESTE_FALHOU`, exit 1) para o item novo não nascer sem
+  prova de que reprova.
+- **Suíte de banco: linha do `RESUMO` mentia sobre a etapa `ambiente`** (`TRE-W1-E05-T01` — defeito achado
+  pelo card de D01/`t_39838c5b`, que reproduziu a etapa reprovando com o resumo imprimindo
+  `ambiente ............. OK`) — a linha era **texto fixo** e não refletia o veredito contado: quem lesse só
+  o resumo (ou o resumo de um log grande) concluiria "ambiente OK" com a suíte falhando por causa daquela
+  etapa. A linha agora sai do que foi contado (`FALHOU (N itens)` quando há reprovação na etapa) e entrou uma
+  **guarda de consistência do próprio resumo** (o número de linhas `FALHOU` no resumo tem de cobrir as
+  etapas reprovadas; desvio reprova a suíte). A guarda tem prova negativa: com o registro da migration
+  divergido no alvo descartável, a suíte sai com exit 1, aponta a etapa e o resumo **não** pode dizer `OK` —
+  `SUITE_DENTE_OK (19 itens, 0 falhas)`.
 
 - **Log da migração em caminho fixo `/tmp/tre_migracao_<versao>.log`: a execução seguinte (de outro
   usuário) morria com diagnóstico vazio** (`TRE-W1-E01-T01-D02`, defeito `F1` achado na revisão
@@ -405,12 +861,18 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   dois units executam sob `tre-deploy`: `tre-backup.service` roda `backup-tre.sh todos` (exit 0) e
   `tre-backup-verify.service` faz o restore real do último artefato (`RESTORE_OK`, 11 itens).
   **O backup diário ainda não gera artefato** — isso é o defeito irmão `t_1b2ab418` (trio `TRE_PG_*` ausente
-  do `EnvironmentFile`), não o bit. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
-  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`,
-  publicações de teste do card `t_091cfea9`) — o bit no git e a guarda são duráveis, a cópia operacional
+  do `EnvironmentFile`), não o bit. **Resolvido em 30/09/2026 pelo próprio `t_1b2ab418`** (resolução do trio
+  por ambiente, `scripts/backup/lib-ambiente.sh`; evidência em `docs/runbooks/backup-restore-rollback.md`
+  §7f): sob `tre-deploy`, `tre-backup.service` → `Result=success` + `RESULTADO: BACKUP_OK` + artefato
+  `tre_dev_*`, e `tre-backup-verify.service` → `RESTORE_OK`/`VERIFICACAO_OK`. **Qualificação medida (30/09 20:02–20:13 UTC):** a cópia operacional foi
+  revertida para `644` duas vezes por publicação de árvore **anterior** à correção (`/opt/tre/.publicacoes.log`)
+  — o bit no git e a guarda são duráveis, a cópia operacional
   depende do caminho versionado de publicação (ACHADO ABERTO 3). Depois da publicação versionada de
   20:12:35Z os dois critérios da cópia foram remedidos com horário (`test -x` exit 0; `systemctl start` →
-  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8.
+  `Result=success`, `ExecMainStatus=0`) — runbook §7d/§8. **Correção de atribuição (medida pelo card
+  `t_091cfea9`):** as publicações de ensaio de 20:03:59Z/20:06:19Z foram para o destino **isolado**
+  `/opt/tre/.teste-publicacao`, não para `/opt/tre/repo` (o campo `destino=` só passou a ser gravado no log
+  depois delas) — o revert da cópia operacional medido ali é de sincronização por `tar` ad-hoc, não delas.
 - **Runner: precedência de configuração e stdin** (`TRE-W1-E01-T01`, defeito achado por teste no mesmo card)
   — o arquivo versionado sobrescrevia a variável do operador e o `docker exec -i` consumia o stdin de quem
   orquestra por SSH (o script remoto morria no meio). Corrigido: variável vence o arquivo; migration entra
@@ -436,6 +898,32 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **não** é prefixo de `0 itens` — a guarda funcionava e a prova dizia que não. Corrigidos: restauração
   recria coluna **e** índice; a checagem passou a casar a mensagem real (`nao executou item nenhum`).
   Segunda execução: `SUITE_DENTE_OK (14 itens, 0 falhas)`.
+- **Cópia operacional `/opt/tre/repo` reescrita por qualquer card — sem dono, sem modo e sem registro**
+  (`t_091cfea9`, o achado F3 do card `TRE-W1-E06-T01`) — cada card publicava o seu pedaço com
+  `tar -cz … | ssh … 'tar -xz -C /opt/tre/repo'`: quem sincronizava por último mandava (o driver recém
+  instalado voltou de `sha256 d29c9c97…` para `9f24572a…` no meio de uma rodada), o modo vinha do
+  *checkout* e não do git (foi o que devolveu `644` para `scripts/backup/*.sh` e produziu o `203/EXEC`) e
+  a cópia não tinha `.git` nem registro — na medição de 30/09 ela tinha **122 arquivos** de **300**
+  versionados, sem ninguém saber qual commit estava no ar. Corrigido com **um caminho único de
+  publicação** (`deploy/publicar.sh`, ver o `Added` acima): commit explícito, modo do índice do git,
+  `.publicado` com o commit em uso, `--conferir` que reprova a cópia divergente e histórico em
+  `/opt/tre/.publicacoes.log`. Evidência medida em `docs/runbooks/backup-restore-rollback.md` §7e.
+- **Recorrência: a cópia operacional foi reescrita por fora do caminho único e reverteu o commit
+  publicado** (`t_daca4bda`; mesmo defeito do `t_091cfea9`, um dia depois) — o card `t_c7281fce`, **em
+  execução**, ressincronizou `/opt/tre/repo` da própria árvore de trabalho por `tar` ad-hoc (os `mtime`
+  gravados na cópia batem ao segundo com os arquivos do worktree dele, com `mtime` preservado; o
+  `.publicacoes.log` não tem entrada dele e o `.publicado` continuou apontando para `c7972ca`, o commit
+  consertado) e o `tre-backup.service` voltou a executar a rotina **pré-correção**, imprimindo
+  `BACKUP_OK` cobrindo **zero** ambientes. Causa raiz medida, não inferida: o caminho único existia mas
+  **não tinha enforcement** — o `--conferir` só reprovava quando alguém lembrava de rodar, e nada impedia
+  a escrita. Corrigido com trava de imutabilidade, artefato do commit e watchdog (detalhes no `Added`
+  acima), tudo medido no destino real: com a trava armada, os quatro caminhos ad-hoc do defeito (append,
+  `sed -i`, `tar -xz` de outra árvore, arquivo novo plantado) são **bloqueados** com `Operation not
+  permitted`; removida a trava na mão, a divergência injetada (conteúdo pré-correção com `mtime`
+  preservado + `scripts/db/teste_isolamento_clientes.sh` plantado) foi **detectada, atribuída pelos
+  `mtime` e restaurada** pelo watchdog, e a cópia voltou a bater com o commit registrado. Decisão de
+  processo registrada no runbook: `/opt/tre/repo` é **produção**, bancada de teste é destino isolado
+  (`TRE_PUBLICAR_DESTINO`).
 
 ### Notas de estado
 
@@ -460,11 +948,13 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `tre_dev_20260930T193704Z` (12 tabelas, 30 índices, contagens batendo linha a linha), enviado ao bucket
   `tre-backup` com manifesto `externo: enviado`; negativos reprovados (dump truncado, dump de 0 byte, dump
   de outro banco, contagem mutada, destino externo inexistente).
-- **A rotina automática de backup NÃO está funcionando** — dois achados abertos medidos no mesmo card:
-  o unit `tre-backup.service` falha com `203/EXEC` (scripts de `scripts/backup/` estão `100644` no git) e,
-  mesmo executando, `backup-tre.sh todos` **pula os três ambientes** (procura `pg-dev`, o dev real é
-  `pg-sales-dev`) e sai `BACKUP_OK` sem gerar artefato. Detalhes em
-  `docs/runbooks/backup-restore-rollback.md` §8.
+- **A rotina automática de backup NÃO estava funcionando** — dois achados abertos medidos no mesmo card:
+  o unit `tre-backup.service` falhava com `203/EXEC` (scripts de `scripts/backup/` estavam `100644` no git)
+  e, mesmo executando, `backup-tre.sh todos` **pulava os três ambientes** (procurava `pg-dev`, o dev real é
+  `pg-sales-dev`) e saía `BACKUP_OK` sem gerar artefato. **Os dois foram resolvidos em 30/09/2026**
+  (`6a580ee`/`fix/TRE-W1-E06-T01-D01` e `9b464ed`/`fix/TRE-W1-E06-T01-F2`): sob o usuário do timer,
+  `tre-backup.service` sai `BACKUP_OK` com artefato `tre_dev_*` e `tre-backup-verify.service` restaura de
+  verdade (`RESTORE_OK`, 11 itens). Detalhes em `docs/runbooks/backup-restore-rollback.md` §7c/§7f/§8.
 - **Suíte do banco medida em dev (`TRE-W1-E05-T01`):** `suite_banco.sh dev` → `SUITE_FALHOU` (exit 1) com
   **uma** reprovação e **um** critério não testável; `--somente-leitura` roda a mesma bateria sem escrever
   no alvo (varredura `--detectar` no lugar do cenário). As etapas de contrato (37 itens), constraints/índices
@@ -694,6 +1184,67 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   recorta a secao pelo grupo do vendedor (medido 0)` e a prova independente com 2 falhas); dente 2
   (a view do modelo fora do manifesto `data`) → `VIEWS_FALHOU (83 itens, 27 falhas)`, exit 1.
   Resultado do comando: `RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas)`, exit 0.
+  (`res.users, tf.process.opportunity`). `RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas)`, exit 0. Cada
+  prova escreve no **próprio** diretório de log (`"$TRE_LOG_DIR/dente/prova-N"`) e uma guarda
+  fail-closed confere o sha256 dos `[1-4]-*.log` do aceite antes/depois; o dente 2 ainda exige que o
+  item do log de teste dispare — guarda e dente do item chegaram no retrabalho da revisão rodada 1
+  (ver `Fixed`, `TRE-W2-E07-T01`).
+- **Verificador da CLASSE do `D04-D01` — ponteiro de commit em doc de registro (`t_37db9564`)** —
+  `scripts/verificar_ponteiros_de_registro.py` resolve todo identificador hex (7..40) de
+  `docs/operations/*.md` e `docs/runbooks/*.md` contra o repositório (`rev-parse --disambiguate`,
+  `cat-file -t`, `for-each-ref --contains`) e **reprova** o *ponteiro morto* — commit que não se
+  alcança por ref nenhuma — citado sem marca na **mesma unidade** do doc (`fora de ref`,
+  `nao se alcanca por ref`, `ERRATA DE PONTEIRO`). Não reprova falso positivo: `sha256` de conteúdo
+  (64 hex), fragmento truncado com `…`, prefixo ambíguo e identificador sem objeto no repositório
+  saem **classificados**. Dente antes/depois em um comando: árvore congelada `3f104ac` →
+  `PONTEIROS_FALHOU (9 ponteiros mortos, 9 sem marca)`, exit 1, listando `f1f1cb6b`
+  (registro L190/L192; runbook L192/L203/L212/L220/L248) e `c41822e` **sem marca**; árvore corrigida
+  `4ea3d36` (que já contém o conserto do `D04-D01` em `8827c37`) → `PONTEIROS_OK (11 ponteiros
+  mortos, 0 sem marca)`, exit 0. Prova de mutação (`--autoteste`): ponteiro morto **novo** plantado
+  sem marca → reprova; com a marca → passa; marca em outra unidade → reprova; `sha256` de conteúdo e
+  ponteiro vivo → passam — **6/6** mutações com o veredito esperado. Classificação (regra 3) medida
+  em repo descartável, porque o repositório canônico não tem colisão de prefixo de 7 chars
+  (**0 em 2305 objetos**): prefixo ambíguo `59b7` (dois blobs) → `ambiguo`, e um sha inexistente →
+  `ausente` — ambos **classificados, não reprovados**. Teste num comando:
+  `bash scripts/teste_ponteiros_de_registro.sh` → `PONTEIROS_TESTE_OK (17 itens, 0 falhas)`, exit 0.
+  Os dois artefatos entram na cobertura de `scripts/verificar_estrutura.sh`.
+- **CRM básico configurado no dev (`TRE-W2-E02-T01`)** — funil comercial do módulo `crm` derivado
+  **literalmente** da §7.1 do Data Contract V1.0 (congelado) e declarado de forma versionada em
+  `odoo/crm/funil-transformativa.yaml` (11 etapas, ordem 10..110, `Won` com `is_won`, ramo lateral
+  `Nurture` em pipeline próprio, `Lost` deixado no nativo do Odoo — **nenhuma etapa inventada**) +
+  `scripts/provision/{configurar-crm-dev.sh,verificar-crm-dev.sh,reverter-crm-dev.sh,aplicar_funil_crm.py,desfazer_funil_crm.py,repor_etapas_padrao_crm.py}`
+  + runbook `docs/runbooks/odoo-crm-dev.md`. Medido na VPS Contabo `vmi3619453`, 01/10/2026: módulo `crm`
+  instalado em `odoo_dev`; pipeline `Sales` com `Descoberto 10 … Negociação 100` + `Won 110`; time/etapa
+  `Nurture` fora do funil; etapas do módulo `New`/`Qualified`/`Proposition` reconciliadas e `Won` **adotada**;
+  `crm.lead` com 0 oportunidades antes e depois (nenhum dado de negócio tocado).
+- **Aceite do CRM item a item**: `bash verificar-crm-dev.sh` → `RESULTADO: CRM_DEV_OK (29 itens, 0 falhas)`,
+  exit 0 — confronto **banco × declaração** etapa por etapa, pipeline único, etapa de ganho única e última,
+  ramo lateral separado, ausência de etapa órfã, campos mínimos 10/10 em `crm.lead`, banco do Odoo ainda
+  separado do `sales_intelligence`, `pg-sales-dev` de pé e Odoo **só em loopback**.
+- **Dentes do aceite do CRM** (provas negativas medidas, com exit code): declaração mutada → `CRM_DEV_FALHOU
+  (30 itens, 3 falhas)`, exit 1; **etapa intrusa plantada no banco vivo** → `CRM_DEV_FALHOU (29 itens, 1 falha)`,
+  exit 1, e o configurador a removeu; rollback **padrão** → `CRM_DEV_FALHOU (29 itens, 15 falhas)`, exit 1;
+  rollback **total** (módulo desinstalado) → `CRM_DEV_FALHOU (13 itens, 3 falhas)`, exit 1 — com o aceite
+  voltando a 29/29 em cada reconfiguração.
+- **Backup do Odoo no MESMO artefato do ambiente (`TRE-W2-E01-T01-F01`, card `t_a5afde31`)** — o
+  artefato diário deixa de ser "só o trio": passa a levar o Odoo do ambiente junto
+  (`odoo_dev.dump` + `.sha256`, `odoo-contagens.txt` por tabela, `odoo-filestore.tar.gz` do volume
+  `odoo-data-dev` e `odoo-manifest.txt` com o **digest da imagem** do Odoo), tudo em
+  `scripts/backup/{lib-ambiente.sh,backup-tre.sh}` e declarado no par não-secreto
+  `deploy/environments/dev.env` (`TRE_ODOO_PG_SERVICO`/`_USER`/`_DB`/`TRE_ODOO_FILESTORE`/
+  `TRE_ODOO_IMAGEM`). O Odoo é resolvido **por ambiente**, na mesma precedência do trio (variável por
+  ambiente → arquivo do ambiente → nada): ambiente que não declara Odoo é **pulado com a ausência
+  declarada no manifesto**, ambiente que declara e não tem container (ou cujo dump/filestore não sai)
+  é **falha** — nunca `BACKUP_OK`.
+- **`scripts/backup/verificar-odoo.sh` — a prova de restore do Odoo** (alvo descartável): confere
+  `sha256`/nº de arquivos/**digest da imagem** contra o manifesto, restaura o dump num PostgreSQL
+  descartável **sem porta publicada**, compara **tabela por tabela linha a linha**, exige o módulo
+  `base` instalado, desempacota o filestore (exige `filestore/odoo_dev` e a mesma contagem de
+  arquivos), sobe um **Odoo descartável** contra o banco restaurado e só aceita com `/web/login` em
+  **HTTP 200** + JSON-RPC respondendo — e confere ao fim que `odoo-dev`/`pg-odoo-dev`/`pg-sales-dev`
+  continuam `running`. `verificar-ultimo-backup.sh` encadeia esse verificador quando o artefato mais
+  recente do ambiente traz o Odoo; artefato **pela metade** (trio sem Odoo, com o ambiente declarando
+  Odoo) é **falha** na verificação.
 
 ### Security
 
@@ -760,6 +1311,24 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   teste reprovado** (o Odoo 19 escreve `… ERROR <banco> <módulo>: FAIL: TestX.test_y`) — mesma classe
   do defeito D04 do verificador de estrutura; conserto com `grep -cE '(^| )(FAIL|ERROR): [A-Za-z_]'`,
   provado no log da rodada 1 (padrão antigo 0 casamentos / padrão novo 1) e pelo dente 3.
+- **`--prova-de-dente` do aceite de `res.partner` dava verde sem medir dente nenhum**
+  (`TRE-W2-E04-T01`, defeito registrado no card `t_e1f62fae` — achado da revisão independente do card
+  irmão `TRE-W2-E04-T02`, observação O6; registro **retroativo**, a origem já estava `done`): o
+  julgamento de cada dente aceitava **qualquer** `RES_PARTNER_FALHOU`, inclusive a que vem das
+  **guardas do ambiente** — com `TRE_CARTAO_DIR=/opt/tre/nao-existe` as 3 provas morriam na guarda e o
+  comando devolvia `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`, **exit 0** (reproduzido por mim antes do
+  conserto; o **aceite** em si sempre foi fail-**CLOSED** — quem falhava aberto era só o modo dente).
+  Conserto no mesmo padrão já medido e aprovado no E04-T02: **baseline** do caminho não mutado exigido
+  verde (senão `RES_PARTNER_DENTE_FALHOU (baseline nao medido — nenhum dente exercitado)`, exit 1),
+  **assinatura de falha própria por dente** (`tf_cnpj NAO esta indexado`; `campo tf_domain AUSENTE em
+  res.partner`; `1 failed, 0 error(s) of` **e** `rodei 8 teste`), dente que **abortou numa guarda** ou
+  não chegou ao passo medido é reprovado, guardas de **arquivo primeiro** e reexecução do próprio script
+  por caminho absoluto (`SELF`). Medido na VPS do dev: ambiente não resolvido — antes `exit 0`
+  (falso-verde) / depois `exit 1`; ambiente completo → baseline `RES_PARTNER_OK (29 itens, 0 falhas)` +
+  3 dentes com as contagens da revisão **preservadas** (dente 1 `9/1`, dente 2 `9/2`, dente 3 `1 failed`
+  + suite `8 != 7`) → `RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`; aceite `RES_PARTNER_OK (64 itens, 0
+  falhas)` e regressão do módulo base `MODULO_ODOO_OK (51 itens, 0 falhas)` seguem verdes. Detalhe no
+  runbook §9 (`docs/runbooks/res-partner-campos-dedup.md`).
 - **`'At least one test failed when loading the modules.'` é marcador vazio no Odoo 19**
   (`TRE-W2-E04-T01`): medido — ele **não** aparece nem com teste reprovado. O item do aceite ficou só
   como ausência (não pode dar falso OK) e os dentes reais do passo de testes são o **exit code**, o
@@ -820,6 +1389,170 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   `ctl-e` módulo inexistente, `ctl-f` README divergente). Achado menor corrigido no mesmo rework: a
   rodada 1 registrou sha256 igual "nos 20 arquivos" e a cópia medida carregava um `README.md` de
   rodada anterior ao commit entregue. Detalhe no runbook §8.
+- **Duas classes de defeito do E03 reincidiram no verificador NOVO das ACLs (`TRE-W2-E07-T01`), achadas
+  na verificação independente (rodada 1, perfil `tester`) e consertadas no retrabalho** — um arquivo,
+  `scripts/odoo/verificar-acl-modulo.sh` (o módulo, o XML/CSV de segurança e o prover não foram tocados):
+  (1) o `--prova-de-dente` herdava `TRE_LOG_DIR="$LOG_DIR"` nos dois sub-runs mutados e escrevia os
+  **mesmos nomes de passo** no diretório do aceite — a sequência do runbook §3 (um `export TRE_LOG_DIR`
+  seguido do aceite **e** dos dentes) **apagava a evidência bruta do aceite** e deixava no lugar a do
+  mutante (`tre_e07t01_acl_d2`, `1 failed … of 26 tests`, `ACL_ITENS=22 ACL_FALHAS=2`): é o defeito
+  `TRE-W2-E03-T01-D02` reincidente; (2) o item "nenhuma linha de teste 'FAIL:'/'ERROR:' no log" usava o
+  padrão **morto** no Odoo 19 (`^(FAIL|ERROR): `, ancorado no início da linha) e imprimia `OK` com teste
+  reprovado no log — defeito `TRE-W2-E03-T01-D01` reincidente. Conserto: cada prova passa a escrever em
+  `"$TRE_LOG_DIR/dente/prova-N"` (os `.out` dos dentes em `"$TRE_LOG_DIR/dente/"`), com **guarda
+  fail-closed** que fotografa o sha256 dos `[1-4]-*.log` do aceite antes/depois e reprova o dente se
+  algum mudar; o item do log passou a `grep -E '(^| )(FAIL|ERROR): [A-Za-z_]'` (o mesmo já medido em
+  `scripts/odoo/verificar-res-partner.sh`), com as linhas casadas impressas, e o dente 2 ganhou **item
+  próprio** (exige que o item dispare com um teste reprovado). Medido na VPS em 01/10/2026: aceite →
+  dentes no mesmo `TRE_LOG_DIR` → `ACL_OK (51 itens, 0 falhas)` exit 0 e `ACL_DENTE_OK (2 provas, 0
+  falhas)` exit 0, os **3 arquivos do aceite com sha256 idêntico** antes/depois e ainda citando
+  `tre_e07t01_acl`; controle com o caminho compartilhado de volta → `ACL_DENTE_FALHOU (… 1 falha na
+  guarda)`, exit 1; controle com o padrão morto de volta → `OK nenhuma linha de teste 'FAIL:'/'ERROR:'
+  no log` num log com `1 failed, 0 error(s) of 26 tests` (o defeito, reproduzido). Detalhe no runbook
+  §8/§9.
+- **`TRE-W2-E03-T01-D02` (severidade média, `fix/TRE-W2-E03-T01-D02`) — o `--prova-de-dente`
+  sobrescrevia a evidência do aceite.** O sub-run do dente herdava o `TRE_LOG_DIR` do chamador
+  **por ambiente** e escrevia os mesmos nomes de passo: encadear aceite → dente na mesma sessão
+  apagava a evidência bruta do aceite (o caso apareceu no `TRE-W2-E05-T01` — runbook §5.1).
+  Medido com o script anterior (`72d00aa1…`): aceite `MODULO_ODOO_OK (51 itens, 0 falhas)` exit 0
+  seguido de `--prova-de-dente` no mesmo diretório → `1-instalacao.log` com **547** referências ao
+  banco `tre_e03_t01_modulo_dente` e `2-teste.log` com **33** (o log do aceite verde sobrava só no
+  console). Conserto: cada prova do dente escreve em `$TRE_LOG_DIR/dente/prova-N` (nada do dente
+  toca o diretório do aceite) **+ guarda fail-closed** que fotografa o `sha256` dos `[1-4]-*.log`
+  do aceite antes das provas e reprova o dente se algum mudar. Medido depois: mesma sequência →
+  dente `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)` exit 0 com os 4 logs do aceite em **sha256
+  idêntico** e ainda citando o banco do aceite; controle negativo (cópia do script com o caminho
+  compartilhado de volta) → a guarda reprova, exit 1.
+- **`TRE-W2-E03-T01-D04` (severidade média, `fix/TRE-W2-E03-T01-D04`) — o `--prova-de-dente`
+  mentia sobre os dentes quando chamado pela forma documentada.** O cabeçalho do script documenta
+  `bash verificar-modulo-odoo.sh --prova-de-dente` (nome simples, cwd = diretório do script), mas o
+  modo de dente era o **único** que re-invocava o próprio arquivo — e fazia isso com `"$0"`: por
+  nome simples `$0` não tem diretório e não está no `PATH`, então a re-invocação morria em
+  `verificar-modulo-odoo.sh: line 103/121: verificar-modulo-odoo.sh: command not found` e as duas
+  provas eram acusadas de **não ter dente** (`MODULO_ODOO_DENTE_FALHOU (2 prova(s) sem dente)`,
+  exit 1) — fail-closed, mas com diagnóstico **falso** ("o aceite é oco"), justamente para quem
+  foi ler os dentes. A bateria do E03 nunca pegou porque chama por caminho absoluto. Conserto:
+  `EU="$(readlink -f "$0")"` e `bash "$EU" --…` em **toda** re-invocação; sub-run **sem** linha
+  `RESULTADO:` passa a ser reportado como **falha de invocação** (contador próprio), nunca como
+  "item sem dente". Medido na VPS: blob antigo (`72d00aa1…`) na forma documentada → `command not
+  found` nas duas provas + `FALHOU … nao tem dente`, exit 1; conserto nas **duas formas**
+  (`bash verificar-modulo-odoo.sh --prova-de-dente` de dentro do diretório e `bash /caminho/absoluto/…
+  --prova-de-dente`) → `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, **exit 0 nas duas**; aceite
+  completo remedido com o mesmo blob → `MODULO_ODOO_OK (51 itens, 0 falhas)`, exit 0; controle
+  negativo (re-invocação apontada para caminho inexistente) → `2 falha(s) de invocacao` e **0**
+  "prova(s) sem dente", exit 1. Detalhe no runbook §5.2.
+- **Defeito do verificador do módulo — a régua do resquício media pelo nome do pacote
+  (`TRE-W2-E03-T01-D03`)** — os dois itens de resquício do passo 3 (o rollback declarado do card)
+  mediam `ir_ui_view`/`ir_model_fields` por `like '<módulo>%'` e "tabela com prefixo do módulo"; com o
+  módulo **instalado** os três termos davam **0** (código morto), enquanto a superfície real era
+  **1 tabela** (`tf_process_opportunity`, 14 colunas), **1 modelo**, **15 campos** e 17 registros de
+  `ir_model_data`. Provado com o banco sujo de propósito (desinstalação real + plantio de modelo,
+  tabela, campo e view, nada com `ir_model_data` do módulo): o verificador antigo (`72d00aa1…`) deu
+  **`MODULO_ODOO_OK (51 itens, 0 falhas)`** e o corrigido (`fa1f69f2…`) deu
+  **`MODULO_ODOO_FALHOU (51 itens, 2 falhas)`**, só nos dois itens de resquício. Conserto: a régua passou
+  a ser **derivada do que o módulo registra** (`ir_model_data` → modelos próprios, sem os compartilhados
+  com outro módulo; tabelas medidas em `information_schema`; campos/views por `model`), capturada
+  **antes** de desinstalar (depois o `ir_model_data` do módulo já não existe e a régua ficaria vazia de
+  novo) e impressa em `INFO`; e `--prova-de-dente` ganhou o **dente 3** (resquício plantado) →
+  `MODULO_ODOO_DENTE_OK (3 provas, 0 falhas)`. O aceite segue **51 itens** nos dois módulos medidos (E05
+  com modelo e E03 base sem modelo — neste, com a superfície 0 **impressa**, não silenciosa). Detalhe no
+  runbook §10.
+
+- **`TRE-W2-E03-T01-D05` (card `t_de461d14`, branch `fix/TRE-W2-E03-T01-D05`) — os quatro consertos do
+  verificador do módulo (D01+D02+D03+D04) consolidados em **um** commit e publicados **uma vez** na cópia
+  operacional do dev.** Os três cards irmãos declararam de propósito que **não** republicariam (três
+  consertos parciais da mesma base, em paralelo, fazem cada um reverter o outro), e
+  `/opt/tre/dev/scripts/odoo/verificar-modulo-odoo.sh` seguia no **blob do defeito** `72d00aa1…`: quem
+  rodasse o aceite pela forma documentada continuava avaliando o item morto do D01. Merge com base
+  `f773d3c` (D04, que já contém o D02) + `ebd90fd` (D01) + `9054c61` (D03); o conflito (um bloco no
+  mesmo arquivo) foi resolvido mantendo os **três contadores** (`DENTE_FALHAS`, `GUARDA_FALHAS`,
+  `INVOCACAO_FALHAS`) e o `DENTE_PROVAS`. O **dente 3** do D03 re-invocava por `"$0"` — terceira
+  ocorrência do defeito do D04 — e passou a `bash "$EU"`, com log próprio em
+  `$TRE_LOG_DIR/dente/prova-3` (a disciplina do D02). Publicação pelo caminho versionado
+  (`deploy/publicar.sh --commit 3da9f2f`, destino isolado, `digest 9e1bedc2…`, 322 arquivos) e o arquivo
+  instalado a partir do **artefato publicado**, com registro em `/opt/tre/dev/scripts/odoo/.publicado`
+  (`commit 3da9f2f`, blob `44913fd8…`, sha256 `bf63fdf4…`, modo 755). Remedido **da cópia
+  operacional**, não da branch: aceite `MODULO_ODOO_OK (51 itens, 0 falhas)` exit 0; `--prova-de-dente`
+  na forma documentada (nome simples, cwd = diretório do script) e por caminho absoluto →
+  `MODULO_ODOO_DENTE_OK` exit 0 nas duas, com os 4 logs do aceite em **sha256 idêntico** depois das
+  provas; módulo que declara `models/` → `(3 provas, 0 falhas)`; controle negativo (cópia do módulo com
+  teste que falha) → o item do D01 **FALHOU** (1 linha casada, exit 1) enquanto o padrão morto do defeito
+  dá 0 no mesmo log. `verificar_estrutura.sh`, `secret_scan.sh` e `verificar_papeis.sh` → `PASS` no
+  commit consolidado. Detalhe no runbook §11.
+  (6) **a assinatura de falha de um dente provava o sintoma, não a causa** (achado da **revisão
+  independente da rodada 2**, observação O8, card de defeito `t_945f96f1`) — um defeito de **outra
+  classe** (erro de sintaxe plantado na cauda de `models/crm_lead.py` → `odoo --init exit 255`, nenhum
+  rename) faz o campo sumir do banco e **satisfazia** a assinatura do dente 1: o `confere_dente`
+  aprovava (`DENTE_FALHAS_O8=0`) sem o módulo nunca ter instalado; o mesmo valia para a assinatura de
+  índice do dente 2 quando a leitura do banco cai. Conserto (rodada 3, `verificar-crm-lead-odoo.sh`
+  `8127577487ba…`): os dentes 1–3 (os que medem por banco) também exigem o **caminho saudável** do
+  passo 1 (`OK    odoo --init exit 0` + `OK    ir_module_module.state = installed`), reprovando com
+  `"a prova nao instalou o modulo — queda de ambiente nao e' prova de dente"`; o passo 2 recusa de cara
+  quando a leitura SQL volta vazia (queda de ambiente não vira "campo ausente"/"sem índice") — e essa
+  guarda **não conta item**, para as contagens (64; 35/3, 35/1, 35/2) não mudarem. Remedições: a bateria
+  completa seguiu `CRM_LEAD_DENTE_OK (5 provas, 0 falhas)` e `CRM_LEAD_OK (64 itens, 0 falhas)`, exit 0,
+  e o MESMO arquivo de saída do defeito passou de **OK** para **reprovado** no julgador. Detalhe no
+  runbook §8.2.
+
+- **`t_26be11c7` (severidade baixa, `fix/t_26be11c7-ponteiro-publicacao`) — o registro de execuções e o runbook
+  de backup citavam um commit de publicação que não se alcança por ref nenhuma** (`f1f1cb6b…`, a publicação
+  versionada da cópia operacional de 30/09 20:12:35Z). Achado pela varredura da classe do `c41822e` (D04-D01) na
+  verificação independente do `t_52c74f31`, **pré-existente** ao conserto daquele card. Medido: o objeto existe
+  (`git cat-file -t f1f1cb6b` → `commit`), mas `git for-each-ref --contains f1f1cb6b` é **vazio** nas 69 refs
+  (medido em 01/10/2026), `git merge-base --is-ancestor f1f1cb6b develop` → rc 1 e, num clone limpo do `origin`,
+  `git fetch` por sha → `remote error: upload-pack: not our ref` (não é servido pelo remoto). **Conserto doc-only** (nenhum código tocado): o valor histórico
+  **fica** — é o registro do evento, e o parente alcançável de mesma mensagem (`e1eacd2`) é conteúdo
+  **diferente** (`308` arquivos / digest `69b954b0…` contra `306` / `e4e1f05d…`), então trocá-lo seria nova
+  imprecisão — e ganha errata explícita + **âncora que sobrevive sem ref**: o digest da árvore publicada
+  `e4e1f05d…` (`306` arquivos) de `/opt/tre/.publicacoes.log` (20:12:35Z e 20:13:40Z), reconferido hoje por
+  `git archive f1f1cb6b` + manifesto `<modo> <sha256> <caminho>` do `deploy/publicar.sh` → **mesmo digest**.
+  Detalhe em `docs/operations/registro-de-execucoes.md` (entrada `TRE-W1-E06-T01-D01`, ERRATA) e
+  `docs/runbooks/backup-restore-rollback.md` (§7d, nota de rastreabilidade + as 5 menções marcadas).
+- **Oito defeitos encontrados executando o CRM (`TRE-W2-E02-T01`)**, todos consertados nesta execução:
+  (1) `docker exec` em container parado (o configurador parava o serviço antes do `odoo shell`);
+  (2) o desenho previa **arquivar** etapa extra, mas no Odoo 19 `crm.stage` **não tem** `active` — a
+  reconciliação passou a **remover**, com guarda fail-closed para etapa com oportunidade;
+  (3) ler `etapa.name` depois do `unlink()` abortava a transação — o nome é guardado antes;
+  (4) **`NULL || '…'` colapsa a linha do `psql`**: etapa criada fora do módulo fica com `is_won` **NULL**
+  (não `false`), a linha saía **vazia** e o comparador **descartava a etapa em silêncio** — uma etapa
+  intrusa no pipeline passava como aceite (achado pela prova negativa); todo campo entrou em `coalesce` e
+  linha vazia/malformada agora **reprova**;
+  (5) `rpad(jsonb, integer) does not exist` — `crm_stage.name`/`crm_team.name` são **JSONB** (traduzíveis);
+  (6) item de exposição olhava a linha inteira do `ss` (a 5ª coluna é o *peer*, sempre `0.0.0.0:*`) → falso
+  "porta pública", e exigia "UFW só com 22/tcp", fato que o card de TLS muda legitimamente — passou a medir
+  o **bind** da porta do Odoo e a **inexistência de regra** de UFW para ela;
+  (7) o rollback repunha o padrão com `-u crm`, que **não repõe** dado `noupdate` apagado — o pipeline
+  ficava **vazio** depois do rollback; a reposição é explícita e conferida (`repor_etapas_padrao_crm.py`);
+  (8) `odoo-dev` é compartilhado e um reinício de container por outro card mata o `docker exec` no meio
+  (exit **137**) — cada passo de ORM sobe o serviço, confere `HTTP 200` e tem até 3 tentativas.
+- **Dois defeitos do verificador do Odoo, achados rodando (01/10/2026):**
+  (6) o `/entrypoint.sh` da imagem faz `exec odoo "$@" "${DB_ARGS[@]}"` e os argumentos que ele monta
+  (com `HOST` default **`db`**) entram **depois** dos informados — o Odoo descartável subia procurando
+  um host `db` (`Database connection failure: could not translate host name "db"`) e o verificador
+  reprovava um backup **bom**; conserto: `--entrypoint /usr/bin/odoo`;
+  (7) o teste de identidade do Odoo pedia `GET` em `/web/webclient/version_info` e o endpoint é
+  JSON-RPC (**415 Unsupported Media Type**) — mesmo efeito de reprovar quem responde; conserto: `POST`
+  `Content-Type: application/json`, mantendo o `/web/login` **HTTP 200** como critério principal.
+- **`ls *.dump | head -1` deixou de ser o seletor de dump** (`verificar-backup.sh`, `restore-tre.sh`,
+  `teste-backup-restore.sh`): com o Odoo no mesmo artefato há **dois** `*.dump` e `odoo_dev.dump` vem
+  primeiro em ordem alfabética — o verificador do trio compararia o banco errado. Quem escolhe agora é
+  o **manifesto** (`banco:`). Medido: `verificar-backup.sh` num artefato com dois dumps →
+  `RESTORE_OK (11 itens, 0 falhas)`.
+- **Rodada 2 do `TRE-W2-E01-T01-F01` (card `t_a5afde31`, 01/10/2026 — o que a revisão independente
+  reprovou):** o artefato de backup passou a nascer com o dono do **usuário de serviço**
+  (`TRE_BACKUP_DONO`, padrão `tre-deploy` quando existe na máquina; rodando como `root` a rotina
+  aplica o `chown` antes da retenção; declarar um usuário inexistente é **falha**), porque a execução
+  manual do operador como `root` gerava `root:root 700` e o verificador do timer (`tre-deploy`) não
+  conseguia ler o artefato — acusava "backup pela metade"/"sem Odoo" (defeito de **conteúdo**, falso)
+  para um artefato íntegro. Junto: a retenção passou a **conferir o exit do `rm`** e a reportar
+  `NAO consegui remover …` (`BACKUP_FALHOU`) em vez de contar como removido o que continua no disco; os
+  três verificadores passaram a distinguir **ilegível por permissão** de **ausente/pela metade**; o
+  `pg_restore.err` deixou de ser gravado **dentro** do artefato verificado (arquivo temporário); e
+  destino sem escrita falha com o diagnóstico certo (antes: `No such file or directory` no meio do
+  dump). Medido no mesmo estado entregue: rotina a mão por `root` → artefato `tre-deploy:tre-deploy`
+  (`executado_por: root`) verificado por `tre-deploy` → `VERIFICACAO_OK (3 itens)`; units →
+  `Result=success`; negativos de conteúdo continuam reprovando (dump truncado 10 falhas, filestore
+  ausente 4); hermético `TESTE_OK (84 itens, 0 falhas)`. Runbook §7h.
 
 ### Notas de estado
 
@@ -1061,12 +1794,13 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   **nasce inativo**), montado por `scripts/n8n/montar_workflow_observabilidade.py` (o Code node embute o nucleo
   versionado byte a byte e os nos Postgres embutem os arquivos SQL).
   Medicao na VPS, sobre copia propria do commit: aceite `OBSERVABILIDADE_SYNC_OK` (**119 itens, 0 falhas**)
-  exit 0 — lente estrutural **118 itens**, suite do nucleo **58 itens**, montador `--conferir` OK — com 8 estados
+  exit 0 — lente estrutural **118 itens**, suite do nucleo **62 itens** (58 no head medido; o caso novo do
+  `TRE-W3-E05-T01-D01-D01` leva a suite a 62), montador `--conferir` OK — com 8 estados
   reais semeados (saudavel, falha transitoria, dead-letter sem/com motivo, PROCESSED sem trilha, fila no teto,
   direcao fora do vocabulario, trilha COMPLETED sem conclusao), cada metrica medida **por dois caminhos
   independentes** (`psql` direto e pelo workflow no n8n descartavel) e o retrato das duas tabelas identico
   antes/depois da rodada (somente-leitura provado em execucao real). Prova de dente:
-  `OBSERVABILIDADE_SYNC_DENTE_OK` (**12/12**, baseline nao mutado verde, juiz conferido com 7 saidas sinteticas).
+  `OBSERVABILIDADE_SYNC_DENTE_OK` (**12/12**, baseline nao mutado verde, juiz conferido com 8 saidas sinteticas + 2 de sha256).
   Runbook: `docs/runbooks/observabilidade-sync.md`.
 
 ### Fixed
@@ -1088,6 +1822,37 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   papéis e contrato de dados, todos exit 0. Cherry-pick isolado do commit `a5c3a1f` (nascido de `a38585d`)
   sobre árvore que contém o T02: **0 conflito** e `PASS (0 falhas)` exit 0; em árvore anterior ao T02 o gate
   reprova por ausência — que é exatamente o comportamento pedido.
+- **Cobertura da suíte do núcleo: linha com só `tentativas` preenchido (`TRE-W3-E05-T01-D01-D01`)** — defeito de
+  **cobertura de gate** achado pela verificação independente do conserto D01 (cards `t_9b31706d` e
+  `t_dc0bd6d2`): o item 3 do D01 passou a testar `tentativas` em `linhaDeDetalheVazia` (fail-closed,
+  contrato x código), mas **nenhum artefato versionado travava a condição** —
+  `scripts/n8n/testar_observabilidade_sync.js` não foi tocado no branch (`git diff --stat 4a8cead abeae38 --
+  scripts/n8n/testar_observabilidade_sync.js` vazio) e, revertendo só a cláusula numa cópia, o comando
+  versionado do aceite seguia `OBSERVABILIDADE_SYNC_NUCLEO_OK (58 itens, 0 falhas)` exit 0. Conserto (commit
+  `44e0803`): caso novo na suíte que exercita `avaliarDetalhes` com `[{tentativas: 1}]` (dado: `total=1`,
+  `linhas_vazias=0`, divergência `tipo_de_detalhe_nao_declarado:(vazio)`), mantém o placeholder `{}` como
+  ausência de detalhe e fecha a ponta a ponta — a suíte passa de **58** para **62 itens**. **Prova negativa:**
+  a suíte nova contra o núcleo com a cláusula revertida (cópia, nada do entregável editado) fecha
+  `OBSERVABILIDADE_SYNC_NUCLEO_FALHOU (62 itens, 3 falha(s))` exit 1, e a sonda de comportamento na mesma
+  cópia mostra o descarte silencioso (`{tentativas:1}` -> `linhas_vazias=1, total=0`). Medido: suíte 62/0
+  exit 0 nos dois modos (solto e `--workflow`), lente `118 itens, 0 falhas` exit 0, montador `--conferir` OK
+  e os 5 verificadores do projeto PASS; na VPS, o passo de código do próprio aceite (`--apenas-codigo`, cópia
+  própria por bundle) fecha `OBSERVABILIDADE_SYNC_OK (3 itens, 0 falhas)` exit 0 com a suíte 62/0 **dentro
+  da imagem do n8n**, e o mesmo controle negativo morde dentro da imagem (exit 1).
+
+- **Quatro achados de precisão/robustez da revisão independente (`TRE-W3-E05-T01-D01`)** — da revisão do card
+  `t_0b77a689`; nenhum altera resultado medido, todos são precisão de texto/contrato ou robustez da própria
+  lente. (a) `CHANGELOG.md` dizia `7 saídas sintéticas` no juiz do dente quando o artefato já tinha **8**
+  (mais 2 de `sha256`) desde o commit `a58c0a7`; (b) o registro de execuções trazia
+  `(58 itens itens, 0 falhas` — palavra duplicada e parêntese sem fechar; (c) o contrato prometia "linha com
+  **QUALQUER** campo preenchido é dado" e `linhaDeDetalheVazia` do núcleo ignorava `tentativas` — a função
+  passou a testá-lo (direção **fail-closed**: linha ambígua agora é dado, nunca descarte silencioso) e o
+  workflow derivado foi remontado pelo montador; (d) a lente estrutural morria com `AttributeError`
+  (`limites: null` numa métrica de veredito) **depois** de imprimir o item reprovado e **sem** a linha
+  `RESULTADO` — agora usa `(m.get("limites") or {})` e fecha o resumo. Medido localmente (`python3`/`node`
+  puros, sem docker e sem VPS): lente `118 itens, 0 falhas` exit 0, suíte do núcleo `58 itens, 0 falhas`
+  exit 0, e o controle de `limites: null` fecha `OBSERVABILIDADE_LENTE_FALHOU (118 itens, 4 falha(s))`
+  exit 1 **sem** traceback.
 
 - **Âncora de dente do dedup apontava só para a mensagem de sucesso (`TRE-W3-E02-T02`)** — na primeira rodada
   do `--prova-de-dente`, o dente `guarda_de_sucesso_afrouxada` saía `NAO_CONTA (âncora quebrada)`: o item do E7
@@ -1168,7 +1933,60 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   apareceu no aceite r2 e a causa era o proprio padrao); (b) o dente do placeholder saiu `MUTACAO_SEM_DENTE`
   porque a ancora (`nao vira indeterminado`) tambem existia num item vizinho que continuava OK. Corrigido na
   raiz: ancora virou trecho unico, o juiz do dente julga **FALHOU antes de OK** (item vizinho de texto parecido
-  nao pode esconder o dente) e o juiz ganhou controle proprio para esse caso (7 saidas sinteticas).
+  nao pode esconder o dente) e o juiz ganhou controle proprio para esse caso (8 saidas sinteticas).
+
+### Fixed
+
+- **Instrumento de aceite da API controlada: `--prova-de-dente` era fail-open (`TRE-W3-E01-T01-D01`,
+  `t_fa9db205` — defeito retroativo achado pela revisão independente do card `t_e0489efc`, que foi
+  aprovado; o defeito era do instrumento, não da evidência)** — cada dente decidia "mordeu" por
+  `grep -q 'RESULTADO: …_FALHOU'` no sub-run, então **qualquer** falha valia como prova, inclusive um
+  aborto da guarda de ambiente. Medido com `TRE_IMAGEM=odoo:nao-existe-9999
+  TRE_IMAGEM_PG=postgres:nao-existe-9999`: os dentes 1 e 2 abortavam depois de **2 itens** (nenhuma
+  chamada HTTP, nenhuma instalação) e o harness ainda imprimia
+  `API_CONTROLADA_DENTE_OK (3 provas, 0 falhas)` com exit 0. Conserto no verificador: o dente só passa
+  quando o sub-run **terminou no `FALHOU` esperado** *e* **mediu** (nº de itens ≥ piso do modo —
+  `TRE_PISO_ITENS_HTTP=61` em `--apenas-http`, `TRE_PISO_ITENS_MOTOR=53` na suíte pura — *e* logs de
+  passo no diretório da prova) *e* o **item esperado está entre os reprovados**, por assinatura
+  nomeada (dente 1 `operacao declarada (sistema_capacidades) -> HTTP 404`; dente 2
+  `campo nao declarado -> HTTP 200`/campo vazado; dente 3 `producao permitida mas sem aprovacao ->
+  NAO recusou`). O sub-run passou a ser rotulado (`TRE_ORIGEM_DENTE=N`) e imprime
+  `ORIGEM_DENTE=… itens=… falhas=…`, exigida na conferência. Remedido na VPS: ambiente sabotado →
+  **`DENTE_FALHOU`/exit 1** ("mediu 2 itens (piso 61) — aborto na guarda de ambiente nao e' medicao");
+  ambiente saudável → `DENTE_OK (3 provas, 0 falhas)`/exit 0 com os três itens nomeados (61/5, 61/3,
+  `MOTOR_API_FALHOU` 53/1); aceite completo sem regressão em `API_CONTROLADA_OK (75 itens, 0 falhas)`.
+- **Logs e âncora do dente (mesma família do `TRE-W2-E03-T01-D02` e do achado 4 do D01)** — cada prova
+  mede agora em `$TRE_LOG_DIR/dente/prova-N`: nada do dente escreve no diretório de logs do aceite
+  (antes o dente 3 sobrescrevia o `0-motor-puro.out` do aceite), com guarda **nominal** dos 5 logs de
+  passo (sha256 antes/depois); e a guarda externa passou a cobrir **só os arquivos versionados** do
+  módulo (`PYTHONDONTWRITEBYTECODE=1` no passo 0; `__pycache__` fora), tornando o sha256
+  **reprodutível** — `85e6cbc9…`, 28 arquivos, idêntico no worktree, numa cópia solta e no
+  `git archive` (antes: 29 arquivos e um valor por publish). Controle do predicado versionado em
+  `scripts/odoo/teste-dente-confere.sh` (7 itens; extrai a função do próprio verificador e reprova
+  aborto, log ausente, item errado, falta de rótulo e sub-run que passou). Detalhe em
+  `docs/runbooks/odoo-api-controlada.md` §12.
+
+### Fixed
+
+- **Cobertura do verificador de estrutura: os artefatos passam a ser DESCOBERTOS, não listados**
+  (`TRE-W3-E03-T01-D01`, defeito da revisão independente do `TRE-W3-E03-T01`; card `t_c77ca273`) —
+  `scripts/verificar_estrutura.sh` mantinha lista fixa e **não citava nenhum** dos artefatos novos do
+  E03-T01: medido na árvore de `597f2dd`, **0 citações de 20** e o verificador daquele commit imprimia
+  `RESULTADO: PASS (0 falhas)`, exit 0, **mesmo com o arquivo fora da árvore versionada** (controle:
+  contrato do n8n removido do disco e model de evento fora do índice — o gate era cego à classe inteira).
+  Conserto pela **opção C — híbrida**, decidida pelo dono (Anderson Ribeiro, 02/10/2026, Telegram "C";
+  ADR `docs/architecture/cobertura-do-verificador-de-estrutura.md`, commit `70e86e3`; linha 100 do
+  `docs/operations/registro-de-aprovacoes.md`): (1) **descoberta automática** por `git ls-files` nas áreas
+  de artefato, com o conjunto coberto acumulado pelas próprias listas do script; (2) **isenções
+  declaradas** em `scripts/estrutura/isencoes.txt` (`padrao | justificativa | responsavel | data` —
+  isenção **sem justificativa é inválida** e reprova); (3) **fail-closed** para artefato versionado que
+  não está coberto nem isento, nomeando o arquivo e como cobrir ou como isentar. Medido depois: os 20
+  artefatos do E03-T01 (os 17 do card + os 2 SQL e o workflow de n8n que a medição achou) e mais 5 achados
+  de ondas **anteriores** entram na cobertura; `PASS (0 falhas)` exit 0; contrato do n8n removido →
+  `FALHOU ausente` exit 1; arquivo **novo** versionado → `FALHOU nao coberto` exit 1; o mesmo arquivo
+  **isentado** → passa **citando a isenção**; isenção sem justificativa → `FALHOU isencao invalida`
+  exit 1. Única isenção: `*/.gitkeep`. Verificadores do projeto no worktree do fix (estrutura,
+  `secret_scan`, papéis, contrato de dados, modos executáveis): todos PASS. Commit de código `2d817bd`.
 
 ### Notas de estado
 
@@ -1225,6 +2043,21 @@ Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, *
   E2E (`E01-T05` + `E02-T02` + `E03-T01` + `E04-T01` + `E05-T01`), com as duas listas de artefatos dos
   cards de n8n no mesmo `scripts/verificar_estrutura.sh`; a base congelada e' a de
   `feature/TRE-W3-E06-T01` (commit do merge registrado em `docs/operations/registro-de-execucoes.md`).
+
+### Fixed
+
+- **Achados de medicao/higiene da revisao r1 do E2E Foundation #001** (`TRE-W3-E06-T01`, achados do card
+  `t_01ebaaad`, branch `fix/t_01ebaaad-achados-e06-r1`, commit `80121c4`) — quatro correcoes que **nao** mudam
+  o veredito aprovado (139 itens/0 falhas e dente 3/3 remedidos), mas tiram a imprecisao do artefato:
+  - o item da **ida-e-volta** passa a dizer que a ponta no PG e' registrada **pelo harness** com o id lido
+    da trilha (a coluna nao e' escrita por porta da fundacao — o que o runbook §6.5 ja declarava);
+  - o item **"porta de ingestao registrada no n8n"** deixa de aceitar "qualquer saida != 404": exige uma
+    **resposta HTTP real (2xx/4xx)** e recusa o `HTTP_ERRO` de conexao (funcao `webhook_esta_registrado`);
+  - o juiz do `--prova-de-dente` passa a nomear **`ambiente quebrado`** (imagem ausente, trio que nao sobe)
+    em vez de `ancora quebrada`, que acusava erro de redacao do item — mesma decisao do irmao E05 (`a58c0a7`),
+    com o controle sintetico **c5** no `controle_do_juiz`;
+  - o inicio da rodada **remove as sobras `/tmp/e2e-foundation-*` de rodadas interrompidas** (que guardam
+    senha/chave/token em modo `700` e escapam do `trap` de limpeza), preservando rodadas vivas pelo `.pid`.
 
 ### Notas de estado
 
@@ -2137,3 +2970,175 @@ declarada**, gravando a recomendação em `sales_intelligence.recommendations`.
   papel do E2E #001 / fundacao W3-W4. Fechar a lacuna e' do caminho de fundacao/sync.
 - Provas contra Titan e Odoo reais e draft por LLM ficam em **homolog**, com credencial do Sales AI e
   aprovacao do dono.
+
+## [W9-E04-T01] — Best timing (`melhor-horario-v1`) — 2026-10-03
+
+### Added
+
+- `hermes/analytics/melhor_horario.py` + `hermes/analytics/melhor-horario-v1.json`: melhor horário de
+  contato por **janela (dia da semana × faixa horária)** no fuso **declarado** no contrato
+  (`America/Sao_Paulo`, offset fixo `-03:00`). A janela é derivada do instante de ENVIO; o desfecho é a
+  resposta creditada pela **regra do card irmão W8-E04-T01** (o componente importa `desempenho_mensagens.py`
+  — atribuição é uma só no projeto). Grade completa de 49 células (inclusive vazias, com taxa `null`),
+  marginais fechando com o total, amostra mínima declarada e ranking determinístico; base pequena **abstém**
+  (`AMOSTRA_INSUFICIENTE`) em vez de coroar horário com ruído.
+- `scripts/agentes/verificar_melhor_horario.py`: suíte offline (**29 itens**) com duble da porta de banco
+  reusado do irmão e **autoteste por mutação (6/6)** — cada mutação reprova o item que nomeia.
+- `scripts/agentes/teste_melhor_horario_aceite.sh`: aceite E2E em PostgreSQL descartável (`pg-timing-acc`),
+  **19 itens** medidos, incluindo coerência com o irmão de desempenho e prova de somente leitura.
+- `docs/runbooks/melhor-horario.md`: runbook do operador.
+
+### Security
+
+- `prod` RECUSADO exit 4 (ADR-005); única instrução enviada à porta de banco é `SELECT` (guarda herdada do
+  irmão); saída agregada por célula (sem `organization_id`/`contact_id`/`approval_id`); fail-closed para
+  grade com buraco, fuso ilegível e vocabulário do dono divergente. Aceite 100% em loopback, container
+  descartável, nenhuma credencial real.
+
+### Known gaps (declarados, não escondidos)
+
+- Fuso é **offset declarado fixo**; horário de verão/segundo fuso exige versão nova do contrato.
+- Mede o horário **observado** (histórico), não previsão por lead (W9-E02).
+- Grade cobre 24 h porque o Data Contract V1 não declara expediente comercial.
+- `contacts` não tem fuso do contato (usa-se o do remetente); só `EMAIL` é produzido hoje pelo irmão de envio.
+
+## [W9-E05-T01] — Automated nurture (`nutricao-automatica-v1`) — 2026-10-03
+
+### Added
+
+- `hermes/agentes/analytics/nutricao_automatica.py` + `hermes/agentes/analytics/nutricao-automatica-v1.json`:
+  o nurture **planeja**, nao mede e nao envia. Consome os DOIS relatorios dos pais — `previsao-canal-v1`
+  (W9-E03-T01: canal previsto por organizacao e bloqueios de opt-out) e `melhor-horario-v1` (W9-E04-T01:
+  melhor janela dia x faixa e fuso declarado) — e deriva a fila de proximos toques com cadencia declarada de
+  4 passos (0/4/11/25 dias), `due_at_utc` calculado (ancora no dia da janela, passo deslocado ao dia-alvo,
+  nunca no passado e monotonico) e ordem deterministica (due_at, canal, organizacao). **Nada envia**: todo
+  toque carrega `exige_aprovacao_humana: true` e as condicoes de parada. Fail-closed: sem base de canal ou
+  sem janela com amostra o plano ABSTEM por inteiro, com a lista `faltando`. O componente **nao tem porta de
+  banco** (nenhum SQL/escrita) e a auditoria de codigo reprova statement de escrita.
+- `scripts/agentes/verificar_nutricao_automatica.py`: suite offline (**42 itens**) com fixtures na forma dos
+  contratos dos pais e **autoteste por mutacao (5/5)**; inclui o dente da guarda de escrita.
+- `scripts/agentes/teste_nutricao_automatica_aceite.sh`: aceite E2E da CADEIA em PostgreSQL descartavel
+  (`pg-analytics-nurture-acc`), **36 itens** medidos, com regressao das duas suites offline dos pais,
+  abstencao medida, reproducibilidade e prova de somente leitura nas 12 tabelas.
+- `docs/architecture/nutricao-automatica-v1.md` e `docs/runbooks/nutricao-automatica.md`.
+
+### Security
+
+- `prod` RECUSADO exit 4 (ADR-005) antes de qualquer leitura; `homolog` exige `--confirmo`; saida sem PII
+  (UUID, canal, janela e datas); fail-closed para contrato/dependencia incoerentes, fuso ilegivel e janela
+  fora da grade; nada e' materializado (sem tabela, sem cron, sem evento) — executar o toque e' do caminho
+  de outbound com aprovacao humana registrada.
+
+### Added — `TRE-W2-E01-T02` (TLS / reverse proxy / hardening no dev) — 01/10/2026
+
+- **Proxy TLS reverso com Caddy no ambiente dev** — `deploy/compose/dev/{Caddyfile,proxy.yml}` +
+  par não-secreto `deploy/environments/dev-proxy.env` + `scripts/provision/{instalar,verificar,remover}-proxy-dev.sh`
+  + `scripts/provision/prova-de-dente-tls-dev.sh` + runbook `docs/runbooks/odoo-dev-tls.md`.
+  Medido na VPS Contabo `vmi3619453`, 01/10/2026: container `proxy-dev` (id `2f3b62f8fb44…`),
+  imagem `caddy:2-alpine` no digest `sha256:6aeddd44…` (binário `v2.11.4`), **rede host** (precisa
+  escutar 80/443 na interface pública **e** alcançar o Odoo em `127.0.0.1:8069`) com
+  `restart=unless-stopped`; volumes `proxy-data-dev`/`proxy-config-dev`/`proxy-log-dev`.
+  O Odoo ganhou `proxy_mode = True` no `odoo.conf` (executado pelo instalador, com restart só quando
+  a linha muda) e **continua** só em loopback.
+- **Aceite item a item**: `bash verificar-tls-dev.sh` → `RESULTADO: TLS_DEV_OK (28 itens, 0 falhas)`,
+  exit 0 — HTTPS 200 com a **cadeia validada contra a âncora da CA** (e **falha sem a âncora**, o que
+  prova que a validação não é decorativa), HTTP 80 → HTTPS, hardening (HSTS + `X-Frame-Options` +
+  `X-Content-Type-Options` + `Referrer-Policy`, `Server` removido), `/web/database/manager` → **403**,
+  challenge ACME fora do `basic_auth` (404, não 401), **sem a credencial do proxy o Odoo não é
+  servido**, Host desconhecido não recebe o Odoo, 8069 só loopback **sem regra na UFW**, UFW
+  exatamente `22/80/443` com `fail2ban` ativo, e `proxy_mode` **com efeito medido**.
+- **Dentes do aceite** (provas negativas medidas): `bash prova-de-dente-tls-dev.sh` →
+  `TLS_DENTE_OK (6 itens, 0 falhas)`, exit 0 — D1 `docker port` publicando o Odoo → reprova;
+  D2 `ufw status` com a 8069 liberada → reprova; D3 proxy mutante **sem `basic_auth`** → reprova;
+  D4 `proxy_mode` removido de verdade (com restart) → reprova; D5 verificador **depois do rollback**
+  → `TLS_DEV_FALHOU (24 itens, 15 falhas)`. Cada mutação reprova pelo item certo e o alvo real não
+  fica mutado.
+- **Evidência externa** (medida de fora da VPS): varredura → **3 portas abertas** (`22`, `80`, `443`)
+  e `8069`/`8071`/`8072`/`5432`/`5433`/`8443`/`2019` fechadas; chamada HTTPS sem `-k` e sem
+  credencial → `401` com a cadeia validada; HTTP 80 externo → `308`; Host desconhecido de fora →
+  handshake recusado; o log do próprio Caddy registra a origem externa `187.127.56.17` com `401`.
+
+### Security — `TRE-W2-E01-T02`
+
+- **UFW deixa de ser só 22/tcp**: passam a ser `22/80/443` (portas decididas e registradas, §1.1 do
+  runbook). O estado anterior é guardado em `/opt/tre/dev/proxy/ufw-antes.txt` e o rollback devolve a
+  UFW exatamente a ele — não reabre nada às cegas.
+- **`basic_auth` protege o dev exposto** — e não é decorativo: medido neste ambiente, a credencial
+  **padrão `admin`/`admin` do Odoo APROVA** (`303` → `/odoo` com sessão). Virar `odoo-dev` para a
+  internet sem essa correção seria *admin takeover* a um login de distância. A senha do proxy nasce
+  na VPS (`/etc/tre/proxy-dev/basicauth.env`, 600) e o hash é gerado **pelo próprio `caddy`**, com a
+  senha por **stdin** — nunca em argumento de comando, nunca no artefato, nunca em log.
+- **Correção da credencial do Odoo e flag `Secure` do cookie são achados abertos**, não deste card:
+  corrigir a credencial muda o banco do Odoo (card próprio) e precisa estar feito **antes de
+  homologação/produção**; o cookie de sessão do Odoo **não leva `Secure`** (medido com e sem
+  `proxy_mode`) num serviço que só é acessível por HTTPS.
+
+### Fixed — `TRE-W2-E01-T02`
+
+- **Seis defeitos encontrados nesta execução** (todos medidos, todos consertados):
+  (1) `caddy hash-password` lê **uma linha** do stdin e morre com `Error: EOF` sem o `\n` final, e a
+  primeira versão mandava o `stderr` para `/dev/null` — o instalador **morria sem dizer por quê**;
+  (2) o item 7 do **próprio verificador** estava **invertido**: tratava "curl falhou sem a âncora" (o
+  resultado bom) como reprovação;
+  (3) `source` no arquivo de segredos **quebra o script na reexecução** — o hash bcrypt tem
+  `$2a$14$…` e o shell, sob `set -u`, tenta expandir `$2` e morre com `unbound variable` (leitura
+  passou a ser por `sed`, como o T01 já faz);
+  (4) **`docker compose` interpola `$` também nos valores de `env_file`**: o sal do bcrypt é lido
+  como nome de variável e vira string vazia, o container recebia um hash **truncado**
+  (`hashedSecret too short to be a bcrypted password`) e o `basic_auth` recusava **tudo** — e o
+  defeito é **intermitente, porque depende do primeiro caractere do sal sorteado** (passou na
+  primeira instalação e quebrou na reinstalação limpa). Conserto: valores entre **aspas simples** no
+  `env_file` (reprodução mínima medida no alvo), com as aspas removidas na leitura; hash conferido
+  com **60 caracteres** no container depois do conserto (era 46);
+  (5) o rollback acusava `regra do estado anterior nao esta mais presente: To / --` porque o estado
+  guardado é a saída crua do `ufw status`, **com o cabeçalho** — passou a filtrar por `ALLOW`;
+  (6) **colisão com outro card `devops`** (`t_a5afde31`, backup/restore) rodando ao mesmo tempo
+  contra os **mesmos** containers dev — o `odoo-dev` apareceu `Exited (0)` no meio da rodada, por um
+  `compose run` de fora; o instalador ganhou guarda com espera curta e explícita e o caso foi
+  registrado como **hotspot** no board.
+
+### Notas de estado — `TRE-W2-E01-T02`
+
+- **Rollback testado de verdade** (não só escrito): recusa sem `TRE_PROXY_CONFIRMAR_REMOCAO=1`;
+  executado, devolveu a UFW a `[22/tcp]` e preservou Odoo/Postgres; o verificador então **reprovou**
+  o ambiente ausente (15 falhas); a **reinstalação limpa** voltou a `TLS_DEV_OK (28 itens)` e o
+  aceite do card anterior continua verde (`ODOO_DEV_OK (19 itens, 0 falhas)`).
+- **Certificado público pendente da decisão do dono**: medido que `odoo-dev.transformativa.com.br`
+  **não resolve**, a VPS **não tem PTR**, a zona `transformativa.com.br` está em NS1 e **não tem CAA**
+  (Let's Encrypt livre); criar o registro A exige credencial de DNS, fora da declaração deste card.
+  Proposta registrada: `odoo-dev.transformativa.com.br → 169.58.24.102`. Até lá o dev usa a **CA
+  interna do proxy** (`tls internal`), validada de verdade (nunca `-k`); ligar o certificado público
+  é **trocar uma linha** + ter o DNS apontando.
+- **Portas e exposição decididas pelo executor em dev** (padrão do T01): `22/80/443` públicas, `8069`
+  e `5432/5433` só em loopback, `fail2ban` mantido — **pendentes de ratificação do Anderson**.
+- **A publicação versionada falhava de forma intermitente no manifesto do staging e culpava o lado errado**
+  (`t_0f74266d`, defeito registrado pelo card `t_1b2ab418` e reproduzido pelo `tester` no `t_c9a44f85`): o
+  staging era o **caminho fixo** `/opt/tre/.publicacao-staging`, compartilhado por toda publicação de todo
+  card — duas publicações simultâneas se misturavam (o `find` de uma listava o que o `rm -rf`/`tar -x` da
+  outra apagava, ~280 linhas de `sha256sum: … No such file or directory`), a falha era intermitente e a
+  mensagem culpava "a cópia transferida" quando o manifesto incompleto era o do **staging** (o diff ainda
+  saía truncado em `head -30` e a falha não deixava linha no log). Corrigido em `deploy/publicar.sh`
+  (`44e0d13`): staging **único por publicação** (`mktemp -d` no diretório pai do destino, removido no fim e
+  no trap), mapa de modos irmão do staging (era o fixo `/opt/tre/.publicacao-modos`, que ficava para trás no
+  `exit 6`), manifesto **reprovado como INCOMPLETO antes de comparar** (exit 7 — contar linhas não bastava:
+  o defeito real mantinha a contagem e zerava o campo do hash), cada falha nomeando a **fase** e o
+  **arquivo** (staging/local/antes/depois/conferência) com `PUBLICACAO_INDETERMINADA` para o caso em que não
+  dá para afirmar divergência, diff **sem truncar** (arquivo completo em `TRE_PUBLICAR_DIFF_DIR` + `head
+  -200`), `PUBLICACAO_ABORTADA` no log append-only e duas guardas fail-closed da mesma família ("artefato
+  compartilhado em caminho fixo"): lock isolado com destino compartilhado é **recusado** (exit 2) e destino
+  isolado com o artefato padrão do watchdog é **recusado** (o watchdog repararia a produção para o commit do
+  ensaio). `PRODUCAO` passou a ser recalculado **depois** do parse dos argumentos (com `--destino` para um
+  ensaio, o cálculo antigo fazia o destino isolado passar por produção e pedia `--producao`). Teste local sem
+  VPS: `deploy/teste-staging-unico.sh` (39 verificações, 0 falhas em duas execuções — roda o `publicar.sh`
+  real contra um `ssh` de mentira e reproduz o defeito na versão de `3bf5e07` antes de provar o conserto).
+  **Atualização 01/10/2026 (`t_a5afde31`):** a branch `feature/TRE-W2-E01-T01-F01` foi criada **da**
+  `fix/t_daca4bda-enforcement` e trouxe o `develop` para dentro (`git merge origin/develop`), então a
+  publicação dela **não apaga o enforcement** — é o caminho para o Odoo do dev voltar a rodar do par
+  versionado. Publicação por `deploy/publicar.sh` e evidência em
+  `docs/runbooks/backup-restore-rollback.md` §7g e `docs/operations/registro-de-execucoes.md`.
+- **Rotina de backup cobre o Odoo do dev desde 01/10/2026** (`t_a5afde31`): `backup-tre.sh dev` grava
+  num **único** artefato o dump do trio **e** o par do Odoo (banco + filestore), e o timer de
+  domingo (`tre-backup-verify.timer`) verifica os dois. Ambiente que declare Odoo e cujo artefato não
+  o traga é **falha** de verificação, não "meio backup". O artefato nasce com dono do **usuário de
+  serviço** (`TRE_BACKUP_DONO`, padrão `tre-deploy`) mesmo quando a rotina é executada a mão por
+  `root`, e a retenção **confere o `rm`** antes de dizer que removeu (rodada 2, runbook §7h).

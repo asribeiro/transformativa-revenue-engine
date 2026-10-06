@@ -1,0 +1,141 @@
+{
+  "nome": "linkedin-assistido",
+  "versao": "1.0.0",
+  "card": "TRE-W7-E04-T01",
+  "onda": "W7",
+  "epic": "E04",
+  "canal": "LINKEDIN",
+  "motor": "Motor 2 — Inbound / Demand Generation (doc 03 §1) + acao PREPARE_LINKEDIN do NBA (doc 03 §8)",
+  "o_que_e": "Workflow assistido por IA do canal LinkedIn: a maquina PREPARA (rascunho + pedido de aprovacao) e REGISTRA o que chega; quem PUBLICA e o humano, no LinkedIn, fora do sistema.",
+  "o_que_nao_e": [
+    "nao publica, nao agenda publicacao, nao usa API/automacao de navegador do LinkedIn;",
+    "nao comenta, nao reage, nao segue, nao envia convite, nao envia DM, nao menciona pessoas;",
+    "nao responde por ele e nao fala por ele em rede social (regra do dono);",
+    "nao decide aprovacao: quem decide e o humano, no workflow irmao (TRE-W6-E03-T01);",
+    "nao gera texto com LLM dentro do aceite: o rascunho offline e declarado e o gerador externo e' injetavel."
+  ],
+  "acoes_declaradas": {
+    "maquina_liberadas": [
+      "PREPARAR_RASCUNHO",
+      "PEDIR_APROVACAO",
+      "REGISTRAR_ENGAJAMENTO"
+    ],
+    "maquina_proibidas": {
+      "PUBLICAR": "publicacao e' ato exclusivo do humano (o dono publica; a maquina no maximo entrega o texto aprovado)",
+      "AGENDAR_PUBLICACAO": "agendar e' publicar por interposta pessoa",
+      "COMENTAR": "regra do dono: nao comenta post de terceiro",
+      "REAGIR": "regra do dono: nao reage a post de terceiro",
+      "SEGUIR": "nao segue ninguem em nome dele",
+      "ENVIAR_CONVITE": "convite e' primeiro contato: acao sensivel, exclusiva do humano",
+      "ENVIAR_DM": "DM e' primeiro contato: acao sensivel, exclusiva do humano",
+      "MENCIONAR": "nao marca pessoas",
+      "RESPONDER_COMENTARIO": "resposta publica em nome dele: exclusiva do humano",
+      "AUTOMACAO_DE_NAVEGADOR": "nenhuma automacao de sessao do LinkedIn",
+      "USAR_API_DO_LINKEDIN": "nenhuma credencial/API do LinkedIn no sistema"
+    },
+    "regra": "qualquer acao da lista proibida e' RECUSADA com exit 5 (ACOES_HUMANAS_EXCLUSIVAS), auditada em agent_runs e sem nenhuma escrita de efeito"
+  },
+  "aprovacao_humana": {
+    "obrigatoria": true,
+    "dono_da_decisao": "hermes/agents/outreach/approval_workflow.py (TRE-W6-E03-T01) — ADR-0004",
+    "action_type": "LINKEDIN_RASCUNHO",
+    "entity_type": "recommendation",
+    "operador_canonico": "Anderson Ribeiro",
+    "status_do_vocabulario": ["PENDING", "APPROVED", "REJECTED", "EXPIRED"],
+    "regra": "sem pedido em human_approvals nao existe texto entregavel; sem status APPROVED o texto nao sai do sistema nem vira artefato para o humano"
+  },
+  "rascunho": {
+    "gerador_padrao": "renderizador offline declarado (sem LLM) — nao inventa fato: cita a evidencia lida do banco",
+    "gerador_injetavel": "--gerador <arquivo.py> (o gerador real com LLM fica em homolog, declarado como lacuna)",
+    "tipos": {
+      "POST": "conteudo de perfil (Motor 2 — LinkedIn organico)",
+      "DM": "mensagem direta no formato de rascunho para o humano colar (o envio nao e' da maquina)"
+    },
+    "tamanho_maximo": 1300,
+    "proibicoes": [
+      "nao cita numero/afirmacao sem evidencia no proprio pedido",
+      "nao promete resultado nem preco",
+      "nao afirma inferencia como fato (dor nao validada entra como hipotese)"
+    ]
+  },
+  "engajamento": {
+    "channel": "LINKEDIN",
+    "directions": ["INBOUND", "OUTBOUND"],
+    "interaction_types": [
+      "LINKEDIN_PERFIL_VISITADO",
+      "LINKEDIN_CURTIDA",
+      "LINKEDIN_COMENTARIO_RECEBIDO",
+      "LINKEDIN_DM_RECEBIDA",
+      "LINKEDIN_CONVITE_RECEBIDO",
+      "LINKEDIN_CONVITE_ACEITO",
+      "LINKEDIN_MENCAO_RECEBIDA",
+      "LINKEDIN_COMPARTILHAMENTO",
+      "LINKEDIN_POST_PUBLICADO_PELO_HUMANO"
+    ],
+    "obs": "o Data Contract nao fixa vocabulario para estas colunas de interactions: os valores sao DECLARADOS aqui e conferidos contra esta politica",
+    "inferencia": "intent/sentiment/response_category so entram com ai_confidence e marcados como INFERENCIA no proprio registro; inferencia nunca vira fato"
+  },
+  "evidencia": {
+    "minima_para_preparar": 1,
+    "fontes": [
+      "research_runs COMPLETED da organizacao",
+      "pain_hypotheses",
+      "signals"
+    ],
+    "regra": "0 evidencia = SEM_EVIDENCIA e nada escrito (nem pedido de aprovacao)"
+  },
+  "guardas_de_contato": [
+    "contacts.do_not_contact = true => BLOQUEADO (nada escrito)",
+    "organizations.deleted_at <> null => BLOQUEADO",
+    "preferred_channel NOT IN (LINKEDIN, null) => ainda permitido no rascunho de POST (canal do conteudo), BLOQUEADO no rascunho de DM"
+  ],
+  "ambiente": {
+    "permitidos": ["dev", "homolog"],
+    "recusado": "prod",
+    "regra": "prod RECUSA com exit 4 (ADR-005: nada nasce em producao)"
+  },
+  "guarda_de_escrita": {
+    "tabelas": [
+      "sales_intelligence.human_approvals",
+      "sales_intelligence.interactions",
+      "sales_intelligence.agent_runs",
+      "sales_intelligence.sync_events"
+    ],
+    "ddl": "recusado",
+    "delete": "recusado (o desfazer marca, nao apaga)",
+    "update": "recusado (nenhum status de pedido muda por aqui; quem decide e' o workflow irmao)",
+    "regra": "INSERT so nas 4 tabelas; qualquer outra tabela, DDL, UPDATE ou DELETE RECUSA com exit 3"
+  },
+  "idempotencia": {
+    "chave": "linkedin:<organization_id>:<recommendation_id>",
+    "implementacao": "id determinstico (uuid5) do pedido em human_approvals + ON CONFLICT DO NOTHING",
+    "repeticao": "segunda rodada = JA_PEDIDO (0 linhas novas)"
+  },
+  "vereditos": [
+    "PLANO",
+    "PEDIDO_CRIADO",
+    "JA_PEDIDO",
+    "SEM_EVIDENCIA",
+    "BLOQUEADO",
+    "ENTREGAVEL_AO_HUMANO",
+    "AGUARDANDO_APROVACAO",
+    "ENGAJAMENTO_REGISTRADO",
+    "JA_REGISTRADO",
+    "RECUSADA",
+    "DESFEITO",
+    "ERRO"
+  ],
+  "termos_proibidos_na_saida": [
+    "senha",
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "authorization"
+  ],
+  "lacunas_declaradas": [
+    "publicacao real e leitura do LinkedIn: fora do sistema (humano), sem API e sem automacao — nada aqui mede o que o humano faz depois;",
+    "o rascunho do aceite e' o renderizador OFFLINE declarado; o gerador com LLM (GPT) e' injetavel e fica para homolog, como o card irmao de e-mail;",
+    "quem publica assina: nao ha permissao de escrita no LinkedIn para o Hermes (nem token);"
+  ]
+}

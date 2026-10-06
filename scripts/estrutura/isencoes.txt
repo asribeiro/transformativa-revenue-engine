@@ -1,0 +1,16 @@
+# Isencoes do verificador de estrutura — opcao C.
+# ADR: `docs/architecture/cobertura-do-verificador-de-estrutura.md` (decisao do dono, Anderson
+# Ribeiro, 02/10/2026, registrada em `docs/operations/registro-de-aprovacoes.md`).
+#
+# Formato (uma isencao por linha, campos separados por `|`):
+#     padrao | justificativa | responsavel | data (DD/MM/AAAA)
+#
+# Regras do rito (ADR, secao "Rito da isencao"):
+#   - o campo `padrao` aceita glob do shell (ex.: `n8n/*/.gitkeep`);
+#   - isencao SEM justificativa (ou sem responsavel, ou sem data) e' INVALIDA: o verificador
+#     REPROVA nomeando a linha;
+#   - toda isencao e' revista na abertura de onda (Risco 2 do ADR).
+#
+# Use isencao apenas para arquivo que NAO e' artefato de card. Artefato de verdade se COBRE,
+# acrescentando o caminho a lista do bloco correspondente de `scripts/verificar_estrutura.sh`.
+*/.gitkeep | arquivo vazio de marcacao de diretorio versionado: nao e' artefato de card e nao tem conteudo a cobrir | Anderson Ribeiro | 02/10/2026

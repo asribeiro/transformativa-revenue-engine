@@ -215,6 +215,36 @@ GUARDRAILS_EXIGIDOS = {
 }
 
 # ---------------------------------------------------------------------------
+# Guardrail de REGISTRO MARCADO (defeito [encaixe] do card `t_60fac84b`, 02/10/2026)
+#
+# REGRA JA DECIDIDA PELA POLITICA, implementada aqui (nao e decisao nova):
+#   * `guardrails` da politica: "empresa com do_not_contact ou opt_out nao e contatada";
+#   * fonte da camada Human Approval (`hermes/policies/human-approval.yaml`, secao
+#     `nunca_automatico`): "contatar empresa com do_not_contact / opt_out marcado".
+#
+# O QUE FALTAVA: o registro anotado nao tinha a marca de PROIBIDA PARA EXECUCAO
+# AUTOMATICA. O guardrail de contato decidia por VOCABULARIO (`_e_acao_outbound`) se a
+# acao era abordagem — e vocabulario tem recall finito (medido: frases de abordagem que
+# nao casam, e casos de rotulo humano `outbound_para_terceiro: false` que casam — ver os
+# cards `t_fa344342` e `t_60fac84b`). Com o registro ANOTADO, a decisao nao pode depender
+# do casamento de prosa: a acao sobre registro anotado NAO EXECUTA SOZINHA (guardrail
+# declarado "falha de guardrail bloqueia, nao libera": duvida na avaliacao = BLOCK), e o
+# recibo sai BLOCK com `exige_aprovacao_humana: true` — a maquina nunca executa, quem
+# decide e o humano. O contrato de recibo continua com 13 campos: o rastro entra no campo
+# `override`, o mesmo canal do piso por ambiente e da aprovacao humana registrada.
+# ---------------------------------------------------------------------------
+IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO = "registro_marcado"
+SINAL_DE_REGISTRO_MARCADO = "empresa_do_not_contact"
+GUARDRAILS_PROIBIDOS_PARA_EXECUCAO_AUTOMATICA = frozenset(
+    {IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO})
+
+# Regra do campo `override` do RECIBO (defeito de cobertura D1, card `t_145eeaef`): `humano`
+# e RESERVADO ao override que a PROPRIA tarefa declarou e recomposto de
+# `plano["override_do_chamador"]`; os rastros de regra (registro do guardrail que proibe a
+# execucao automatica, piso por ambiente) sao IRMAOS de `humano`, no topo do campo — nunca
+# embrulhados junto sob ele (`_compor_override_do_recibo`).
+
+# ---------------------------------------------------------------------------
 # Fonte da camada Human Approval (correcao do defeito D03, card TRE-W0-E04-T02-D03)
 #
 # `hermes/policies/human-approval.yaml` declara as acoes da camada 2 da precedencia
@@ -600,6 +630,44 @@ def _singular(t: str) -> str:
 #
 # Nada disso vale fora do vocabulario de papel: `CONCEITOS_DE_ACAO`,
 # `REGRAS_DE_ACAO_HUMANA` e o casamento de credencial seguem em `_token_casa`.
+#
+# ---------------------------------------------------------------------------
+# LIMITACAO DECLARADA — o recall de flexao NAO esta fechado (achado A1 da verificacao
+# independente `t_b8adfe6c`; defeito TRE-W3-E04-T03-D01-D01-D01, card `t_79156ab2`)
+#
+# As formas abaixo sao o MESMO termo do vocabulario, flexionado, e NAO acionam este
+# encaixe. Ficam de fora por DECISAO MEDIDA, nao por esquecimento: a terminacao e cega a
+# classe da palavra — acrescentar `-o`/`-as`/`-em` corta QUALQUER token terminado nelas —
+# e entre as 10 formas 4 sao tambem substantivo/adjetivo em portugues (`contato`, `envio`,
+# `publico`, `publicas`) e 1 cai na regra de radical minimo de 5 (`envia`, radical `envi`).
+# A mesma familia de falso positivo que o D01 removeu volta pela porta da terminacao:
+#   * 1a pessoa do presente (`-o`): contato, envio, publico, aplico
+#       (`contato` e o substantivo da ficha de CRM; `envio` e `publico` sao substantivo/
+#        adjetivo; com `-o` em TERMINACOES_DE_UMA_LETRA, `contrato` -> `contrat` casaria
+#        `contratar`, que e tolerancia de prefixo pela porta dos fundos);
+#   * 2a pessoa (`-s`/`-as`): contatas, envias, publicas, aplicas
+#       (`-as` e plural de substantivo; `es`/`as` ja foram MEDIDOS afrouxando no D01-D01);
+#   * 3a pessoa plural do subjuntivo (`-em`): contatem
+#       (`-em` ja foi MEDIDO afrouxando no D01-D01);
+#   * 3a pessoa singular de radical curto: envia (radical `envi`, 4 caracteres)
+#       (terminacao de UMA letra exige radical de 5 — e a mesma regra que sustenta
+#        `conta` !~ `contar`; baixar o minimo para 4 quebra essa precisao medida).
+#
+# MEDICAO (corpus de 7710 textos do proprio board, mesma fonte da verificacao
+# independente; saida bruta em `logs-medicao-A1.txt` do card `t_79156ab2`): os DOIS
+# candidatos que restaurariam estas formas pelo caminho da terminacao/forma declarada
+# PIORAM a decisao —
+#   * terminacao ampliada (`-o`, `-as`, `-em`; radical minimo de uma letra = 4):
+#     41 desfechos mudam nos 4540 textos afetados, 28 viram BLOCK — inclusive prosa real
+#     do board sem nada de abordagem (uma linha so com "ENTREGA EXIGIDA:" passa a BLOCK
+#     por "alteracao estrutural de arquitetura") — e 1 caso AFROUXA (BLOCK -> ESCALATE);
+#   * tabela de formas por termo declarado: 14 desfechos mudam, 5 viram BLOCK (ex.:
+#     "resumo do contato com o cliente") e a frase canonica "contatar lead, cliente ou
+#     decisor" AFROUXA de BLOCK para ESCALATE — quebraria o lado 2d desta suite.
+# Recall completo exige um SEGUNDO MECANISMO decidido item a item (paradigma verbal por
+# termo declarado). Ate a decisao, a limitacao fica DECLARADA — aqui, no registro de
+# aprovacoes e no docstring da suite `scripts/verificar_papel_sem_prefixo.py` — para
+# nunca ser lida como recall fechado.
 # ---------------------------------------------------------------------------
 TERMINACOES_VERBAIS = tuple(sorted((
     # formas nominais
@@ -1182,6 +1250,34 @@ def _lane_com_piso(politica: dict, tarefa: dict, lane):
     return final, piso
 
 
+def _compor_override_do_recibo(plano: dict, rastro: dict) -> dict:
+    """Monta o campo `override` do recibo: override do CHAMADOR + rastro da REGRA.
+
+    `humano` nomeia SO o override que a PROPRIA tarefa declarou (`plano["override_do_chamador"]`).
+    O rastro de regra (piso por ambiente, registro do guardrail que proibe a execucao
+    automatica) e IRMAO de `humano`, no TOPO do campo — nunca embrulhado junto sob ele.
+    Antes desta composicao o piso embrulhava tudo o que ja estava em `override` sob `humano`,
+    e com anotacao E piso agindo o rastro de guardrail saia do topo
+    (`override.humano.registro_marcado`) — exatamente o caminho que o card, o doc §9 e a
+    suite nova leem (defeito de cobertura D1, card `t_145eeaef`).
+
+    Nenhuma chave ja gravada e descartada: o que outro guardrail tiver posto no campo
+    continua la (so `humano` e recomposto do slot do chamador, para nao embrulhar rastro de
+    guardrail). O contrato de 13 campos do recibo nao cresce: o campo e o mesmo.
+    """
+    chamador = plano.get("override_do_chamador")
+    anterior = plano.get("override")
+    composto = {}
+    if isinstance(anterior, dict) and anterior != chamador:
+        composto = {chave: valor for chave, valor in anterior.items() if chave != "humano"}
+    composto.update(rastro)
+    if isinstance(chamador, dict) and chamador:
+        return {"humano": chamador, **composto}
+    if chamador:
+        return {"anterior": chamador, **composto}
+    return composto
+
+
 def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
     """Registra o piso por ambiente no rastro da decisao e no recibo.
 
@@ -1191,6 +1287,9 @@ def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
     objeto nomeia a origem (`piso_por_ambiente`) para o recibo nunca sugerir override
     humano onde houve regra de politica. O motivo tambem vai em `decisao.motivos`, que
     e gravado junto do recibo pelo encaixe.
+
+    O piso embrulha SO o override do CHAMADOR sob `humano` (`_compor_override_do_recibo`):
+    rastro de guardrail que ja esteja no campo (registro marcado) continua no TOPO.
     """
     if not politica:
         return
@@ -1215,11 +1314,7 @@ def _registrar_piso_no_plano(politica: dict, tarefa: dict, plano: dict) -> None:
             plano["motivos"].append(
                 f"lane {plano['lane']} (piso por ambiente) exige aprovacao humana "
                 "registrada antes de executar")
-    humano = plano.get("override")
-    if isinstance(humano, dict) and humano:
-        plano["override"] = {"humano": humano, "piso_por_ambiente": registro}
-    else:
-        plano["override"] = {"piso_por_ambiente": registro}
+    plano["override"] = _compor_override_do_recibo(plano, {"piso_por_ambiente": registro})
 
 
 def acoes_nunca_decididas_por_maquina(politica: dict) -> list:
@@ -1255,6 +1350,37 @@ def _guardrail(id_, regra, verifica, acionado, detalhe="") -> dict:
             "acionado": bool(acionado), "detalhe": detalhe}
 
 
+def _guardrails_proibidos_para_execucao_automatica(acionados) -> list:
+    """Guardrails acionados que PROIBEM a execucao automatica (nao basta bloquear: a
+    decisao exige humano registrado). Hoje: o registro anotado (card `t_60fac84b`)."""
+    return [g for g in (acionados or [])
+            if g.get("id") in GUARDRAILS_PROIBIDOS_PARA_EXECUCAO_AUTOMATICA]
+
+
+def _registrar_proibicao_automatica_no_plano(plano: dict, acionados: list) -> None:
+    """Marca a decisao como PROIBIDA PARA EXECUCAO AUTOMATICA e registra o motivo.
+
+    Mesma postura do piso por ambiente: a exigencia sobe em `decisao`
+    (`exige_aprovacao_humana`) e o rastro entra no campo `override` do recibo — o contrato
+    de 13 campos NAO cresce e quem for decidir ve o motivo dentro do proprio recibo.
+    """
+    marcados = _guardrails_proibidos_para_execucao_automatica(acionados)
+    motivos = [str(g.get("detalhe") or g.get("regra") or "") for g in marcados]
+    motivo = "; ".join(m for m in motivos if m)
+    plano["exige_aprovacao_humana"] = True
+    plano["exige_escalacao"] = True
+    registro = {"guardrails": [g["id"] for g in marcados],
+                "sinal": SINAL_DE_REGISTRO_MARCADO,
+                "motivo": motivo,
+                "exige_aprovacao_humana": True}
+    plano["demais"]["proibicao_de_execucao_automatica"] = registro
+    humano = plano.get("override")
+    if isinstance(humano, dict) and humano:
+        plano["override"] = {"humano": humano, "registro_marcado": registro}
+    else:
+        plano["override"] = {"registro_marcado": registro}
+
+
 def _guardrails_de_codigo(tarefa: dict) -> list:
     """Guardrails que nao dependem da politica: sempre rodam, sempre fail-closed."""
     guardrails = []
@@ -1280,6 +1406,30 @@ def _guardrails_de_codigo(tarefa: dict) -> list:
         "fail-closed: duvida na avaliacao = BLOCK, nunca prosseguir",
         bool(desconhecidos),
         f"sinal nao reconhecido: {desconhecidos}" if desconhecidos else ""))
+
+    # Guardrail de REGISTRO MARCADO (defeito [encaixe] de 02/10/2026, card `t_60fac84b`):
+    # registro anotado como nao-perturbe/opt-out NAO TEM EXECUCAO AUTOMATICA. O acionamento
+    # e a ANOTACAO do registro — nunca o casamento de vocabulario (`_e_acao_outbound`), cujo
+    # recall e finito e ja produziu falso positivo (card `t_fa344342`) e omissao de abordagem
+    # no mesmo encaixe. Este guardrail NAO substitui o de contato: os dois convivem, e a acao
+    # classificada como abordagem aciona os dois.
+    #
+    # Ele vive AQUI, junto dos guardrails de CODIGO, e nao em `_guardrails_de_politica`: o
+    # sinal e do CHAMADOR e nao depende do YAML carregado. Na camada da politica ele
+    # simplesmente NAO EXISTIA em modo degradado (politica ausente/corrompida/versao
+    # desconhecida), a decisao virava ESCALATE e a aprovacao de onda liberava o card
+    # ANOTADO — saida identica a de um card limpo (defeito de cobertura D2, card
+    # `t_145eeaef`). Guardrail de codigo roda em qualquer modo, inclusive no degradado.
+    sinais = tarefa.get("sinais") or {}
+    registro_marcado = bool(sinais.get(SINAL_DE_REGISTRO_MARCADO))
+    guardrails.append(_guardrail(
+        IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO,
+        "registro anotado como do_not_contact/opt_out nao tem execucao automatica",
+        "anotacao do registro declarada pelo encaixe (sinais.empresa_do_not_contact)",
+        registro_marcado,
+        "registro anotado como do_not_contact/opt_out: acao proibida para execucao "
+        "automatica (nunca decidida por maquina; aprovacao humana exigida)"
+        if registro_marcado else ""))
     return guardrails
 
 
@@ -1379,6 +1529,10 @@ def _guardrails_de_politica(tarefa: dict, politica: dict, papeis: dict) -> list:
         do_not_contact and _e_acao_outbound(acao, politica, papeis),
         "empresa marcada como do_not_contact/opt_out em acao outbound"
         if do_not_contact else ""))
+
+    # O guardrail de REGISTRO MARCADO NAO fica aqui: ele e CODIGO (`_guardrails_de_codigo`),
+    # porque o sinal e do chamador e nao depende do YAML — nesta camada ele nao existia em
+    # modo degradado (defeito de cobertura D2, card `t_145eeaef`).
 
     # Guardrail de DDL (defeito D08): so aciona com DDL/migration REAL — comando SQL de
     # definicao ou declaracao nos campos da propria tarefa. O motivo diz qual operacao
@@ -1966,6 +2120,11 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         # ambiente agir, `_fechar` acrescenta o registro do piso NESTE campo (um dos 13
         # do contrato — sem campo novo).
         "override": tarefa.get("override") or None,
+        # O override que a PROPRIA tarefa declarou, guardado a parte do campo do recibo: e
+        # SO ele que o piso por ambiente embrulha sob `humano` — rastro de guardrail e
+        # IRMAO de `humano`, nunca embrulhado junto (defeito de cobertura D1, card
+        # `t_145eeaef`).
+        "override_do_chamador": tarefa.get("override") or None,
     }
 
     # ---- Resolucao da acao: CODIGO antes de decidir (card T07) --------------
@@ -1991,6 +2150,15 @@ def decidir(tarefa, politica=None, motivo_politica=None, politicas_papel=None,
         plano["outcome"] = OUTCOME_BLOQUEAR
         plano["motivos"] = [f"guardrail {g['id']}: {g['regra']}"
                             + (f" ({g['detalhe']})" if g["detalhe"] else "") for g in acionados]
+        # Registro anotado como nao-perturbe/opt-out: a acao nao e so "bloqueada" — ela e
+        # PROIBIDA PARA EXECUCAO AUTOMATICA (card `t_60fac84b`). A marca sobe para a decisao
+        # (`exige_aprovacao_humana: true`) e o motivo entra no recibo pelo campo `override`
+        # (contrato de 13 campos, sem campo novo). Vale SO quando um guardrail que proibe a
+        # execucao automatica esta entre os acionados: bloqueio por segredo/DDL/papel segue
+        # registrando o motivo como sempre registrou.
+        proibidos = _guardrails_proibidos_para_execucao_automatica(acionados)
+        if proibidos:
+            _registrar_proibicao_automatica_no_plano(plano, proibidos)
         plano["lane"] = _lane_segura(politica, tarefa)
         return _fechar(politica, tarefa, plano, agora)
 

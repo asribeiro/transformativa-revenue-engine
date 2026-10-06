@@ -48,6 +48,7 @@
 # `deploy/environments/<ambiente>.env` (o arquivo e default, nao override):
 #   TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB      — alvo no ambiente pedido
 #   TRE_PG_SERVICO_HOMOLOG / TRE_PG_USER_HOMOLOG / TRE_PG_DB_HOMOLOG — alvo de homolog
+#                                  (default: pg-sales-homolog / sales_ai / sales_intelligence)
 #   TRE_APROVACAO_HUMANA, TRE_RAIZ
 # =====================================================================================
 set -uo pipefail
@@ -59,6 +60,7 @@ DIR_MIGRACOES="$RAIZ/db/migrations"
 ITENS=0
 FALHAS=0
 VERSAO_CONTROLE="public.tre_schema_migrations"
+LOG_CONSULTA="$(mktemp)"   # stderr da ultima consulta (diagnostico honesto)
 
 case "$MODO" in
   aplicar|--somente-checar) ;;
@@ -75,7 +77,11 @@ pula(){ ITENS=$((ITENS + 1)); echo "PULADO $*"; }
 morrer() { echo "$*"; echo "RESULTADO: MIGRACAO_FALHOU"; exit 1; }
 
 consulta() {  # consulta <servico> <usuario> <banco> <sql>
-  docker exec "$1" psql -U "$2" -d "$3" -tAc "$4" 2>/dev/null
+  docker exec "$1" psql -U "$2" -d "$3" -tAc "$4" 2>"$LOG_CONSULTA"
+  # stderr guardado (nao descartado): leitura que falha NAO pode virar "vazio = nao registrado".
+  # Defeito medido em 06/10/2026 no 1o provisionamento de producao: usuario default 'tre' nao existia
+  # no cluster de vendas -> psql falhava em silencio -> producao era recusada com a mensagem FALSA
+  # "versao ainda nao registrada em homolog" (falhar estava certo; a causa dita, nao).
 }
 
 # ------------------------------------------------------------------ par do ambiente
@@ -91,8 +97,12 @@ fi
 SERVICO="${PRESERVADO_SERVICO:-${TRE_PG_SERVICO:-pg-$AMB}}"
 USUARIO="${PRESERVADO_USUARIO:-${TRE_PG_USER:-tre}}"
 BANCO="${PRESERVADO_BANCO:-${TRE_PG_DB:-sales_intelligence}}"
-SERVICO_HOMOLOG="${TRE_PG_SERVICO_HOMOLOG:-pg-homolog}"
-USUARIO_HOMOLOG="${TRE_PG_USER_HOMOLOG:-tre}"
+# Defaults ALINHADOS ao layout real do projeto (deploy/compose/homolog/pg-sales.yml): o rastro de
+# vendas vive no cluster de VENDAS de homolog (`pg-sales-homolog`), cujo usuario e' `sales_ai`.
+# Os defaults antigos (`pg-homolog` / `tre`) nunca existiram nesta VPS: a conferencia da sequencia
+# reprovava por nao conseguir LER. Medido em 06/10/2026, no 1o provisionamento de producao.
+SERVICO_HOMOLOG="${TRE_PG_SERVICO_HOMOLOG:-pg-sales-homolog}"
+USUARIO_HOMOLOG="${TRE_PG_USER_HOMOLOG:-sales_ai}"
 BANCO_HOMOLOG="${TRE_PG_DB_HOMOLOG:-sales_intelligence}"
 
 echo "=================================================================="
@@ -137,6 +147,10 @@ if [ "$AMB" = "prod" ]; then
     morrer "FALHOU sequencia dev -> homolog -> producao: container de homolog '$SERVICO_HOMOLOG' nao existe. Nada foi tocado em producao."
   fi
   ok "ambiente de homolog presente ('$SERVICO_HOMOLOG')"
+  if [ "$(consulta "$SERVICO_HOMOLOG" "$USUARIO_HOMOLOG" "$BANCO_HOMOLOG" "SELECT 1")" != "1" ]; then
+    morrer "FALHOU nao consegui LER o rastro de homolog no container '$SERVICO_HOMOLOG' (usuario '$USUARIO_HOMOLOG', banco '$BANCO_HOMOLOG'): $(head -1 "$LOG_CONSULTA" 2>/dev/null) — a sequencia dev -> homolog -> producao NAO foi avaliada. Ajuste TRE_PG_USER_HOMOLOG/TRE_PG_DB_HOMOLOG (o par de vendas usa usuario 'sales_ai'). Nada foi tocado em producao."
+  fi
+  ok "rastro de homolog legivel (usuario '$USUARIO_HOMOLOG', banco '$BANCO_HOMOLOG')"
   pendentes_homolog=0
   for arq in "${MAPA[@]}"; do
     base="$(basename "$arq")"

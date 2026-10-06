@@ -25,6 +25,14 @@ O QUE ESTA SUITE TRAVA (os dois lados exigidos no card)
      ou cita um termo de abordagem — e a fonte `human-approval.yaml` fica FORA, porque
      uma acao dela ("expor segredo em log, receipt ou mensagem") cita um termo de canal
      sem falar de abordagem a terceiro (o mesmo falso positivo voltaria por outra entrada).
+  4. REGISTRO MARCADO (card `t_60fac84b`, 02/10/2026 — REVISAO DECLARADA desta suite): com o
+     sinal ligado, a decisao de um card que nao aborda passa a ser BLOCK PELO GUARDRAIL DE
+     REGISTRO MARCADO (`registro_marcado`): a acao sobre registro anotado nao executa
+     automaticamente. O que esta suite trava continua igual — o guardrail de VOCABULARIO
+     (`do_not_contact`) NAO aciona nesses textos, ou seja, o falso positivo do D02 segue
+     morto. Os itens "lado 1c" e "acao interna" foram reescritos para essa expectativa, com
+     o porque no proprio item; o outro lado (registro marcado bloqueia, registro limpo passa)
+     e provado pela suite `verificar_registro_marcado_sem_execucao_automatica.py`.
 
 Uso: /opt/hermes/.venv/bin/python scripts/verificar_outbound_sem_prosa_de_papel.py [--autoteste]
 """
@@ -150,9 +158,13 @@ def checar() -> None:
         item(f"lado 1b — com o sinal ligado, o guardrail nao aciona: {texto[:44]!r}…",
              IDENTIFICADOR_DO_GUARDRAIL not in _acionados(com_sinal),
              f"guardrails={_acionados(com_sinal)}")
-        item(f"lado 1c — o sinal nao muda a decisao de um card que nao aborda: {texto[:44]!r}…",
-             com_sinal["decisao"]["decidido"] == sem_sinal["decisao"]["decidido"],
-             f"com={com_sinal['decisao']['decidido']} sem={sem_sinal['decisao']['decidido']}")
+        item(f"lado 1c — o guardrail de VOCABULARIO nao aciona; quem aciona e o de registro "
+             f"marcado (card t_60fac84b): {texto[:44]!r}…",
+             IDENTIFICADOR_DO_GUARDRAIL not in _acionados(com_sinal)
+             and (com_sinal["decisao"]["decidido"] == sem_sinal["decisao"]["decidido"]
+                  or r.IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO in _acionados(com_sinal)),
+             f"com={com_sinal['decisao']['decidido']} sem={sem_sinal['decisao']['decidido']} "
+             f"guardrails={_acionados(com_sinal)}")
 
     # ------------------------------------------------- lado 2: CONTINUA disparando
     for frase in FRASES_DE_ABORDAGEM:
@@ -168,10 +180,17 @@ def checar() -> None:
          r._token_casa("produto", "producao"))
     interno = decisao("ajuste de texto simples", politica, acao_codigo="ajuste_de_texto",
                       sinais={"empresa_do_not_contact": True})
-    item("acao interna com o sinal ligado continua executando",
+    item("acao interna com o sinal ligado NAO executa automaticamente — registro marcado "
+         "(card t_60fac84b), com aprovacao humana exigida",
          IDENTIFICADOR_DO_GUARDRAIL not in _acionados(interno)
-         and interno["decisao"]["decidido"] == "executar",
+         and r.IDENTIFICADOR_DO_GUARDRAIL_DE_REGISTRO_MARCADO in _acionados(interno)
+         and interno["decisao"]["decidido"] == "bloquear"
+         and bool(interno["decisao"]["exige_aprovacao_humana"]),
          f"decidido={interno['decisao']['decidido']} guardrails={_acionados(interno)}")
+    limpo = decisao("ajuste de texto simples", politica, acao_codigo="ajuste_de_texto")
+    item("a MESMA acao interna SEM o sinal segue executando (o encaixe nao virou bloqueio geral)",
+         _acionados(limpo) == [] and limpo["decisao"]["decidido"] == "executar",
+         f"decidido={limpo['decisao']['decidido']} guardrails={_acionados(limpo)}")
 
 
 def autoteste() -> int:

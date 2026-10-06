@@ -21,7 +21,10 @@
 #      virar OPT_OUT (limpeza de citacao medida no banco, nao so na unidade).
 #
 # Pre-requisitos: docker com imagem postgres:16, python3, openssl. Nada de rede externa.
-# Uso: bash scripts/agentes/teste_ingestao_respostas_aceite.sh [--manter]
+# Uso: bash scripts/agentes/teste_ingestao_respostas_aceite.sh [--manter] [--prova-de-dente] [--sub-run] [--modulo <py>]
+# Exit: 0 = OK · 1 = FALHOU · 2 = uso/guarda · 3 = nao testavel.
+# --prova-de-dente: muta uma COPIA do componente (ingestao_respostas.py) e exige que o aceite
+# REPROVE o ITEM ESPERADO (item 12, o dente de citacao) — sem tocar o componente real.
 set -u
 
 OK=0; FALHAS=0
@@ -30,23 +33,85 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PG=pg-resp-acc
 SENHA_SINK="senha-do-sink-e05"
 USUARIO_SINK="sink-dev@dev.local"
+MODULO="hermes/agentes/respostas/ingestao_respostas.py"
 PORTA_BANCO="docker exec -i $PG psql -U sales_ai -d sales_intelligence"
 MANTER=0
-[ "${1:-}" = "--manter" ] && MANTER=1
+DENTE=0
+SUB_RUN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --manter) MANTER=1 ;;
+    --prova-de-dente) DENTE=1 ;;
+    --sub-run) SUB_RUN=1 ;;
+    --modulo) shift; MODULO="${1:?--modulo exige caminho}" ;;
+    --modulo=*) MODULO="${1#--modulo=}" ;;
+    *) echo "uso: $0 [--manter] [--prova-de-dente] [--sub-run] [--modulo <py>]" >&2; exit 2 ;;
+  esac
+  shift
+done
+[ "$SUB_RUN" = "1" ] && DENTE=0   # sub-run do dente: roda a medicao com o mutante, sem re-mutar
 
 item() { # item <nome> <0|1>
   if [ "$2" = "0" ]; then echo "OK    $1"; OK=$((OK+1)); else echo "FALHOU $1"; FALHAS=$((FALHAS+1)); fi
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
 limpar() {
-  docker rm -f "$PG" >/dev/null 2>&1
+  docker rm -f -v "$PG" >/dev/null 2>&1
   [ -n "${PID_SINK:-}" ] && kill "$PID_SINK" >/dev/null 2>&1
-  wait "$PID_SINK" 2>/dev/null
+  [ -n "${PID_SINK:-}" ] && wait "$PID_SINK" 2>/dev/null
+  return 0
 }
 [ "$MANTER" = "1" ] || trap limpar EXIT
 
 rm -rf "$BASE"; mkdir -p "$BASE/ca" "$BASE/fx" "$BASE/out"
 cd "$REPO" || exit 1
+
+# ---------------------------------------------------------------------------------------------
+# --prova-de-dente: muta uma COPIA do componente e exige que o aceite REPROVE o ITEM ESPERADO.
+# O aceite roda de novo (--sub-run --modulo <mutante>) e a prova so' vale se ele sair != 0 E
+# a linha 'FALHOU <item nomeado>' aparecer — item que ja' passa no codigo bom nao serve de dente.
+# ---------------------------------------------------------------------------------------------
+if [ "$DENTE" -eq 1 ]; then
+  echo "== prova de dente (mutacao em COPIA do componente; o componente real nao e' tocado)"
+  TRABALHO="$BASE/dente"
+  rm -rf "$TRABALHO"; mkdir -p "$TRABALHO"
+  mutar() { # <rotulo> <ancora exata> <troca>
+    MUT_ALVO="$2" MUT_TROCA="$3" MUT_SAIDA="$TRABALHO/mut-$1.py" MUT_ORIGEM="$MODULO" python3 - <<'PY'
+import os, pathlib, sys
+origem = pathlib.Path(os.environ["MUT_ORIGEM"]).read_text(encoding="utf-8")
+alvo, troca = os.environ["MUT_ALVO"], os.environ["MUT_TROCA"]
+n = origem.count(alvo)
+if n == 0:
+    print("MUTACAO_NAO_APLICAVEL: ancora ausente", file=sys.stderr); sys.exit(9)
+if n != 1:
+    print(f"MUTACAO_AMBIGUA: ancora aparece {n}x", file=sys.stderr); sys.exit(9)
+pathlib.Path(os.environ["MUT_SAIDA"]).write_text(origem.replace(alvo, troca, 1), encoding="utf-8")
+print("mutante escrito:", os.environ["MUT_SAIDA"])
+PY
+  }
+  dente() { # <rotulo> <item esperado>
+    local saida="$TRABALHO/dente-$1.out"
+    # BASE proprio do sub-run: ele faz 'rm -rf "$BASE"' no inicio e nao pode apagar este log.
+    TRE_ACEITE_BASE="$TRABALHO/sub-$1" bash "$0" --sub-run --modulo "$TRABALHO/mut-$1.py" >"$saida" 2>&1
+    local rc=$?
+    if [ "$rc" -ne 0 ] && grep -qF "FALHOU $2" "$saida"; then
+      echo "DENTE_OK $1 — o aceite REPROVOU o item esperado (exit=$rc): $2"
+      DENTES_OK=$((DENTES_OK + 1))
+    else
+      echo "DENTE_FALHOU $1 — esperava exit!=0 e a linha 'FALHOU $2' (veio exit=$rc)"
+      grep -E "^(FALHOU|ACEITE_)" "$saida" | head -5
+    fi
+  }
+  DENTES_OK=0
+  # Dente do card (item 12): se a limpeza de citacao cair, a resposta cujo descadastro so' existe
+  # no historico citado vira OPT_OUT — e o aceite TEM de reprovar o item 12 nomeado.
+  mutar citacao '        if re.match(r"^(em|on)\s.{0,200}(escreveu|wrote):\s*$", normalizar(t)):' \
+    '        if False and re.match(r"^(em|on)\s.{0,200}(escreveu|wrote):\s*$", normalizar(t)):'
+  dente citacao "dente: descadastro so na citacao NAO vira OPT_OUT"
+  echo "-- dentes OK=$DENTES_OK de 1"
+  if [ "$DENTES_OK" = "1" ]; then echo "PROVA_DE_DENTE_OK"; exit 0; fi
+  echo "PROVA_DE_DENTE_FALHOU"; exit 1
+fi
 
 echo "== 0. pre-flight"
 docker info >/dev/null 2>&1; item "docker responde (daemon presente)" $?
@@ -62,7 +127,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout "$BASE/ca/dev.key" -out "$BASE
 item "certificado TLS proprio gerado" $?
 
 echo "== 2. PostgreSQL descartavel + migration 0001"
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD=dev -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container descartavel $PG criado" $?
 pronto=1
@@ -119,7 +184,7 @@ export TRE_AMBIENTE=dev TRE_TITAN_IMAP_HOST=127.0.0.1 TRE_TITAN_IMAP_PORT=2993 \
   TRE_TITAN_IMAP_SEGURANCA=implicit_tls TRE_TITAN_IMAP_CAIXA=INBOX TRE_TITAN_USER="$USUARIO_SINK" \
   TRE_TITAN_PASSWORD="$SENHA_SINK" TRE_TITAN_CA="$BASE/ca/dev.pem" TRE_TITAN_DOMINIO_DEV=dev.local \
   TRE_RESPOSTAS_PORTA_BANCO="$PORTA_BANCO"
-COMPONENTE="python3 hermes/agentes/respostas/ingestao_respostas.py"
+COMPONENTE="python3 $MODULO"
 
 echo "== 5. guardas antes de escrever"
 $COMPONENTE --planejar >"$BASE/c5-planejar.out" 2>&1; item "--planejar sem banco (exit 0)" $?

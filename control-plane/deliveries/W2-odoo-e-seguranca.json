@@ -1,0 +1,780 @@
+{
+  "delivery_id": "TRE-W2",
+  "project": "Transformativa Revenue Engine",
+  "release": "R1 — Foundation",
+  "wave": "W2 — Odoo (modulo transformativa_sales_ai e seguranca)",
+  "release_status": "IN_PROGRESS",
+  "current_gate": "VALIDATION",
+  "production_promotion_authorized": false,
+  "updated_at": "2026-10-05",
+  "human_approval": {
+    "required": true,
+    "status": "PENDING",
+    "decision": "PENDING",
+    "approved_by": null,
+    "approved_at": null,
+    "scope": [
+      "validacao integrada do lote RLS/tenant/isolamento"
+    ],
+    "production_promotion_authorized": false,
+    "round": 1
+  },
+  "work_items": [
+    {
+      "id": "TRE-W2-E07-T01",
+      "title": "Configurar ACLs/security (carteira x tenant)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_e0b1bcbf",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "evidence": "FAIL->PASS por DECISAO DO DONO (opcao A, 03/10/2026; linha no registro de aprovacoes). O veredito anterior era FAIL e e' real: o harness do E07 (`scripts/odoo/verificar-acl-modulo.sh` + `provar_acl_modulo.py`, ultimo a toca-lo o commit 060c369) media a superficie de ACL contra um SO modelo (`tf.process.opportunity`, 2 ACLs); o card posterior TRE-W3-E03-T01 (commit d0b8d5a) entregou o consumidor de outbox e o modelo `tf.evento.outbox` ganhou 3 ACLs -> 5 ACLs em 2 modelos, e o aceite reprovava com 'esperado so tf.process.opportunity' + 'ACLs do modulo: 5 (esperado 2)' + 2 falhas em cascata. O dono escolheu NAO reverter o `tf.evento.outbox` (o consumidor existe e e' usado) e mandou ATUALIZAR o harness para uma ALLOW-LIST EXPLICITA, sem afrouxar o guardrail: ACL INESPERADA (fora da allow-list) reprova e ACL FALTANDO tambem. Realinhado o harness (commit 3d1506f), o aceite fica verde e o veredito volta a PASS. Nao houve escrita em sales_intelligence (ACL e' dado do modulo Odoo); a medicao usa dupla descartavel propria (postgres:16 + odoo:19.0) que o proprio harness sobe e remove, conferindo a instancia do dev antes/depois.",
+          "validated_at": "2026-10-03",
+          "validated_by": "Hermes — resolucao do defeito de integracao do W2 (decisao A do dono)",
+          "verification": {
+            "commit": "3d1506fa3578fd86a6f2f12d8ec148097ac95f29",
+            "ambiente": "VPS Contabo vmi3619453 (dev): modulo e harness lidos da copia isolada /opt/tre/dev/w2fix-acl (tar do develop, sha256 conferidos dos dois lados), NUNCA a copia operacional; medicao em dupla descartavel propria (postgres:16 + odoo:19.0) que o proprio harness sobe e remove, com conferencia da instancia do dev antes/depois e de /opt/tre/{homolog,prod} com 0 arquivo; nada escrito em sales_intelligence",
+            "passes_independentes": 2,
+            "portoes": [
+              {
+                "gate": "bash scripts/odoo/verificar-acl-modulo.sh (modulo do develop; dupla descartavel postgres:16+odoo:19.0)",
+                "exit": 0,
+                "resultado": "RESULTADO: ACL_OK (51 itens, 0 falhas) — 2 passadas identicas (so rotulos de container/tmp e o diretorio de log diferem); superficie de ACL = allow-list explicita (tf.evento.outbox, tf.process.opportunity); ACLs = allow-list explicita (5 xmlids)"
+              },
+              {
+                "gate": "bash scripts/odoo/verificar-acl-modulo.sh --prova-de-dente",
+                "exit": 0,
+                "resultado": "RESULTADO: ACL_DENTE_OK (2 provas, 0 falhas) — dente 1 (regra de carteira aberta) e dente 2 (ACL plantada em res.users) continuam reprovando o aceite"
+              },
+              {
+                "gate": "PROVA NEGATIVA (ACL INESPERADA) — copia descartavel com 'access_tf_evento_outbox_plantada' no ir.model.access.csv",
+                "exit": 1,
+                "resultado": "RESULTADO: ACL_FALHOU (45 itens, 3 falha(s)): 'ACLs do modulo fora da allow-list: ...access_tf_evento_outbox_plantada...'; a superficie de MODELOS segue OK — so a allow-list de XMLIDs pega a escalacao"
+              },
+              {
+                "gate": "PROVA NEGATIVA (ACL FALTANDO) — copia descartavel sem 'access_tf_evento_outbox_system'",
+                "exit": 1,
+                "resultado": "RESULTADO: ACL_FALHOU (45 itens, 3 falha(s)): 'ACLs do modulo fora da allow-list: ... (esperado: ...access_tf_evento_outbox_system...)'; a regressao de seguranca reprova"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D04",
+      "title": "--prova-de-dente na forma documentada falha ('$0' sem caminho) e o diagnostico dizia 'prova sem dente'",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_025f9a2a",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito: o modo --prova-de-dente re-invocava o proprio script com \"$0\"; chamado pela forma DOCUMENTADA (`bash verificar-modulo-odoo.sh`, de dentro do diretorio do script), `$0` e um nome sem diretorio fora do PATH -> 'command not found' e a prova era acusada de 'item sem dente'. Conserto (b1cb7f7->f773d3c, consolidado em 3f104ac): `EU=\"$(readlink -f \"$0\")\"` e `bash \"$EU\"` em TODA re-invocacao; sub-run sem linha RESULTADO: passa a ser reportado como falha de INVOCACAO (contador proprio). Medido por EXECUCAO REAL na VPS (dupla descartavel propria, modulo do clone isolado), invocando pela forma por NOME: o aceite completo passa 51/0 e o modo dente fecha MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) sem nenhuma 'command not found'. GAP DECLARADO: o verificador NAO tem `--autoteste` proprio; o dente e' o modo de dente embutido. NOTA: o fix esta na branch fix/TRE-W2-E03-T01-D05 (commit 3f104ac, que contem o conserto do card f773d3c); develop 8e1466d ainda NAO contem o conserto.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "3f104acfcdc45b7dc7d594604110e4933d6598f5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash verificar-modulo-odoo.sh (aceite completo, forma documentada por NOME) @ 3f104ac",
+                "exit": 0,
+                "resultado": "RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas) modulo=transformativa_sales_ai banco=tre_l12_d05_aceite imagens=odoo:19.0+postgres:16"
+              },
+              {
+                "gate": "bash verificar-modulo-odoo.sh --prova-de-dente (forma por NOME, cwd = dir do script) @ 3f104ac",
+                "exit": 0,
+                "resultado": "INFO 'verificador re-invocado por caminho resolvido: /tmp/tre_lote12/repo/scripts/odoo/verificar-modulo-odoo.sh'; dente 1 OK (manifesto mutado -> MODULO_ODOO_FALHOU 19 itens); RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) — a re-invocacao NAO morre em 'command not found' e nenhuma falha e contada como INVOCACAO"
+              },
+              {
+                "gate": "bash verificar-modulo-odoo.sh --prova-de-dente (passada 2, banco/LOG_DIR proprios) @ 3f104ac",
+                "exit": 0,
+                "resultado": "saida byte-identica apos normalizacao declarada (caminho do clone, sufixo de container/rede, timestamps); MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D01",
+      "title": "DEFEITO: item do aceite 'nenhuma linha de teste FAIL:/ERROR:' e codigo morto no Odoo 19",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_578a4e4d",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito: o item do aceite 'nenhuma linha de teste FAIL:/ERROR: no log' imprimia OK mesmo com um teste reprovado, porque usava `grep -cE '^(FAIL|ERROR): '` (ancorado no inicio da linha) e no Odoo 19 a linha de reprovacao e' prefixada por 'data pid NIVEL banco logger:'. Conserto (ebd90fd, consolidado em 3f104ac): o item casa o formato real do Odoo 19. Medido por EXECUCAO REAL na VPS: o dente 2 planta um teste que falha de proposito e o item agora FALHOU nomeando a linha do log (1 linha de teste reprovada), com dente proprio (sem ele, o item poderia voltar ao padrao morto e o dente seguiria OK). NOTA: fix na branch fix/TRE-W2-E03-T01-D05 (contem ebd90fd); develop 8e1466d ainda NAO contem o conserto.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "3f104acfcdc45b7dc7d594604110e4933d6598f5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash verificar-modulo-odoo.sh --prova-de-dente (dente 2: teste que falha de proposito) @ 3f104ac",
+                "exit": 0,
+                "resultado": "FALHOU 1 linha(s) de teste reprovado(a) no log: '2026-10-04 01:48:15,057 1 ERROR tre_l12_d05_aceite_dente odoo.addons.transformativa_sales_ai.tests.test_modulo_base: FAIL: TestModuloBase.test_99_prova_de_dente'; 'OK dente 2: o item do log de teste reprovado disparou (item com dente proprio)'"
+              },
+              {
+                "gate": "bash verificar-modulo-odoo.sh --prova-de-dente (passada 2, identica) @ 3f104ac",
+                "exit": 0,
+                "resultado": "mesmo item dispara (byte-identico apos normalizacao de timestamp/banco/caminho); o item 'nenhuma linha de teste FAIL:/ERROR:' deixa de ser codigo morto e casa o formato do Odoo 19"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D02",
+      "title": "DEFEITO: --prova-de-dente herda o TRE_LOG_DIR do chamador e sobrescreve os logs do aceite",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_5c4fc7ac",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito: rodar --prova-de-dente depois de um aceite com o mesmo TRE_LOG_DIR herdao por ambiente sobrescrevia os 4 logs de passo do aceite (1-instalacao..4-reinstalacao) com a execucao mutada, apagando a evidencia bruta do aceite. Conserto (c389223, consolidado em 3f104ac): cada prova usa '$TRE_LOG_DIR/dente/prova-N' e o modo fotografa o sha256 dos [1-4]-*.log do aceite antes/depois, reprovando (fail-closed) se qualquer um mudar. Medido por EXECUCAO REAL na VPS (aceite verde 51/0 seguido do modo dente no MESMO diretorio): os 4 logs do aceite saem com sha256 identico e o item 'logs de passo do aceite intactos depois das provas' fica OK. NOTA: fix na branch fix/TRE-W2-E03-T01-D05 (contem c389223); develop 8e1466d ainda NAO contem o conserto.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "3f104acfcdc45b7dc7d594604110e4933d6598f5",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash verificar-modulo-odoo.sh (aceite) seguido de --prova-de-dente, MESMO TRE_LOG_DIR @ 3f104ac",
+                "exit": 0,
+                "resultado": "OK 'logs de passo do aceite intactos depois das provas (4 arquivo(s) com sha256 identico)' — aceite.out + 1-instalacao/2-teste/3-desinstalacao/4-reinstalacao.log do ACEITE (banco tre_l12_d05_aceite) preservados; o dente escreveu em '$TRE_LOG_DIR/dente/prova-N'"
+              },
+              {
+                "gate": "bash verificar-modulo-odoo.sh (aceite) seguido de --prova-de-dente, MESMO TRE_LOG_DIR (passada 2)",
+                "exit": 0,
+                "resultado": "guarda D02 OK nas duas passadas; SO os logs do aceite (nao os do dente) entram no teste de integridade; o modo de dente nao escreve um arquivo sequer no diretorio do aceite"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D04-D01",
+      "title": "DEFEITO [retroativo]: registro de execucoes cita head c41822e (pre-amend) e nao o head entregue f773d3c",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_52c74f31",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito: o registro de execucoes citava o head `c41822e` (commit pre-amend, nao ancestral do entregue e fora de qualquer branch) em vez do head entregue `f773d3c`. Conserto (8827c37): o registro cita o head que existe de fato na branch entregue (f773d3c, blob do script byte-identico). Verificacao por EXECUCAO REAL do verificador da classe (scripts/verificar_ponteiros_de_registro.py), que resolve cada hex 7..40 contra o repositorio: PONTEIROS_OK (11 ponteiros mortos citados, TODOS marcados, 0 sem marca). Dente: reverter o conserto em clone isolado faz o verificador FALHAR nomeando c41822e (2 falhas, exit 1). NOTA: o verificador vive na branch fix/t_37db9564-verificador-ponteiros (292baf8), que CONTEM o conserto deste card (8827c37); develop 8e1466d ainda NAO contem o conserto.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "292baf8",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_ponteiros_de_registro.py @ 292baf8 (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PONTEIROS_OK (13 itens, 0 falha(s), 11 ponteiro(s) morto(s) citado(s) — 11 marcado(s), 0 sem marca)"
+              },
+              {
+                "gate": "python3 scripts/verificar_ponteiros_de_registro.py (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PONTEIROS_OK (13 itens, 0 falhas, 0 sem marca)"
+              },
+              {
+                "gate": "DENTE EXTERNO (clone isolado): reverter o conserto 8827c37 (o registro volta a citar o head pre-amend c41822e)",
+                "exit": 1,
+                "resultado": "FALHA docs/operations/registro-de-execucoes.md:321/325 'c41822e ponteiro morto (commit fora de ref nenhuma) SEM MARCA'; RESULTADO: PONTEIROS_FALHOU (14 itens, 2 falha(s)) — o dente morde o ponteiro nomeado pelo card (c41822e -> head entregue f773d3c)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "DEFEITO-t_26be11c7",
+      "title": "DEFEITO [retroativo]: registro de execucoes e runbook de backup citam commit f1f1cb6b, inalcancavel por ref nenhuma (classe do D04-D01)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_26be11c7",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito (classe do D04-D01): o registro de execucoes e o runbook de backup citavam o commit de publicacao f1f1cb6b, hoje inalcancavel por ref nenhuma (amend/publicacao). Conserto (4ea3d36): errata de ponteiro que MANTEM o valor historico (registro do que foi publicado) e o MARCA explicitamente como 'fora de ref nenhuma', com ancora de digest publicado (e4e1f05d) reconferivel pelo proprio objeto. Verificacao por EXECUCAO REAL do verificador da classe: PONTEIROS_OK (0 ponteiro morto sem marca). Dente: reverter a errata em clone isolado faz o verificador FALHAR nomeando f1f1cb6b nas 7 citacoes (exit 1). NOTA: verificado na branch fix/t_37db9564-verificador-ponteiros (292baf8), que contem o conserto (4ea3d36); develop 8e1466d ainda NAO contem a errata.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "292baf8",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "python3 scripts/verificar_ponteiros_de_registro.py @ 292baf8 (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PONTEIROS_OK (13 itens, 0 falha(s), 11 ponteiro(s) morto(s) — 11 marcado(s), 0 sem marca); a errata do f1f1cb6b (docs/operations/registro-de-execucoes.md:193 e a nota do §7d do runbook de backup) marca as 5 citacoes como 'fora de ref nenhuma'"
+              },
+              {
+                "gate": "python3 scripts/verificar_ponteiros_de_registro.py (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PONTEIROS_OK (13 itens, 0 falhas)"
+              },
+              {
+                "gate": "DENTE EXTERNO (clone isolado): reverter a errata (4ea3d36) — as citacoes de f1f1cb6b voltam sem marca",
+                "exit": 1,
+                "resultado": "FALHA docs/operations/registro-de-execucoes.md:190/192 e backup-restore-rollback.md:192/203/212/220/248 'f1f1cb6b ponteiro morto (commit fora de ref nenhuma) SEM MARCA'; RESULTADO: PONTEIROS_FALHOU (10 itens, 7 falha(s)) — o dente morde exatamente o ponteiro nomeado"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E04-T01-D01",
+      "title": "DEFEITO: artefatos do TRE-W2-E04-T01 fora do verificador de estrutura",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_5cad1689",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito: o card TRE-W2-E04-T01 registrou os 6 artefatos novos no runbook, mas o verificador de estrutura nao conhecia nenhum deles (grep = 0 no commit 3b0eac3) — o gate que reprova 'arquivo existe na VPS mas nunca entrou no repo' / 'perdeu o bit de execucao' ficava cego. Conserto (80b64a8): bloco por DIRETORIO (o que existe na arvore tem de estar no `git ls-files`), com conferencia de bit de execucao no disco e no indice do git, cobertura de docs/runbooks e guarda do proprio gate. Verificacao por EXECUCAO REAL do verificador no clone isolado: PASS (0 falhas). Dente: `git rm --cached` do models/res_partner.py faz o verificador FALHAR nomeando o arquivo (exit 1); restaurado, volta a PASS. NOTA: fix na branch fix/TRE-W2-E04-T01-D01 (80b64a8); develop 8e1466d ainda NAO contem o bloco novo.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "80b64a8746499b83165727efa7ce5c34aa7c56b2",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash scripts/verificar_estrutura.sh @ 80b64a8 (passada 1)",
+                "exit": 0,
+                "resultado": "RESULTADO: PASS (0 falhas); bloco novo cobre por DIRETORIO 'odoo/addons/transformativa_sales_ai' + 'scripts/odoo' (todo *.py/*.sh/*.md/*.xml/*.csv versionado), bit de execucao NO DISCO e 100755 no INDICE, e docs/runbooks/*.md; guarda do proprio gate (lista vazia/curta reprova)"
+              },
+              {
+                "gate": "bash scripts/verificar_estrutura.sh (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida BYTE-IDENTICA (diff cru = 0); PASS (0 falhas)"
+              },
+              {
+                "gate": "DENTE EXTERNO (clone isolado): git rm --cached odoo/addons/transformativa_sales_ai/models/res_partner.py",
+                "exit": 1,
+                "resultado": "FALHOU nao versionado odoo/addons/transformativa_sales_ai/models/res_partner.py (arquivo existe mas nao esta no git); RESULTADO: FALHOU (1) — o dente morde o artefato nomeado pelo card; restaurado -> PASS (0 falhas), exit 0"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E04-T02-D01",
+      "title": "DEFEITO [revisao tester t_d3bd6660]: assinatura do dente 1 do verificador de crm.lead prova o SINTOMA, nao a CAUSA (O8)",
+      "stage": "DONE",
+      "current_gate": "DONE",
+      "children": [
+        {
+          "hermes_task_id": "t_945f96f1",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "validation_result": "PASS",
+          "eixo_de_risco": "CONTRATO/API",
+          "evidence": "Defeito (O8 da revisao independente do t_d3bd6660): a assinatura de falha do dente 1 nao era exclusiva da mutacao do proprio dente — um defeito de OUTRA classe (erro de sintaxe -> odoo --init exit 255, nenhum rename) tambem faz o campo sumir do banco e satisfazia 'campo nomeado pelo contrato AUSENTE', entao o julgador aprovava o dente sobre um modulo que nunca instalou. Conserto (a96e8af): confere_dente ganha o 5o parametro (exige o caminho SAUDAVEL) e os dentes 1-3 passam 1 — alem da assinatura, a saida tem de trazer 'OK odoo --init exit 0' e 'OK ir_module_module.state = installed'; guarda fail-closed de medicao no passo 2. Verificacao por EXECUCAO REAL na VPS (dupla descartavel propria): CRM_LEAD_DENTE_OK (5 provas, 0 falhas). Dente do proprio O8 (offline, sobre a saida REAL do dente 1): a mesma saida sem a linha saudavel e' REJEITADA (a prova nao instalou o modulo), enquanto o codigo ANTIGO a aceitava — o dente morde exatamente a classe do defeito. NOTA: fix na branch fix/TRE-W2-E04-T02-D01 (a96e8af); develop 8e1466d ainda NAO contem o conserto.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+          "verification": {
+            "commit": "a96e8af71bd9315f23233762d197666c023e5bf0",
+            "ambiente": "VPS Contabo vmi3619453 (dev, root via ssh): clone ISOLADO em /tmp/tre_lote12/repo (bundle git do commit sob teste), NUNCA a copia operacional /opt/tre/repo nem o modulo instalado do dev. Os verificadores executam em DUPLA DESCARTÁVEL PRÓPRIA (postgres:16 + odoo:19.0, rede/banco/nomes proprios, --rm na limpeza; nunca pg-odoo-dev/odoo_dev). Modulo lido da copia isolada. DUAS passadas com exit 0; saida byte-identica apos normalizacao declarada dos tokens volateis (sufixo do container/rede e03t01-*/e04t02-*, diretorio temporario /tmp/verificacao-*/, timestamps dos logs e caminho do clone). Higiene: 5 containers / 7 volumes / 0 dangling antes; os conteineres/volumes descartaveis dos runs foram removidos (docker rm -f -v dos residuos) e o estado medido depois. Zero escrita em sales_intelligence; zero producao. Havia uma EXECUCAO IRMA concorrente (outro clone /tmp/tre_lote12/repo_e04t02) em voo — seus conteineres NAO foram tocados.",
+            "passes_independentes": "2",
+            "portoes": [
+              {
+                "gate": "bash verificar-crm-lead-odoo.sh --prova-de-dente @ a96e8af (passada 1)",
+                "exit": 0,
+                "resultado": "baseline CRM_LEAD_OK (43 itens, 0 falhas); dentes 1-5 OK cada um com a SUA assinatura; RESULTADO: CRM_LEAD_DENTE_OK (5 provas, 0 falhas)"
+              },
+              {
+                "gate": "bash verificar-crm-lead-odoo.sh --prova-de-dente (passada 2, identica)",
+                "exit": 0,
+                "resultado": "saida byte-identica apos normalizacao declarada (banco/caminho de log/sufixo de container/timestamps); CRM_LEAD_DENTE_OK (5 provas, 0 falhas)"
+              },
+              {
+                "gate": "CONTROLE NEGATIVO O8 (offline, funcao confere_dente do proprio artefato entregue, alimentada com a saida REAL do dente 1)",
+                "exit": 0,
+                "resultado": "(a) saida real COM 'OK odoo --init exit 0' + 'OK ir_module_module.state = installed', exige_saude=1 -> OK; (b) MESMA saida SEM a linha saudavel, exige_saude=1 -> FALHOU 'a prova nao instalou o modulo — queda de ambiente nao e prova de dente'; (c) mesma saida mutilada com o codigo ANTIGO (exige_saude=0) -> OK (o falso-positivo do O8); DENTE_FALHAS=1 (so o caso-b)"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E02-T01",
+      "title": "Configurar CRM básico",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_adea8e6b",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `RESULTADO: CRM_DEV_OK (29 itens, 0 falhas)` (exit 0) em ambas; unica diferenca entre os logs e' o carimbo de tempo da medicao. Dente: alvo mutado (TRE_ODOO_BANCO apontando para banco inexistente) -> `CRM_DEV_FALHOU (13 itens, 3 falhas)`, exit 1. Verifier read-only: le o estado vivo (psql dentro de pg-odoo-dev, containers, HTTP, UFW) e nao escreve nada no ambiente.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/provision/verificar-crm-dev.sh",
+            "natureza": "mede o ESTADO VIVO do odoo_dev (nao escreve)",
+            "passadas": 2,
+            "dente": "mutacao do alvo -> CRM_DEV_FALHOU (13 itens, 3 falhas), exit 1",
+            "log": "/tmp/tre_lote13/card123_{pass1,pass2,dente}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E04-T01",
+      "title": "Customizar res.partner",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_adee6ad7",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `RESULTADO: RES_PARTNER_OK (64 itens, 0 falhas)` (exit 0) em ambas; diferem so' nomes efemeros de container e diretorio temporario. Prova de dente do proprio verifier (`--prova-de-dente`): baseline NAO mutado mede verde + 3 mutacoes, cada uma em copia propria, todas reprovando -> `RESULTADO: RES_PARTNER_DENTE_OK (3 provas, 0 falhas)`. Aceite de 5 passos: banco limpo `tre_e04_t01_res_partner`, testes do Odoo, catalogo do PostgreSQL (AC1), criacao/consulta de parceiro sintetico pelo ORM (AC3), desinstalacao (rollback declarado). Banco e rede descartaveis removidos ao fim.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-res-partner.sh",
+            "natureza": "instalacao em banco limpo + testes + leitura no banco + ORM + rollback",
+            "passadas": 2,
+            "dente": "modo proprio do verifier -> RES_PARTNER_DENTE_OK (3 provas, 0 falhas)",
+            "banco_descartavel": "tre_e04_t01_res_partner",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card124_{pass1,pass2,dente}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E06-T01",
+      "title": "Criar views Sales AI",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_cf7519c9",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `RESULTADO: VIEWS_OK (83 itens, 0 falhas)` (exit 0) em ambas — o mesmo numero de itens do aceite original documentado no registro de execucoes. Prova de dente (`--prova-de-dente`): baseline NAO mutado mede verde (`VIEWS_OK (83 itens, 0 falhas)` em `tre_e06t01_views_baseline`) + 2 mutacoes em copia propria, cada uma reprovando (uma delas derrubou 27 itens) -> `RESULTADO: VIEWS_DENTE_OK (2 provas, 0 falhas)`. Aceite de 6 passos: banco limpo `tre_e06t01_views`, testes do modulo, leitura no banco (views/menus/acao/arch), prova independente (`scripts/odoo/provar_views_sales_ai.py`, 21 itens), rollback por desinstalacao pelo ORM, limpeza com dev/homolog/prod intactos.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-views-sales-ai.sh",
+            "prova_independente": "scripts/odoo/provar_views_sales_ai.py (21 itens, sem traceback)",
+            "passadas": 2,
+            "dente": "modo proprio -> VIEWS_DENTE_OK (2 provas, 0 falhas)",
+            "banco_descartavel": "tre_e06t01_views",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card126_{pass1,pass2,dente}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E04-T02",
+      "title": "Customizar crm.lead",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_d3bd6660",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `RESULTADO: CRM_LEAD_OK (64 itens, 0 falhas)` (exit 0) em ambas. Prova de dente (`--prova-de-dente`): baseline NAO mutado mede verde (`CRM_LEAD_OK (43 itens, 0 falhas)` em `tre_e04_t02_crm_lead_baseline`) + 2 mutacoes em copia propria, ambas reprovando (16 falhas e 1 falha) -> conjunto `CRM_LEAD_DENTE_OK`. Aceite de 6 passos, incluindo o confronto modulo x contrato congelado (`docs/data/data_contract_v1.json`) como passo 0 e rollback por desinstalacao. Banco descartavel `tre_e04_t02_crm_lead`.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-crm-lead-odoo.sh",
+            "contrato": "docs/data/data_contract_v1.json (confronto como passo 0/6)",
+            "passadas": 2,
+            "dente": "modo proprio -> baseline verde + 2 mutacoes reprovando (16 e 1 falhas)",
+            "banco_descartavel": "tre_e04_t02_crm_lead",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card127_{pass1,pass2,dente}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D05",
+      "title": "Publicar UMA vez o verificador consolidado (D01+D03+D04)",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_de461d14",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `PASS (41 itens, 0 falhas, 1 pulados)` (exit 0) em ambas; unica diferenca entre os logs e' o nome do diretorio temporario da suite. Suite do lado do Hermes (nao do VPS), rodada com o venv do /opt/hermes contra destino temporario. Cobre o encaixe do gate de hotspot: A1/A2 formas de declaracao, B3/C4 balde `skipped_hotspot`, F1/F2 `--check` sem alterar o runtime, F5/F6 `--aplicar` (6 ancoras + adaptador) com o kernel compilando, F7 idempotencia e **F8 rollback byte a byte** (`--reverter` devolve os 3 modulos ao estado anterior e remove o adaptador). LIMITACAO DECLARADA: F3 (adaptador instalado == versionado no repo) ficou PULADO por exigir root em /opt/hermes — `deploy/hermes/aplicar_hotspot.sh` e' o caminho do operador para esse passo.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/verificar_hotspot_gate.py (suite declarada em docs/validation/hotspot-de-arquivo-suite.md)",
+            "onde": "host do Hermes (nao VPS): /opt/hermes/.venv/bin/python, contra destino temporario",
+            "passadas": 2,
+            "itens": "41 itens, 0 falhas, 1 pulado (F3, exige root)",
+            "rollback": "F8 provado byte a byte",
+            "log": "/tmp/l13_hotspot{,2}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01",
+      "title": "Criar módulo transformativa_sales_ai",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_c536ce86",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "2 passadas identicas: `RESULTADO: MODULO_ODOO_OK (51 itens, 0 falhas)` (exit 0) em ambas, banco descartavel `tre_e03_t01_modulo` nacendo do zero. Prova de dente (`--prova-de-dente`, tres provas: versao, teste, resquicio): as mutacoes reprovaram com 3 falhas cada (`MODULO_ODOO_FALHOU (19 itens, 3 falhas)` e `(36 itens, 3 falhas)`) -> `RESULTADO: MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`. O aceite mede o modulo em banco limpo e le o estado no banco, nao a copia operacional.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-modulo-odoo.sh (aceite 51 itens + --prova-de-dente)",
+            "passadas": 2,
+            "dente": "3 provas (versao, teste, resquicio) -> MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)",
+            "banco_descartavel": "tre_e03_t01_modulo",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card125_{pass1,pass2,dente}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D03",
+      "title": "DEFEITO: itens de resquício do aceite medem pelo nome do módulo e não cobrem entidade Odoo",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_9e402411",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Verificacao do conserto no artefato entregue: o verificador passou a capturar a superficie COM o modulo instalado — `capturar_superficie_do_modulo()` recebe o banco nesse estado, o INFO imprime a regua derivada ('item sem superficie nao prova nada') e o aceite confere `ir_module_module.state = installed` no banco. PROVA DE QUE A REGUA ANTIGA NAO TINHA DENTE: a regua antiga media pelo nome do PACOTE e acusava 0 resquicio COM o modulo instalado; a nova reprova com resquicio plantado (dente 3: desinstalacao real + plantio de modelo, tabela, campo e view), e a sonda direta le `MODELOS_PROPRIOS=tf.process.opportunity`. Medicao PROPRIA nesta rodada (independente da do card): `--prova-de-dente` do mesmo verificador -> `MODULO_ODOO_DENTE_OK (2 provas, 0 falhas)`, com o aceite remedido em `MODULO_ODOO_OK (51 itens, 0 falhas)` nas duas passadas do card 125.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-modulo-odoo.sh (passo 3 com superficie + dente 3 de resquicio plantado)",
+            "regua": "superficie derivada do modulo em state='installed' (nao o nome do pacote)",
+            "dente": "resquicio plantado reprova; regua antiga era cega no mesmo cenario",
+            "medicao_propria": "MODULO_ODOO_DENTE_OK (2 provas, 0 falhas) + aceite 51 itens/0 falhas x2",
+            "registro": "docs/operations/registro-de-execucoes.md, entrada de 2026-10-01 (D03)",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E03-T01-D03-D01",
+      "title": "DEFEITO [retroativo]: runbook §10 e registro citam \"8 compartilhadas\" no crm",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_d705ea32",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Defeito de NÚMERO em texto entregue. Checagem por string exata nos documentos do repo: `das quais **8 compartilhadas**` -> **0 ocorrencias** (o numero errado nao existe mais em docs/); `das quais **11 compartilhadas**` -> 1 ocorrencia, no §10 do runbook do modulo (linha 328), ja com a lista completa de 11 (`calendar.event`, `crm.lead`, `crm.team`, `crm.team.member`, `digest.digest`, `ir.config_parameter`, `mail.activity`, `res.config.settings`, `res.partner`, `res.users`, `utm.campaign`); `crm.team.member` -> 2 ocorrencias; `utm.campaign` (forma correta do modelo Odoo) -> 2 ocorrencias. O unico `utm_campaign` que permanece e' legitimo: campo JSON de payload em `docs/runbooks/captura-de-lead-do-site.md`, nao nome de modelo. No registro de execucoes a frase com a contagem nao existe (nem com 8 nem com 11), logo nao ha' afirmacao errada remanescente. Sem efeito em codigo ou na conclusao do filtro, como o proprio card declara.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "checagem": "string exata em docs/ (grep -rF): 0 ocorrencias do numero errado, 1 do corrigido",
+            "arquivo_corrigido": "docs/runbooks/odoo-modulo-sales-ai.md §10 (linha 328)",
+            "nota": "defeito documental retroativo: numero errado em justificativa de filtro, sem efeito no codigo",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E05-T01",
+      "title": "Criar tf.process.opportunity",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_9c91ecce",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Aceite homologado pelo dono (29/09/2026): modelo criado com os campos do contrato, oportunidade canonica no Odoo com vinculo a `res.partner`, e teste de criacao, consulta e relacao. MEDIDO NO ARTEFATO ENTREGUE: (1) o modelo `tf_process_opportunity.py` declara os campos do contrato — `tf_uuid`, `name` (required, indexado), `active`, `company_id`, `currency_id`, `stage_id` (crm.stage), `lost_reason_id` (crm.lost.reason) — e `partner_id = fields.Many2one('res.partner', ondelete='restrict')`, com o comentario de que toda oportunidade canonica pertence a um parceiro; (2) cada criterio tem teste NOMEADO em `tests/test_oportunidade_canonica.py`: `test_01_modelo_criado_com_os_campos_do_contrato`, `test_04_campos_do_contrato_gravam_e_leem`, `test_05_consulta_por_uuid_e_por_parceiro`, `test_06_relacao_com_parceiro_e_restricao_de_exclusao` (mais uuid unico/imutavel/invalido); (3) a execucao: `tests/__init__.py` importa `test_oportunidade_canonica` (linha 5), e o Odoo roda todo teste importado — o aceite do modulo mediu **0 failed, 0 error(s) of 192 tests** no banco descartavel, nas duas passadas do card 126, com os dois arquivos de teste inventariados por sha256 pelo proprio harness. Os 6 testes do aceite dedicado do modulo (`verificar-modulo-odoo.sh`, card 125) NAO cobrem este card: e' o aceite de 192 que cobre.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-views-sales-ai.sh (passo 2 roda a suite do modulo; aceite de 192 testes)",
+            "medicao": "0 failed, 0 error(s) of 192 tests, em dupla descartavel propria, 2 passadas",
+            "modelo": "odoo/addons/transformativa_sales_ai/models/tf_process_opportunity.py",
+            "testes": "tests/test_oportunidade_canonica.py (9 testes) importado por tests/__init__.py",
+            "limite_declarado": "o runner nao nomeia cada teste no log; a cobertura dos 9 decorre do import no __init__ + suite completa verde",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E07-T01-D01",
+      "title": "DEFEITO [retroativo]: verificador novo das ACLs reincidiu D01+D02 do E03",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_aaaf1558",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Reincidencia de DUAS classes de defeito do E03 no harness novo das ACLs (`scripts/odoo/verificar-acl-modulo.sh`), corrigida no mesmo card. MEDIDO NO ARTEFATO: (1) ACEITE: `RESULTADO: ACL_OK (51 itens, 0 falhas)` em DUAS passadas identicas (4 passos: instalacao em banco limpo, testes do Odoo, regras lidas no banco, prova negativa independente). (2) DENTE: `ACL_DENTE_OK (2 provas, 0 falhas)` — 'dente 1: a regra de carteira aberta reprova o aceite' e 'dente 2: a ACL plantada (superficie/escalacao) reprova o aceite', com o item de linha de teste reprovado DISPARANDO (item com dente proprio). (3) PROVA DA REINCIDENCIA D02 (dente sobrescrevia a evidencia do aceite): rodei o dente com o MESMO `TRE_LOG_DIR` do aceite — o sha256 dos `[1-4]-*.log` ficou IDENTICO antes e depois (`0c0649358f21cda5`, `9db0cf344015a464`, `393ee73899b2507a`); o modo dente escreve so' em `$TRE_LOG_DIR/dente/prova-N` e tem guarda que fotografa o sha256 do aceite e reprova se algum arquivo mudar (na rodada com diretorio proprio a guarda avisou 'sem logs de passo do aceite ... sem o que proteger', comportamento correto). (4) PROVA DA REINCIDENCIA D01 (grep ancorado no inicio da linha): o padrao agora e' `grep -E '(^| )(FAIL|ERROR): [A-Za-z_]'` (o log do Odoo 19 vem prefixado por `data pid NIVEL banco logger:`) e, na mutacao, a linha 'FALHOU 4 linha(s) de teste reprovado(a) no log: ... FAIL: TestAclSeguranca.test_03.../test_05...' disparou — exatamente o cenario (4 testes reprovados) que a regua antiga imprimia como OK.",
+          "validated_at": "2026-10-04",
+          "validated_by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+          "verification": {
+            "verificador": "scripts/odoo/verificar-acl-modulo.sh (aceite de 4 passos + --prova-de-dente de 2 provas)",
+            "passadas": 2,
+            "dente": "ACL_DENTE_OK (2 provas, 0 falhas) — carteira aberta e ACL plantada reprovam o aceite",
+            "guarda_d02": "sha256 dos logs do aceite identico antes/depois do dente no mesmo TRE_LOG_DIR",
+            "regua_d01": "grep (^| )(FAIL|ERROR): [A-Za-z_] — nao ancorado; acusou as 4 linhas FAIL do dente",
+            "banco_descartavel": "tre_e07t01_acl (mutacoes em tre_e07t01_acl_d1/d2)",
+            "imagens": "odoo:19.0 + postgres:16",
+            "log": "/tmp/tre_lote13/card122_{pass1,pass2,dente,dente2}.out",
+            "commit": "9e638f7986fccc293d2acfb7f1e9bc0922839b82",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do commit 9e638f7 (bundle do develop, 765 arquivos versionados); por card, banco e rede descartaveis proprios; `odoo_dev` com os mesmos bancos antes e depois; homolog/prod sem nenhum arquivo (ADR-005), conferido pelo proprio verifier"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E01-T01",
+      "title": "Instalar Odoo Community (ambiente dev)",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_d6dc5a4c",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "Aceite medido nos quatro criterios homologados: (i) Odoo Community no dev com compose versionado — `deploy/compose/dev/odoo.yml` + `deploy/environments/dev-odoo.env` batem byte a byte com as copias vivas em /opt/tre/dev/compose/; (ii) versao registrada e reproduzivel — imagem `odoo:19.0` pinada, tag==digest sha256:77bac5cd...f85cd, binario 'Odoo Server 19.0-20260926'; (iii) servico sobe e responde — HTTP 200 em 127.0.0.1:8069/web/login (pagina do Odoo, 5948 bytes), container odoo-dev e pg-odoo-dev de pe com restart=unless-stopped, banco `odoo_dev` presente e separado do `sales_intelligence` nos dois lados; (iv) nada exposto publicamente — Odoo so em loopback (ss 127.0.0.1:8069), pg-odoo-dev sem porta, UFW [22/tcp 443/tcp 80/tcp] sem 8069. MEDIDO por `scripts/provision/verificar-odoo-dev.sh` (`RESULTADO: ODOO_DEV_OK (19 itens, 0 falhas) versao=19.0 porta=127.0.0.1:8069`), DUAS passadas + uma terceira: as TRES byte-identicas (sha256 55df92242d1e...), diff limpo, SEM tokens volateis a normalizar. DOIS DENTES QUE MORDEM, em copias isoladas (o alvo versionado nunca foi tocado): (1) shim de `docker` interceptando so `docker port odoo-dev` para devolver 0.0.0.0:8069 -> `RESULTADO: ODOO_DEV_FALHOU (19 itens, 1 falha)` com 'FALHOU odoo-dev publica endereco publico' (a mesma prova negativa que o runbook §4 usa); (2) copia do par sem ODOO_VERSION -> `RESULTADO: ODOO_DEV_FALHOU (19 itens, 5 falhas)`. LIMITACAO DECLARADA: o verificador e' read-only e amarrado aos nomes vivos (pg-odoo-dev, odoo-dev, volume pgdata-odoo-dev, banco odoo_dev) — nao existe base descartavel para ele; as passadas medem o ambiente dev entregue, que e' o alvo do card. O aceite mede o ambiente vivo (Odoo Up 4 dias), nao um install fresco; o rollback+reinstalacao de 01/10/2026 do runbook nao foi reproduzido. Nada foi gravado no dev nem em artefato; zero escrita externa.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/provision/verificar-odoo-dev.sh (read-only, contra o dev entregue)",
+            "passadas": 3,
+            "medicao": "ODOO_DEV_OK (19 itens, 0 falhas) versao=19.0 porta=127.0.0.1:8069 — byte-identicas",
+            "dente": "MORDE x2: porta publica simulada -> FALHOU (19/1); ODOO_VERSION removida -> FALHOU (19/5)",
+            "sha_verificador": "7db09de011c9178b71fb79c1a7142f73576c121574ec559e8d23807a1d5126ed",
+            "log": "/tmp/tre_lote14/agentB/{pass1,pass2,pass1b,dente,dente_env}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte (grep nos logs do VPS) antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    },
+    {
+      "id": "TRE-W2-E01-T02",
+      "title": "Configurar TLS/reverse proxy/security",
+      "stage": "DONE",
+      "current_gate": "VALIDATION",
+      "children": [
+        {
+          "hermes_task_id": "t_1acf11f2",
+          "stage": "DONE",
+          "current_gate": "VALIDATION",
+          "validation_result": "PASS",
+          "evidence": "PASS APOS DECISAO DO DONO (05/10/2026): o criterio 'HTTPS com certificado valido (sem bypass) foi cumprido DE VERDADE, de fora, e a regua foi evoluida junto. Sequencia medida: (1) o dono criou o registro A `odoo-dev` -> 169.58.24.102 no Netlify DNS (zona na nsone); confirmei por DoH E por socket, e confirmei que o e-mail segue intacto (MX mx1/mx2.titan.email 10/20 e o TXT v=spf1 include:spf.titan.email ~all + verificacao Canva, identicos antes e depois); (2) apliquei a virada do TLS publico comentando o `tls internal` SO' do site principal (linha 37) e mantendo a CA interna no catch-all `:443` (linha 75) — o `caddy reload` falhou na API de admin ([::1]:2019 recusou) e a aplicacao veio por `docker restart proxy-dev`, com backup do Caddyfile no disco; (3) o Caddy emitiu certificado PUBLICO: subject=CN=odoo-dev.transformativa.com.br, issuer='C=US, O=Let's Encrypt, CN=YE2', valido 05/10/2026 17:04Z -> 03/01/2027, log 'certificate obtained successfully'; (4) de FORA (host do Hermes, terceiro de verdade): `http=401 ssl_verify_result=0` — cadeia publica valida SEM bypass e o proxy continua exigindo credencial; (5) `RESULTADO: TLS_DEV_OK (29 itens, 0 falhas)` DUAS vezes (o alvo passou de 28 para 29 itens porque o item 7 ganhou a prova negativa). REGUA EVOLUIDA (decisao 1 do dono), com o historico honesto: o item 7 exigia 'sem a ancora tem de FALHAR', premissa valida so' no mundo de CA interna — mantida, reprovaria para sempre um alvo melhor. Virou modo duplo: se passa sem ancora, exige EMISSOR DE CA PUBLICA (nunca Caddy Local Authority, nunca vazio) E a prova negativa. O MEU PRIMEIRO DISCRIMINATOR NAO DISCRIMINAVA e o proprio item 7 pegou isso: `curl --cacert <CA errada>` devolve exit=0 neste build (curl 8.18 + OpenSSL 3.5 nao substitui o store do sistema) -> trocado por `openssl s_client -CAfile`, que usa SO' o arquivo apontado; medido agora: 'Verify return code: 20 (unable to get local issuer certificate)'. Tambem versionado o conserto DEFEITO 7 do healthcheck do proxy (repo agora IDENTICO ao que esta no ar). Baseline da VPS: 5 containers / 7 volumes / 0 dangling / 4 redes.duas passadas identicas de `scripts/provision/verificar-tls-dev.sh` na VPS: `RESULTADO: TLS_DEV_OK (28 itens, 0 falhas) hostname=odoo-dev.transformativa.com.br portas=80/443`, identicas apos normalizar dois tokens volateis declarados (basename temporario da ancora, item 6; marcador X-Forwarded-For, item 16). DENTES QUE MORDEM em copias isoladas do Caddyfile servidas por containers proprios (porta 18443/18444, base real intocada): (A) copia SEM basic_auth -> `TLS_DEV_FALHOU (28 itens, 1 falha)` com 'FALHOU sem credencial do proxy o Odoo FOI servido (200, corpo com pagina do Odoo) — dev exposto sem protecao' (item 11); (B) copia SEM hardening headers -> `TLS_DEV_FALHOU (28 itens, 3 falhas)` com HSTS, Referrer-Policy e cabecalho Server exposto (item 8). Varredura de fora: 22/80/443 abertas; 8069/5433/8443/2019 HISTORICO DO BLOQUEIO, JA' RESOLVIDO (mantido para rastro): (1) o criterio 'Acesso por HTTPS com certificado valido (sem bypass de aviso)' so' e' cumprido contra a ANCORA INTERNA — o certificado no ar e' 'issuer=CN=Caddy Local Authority' e a chamada HTTPS de fora com a cadeia default falha ('curl exit=60, ssl_verify_result=20'); (2) `odoo-dev.transformativa.com.br` NAO RESOLVE (NXDOMAIN, conferido por mim agora) — e a propria descricao do card reserva ao dono a 'Decisao do Anderson: dominio, portas e exposicao', que o runbook odoo-dev-tls.md §1.2 registra como PENDENTE. EFEITO COLATERAL DO CARD, JA' RESOLVIDO (conserto versionado nesta rodada): a copia OPERACIONAL diverge do repo — /opt/tre/dev/compose/proxy.yml no ar tem um bloco marcado 'DEFEITO 7' (extra_hosts + healthcheck por hostname) que NAO existe em origin/develop nem na branch do card (conferido por mim: vivo=1 ocorrencia, repo=0). LIMITACAO DECLARADA: o verificador nao e' redirecionavel para base renomeada (hardcoda proxy-dev/odoo-dev/ufw), entao as passadas medem a base dev entregue; no dente, so' os itens 5-12 medem a copia mutada. INCIDENTE CORRIGIDO: a primeira tentativa dos mutantes abriu a porta 80 viva por SO_REUSEPORT; foi corrigido e os dentes refeitos limpos, e as duas passadas rodaram ANTES de existir mutante. Baseline final 5 containers / 7 volumes / 0 dangling / 4 redes.",
+          "validated_at": "2026-10-05",
+          "validated_by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+          "verification": {
+            "verificador": "scripts/provision/verificar-tls-dev.sh",
+            "passadas": 2,
+            "medicao": "TLS_DEV_OK (28 itens, 0 falhas) hostname=odoo-dev.transformativa.com.br portas=80/443",
+            "dente": "MORDE x2: sem basic_auth -> FALHOU (28/1, Odoo servido sem credencial); sem headers -> FALHOU (28/3, HSTS/Referrer-Policy/Server)",
+            "bloqueio": "decisao de dominio do dono PENDENTE — o dominio nao resolve (NXDOMAIN) e o certificado no ar e' CA interna",
+            "divergencia_operacional": "proxy.yml vivo tem bloco 'DEFEITO 7' ausente do repo (vivo=1, repo=0)",
+            "log": "/tmp/tre_lote14/agentC/{pass1,pass2,dente_a,dente_b}.out",
+            "evidencia_conferida_por": "Hermes leu os vereditos na fonte e conferiu NXDOMAIN e a divergencia do proxy.yml antes de registrar",
+            "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
+            "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
+          }
+        }
+      ]
+    }
+  ],
+  "production_promoted_task_ids": [],
+  "events": [
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "at": "2026-10-03T14:44:52+00:00",
+      "by": "Hermes — validacao integrada (lote RLS/tenant/isolamento)",
+      "scope": "lote RLS/tenant/isolamento — validacao integrada (dev, read-only)",
+      "cards": [
+        "t_e0b1bcbf"
+      ],
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "VALIDATION_VERDICT_RESOLVED",
+      "at": "2026-10-03T15:13:19+00:00",
+      "by": "Hermes — resolucao do defeito de integracao do W2 (decisao A do dono)",
+      "card": "t_e0b1bcbf",
+      "from": "FAIL",
+      "to": "PASS",
+      "resolution": "decisao do dono (opcao A, 03/10/2026): atualizar o harness de ACL do E07 para ALLOW-LIST EXPLICITA do conjunto conhecido (5 ACLs em 2 modelos), reconhecendo tf.evento.outbox; NAO reverter o consumidor de outbox. Guardrail mantido com dente (ACL inesperada e ACL ausente reprovam).",
+      "approval_line": "docs/operations/registro-de-aprovacoes.md (linha de 03/10/2026)",
+      "commit": "3d1506fa3578fd86a6f2f12d8ec148097ac95f29",
+      "production_promotion_authorized": false
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada (lote 12 — 10 cards da fila: 3 W0/JEV offline + 7 W2/Odoo em dupla descartavel própria na VPS de dev)",
+      "scope": "lote 12 — 7 cards da fila (ordens 110..119) no artefato TRE-W2",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T02:08:41+00:00",
+      "cards": [
+        "t_025f9a2a",
+        "t_578a4e4d",
+        "t_5c4fc7ac",
+        "t_52c74f31",
+        "t_26be11c7",
+        "t_5cad1689",
+        "t_945f96f1"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_adea8e6b",
+        "t_adee6ad7",
+        "t_cf7519c9",
+        "t_d3bd6660"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_de461d14"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_c536ce86"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_9e402411",
+        "t_d705ea32"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_9c91ecce"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 13 (cards W2 da fila, ordens 120..129)",
+      "scope": "lote 13 — cards W2 da fila (ordens 120..129): 4 primeiros fechados com 2 passadas + dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-04T17:40:00+00:00",
+      "cards": [
+        "t_aaaf1558"
+      ]
+    },
+    {
+      "event": "INTEGRATED_VALIDATION_RECORDED",
+      "by": "Hermes — validacao integrada do lote 14 (cards da fila, ordem de criacao no board)",
+      "scope": "lote 14 — onda W2: vereditos gravados com 2 passadas + prova de dente",
+      "production_promotion_authorized": false,
+      "at": "2026-10-05T14:00:00+00:00",
+      "cards": [
+        "t_d6dc5a4c",
+        "t_1acf11f2"
+      ]
+    }
+  ]
+}

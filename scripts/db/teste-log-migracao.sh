@@ -51,7 +51,7 @@ ko() { ITENS=$((ITENS + 1)); FALHAS=$((FALHAS + 1)); echo "FALHOU $*"; }
 
 limpar() {
   local s
-  for s in "${SERVICOS[@]:-}"; do [ -n "$s" ] && docker rm -f "$s" >/dev/null 2>&1; done
+  for s in "${SERVICOS[@]:-}"; do [ -n "$s" ] && docker rm -f -v "$s" >/dev/null 2>&1; done
   # devolve o caminho fixo ao estado anterior (o defeito deixou esse arquivo no host)
   if [ -f "$TMP/plantado_original" ]; then
     cp -a "$TMP/plantado_original" "$ARQ_FIXO" 2>/dev/null

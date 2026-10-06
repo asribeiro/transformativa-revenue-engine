@@ -264,10 +264,16 @@ texto = texto.replace(
 
     # ---------------------------------------------------------------- dente 3
     cp -a "$MODULO_DIR" "$DENTE_DIR/m3"
+    # Ancora do dente 3 atualizada (a antiga, "if existentes:", apodreceu quando o upsert por
+    # identidade foi reescrito no fecho do card): o mesmo ramo "ha' registro casado -> ATUALIZA"
+    # hoje e' o `if registros:` de `_executar_upsert` (controllers/api_controlada.py), logo abaixo
+    # da guarda de ambiguidade `if len(registros) > 1:`. Mutar esse ramo mantem a MESMA intencao do
+    # dente (desligar o upsert -> cria sempre -> duplicata) e a ancora continua EXATA: se o codigo
+    # mudar de novo, a mutacao nao aplica e o harness falha fechado.
     MUT3="$(mutar_python "$DENTE_DIR/m3/controllers/api_controlada.py" '
 texto = texto.replace(
-    "            if existentes:\n",
-    "            if False:  # mutacao: upsert por identidade desligado (cria sempre)\n",
+    "        if registros:\n",
+    "        if False:  # mutacao: upsert por identidade desligado (cria sempre)\n",
     1,
 )
 ')"
@@ -421,8 +427,8 @@ if [ "$FALHAS" -gt 0 ]; then resumo; fi
 # helpers
 # ---------------------------------------------------------------------------
 limpeza() {
-    [ -n "$API_CT" ] && docker rm -f "$API_CT" >/dev/null 2>&1
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    [ -n "$API_CT" ] && docker rm -f -v "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     docker network rm "$NET_TMP" >/dev/null 2>&1
     [ -n "$DESC_DIR" ] && rm -rf "$DESC_DIR"
 }
@@ -909,7 +915,7 @@ JSON
     else
         ok "nenhum token/Bearer no log do servidor"
     fi
-    docker rm -f "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
     API_CT=""
     ok "servidor de API encerrado (container descartavel removido)"
 
@@ -968,7 +974,7 @@ JSON
     item_sql "a guarda de ambiente nao escreveu nada" \
         "select count(*) from crm_lead where tf_opportunity_id = '$UUID_VERSAO'" "0"
     CFG="$CFG_GUARDA"
-    docker rm -f "$API_CT" >/dev/null 2>&1
+    docker rm -f -v "$API_CT" >/dev/null 2>&1
     API_CT=""
     ok "servidor de homologacao encerrado (container descartavel removido)"
 fi
@@ -1065,7 +1071,7 @@ for auxiliar in "${AUXILIARES[@]}"; do
         else ok "banco descartavel $auxiliar removido"; fi
     fi
 done
-docker rm -f "$PG_TMP" >/dev/null 2>&1
+docker rm -f -v "$PG_TMP" >/dev/null 2>&1
 if [ -z "$(docker ps -q --filter "name=^$PG_TMP$")" ]; then ok "postgres descartavel $PG_TMP removido"
 else falhou "postgres descartavel $PG_TMP continua de pe"; fi
 docker network rm "$NET_TMP" >/dev/null 2>&1

@@ -101,7 +101,7 @@ psql_alvo() { "${PREFIXO[@]}" -q "$@" 2>&1; }
 # =====================================================================================
 SERVICO_DESCART=""
 TMP_DESCART=""
-limpar_descartavel() { docker rm -f "$SERVICO_DESCART" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP_DESCART"; }
+limpar_descartavel() { docker rm -f -v "$SERVICO_DESCART" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP_DESCART"; }
 
 prova_de_dente() {
   command -v docker >/dev/null 2>&1 || { echo "FALHOU docker ausente (a prova de dente roda onde ha Docker)"; echo "RESULTADO: TENANT_RLS_DENTE_FALHOU (1 itens, 1 falha)"; exit 1; }

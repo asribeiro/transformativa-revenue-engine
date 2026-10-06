@@ -11,26 +11,116 @@
 #     manifest.txt              metadados da execucao (origem, versao, tamanho, indices, externo)
 #     pg_dump.err               stderr do pg_dump (vazio em caso de sucesso)
 #
-# Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
-#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ
+#   Quando o ambiente DECLARA Odoo (deploy/environments/<ambiente>.env, secao "Odoo do
+#   ambiente"), o MESMO artefato recebe tambem o Odoo (card TRE-W2-E01-T01-F01):
+#     odoo_dev.dump             dump -Fc do banco do Odoo (container proprio pg-odoo-dev)
+#     odoo_dev.dump.sha256
+#     odoo-contagens.txt        <tabela>|<linhas> do schema public do Odoo
+#     odoo-filestore.tar.gz     volume do filestore (odoo-data-dev) empacotado inteiro
+#     odoo-filestore.tar.gz.sha256
+#     odoo-manifest.txt         metadados do Odoo (imagem, digest, tamanhos, arquivos)
+#   Um Odoo por ambiente dentro do MESMO artefato de proposito: restaurar o dev no meio de
+#   um incidente precisa dos DOIS lados; dois artefatos em timers diferentes produziriam
+#   restauracao pela metade. `verificar-backup.sh` escolhe o dump do trio pelo `banco:` do
+#   manifesto (senao `ls *.dump | head -1` pegaria o do Odoo) e `verificar-odoo.sh` faz o
+#   restore do Odoo descartavel, subindo o Odoo contra o banco restaurado.
+#
+# DO DONO DO ARTEFATO (conserto da rodada 2 de revisao do card t_a5afde31): o diretorio do
+# artefato e criado com modo 700 e dono do USUARIO DE SERVICO (`TRE_BACKUP_DONO`, padrao
+# `tre-deploy`), nao de quem por acaso executou o script. Sem isso, uma execucao manual do
+# operador como root gerava `root:root 700` — e o verificador de domingo, que roda como
+# `tre-deploy`, nao lia o artefato: acusava "backup pela metade" (defeito de CONTEUDO, falso)
+# para um artefato integro e a retencao nao conseguia remove-lo, imprimindo "removido(s)".
+#
+# Variaveis: TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB (globais — valem em chamada de UM
+#            ambiente), TRE_ENV_DIR, TRE_BACKUP_DIR, TRE_BACKUP_RETENCAO_DIAS,
+#            TRE_BACKUP_EXTERNO (destino remoto via rclone, ex.: s3:tre-backup), TRE_RAIZ,
+#            TRE_BACKUP_DONO (usuario de servico dono do artefato; declarado vence o padrao
+#            `tre-deploy`; sem ele na maquina, quem executa, com NOTA).
+#            O trio de CADA ambiente vem de deploy/environments/<ambiente>.env ou de
+#            TRE_PG_SERVICO_<AMBIENTE> — regra completa em scripts/backup/lib-ambiente.sh.
 #
 # SEGREDOS: o backup NAO copia `.env` de proposito. Segredo se recupera do cofre
 # (docs/operations/gestao-de-secrets.md), nao de arquivo de backup.
 #
-# Ambiente inexistente e PULADO (nao falha): assim o mesmo timer cobre dev/homolog/prod
-# desde o primeiro dia, antes de os tres existirem.
+# AMBIENTE NAO PROVISIONADO e PULADO; ambiente DECLARADO cujo container nao existe e
+# FALHA (exit != 0). Essa distincao e o conserto do defeito t_1b2ab418: a rotina imprimia
+# `BACKUP_OK` com exit 0 cobrindo ZERO ambientes (procurava `pg-dev`; o dev real e
+# `pg-sales-dev`, e nenhum timer lia deploy/environments/dev.env).
+#
+# Resultados possiveis:
+#   BACKUP_OK            — todos os ambientes provisionados foram copiados, nenhuma falha
+#   BACKUP_SEM_AMBIENTE  — nenhum ambiente provisionado: nada foi copiado (nunca "OK")
+#   BACKUP_FALHOU        — pelo menos uma falha (ambiente declarado sem container, dump
+#                          que falhou, destino externo que falhou...): exit 1
 # =====================================================================================
 set -uo pipefail
+
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-ambiente.sh
+. "$AQUI/lib-ambiente.sh"
 
 AMBIENTE="${1:-todos}"
 RAIZ="${TRE_RAIZ:-/opt/tre}"
 DEST="${TRE_BACKUP_DIR:-$RAIZ/backup}"
 RETENCAO="${TRE_BACKUP_RETENCAO_DIAS:-14}"
 EXTERNO="${TRE_BACKUP_EXTERNO:-}"
+# Dono do artefato = usuario de SERVICO (o que o timer usa), nao quem roda o script.
+# Regra: TRE_BACKUP_DONO declarado vence; sem declaracao, `tre-deploy` quando existir nesta
+# maquina; sem ele (maquina de desenvolvimento), quem executa.
+DONO_PADRAO="tre-deploy"
+DONO_DECLARADO="${TRE_BACKUP_DONO:-}"
+DONO_EXPLICITO=0
+if [ -n "$DONO_DECLARADO" ]; then
+  DONO_ALVO="$DONO_DECLARADO"; DONO_EXPLICITO=1
+elif id -u "$DONO_PADRAO" >/dev/null 2>&1; then
+  DONO_ALVO="$DONO_PADRAO"
+else
+  DONO_ALVO="$(id -un)"
+fi
 FALHAS=0
+COBERTOS=0
+PULADOS=0
 
 ok() { echo "OK    $*"; }
 ko() { echo "FALHOU $*"; FALHAS=$((FALHAS + 1)); }
+
+# Quem VAI ser o dono do artefato desta execucao (vai para o manifesto, antes do chown).
+dono_previsto() {
+  if [ "$(id -u)" = "0" ] && [ "$DONO_ALVO" != "root" ] && id -u "$DONO_ALVO" >/dev/null 2>&1; then
+    printf '%s' "$DONO_ALVO"
+  else
+    id -un
+  fi
+}
+
+# O artefato tem de ficar legivel E removivel pelo usuario de servico. Caso real medido na
+# revisao independente deste card (rodada 2): `backup-tre.sh` executado a mao pelo operador root
+# deixou `/opt/tre/backup/tre_dev_20261001T135513Z` como `root:root 700`; o
+# `verificar-ultimo-backup.sh` do timer (`tre-deploy`) nao conseguia ler o artefato, acusava
+# "backup pela metade" (falso, defeito de CONTEUDO) e a retencao nao conseguia remover o
+# diretorio enquanto imprimia "removido(s)". Rodando como root o dono e aplicado aqui.
+aplicar_dono_artefato() {
+  local dir="$1" grupo
+  if [ "$DONO_EXPLICITO" = "1" ] && ! id -u "$DONO_ALVO" >/dev/null 2>&1; then
+    ko "TRE_BACKUP_DONO='$DONO_ALVO' foi declarado e esse usuario nao existe nesta maquina — o artefato ficaria com dono '$(id -un)' e o verificador do timer nao leria nem removeria"
+    return 0
+  fi
+  if [ "$(id -u)" = "0" ] && [ "$DONO_ALVO" != "root" ]; then
+    grupo="$(id -gn "$DONO_ALVO" 2>/dev/null || printf '%s' "$DONO_ALVO")"
+    if chown -R "$DONO_ALVO:$grupo" "$dir" 2>/dev/null && chmod 700 "$dir"; then
+      ok "dono do artefato: $DONO_ALVO:$grupo (modo 700) — legivel e removivel pelo usuario de servico"
+    else
+      ko "nao consegui aplicar o dono '$DONO_ALVO:$grupo' no artefato $dir — o verificador do timer pode nao ler nem remover"
+    fi
+    return 0
+  fi
+  if [ "$(id -un)" = "$DONO_ALVO" ]; then
+    ok "dono do artefato: '$(id -un)' e o usuario de servico (modo 700, legivel e removivel pelo timer)"
+  else
+    ko "artefato criado por '$(id -un)' e o usuario de servico e '$DONO_ALVO' — sem root nao da para corrigir o dono, e o verificador do timer nao vai ler este artefato"
+  fi
+}
 
 # Contagens exatas por tabela (nao usa n_live_tup: depende de ANALYZE e mente).
 # O UNION ALL e montado DENTRO do SQL (string_agg): juntar as linhas fora da consulta nao
@@ -46,24 +136,173 @@ sql_contagens() {
   docker exec "$servico" psql -U "$usuario" -d "$banco" -tAF'|' -c "$uniao ORDER BY 1"
 }
 
+# Contagens por tabela do Odoo (schema public inteiro). Mesma tecnica e mesmo motivo do
+# trio: o UNION ALL e montado DENTRO do SQL e `n_live_tup` nao e usado (depende de ANALYZE
+# e mente). `quote_ident` protege nome de tabela com maiuscula/espaco (o Odoo tem tabelas
+# como `ir_model_fields`, mas o quoting e barato e evita surpresa com modelo customizado).
+sql_contagens_odoo() {
+  local servico="$1" usuario="$2" banco="$3"
+  local uniao
+  uniao="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc \
+    "SELECT string_agg('SELECT '''||table_name||''' AS tabela, count(*)::bigint AS linhas FROM public.'||quote_ident(table_name), ' UNION ALL ' ORDER BY table_name) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")"
+  uniao="$(printf '%s' "$uniao" | tr -d '\r' | sed '/^[[:space:]]*$/d')"
+  [ -n "$uniao" ] || return 1
+  docker exec "$servico" psql -U "$usuario" -d "$banco" -tAF'|' -c "$uniao ORDER BY 1"
+}
+
+# ---------------------------------------------------------------------------------
+# Odoo do ambiente: banco PROPRIO (pg-odoo-dev/odoo_dev) + filestore (odoo-data-dev).
+# Nada do Odoo entra no dump do trio e vice-versa: sao bancos, containers e volumes
+# separados (docs/runbooks/odoo-dev.md §2).
+#
+# O filestore e empacotado pelo DOCKER (container efemero montando o volume), nao pelo
+# caminho do host: /var/lib/docker so e legivel por quem tem o socket, e o unit roda
+# como tre-deploy — ler `docker volume inspect` e copiar o caminho seria depender de um
+# detalhe do daemon que nao e contrato.
+#
+# Segredos: o dump NAO leva senha nenhuma do cofre — `/etc/tre/odoo-dev/{pg.env,odoo.conf}`
+# ficam de fora (o dump do banco traz o que o proprio Odoo guarda, nao a credencial de
+# infraestrutura). Ver docs/operations/gestao-de-secrets.md.
+# ---------------------------------------------------------------------------------
+backup_odoo_ambiente() {
+  local amb="$1" saida="$2"
+  local servico="$TRE_ODOO_SERVICO" usuario="$TRE_ODOO_USUARIO" banco="$TRE_ODOO_BANCO"
+  local volume="$TRE_ODOO_FILESTORE"
+  local imagem_aux="${TRE_BACKUP_IMAGEM_AUX:-${TRE_BACKUP_IMAGEM:-postgres:16}}"
+  local imagem="${TRE_ODOO_IMAGEM:-odoo:19.0}"
+  local digest="${TRE_ODOO_IMAGEM_DIGEST:-n/d}"
+  local man="$saida/odoo-manifest.txt"
+  local arq_fs="$saida/odoo-filestore.tar.gz"
+
+  echo "------------------------------------------------------------------"
+  echo "-- odoo do ambiente: $amb   servico: $servico   banco: $banco   filestore: $volume"
+
+  # 1. o servico responde?
+  if docker exec "$servico" pg_isready -U "$usuario" >/dev/null 2>&1; then
+    ok "odoo: postgres responde em '$servico'"
+  else
+    ko "odoo: postgres nao responde em '$servico' (backup do Odoo abortado para nao gerar artefato vazio)"
+    return 1
+  fi
+
+  # 2. dump do banco do Odoo (formato custom, igual ao do trio: restauravel e verificavel)
+  local versao_pg
+  versao_pg="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc 'SHOW server_version' 2>/dev/null | tr -d '[:space:]')"
+  if docker exec "$servico" pg_dump -U "$usuario" -d "$banco" -Fc \
+       >"$saida/$banco.dump" 2>"$saida/odoo-pg_dump.err"; then
+    ok "odoo: dump de $banco: $(du -h "$saida/$banco.dump" | cut -f1) (postgres $versao_pg)"
+  else
+    ko "odoo: pg_dump de $banco falhou: $(head -c 300 "$saida/odoo-pg_dump.err")"
+    return 1
+  fi
+  (cd "$saida" && sha256sum "$banco.dump" >"$banco.dump.sha256") \
+    && ok "odoo: sha256 do dump gravado" || ko "odoo: sha256 do dump falhou"
+
+  # 3. contagens por tabela (o que o restore vai comparar linha a linha)
+  local tabelas_odoo
+  tabelas_odoo="$(docker exec "$servico" psql -U "$usuario" -d "$banco" -tAc \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'" 2>/dev/null | tr -d '[:space:]')"
+  if [ "${tabelas_odoo:-0}" = "0" ]; then
+    ko "odoo: banco '$banco' sem tabela nenhuma em public (base nao inicializada?) — este backup nao tem o que restaurar"
+  elif sql_contagens_odoo "$servico" "$usuario" "$banco" >"$saida/odoo-contagens.txt" \
+       && [ -s "$saida/odoo-contagens.txt" ]; then
+    ok "odoo: contagens: $(wc -l <"$saida/odoo-contagens.txt") tabelas, $(awk -F'|' '{s+=$2} END {print s+0}' "$saida/odoo-contagens.txt") linhas"
+  else
+    ko "odoo: nao consegui extrair as contagens por tabela de '$banco' (base tem $tabelas_odoo tabelas)"
+  fi
+
+  # 4. filestore: o volume inteiro (filestore do banco + sessoes + addons do data_dir)
+  if docker run --rm --entrypoint tar \
+       -v "$volume:/origem:ro" -v "$saida:/destino" \
+       "$imagem_aux" -czf "/destino/$(basename "$arq_fs")" -C /origem . \
+       >"$saida/odoo-filestore.err" 2>&1; then
+    ok "odoo: volume '$volume' empacotado ($(du -h "$arq_fs" | cut -f1))"
+  else
+    ko "odoo: falha ao empacotar o volume '$volume': $(head -c 300 "$saida/odoo-filestore.err" | tr '\n' ' ')"
+    return 1
+  fi
+  local bytes_fs arquivos_fs
+  bytes_fs="$(stat -c%s "$arq_fs" 2>/dev/null || echo 0)"
+  arquivos_fs="$(tar -tzf "$arq_fs" 2>/dev/null | grep -vc '/$' || true)"
+  (cd "$saida" && sha256sum "$(basename "$arq_fs")" >"$(basename "$arq_fs").sha256") \
+    && ok "odoo: sha256 do filestore gravado" || ko "odoo: sha256 do filestore falhou"
+
+  # 5. metadados do Odoo (em arquivo proprio; o manifesto principal o incorpora)
+  {
+    echo "odoo_servico: $servico"
+    echo "odoo_usuario: $usuario"
+    echo "odoo_banco: $banco"
+    echo "odoo_filestore_volume: $volume"
+    echo "odoo_imagem_restore: $imagem"
+    echo "odoo_imagem_digest: $digest"
+    echo "odoo_postgres: ${versao_pg:-n/d}"
+    echo "odoo_tabelas: $(wc -l <"$saida/odoo-contagens.txt" 2>/dev/null || echo 0)"
+    echo "odoo_linhas: $(awk -F'|' '{s+=$2} END {print s+0}' "$saida/odoo-contagens.txt" 2>/dev/null)"
+    echo "odoo_bytes_dump: $(stat -c%s "$saida/$banco.dump" 2>/dev/null || echo 0)"
+    echo "odoo_sha256_dump: $(cut -d' ' -f1 "$saida/$banco.dump.sha256" 2>/dev/null)"
+    echo "odoo_filestore_bytes: $bytes_fs"
+    echo "odoo_filestore_arquivos: $arquivos_fs"
+    echo "odoo_filestore_sha256: $(cut -d' ' -f1 "$arq_fs.sha256" 2>/dev/null)"
+    echo "odoo_segredos: fora do artefato (o dump nao leva /etc/tre/odoo-dev/*)"
+  } >"$man"
+  ok "odoo: manifesto gravado ($(basename "$man"))"
+  return 0
+}
+
 backup_ambiente() {
-  local amb="$1"
-  local servico="${TRE_PG_SERVICO:-pg-$amb}"
-  local usuario="${TRE_PG_USER:-tre}"
-  local banco="${TRE_PG_DB:-sales_intelligence}"
+  local amb="$1" modo="${2:-um}"
   local selo saida
+
+  # Resolucao do trio POR AMBIENTE (lib-ambiente.sh). O container NAO vem de uma variavel
+  # global quando a chamada e `todos`: uma variavel unica atravessando os tres ambientes
+  # copiaria o banco do dev tres vezes, rotulado como dev/homolog/prod.
+  if ! tre_resolver_ambiente "$amb" "$modo"; then
+    echo "=================================================================="
+    echo "-- ambiente: $amb   (resolucao de configuracao FALHOU)"
+    ko "$TRE_AMB_ERRO"
+    return 1
+  fi
+  local servico="$TRE_AMB_SERVICO" usuario="$TRE_AMB_USUARIO" banco="$TRE_AMB_BANCO"
+  tre_estado_ambiente
+
   selo="$(date -u +%Y%m%dT%H%M%SZ)"
   saida="$DEST/tre_${amb}_${selo}"
 
   echo "=================================================================="
-  echo "-- ambiente: $amb   servico: $servico   data: $selo"
+  echo "-- ambiente: $amb   servico: $servico   usuario: $usuario   banco: $banco"
+  echo "-- config:   $TRE_AMB_FONTE"
+  echo "-- data:     $selo"
   echo "=================================================================="
+  [ -n "${TRE_AMB_AVISO:-}" ] && echo "NOTA  $TRE_AMB_AVISO"
 
-  if ! docker inspect "$servico" >/dev/null 2>&1; then
-    echo "PULADO ambiente $amb: container '$servico' nao existe (ambiente ainda nao provisionado)"
-    return 0
+  case "$TRE_AMB_ESTADO" in
+    FALHAR)
+      # Era aqui que a rotina mentia: container ausente virava "PULADO" e a execucao
+      # terminava em BACKUP_OK com zero artefato.
+      ko "$TRE_AMB_MOTIVO"
+      return 1
+      ;;
+    PULAR)
+      echo "PULADO $TRE_AMB_MOTIVO"
+      PULADOS=$((PULADOS + 1))
+      return 0
+      ;;
+  esac
+
+  # Dois ambientes apontando para o MESMO container na mesma execucao produziriam um
+  # artefato de 'homolog' com o banco do dev. Recusa o segundo; nunca copia por cima.
+  if ! tre_registrar_origem "$servico"; then
+    ko "ambiente '$amb' aponta para o container '$servico', ja usado por outro ambiente desta execucao — artefato de '$amb' com o banco de outro ambiente e pior que nenhum artefato"
+    return 1
   fi
-  mkdir -p "$saida" && chmod 700 "$saida"
+
+  # Diretorio do artefato: sem escrita aqui, a rotina seguiria e o erro apareceria como
+  # "No such file or directory" no meio do dump (diagnostico no lugar errado — medido no
+  # ensaio do card t_a5afde31 quando o destino nao era gravavel pelo usuario de servico).
+  if ! mkdir -p "$saida" || ! chmod 700 "$saida"; then
+    ko "nao consegui criar o diretorio do artefato em '$saida' (destino $DEST nao e gravavel por '$(id -un)'?)"
+    return 1
+  fi
 
   # 1. o servico responde?
   if docker exec "$servico" pg_isready -U "$usuario" >/dev/null 2>&1; then
@@ -109,13 +348,35 @@ backup_ambiente() {
     "SELECT count(*) FROM pg_indexes WHERE schemaname='sales_intelligence'" 2>/dev/null | tr -d '[:space:]')"
   (cd "$saida" && sha256sum "$banco.dump" >"$banco.dump.sha256") && ok "sha256 gravado" || ko "sha256 falhou"
 
+  # 5b. Odoo do ambiente (banco proprio + filestore), quando o ambiente declara um.
+  # Ambiente que nao declara Odoo e PULADO; declarado sem container e FALHA (mesma regra
+  # do trio) — nunca "pulado" em silencio.
+  tre_resolver_odoo "$amb" || true
+  tre_estado_odoo
+  case "$TRE_ODOO_ESTADO" in
+    COBRIR)
+      echo "OK    odoo: $TRE_ODOO_MOTIVO"
+      backup_odoo_ambiente "$amb" "$saida" || FALHAS=$((FALHAS + 1))
+      ;;
+    PULAR)
+      echo "PULADO odoo: $TRE_ODOO_MOTIVO"
+      ;;
+    *)
+      ko "odoo: $TRE_ODOO_MOTIVO"
+      ;;
+  esac
+
   # 6. metadados
   {
     echo "ambiente: $amb"
     echo "servico: $servico"
     echo "banco: $banco"
+    echo "usuario: $usuario"
+    echo "config: $TRE_AMB_FONTE"
     echo "selo_utc: $selo"
     echo "host_origem: $(hostname)"
+    echo "executado_por: $(id -un)"
+    echo "dono_artefato: $(dono_previsto)"
     echo "postgres: ${versao_pg:-n/d}"
     echo "tabelas: $(wc -l <"$saida/contagens.txt" 2>/dev/null || echo 0)"
     echo "indices: ${indices:-n/d}"
@@ -123,6 +384,12 @@ backup_ambiente() {
     echo "sha256: $(cut -d' ' -f1 "$saida/$banco.dump.sha256" 2>/dev/null)"
     echo "retencao_dias: $RETENCAO"
     echo "segredos: fora do artefato (ver docs/operations/gestao-de-secrets.md)"
+    # bloco do Odoo, quando o ambiente tem um (card TRE-W2-E01-T01-F01)
+    if [ -s "$saida/odoo-manifest.txt" ]; then
+      grep -v '^$' "$saida/odoo-manifest.txt"
+    else
+      echo "odoo: ausente neste ambiente ($TRE_ODOO_MOTIVO)"
+    fi
   } >"$saida/manifest.txt"
   ok "manifesto gravado"
 
@@ -145,35 +412,63 @@ backup_ambiente() {
     echo "externo: pendente (sem destino configurado)" >>"$saida/manifest.txt"
   fi
 
+  # 7b. dono/permissao do artefato: quem le e REMOVE este artefato e o usuario de servico
+  # (o timer), nao quem por acaso rodou o script. Vem DEPOIS de tudo escrito (dump, filestore
+  # por container efemero, manifesto e envio externo) e ANTES da retencao.
+  aplicar_dono_artefato "$saida"
+
   # 8. retencao (so o prefixo deste ambiente; nunca toca em outro diretorio)
   if [ "${RETENCAO:-0}" -gt 0 ] 2>/dev/null; then
-    local removidos=0
+    local removidos=0 tentados=0 falhas_rm=0
     while IFS= read -r antigo; do
       [ -n "$antigo" ] || continue
+      tentados=$((tentados + 1))
       echo "  retencao: removendo $(basename "$antigo")"
-      rm -rf "$antigo"
-      removidos=$((removidos + 1))
+      # `rm -rf` SEM conferir o exit foi o que fez o diretorio root:root 700 do caso real
+      # escapar da retencao para sempre: o `rm` dava Permission denied, o contador subia e a
+      # rotina imprimia "removido(s)". Ausencia de erro nao e prova de remocao.
+      if rm -rf "$antigo" 2>/dev/null; then
+        removidos=$((removidos + 1))
+      elif [ -e "$antigo" ]; then
+        falhas_rm=$((falhas_rm + 1))
+        ko "retencao: NAO consegui remover $(basename "$antigo") (dono $(stat -c '%U:%G' "$antigo" 2>/dev/null || echo n/d), modo $(stat -c '%a' "$antigo" 2>/dev/null || echo n/d), rodando como $(id -un)) — este artefato escapa da retencao"
+      else
+        removidos=$((removidos + 1))
+      fi
     done < <(find "$DEST" -maxdepth 1 -type d -name "tre_${amb}_*" -mtime +"$RETENCAO" 2>/dev/null)
-    ok "retencao aplicada ($RETENCAO dias; $removidos artefato(s) antigo(s) removido(s))"
+    if [ "$falhas_rm" -eq 0 ]; then
+      ok "retencao aplicada ($RETENCAO dias; $removidos de $tentados artefato(s) antigo(s) removido(s))"
+    else
+      ko "retencao $RETENCAO dias: $removidos de $tentados artefato(s) removido(s), $falhas_rm NAO removido(s) (o log nao pode chamar de removido o que continua no disco)"
+    fi
   else
     echo "PULADO retencao desativada (TRE_BACKUP_RETENCAO_DIAS=$RETENCAO)"
   fi
 
   echo "artefato: $saida"
+  COBERTOS=$((COBERTOS + 1))
   return 0
 }
 
+if [ "$DONO_EXPLICITO" = "0" ] && [ "$DONO_ALVO" != "$DONO_PADRAO" ]; then
+  echo "NOTA  usuario de servico padrao ('$DONO_PADRAO') nao existe nesta maquina — o dono do artefato sera quem executa ($DONO_ALVO); declare TRE_BACKUP_DONO para fixar outro"
+fi
+
 if [ "$AMBIENTE" = "todos" ]; then
-  for amb in dev homolog prod; do backup_ambiente "$amb"; done
+  for amb in dev homolog prod; do backup_ambiente "$amb" todos; done
 else
-  backup_ambiente "$AMBIENTE"
+  backup_ambiente "$AMBIENTE" um
 fi
 
 echo
-if [ "$FALHAS" -eq 0 ]; then
-  echo "RESULTADO: BACKUP_OK ($AMBIENTE)"
+if [ "$FALHAS" -gt 0 ]; then
+  echo "RESULTADO: BACKUP_FALHOU ($AMBIENTE; $FALHAS falha(s), $COBERTOS ambiente(s) coberto(s), $PULADOS pulado(s))"
+  exit 1
+elif [ "$COBERTOS" -eq 0 ]; then
+  # nunca chamar isso de BACKUP_OK: nenhum ambiente foi coberto e nenhum artefato existe
+  echo "RESULTADO: BACKUP_SEM_AMBIENTE ($AMBIENTE; 0 ambiente coberto, $PULADOS pulado(s)) — nenhum ambiente provisionado, nenhum artefato produzido"
   exit 0
 else
-  echo "RESULTADO: BACKUP_FALHOU ($FALHAS falha(s))"
-  exit 1
+  echo "RESULTADO: BACKUP_OK ($AMBIENTE; $COBERTOS ambiente(s) coberto(s), $PULADOS pulado(s))"
+  exit 0
 fi

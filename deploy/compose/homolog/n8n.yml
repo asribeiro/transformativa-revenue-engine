@@ -1,0 +1,72 @@
+# n8n no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
+#
+# Runbook: docs/runbooks/n8n-homolog.md. Par não-secreto: deploy/environments/homolog-n8n.env.
+#
+# Regras que este arquivo carrega (e que o verificador cobra item a item):
+#   * nenhum segredo aqui: a chave de criptografia do n8n vive em /etc/tre/n8n-homolog/n8n.env
+#     (600, na VPS, fora do artefato publicado — politica de secrets V1);
+#   * nenhuma porta publica: o n8n publica SO em 127.0.0.1 (loopback). Ele fala com o Odoo pela
+#     rede interna `tre-odoo-homolog`, e e por ela que o Odoo alcanca o webhook
+#     `http://n8n-homolog:5678/webhook/...` — exposicao publica da UI e' card proprio;
+#   * versao e porta sao OBRIGATORIAS e vem do par nao-secreto versionado: sem ele
+#     `docker compose config` FALHA em vez de subir "a ultima de hoje" — a identidade do que esta
+#     no ar e' o digest registrado la (`N8N_DIGEST_ESPERADO`);
+#   * HOME INTEIRO montado (armadilha MEDIDA neste projeto, 02/10/2026): rodando com `--user` o
+#     n8n escreve `~/.n8n` E `~/.cache`; montar so o `.n8n` morre com
+#     `EACCES mkdir '/home/node/.cache'`. Por isso o bind e' em /home/node.
+#
+# VERSAO PINADA (registrada aqui E no par): n8n **2.41.5** — a versao que o `n8nio/n8n:latest`
+# desta VPS de fato e' (medido) e portanto a que as suites de n8n do projeto exercitaram. Tag
+# flutuante nao e' aceita: a identidade e' o digest, conferido pelo verificador.
+#
+# Uso na VPS (a partir da copia do ambiente em /opt/tre/homolog/compose/):
+#   docker compose --env-file /opt/tre/homolog/compose/n8n.env -f /opt/tre/homolog/compose/n8n.yml up -d
+name: tre-n8n-homolog
+
+services:
+  n8n-homolog:
+    image: ${N8N_IMAGEM:?defina N8N_IMAGEM em deploy/environments/homolog-n8n.env}:${N8N_VERSAO:?defina N8N_VERSAO em deploy/environments/homolog-n8n.env}
+    container_name: n8n-homolog
+    restart: unless-stopped
+    # o usuario `node` da imagem e' 1000:1000 (medido); rodar como ele evita arquivo de estado
+    # pertencente a root em ~/.n8n
+    user: "1000:1000"
+    # D5 (mesmo conjunto nos tres, com limite por servico): 1 GB e' folga medida para o n8n
+    # sem runner externo; os demais servicos entram na normalizacao do D5.
+    mem_limit: 1g
+    env_file:
+      - /etc/tre/n8n-homolog/n8n.env
+    environment:
+      HOME: /home/node
+      GENERIC_TIMEZONE: ${N8N_TIMEZONE:-UTC}
+      TZ: ${N8N_TIMEZONE:-UTC}
+      N8N_HOST: ${N8N_HOST:?defina N8N_HOST em deploy/environments/homolog-n8n.env}
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      N8N_PORT: ${N8N_PORTA_CONTAINER:-5678}
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE:-false}
+      N8N_DIAGNOSTICS_ENABLED: ${N8N_DIAGNOSTICS_ENABLED:-false}
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
+      # os workflows do TRE leem `$env` nos nos Code (contrato do outbox consumer): sem isto o
+      # n8n bloqueia em execucao, nao no start — falha silenciosa caro
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
+      N8N_PAYLOAD_SIZE_MAX: ${N8N_PAYLOAD_SIZE_MAX:-16}
+      # base da porta unica do Odoo NESTE ambiente (consumidor de outbox)
+      TRE_API_BASE: ${TRE_API_BASE:?defina TRE_API_BASE em deploy/environments/homolog-n8n.env}
+    volumes:
+      - /opt/tre/homolog/n8n/home:/home/node
+    ports:
+      - "127.0.0.1:${N8N_PORTA_LOCAL:?defina N8N_PORTA_LOCAL em deploy/environments/homolog-n8n.env}:5678"
+    healthcheck:
+      # o mesmo endpoint que o verificador usa: /healthz/readiness (200 quando o n8n esta pronto)
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5678/healthz/readiness').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    networks:
+      - odoo-homolog
+
+networks:
+  odoo-homolog:
+    name: tre-odoo-homolog
+    external: true

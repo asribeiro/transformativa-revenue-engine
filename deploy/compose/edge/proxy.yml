@@ -1,0 +1,69 @@
+# Proxy de BORDA TLS do TRE (VPS Contabo `vmi3619453`). Substitui o proxy do dev como dono das
+# portas 80/443. Decisão D5 (complemento) — ver docs/operations/ambientes-e-promocao.md.
+#
+# Regras que este arquivo carrega:
+#   * `network_mode: host` é DELIBERADO: a borda precisa (a) escutar 80/443 na interface pública —
+#     e é o ÚNICO serviço que publica porta — e (b) falar com o Odoo de cada ambiente em
+#     127.0.0.1:<porta>, que continua loopback (sem regra na UFW). Sem host networking o container
+#     não alcançaria o loopback do host.
+#   * nenhum segredo no artefato: usuário/hash do basic auth vêm de
+#     /etc/tre/proxy-edge/basicauth.env (600, NA VPS — política de secrets V1).
+#   * imagem por tag + digest conferido contra `deploy/environments/edge-proxy.env`
+#     (`PROXY_DIGEST_ESPERADO`): a identidade do que está no ar é o digest, não a tag.
+#   * volumes próprios (`proxy-*-edge`) para a CA local, a configuração e os logs de acesso.
+#
+# Uso na VPS (a partir da cópia do ambiente em /opt/tre/edge/compose/):
+#   docker compose --env-file /opt/tre/edge/compose/proxy.env -f /opt/tre/edge/compose/proxy.yml up -d
+#
+# Migração (o handover é de segundos, porque 80/443 não admitem dois donos):
+#   1. docker compose --env-file /opt/tre/dev/compose/proxy.env -f /opt/tre/dev/compose/proxy.yml stop
+#   2. docker compose --env-file /opt/tre/edge/compose/proxy.env -f /opt/tre/edge/compose/proxy.yml up -d
+#   Rollback (um comando, nada é destruído):
+#   docker compose ... -f /opt/tre/edge/compose/proxy.yml down && docker compose ... -f /opt/tre/dev/compose/proxy.yml start
+name: tre-proxy-edge
+
+services:
+  proxy-edge:
+    image: ${PROXY_IMAGEM:?defina PROXY_IMAGEM em deploy/environments/edge-proxy.env}
+    container_name: proxy-edge
+    restart: unless-stopped
+    network_mode: host
+    # Segredo: o arquivo vive na VPS, 600, fora do artefato publicado.
+    env_file:
+      - /etc/tre/proxy-edge/basicauth.env
+    environment:
+      TRE_HOSTNAME_DEV: ${TRE_HOSTNAME_DEV:?defina em deploy/environments/edge-proxy.env}
+      TRE_HOSTNAME_DEV_APELIDO: ${TRE_HOSTNAME_DEV_APELIDO:?defina em deploy/environments/edge-proxy.env}
+      TRE_HOSTNAME_HOMOLOG: ${TRE_HOSTNAME_HOMOLOG:?defina em deploy/environments/edge-proxy.env}
+      TRE_HOSTNAME_PROD: ${TRE_HOSTNAME_PROD:?defina em deploy/environments/edge-proxy.env}
+      TRE_PORTA_ODOO_DEV: ${TRE_PORTA_ODOO_DEV:?defina em deploy/environments/edge-proxy.env}
+      TRE_PORTA_ODOO_HOMOLOG: ${TRE_PORTA_ODOO_HOMOLOG:?defina em deploy/environments/edge-proxy.env}
+      TRE_PORTA_ODOO_PROD: ${TRE_PORTA_ODOO_PROD:?defina em deploy/environments/edge-proxy.env}
+      TRE_PROXY_USUARIO: ${PROXY_USUARIO:-tre-dev}
+    volumes:
+      - /opt/tre/edge/compose/Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy-data-edge:/data
+      - proxy-config-edge:/config
+      - proxy-log-edge:/var/log/caddy
+    # O healthcheck usa o NOME (e não 127.0.0.1) porque o Caddy recusa handshake de SNI desconhecido:
+    # healthcheck que sempre reprova é pior que não ter — mascara falha real. O 401 é resposta
+    # ESPERADA (o basic auth está no lugar); o que reprova é não responder nada (TLS fora do ar).
+    extra_hosts:
+      - "${TRE_HOSTNAME_DEV}:127.0.0.1"
+      - "${TRE_HOSTNAME_DEV_APELIDO}:127.0.0.1"
+      - "${TRE_HOSTNAME_HOMOLOG}:127.0.0.1"
+      - "${TRE_HOSTNAME_PROD}:127.0.0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -S -O /dev/null --no-check-certificate https://$$TRE_HOSTNAME_DEV/ 2>&1 | grep -qE 'HTTP/1\\.[01] (200|401|403|503)'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  proxy-data-edge:
+    name: proxy-data-edge
+  proxy-config-edge:
+    name: proxy-config-edge
+  proxy-log-edge:
+    name: proxy-log-edge

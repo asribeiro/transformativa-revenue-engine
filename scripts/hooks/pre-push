@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Gancho pre-push do TRE — versao GRATUITA da trava de branch (o GitHub so' libera rulesets
+# em repo privado no plano Pro; este gancho cobre o risco real: o proprio agente/execucao irma
+# empurrar para o lugar errado).
+#
+# BLOQUEIA:
+#   1. qualquer push direto para `main`         (producao so' entra por merge vindo de homolog)
+#   2. delecao de `develop` / `homolog` / `main`
+#   3. force-push (nao-fast-forward) em `develop` / `homolog`
+# NAO BLOQUEIA: push para `develop`, `homolog`, `feature/*`, `fix/*` — o motor do board publica
+# por SHA em `develop` de proposito, e a promocao Dev->Homolog e' autonoma por desenho (D4).
+#
+# Instalar (uma vez por clone; o git usa os ganchos do worktree principal para todos os worktrees):
+#   scripts/instalar-hooks.sh
+set -u
+
+ZERO="0000000000000000000000000000000000000000"
+FORTE="refs/heads/main"
+LEVES="refs/heads/develop refs/heads/homolog"
+falhou=0
+
+while read -r lref lsha rref rsha; do
+  [ -z "${rref:-}" ] && continue
+
+  case " $FORTE " in *" $rref "*)
+    echo "PUSH RECUSADO: '$rref' so' entra por merge (PR) vindo de 'homolog'." >&2
+    echo "  Producao exige aprovacao humana REGISTRADA (card + docs/operations/registro-de-aprovacoes.md);" >&2
+    echo "  um push direto nao carrega esse registro — por isso nao passa." >&2
+    echo "  Caminho certo: PR 'homolog' -> 'main', mergeado pela interface/API depois do aprovado." >&2
+    falhou=1
+    continue
+    ;;
+  esac
+
+  case " $LEVES " in *" $rref "*)
+    if [ "$rsha" = "$ZERO" ]; then
+      echo "PUSH RECUSADO: delecao de '$rref' (branch de ambiente nao se apaga por push)." >&2
+      falhou=1
+      continue
+    fi
+    if [ "$lsha" != "$ZERO" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null; then
+      echo "PUSH RECUSADO: '$rref' andaria para tras (force/rebase). Fast-forward obrigatorio." >&2
+      falhou=1
+      continue
+    fi
+    ;;
+  esac
+done
+
+if [ "$falhou" -ne 0 ]; then
+  echo "  (contornar exigiria --no-verify; nao use: conserte a origem do push, nao o portao)" >&2
+  exit 1
+fi
+exit 0

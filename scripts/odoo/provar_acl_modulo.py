@@ -21,7 +21,8 @@ O que ele prova (critérios homologados do card):
         tambem nao e alcancada;
     AC3 aprovacao humana nunca concedida por maquina: o usuario do Sales AI nao administra
         outro usuario, nao cria regra de acesso, nao se promove a administrador, e a
-        superficie de ACL do modulo e' so o modelo do modulo.
+        superficie de ACL do modulo e' a ALLOW-LIST explicita (modelos E xmlids: as 5 ACLs de
+        `tf.process.opportunity` + `tf.evento.outbox`).
 
 Marcadores (lidos pelo verificador, nunca o exit code sozinho — `odoo shell` e' interativo):
 
@@ -36,6 +37,19 @@ from odoo.exceptions import AccessError
 
 MODULO = 'transformativa_sales_ai'
 MODELO = 'tf.process.opportunity'
+# Superficie de ACL do modulo = ALLOW-LIST EXPLICITA (decisao do dono, 03/10/2026, opcao A do
+# defeito de integracao do W2 / card t_e0b1bcbf). O card TRE-W3-E03-T01 (commit d0b8d5a) entregou
+# o consumidor de outbox e o modelo `tf.evento.outbox` passou a ter ACL. O guardrail NAO foi
+# afrouxado: a expectativa e um CONJUNTO FECHADO de modelos E de xmlids — ACL inesperada reprova
+# e ACL da lista que sumiu tambem reprova. Nao e "qualquer superficie serve".
+MODELOS_ACL = {'tf.evento.outbox', 'tf.process.opportunity'}
+ACLS_ESPERADAS = {
+    'access_tf_evento_outbox_manager',
+    'access_tf_evento_outbox_system',
+    'access_tf_evento_outbox_user',
+    'access_tf_process_opportunity_manager',
+    'access_tf_process_opportunity_user',
+}
 PREFIXO = 'e07t01-prova'
 
 ITENS = [0]
@@ -197,9 +211,12 @@ def main():
     dados = env['ir.model.data'].sudo().search([('module', '=', MODULO),  # noqa: F821
                                                 ('model', '=', 'ir.model.access')])
     acls = env['ir.model.access'].sudo().browse(dados.mapped('res_id'))  # noqa: F821
-    checar(bool(acls) and set(acls.mapped('model_id.model')) == {MODELO},
-           'AC3 superficie de ACL do modulo e so o modelo do modulo (%s)'
-           % sorted(set(acls.mapped('model_id.model'))))
+    modelos = set(acls.mapped('model_id.model'))
+    checar(bool(acls) and modelos == MODELOS_ACL,
+           'AC3 superficie de ACL do modulo = allow-list de modelos (%s)' % sorted(modelos))
+    nomes = set(dados.mapped('name'))
+    checar(nomes == ACLS_ESPERADAS,
+           'AC3 ACLs do modulo = allow-list de xmlids (%s)' % sorted(nomes))
     proibidos = {ref('base.group_system').id, ref('base.group_erp_manager').id}
     alcance = set(grupo_vendedor.all_implied_ids.ids) | set(grupo_gestor.all_implied_ids.ids)
     checar(not (alcance & proibidos), 'AC3 nenhum grupo do modulo alcanca administracao do Odoo')

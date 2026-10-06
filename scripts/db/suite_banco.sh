@@ -176,7 +176,7 @@ if [ "$MODO" = "dente" ]; then
   command -v docker >/dev/null 2>&1 || { echo "FALHOU docker ausente"; echo "RESULTADO: SUITE_DENTE_FALHOU (1 itens, 1 falha)"; exit 1; }
   SERVICO_DESCART="tre-suite-banco-$$-$RANDOM"
   SENHA_DESCART="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
-  limpar() { docker rm -f "$SERVICO_DESCART" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"; }
+  limpar() { docker rm -f -v "$SERVICO_DESCART" >/dev/null 2>&1; echo; echo "artefatos do teste em: $TMP"; }
   trap limpar EXIT
 
   esperar_postgres() {

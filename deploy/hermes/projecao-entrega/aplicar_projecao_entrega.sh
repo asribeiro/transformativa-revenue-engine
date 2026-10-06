@@ -25,30 +25,56 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PY="${HERMES_PY:-/opt/hermes/.venv/bin/python}"
 EDITOR="$RAIZ/deploy/hermes/projecao-entrega/editar_plugin_api_delivery_root.py"
 
-ALVOS=(
-  "/opt/data/plugins/kanban/dashboard/plugin_api.py"   # user  (o dashboard USA este)
-  "/opt/hermes/plugins/kanban/dashboard/plugin_api.py" # bundled (imagem; exige root)
+COMPOSITOR="$RAIZ/deploy/hermes/plugin-composicao/compor_plugin_api.py"
+
+# A cadeia INTEIRA, na ordem (medido em 05/10/2026; a ordem importa porque cada delta
+# exige a forma do anterior):
+#   1. delta deste card  — raiz do registro de entregas DECLARADA (editor ancorado)
+#   2. filtro de snapshots (`_artifact_files`, escrito em runtime em 02/10 sem card)
+#   3. coluna `production` (`Em producao (entrega)`, 05/10)
+#   4. frontend: `dist/index.js` (relabel pt-BR + a coluna; nao ha fonte no repo, so
+#      bundle — por isso a forma versionada e' o patch `dist_index.patch`)
+# Sem os passos 2-4 uma troca de imagem devolve o plugin a um estado em que o conserto
+# deste card nao aparece.
+RAIZES=(
+  "/opt/data"   # copia `user` — o dashboard USA esta (o agente grava sozinho)
+  "/opt/hermes" # copia empacotada (imagem) — exige a linha do operador (root)
 )
 
-if [ ! -f "$EDITOR" ]; then
-  echo "FALHOU editor nao encontrado: $EDITOR"
-  exit 1
-fi
+for FERRAMENTA in "$EDITOR" "$COMPOSITOR"; do
+  if [ ! -f "$FERRAMENTA" ]; then
+    echo "FALHOU ferramenta nao encontrada: $FERRAMENTA"
+    exit 1
+  fi
+done
 
 PENDENTE_ROOT=0
 FALHA=0
-for ALVO in "${ALVOS[@]}"; do
-  if [ ! -f "$ALVO" ]; then
-    echo "PULADO ausente: $ALVO"
+for R in "${RAIZES[@]}"; do
+  echo "== $R"
+  if [ ! -d "$R/plugins/kanban/dashboard" ]; then
+    echo "PULADO ausente: $R/plugins/kanban/dashboard"
     continue
   fi
-  if [ ! -w "$ALVO" ]; then
-    echo "PENDENTE (root) sem permissao de escrita: $ALVO"
+  if [ ! -w "$R/plugins/kanban/dashboard" ]; then
+    echo "PENDENTE (root) sem permissao de escrita: $R/plugins/kanban/dashboard"
     PENDENTE_ROOT=1
     continue
   fi
-  if ! "$PY" "$EDITOR" --alvo "$ALVO" "$@"; then
-    FALHA=1
+  ALVO="$R/plugins/kanban/dashboard/plugin_api.py"
+  BUNDLE="$R/plugins/kanban/dashboard/dist/index.js"
+  # Em REVERSAO a ordem e' inversa: desfaz a composicao e so' depois o delta do card.
+  if [ "${1:-}" = "--reverter" ]; then
+    [ -f "$ALVO" ] && { "$PY" "$COMPOSITOR" --alvo "$ALVO" "$@" || FALHA=1; }
+    [ -f "$ALVO" ] && { "$PY" "$EDITOR" --alvo "$ALVO" "$@" || FALHA=1; }
+  else
+    [ -f "$ALVO" ] && { "$PY" "$EDITOR" --alvo "$ALVO" "$@" || FALHA=1; }
+    [ -f "$ALVO" ] && { "$PY" "$COMPOSITOR" --alvo "$ALVO" "$@" || FALHA=1; }
+  fi
+  if [ -f "$BUNDLE" ]; then
+    "$PY" "$COMPOSITOR" --bundle-raiz "$R" "$@" || FALHA=1
+  else
+    echo "PULADO ausente: $BUNDLE"
   fi
 done
 

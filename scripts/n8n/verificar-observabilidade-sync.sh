@@ -457,7 +457,7 @@ limpeza() {
         info "--manter: trio preservado (container $PG_TMP, rede $NET_TMP, diretorio $DESC_DIR)"
         return 0
     fi
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     [ -n "$N8N_HOME" ] && rm -rf "$N8N_HOME"
     docker network rm "$NET_TMP" >/dev/null 2>&1
     [ -n "$DESC_DIR" ] && rm -rf "$DESC_DIR"
@@ -581,7 +581,7 @@ garantir_trio() {
         falhou "trio descartavel sumiu por fora e o diretorio 700 tambem (sem senha nao da' para restabelecer)"
         return 1
     fi
-    docker rm -f "$PG_TMP" >/dev/null 2>&1
+    docker rm -f -v "$PG_TMP" >/dev/null 2>&1
     docker run -d --rm --name "$PG_TMP" --network "$NET_TMP" --env-file "$DESC_DIR/pg.env" "$IMAGEM_PG" \
         >/dev/null 2>&1
     local pronto=0

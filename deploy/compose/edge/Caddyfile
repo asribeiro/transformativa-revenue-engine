@@ -1,0 +1,96 @@
+# Proxy de BORDA do TRE — um único terminador TLS para os três ambientes.
+#
+# Por que existe (complemento da decisão D5, 05/10/2026): só UM processo pode segurar 80/443 na VPS,
+# e o Let's Encrypt valida cada nome pela porta 80. Então "um proxy por stack" não fecha — a borda é
+# compartilhada e cada ambiente mantém seu Odoo, seu Postgres e seu n8n isolados.
+#
+# Roteamento por hostname (todos no mesmo certificador):
+#   dev.tre.…      -> Odoo do DEV      (127.0.0.1:$TRE_PORTA_ODOO_DEV)      [basic auth]
+#   odoo-dev.…     -> MESMO Odoo do DEV [apelido: runbooks e bookmarks antigos continuam valendo]
+#   homolog.tre.…  -> Odoo do HOMOLOG  (127.0.0.1:$TRE_PORTA_ODOO_HOMOLOG) [basic auth]
+#   tre.…          -> Odoo de PROD     (127.0.0.1:$TRE_PORTA_ODOO_PROD)    [público; 503 até a stack subir]
+#   qualquer outro Host na 443 -> 404 com CA local (barra varredura por IP/nome inventado)
+#
+# Segredos (usuário/hash do basic auth) NÃO moram aqui: vêm de /etc/tre/proxy-edge/basicauth.env (600).
+{
+	admin off
+	log {
+		output stderr
+		level INFO
+	}
+}
+
+# Cabeçalhos e o bloqueio do gerenciador de bases do Odoo (superfície administrativa, nunca pública).
+(seguranca) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		-Server
+	}
+	@gerenciador path /web/database* /web/database/manager*
+	respond @gerenciador 403
+}
+
+# ---------- DEV ----------
+{$TRE_HOSTNAME_DEV}, {$TRE_HOSTNAME_DEV_APELIDO} {
+	import seguranca
+	basic_auth {
+		{$TRE_PROXY_USUARIO} {$TRE_PROXY_HASH}
+	}
+	reverse_proxy 127.0.0.1:{$TRE_PORTA_ODOO_DEV} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
+	log {
+		output file /var/log/caddy/acesso-dev.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ---------- HOMOLOG ----------
+{$TRE_HOSTNAME_HOMOLOG} {
+	import seguranca
+	basic_auth {
+		{$TRE_PROXY_USUARIO} {$TRE_PROXY_HASH}
+	}
+	reverse_proxy 127.0.0.1:{$TRE_PORTA_ODOO_HOMOLOG} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
+	log {
+		output file /var/log/caddy/acesso-homolog.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ---------- PRODUÇÃO (público por desenho; quem expõe é esta borda) ----------
+{$TRE_HOSTNAME_PROD} {
+	import seguranca
+	reverse_proxy 127.0.0.1:{$TRE_PORTA_ODOO_PROD} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
+	log {
+		output file /var/log/caddy/acesso-prod.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ---------- catch-all ----------
+:443 {
+	tls internal
+	respond 404
+}

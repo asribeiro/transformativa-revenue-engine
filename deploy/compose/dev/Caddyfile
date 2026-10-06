@@ -1,0 +1,77 @@
+# Caddyfile — proxy TLS + hardening do Odoo no ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+#
+# Card: TRE-W2-E01-T02 (`t_1acf11f2`). Runbook: docs/runbooks/odoo-dev-tls.md.
+# Par nao-secreto: deploy/environments/dev-proxy.env (na VPS: /opt/tre/dev/compose/proxy.env).
+# Segredos (usuario/hash do basic auth): /etc/tre/proxy-dev/basicauth.env, 600, NA VPS — nunca aqui.
+#
+# O que este arquivo decide e por que (o verificador cobra item a item):
+#   * TLS termina AQUI. O Odoo continua em 127.0.0.1:8069 (loopback): a porta administrativa
+#     NAO e publica — quem entra de fora so fala com a 80/443.
+#   * `tls internal` = CA LOCAL do Caddy (modo dev). O certificado e validado de verdade contra
+#     a raiz local — nada de `-k`/`--insecure` no aceite. O certificado PUBLICO (Let's Encrypt)
+#     e a TROCA DE UMA LINHA: apagar o `tls internal` abaixo, que o Caddy passa a emitir sozinho
+#     — e isso depende do registro DNS do dominio, que e decisao do Anderson (ver runbook §1).
+#   * `basic_auth` protege o dev de estar publico sem protecao. Nao e decoracao: medimos que a
+#     credencial padrao `admin`/`admin` do Odoo APROVADA neste ambiente (ver runbook §1 —
+#     achado registrado). Enquanto ela nao for corrigida, o dev exposto e o dev atras de
+#     credencial propria.
+#   * `/web/database*` (gerenciador de bases) responde 403 mesmo para quem passou pelo basic
+#     auth: e a superficie administrativa do proprio Odoo.
+#   * Host desconhecido NAO recebe o Odoo (bloco `:443` final) — o proxy so serve o nome dele.
+#   * O caminho do challenge ACME (`/.well-known/acme-challenge/*`) NAO fica atras do basic
+#     auth: o Caddy trata o challenge ANTES das rotas do site. O verificador mede isso (o
+#     caminho tem de dar 404, nunca 401) para o dia em que a emissao publica for ligada.
+
+{
+	# Sem API de administracao: aplicar configuracao e `docker compose up -d`/`restart`,
+	# nao um endpoint local que alguem possa alcancar.
+	admin off
+	log {
+		output stderr
+		level INFO
+	}
+}
+
+{$TRE_DEV_HOSTNAME} {
+	# MODO DEV: CA interna do proprio proxy. Para o certificado publico, apagar esta linha.
+	tls internal
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		-Server
+	}
+
+	# Gerenciador de bases do Odoo: superficie administrativa, nunca pela internet.
+	@gerenciador path /web/database* /web/database/manager*
+	respond @gerenciador 403
+
+	basic_auth {
+		{$TRE_PROXY_USUARIO} {$TRE_PROXY_HASH}
+	}
+
+	reverse_proxy 127.0.0.1:8069 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
+
+	log {
+		output file /var/log/caddy/acesso.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# Qualquer outro Host na 443 nao recebe o Odoo. Barra o acesso por IP/nome inventado,
+# que e o caminho tipico de varredura automatica.
+:443 {
+	tls internal
+	respond 404
+}
