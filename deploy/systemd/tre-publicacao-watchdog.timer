@@ -1,6 +1,6 @@
 [Unit]
 Description=Watchdog da publicacao versionada do TRE a cada 2 minutos
-Documentation=file:/opt/tre/repo/docs/runbooks/publicacao-da-copia-operacional.md
+Documentation=file:/opt/tre/prod/repo/docs/runbooks/publicacao-da-copia-operacional.md
 
 [Timer]
 OnBootSec=2min

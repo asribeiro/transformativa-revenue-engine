@@ -247,7 +247,7 @@ verifica "G artefato padrao NAO foi tocado"    "$([ ! -e "$REMOTO/.publicacao-ar
 
 echo
 echo "== H) --destino por CLI: destino isolado nao e confundido com PRODUCAO (recálculo pos-parse) =="
-ALVO_PROD_H="/opt/tre/repo"   # igual ao destino PADRAO: e exatamente o caso que confundia o calculo
+ALVO_PROD_H="/opt/tre/prod/repo"   # igual ao destino PADRAO: e exatamente o caso que confundia o calculo
 h_run() { # $1=rotulo $2=commit
   env PATH="$BIN:$PATH" TRE_TESTE_RAIZ="$REMOTO" TRE_TESTE_LOG="$SHIMLOG" \
       TRE_PUBLICAR_ALVO="sandbox@local" TRE_PUBLICAR_LOCK="$REMOTO/.lock-h" \

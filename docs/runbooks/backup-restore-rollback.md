@@ -49,14 +49,14 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
   `executado_por:` e `dono_artefato:`). Declarar `TRE_BACKUP_DONO` inexistente é **falha** — o
   artefato ilegível pelo timer não pode nascer em silêncio (§7h).
 - Configuração: `/etc/tre/backup.env` (caminhos, `TRE_ENV_DIR` e destino — **sem segredo**).
-- **Cópia operacional (`/opt/tre/repo`):** instalada **somente** por `deploy/publicar.sh` (um commit por
+- **Cópia operacional (`/opt/tre/prod/repo`):** instalada **somente** por `deploy/publicar.sh` (um commit por
   vez, com `.publicado` gravando o commit em uso). Nada de `tar`/`scp`/`rsync` direto — runbook
   `publicacao-da-copia-operacional.md`.
 - **O trio (container, usuário, banco) é resolvido POR AMBIENTE**, nesta ordem:
   1. `TRE_PG_SERVICO_<AMBIENTE>` / `TRE_PG_USER_<AMBIENTE>` / `TRE_PG_DB_<AMBIENTE>` (ex.: `TRE_PG_SERVICO_DEV`);
   2. `$TRE_ENV_DIR/<ambiente>.env` — par não-secreto versionado (hoje `deploy/environments/dev.env` =
      `pg-sales-dev` / `sales_ai` / `sales_intelligence`; `TRE_ENV_DIR` aponta para
-     `/opt/tre/repo/deploy/environments`);
+     `/opt/tre/prod/repo/deploy/environments`);
   3. `TRE_PG_SERVICO`/`TRE_PG_USER`/`TRE_PG_DB` globais — **só em chamada de UM ambiente**;
   4. convenção `pg-<ambiente>` / `tre` / `sales_intelligence`.
   A regra vive em `scripts/backup/lib-ambiente.sh` e é a mesma para a rotina e para a verificação.
@@ -91,7 +91,7 @@ Instalação (uma vez, com `sudo`): `scripts/backup/instalar-timers.sh`
 ## 3. BACKUP — manual
 
 ```bash
-# um ambiente (o trio vem de $TRE_ENV_DIR/<ambiente>.env; na VPS: /opt/tre/repo/deploy/environments)
+# um ambiente (o trio vem de $TRE_ENV_DIR/<ambiente>.env; na VPS: /opt/tre/prod/repo/deploy/environments)
 scripts/backup/backup-tre.sh dev
 
 # os tres (o que o timer roda)
@@ -219,7 +219,7 @@ Comando: `scripts/backup/teste-backup-restore.sh` — **`RESULTADO: TESTE_OK (9 
 
 ## 7b. Evidência medida — 30/09/2026 (TRE-W1-E06-T01, **banco do ambiente dev**)
 
-Comando: `set -a; . /etc/tre/backup.env; set +a; bash scripts/backup/teste-backup-restore.sh /opt/tre/repo --ambiente dev`
+Comando: `set -a; . /etc/tre/backup.env; set +a; bash /usr/local/lib/tre/backup/teste-backup-restore.sh /opt/tre/prod/repo --ambiente dev`
 — **`RESULTADO: TESTE_OK (14 itens, 0 falhas)`**, exit 0.
 (Note o `bash` explícito: **na data desta medição** os scripts de `scripts/backup/` estavam `100644` no git
 — era o ACHADO ABERTO 1, corrigido depois em §7c; hoje são `100755`.)
@@ -252,7 +252,7 @@ Máquina: VPS `vmi3619453`, como `root` (acesso do agente); o exec acontece sob 
 |---|---|---|
 | `git ls-files -s scripts/backup/` | `100644` em **6 dos 7** scripts que existiam (`teste-backup-restore.sh` já era `100755`; `verificar-modos-executaveis.sh` não existia) | `100755` nos 8 (`backup-tre.sh`, `restore-tre.sh`, `verificar-backup.sh`, `verificar-ultimo-backup.sh`, `configurar-destino-externo.sh`, `instalar-timers.sh`, `teste-backup-restore.sh`, `verificar-modos-executaveis.sh`) |
 | `verificar-modos-executaveis.sh` | `MODOS_FALHOU (4 itens, 2 falhas)`, exit 1 | `MODOS_OK (4 itens, 0 falhas)`, exit 0 |
-| `sudo -u tre-deploy test -x /opt/tre/repo/scripts/backup/backup-tre.sh` | exit 1 | **exit 0** |
+| `sudo -u tre-deploy test -x /usr/local/lib/tre/backup/backup-tre.sh` | exit 1 | **exit 0** |
 | `systemctl start tre-backup.service` | `START_EXIT=1`, `ExecMainStatus=203`, journal `Failed at step EXEC … Permission denied` | **`START_EXIT=0`**, `Result=success`, journal com o `backup-tre.sh` executando (`PULADO` nos três ambientes — motivo de negócio, ACHADO 2) |
 | `sha256` copia operacional × repositório | — | **8/8 idênticos** (dump do conteúdo em `/opt/tre/backup` intocado) |
 
@@ -276,7 +276,7 @@ A instalação de §7c **foi desfeita 39 s depois** por uma publicação concorr
 critérios que medem a cópia operacional voltaram a reprovar. Cronologia medida em `/opt/tre/.publicacoes.log`
 e `stat` dos arquivos:
 
-| UTC | Evento (fonte) | Estado de `/opt/tre/repo/scripts/backup/*.sh` |
+| UTC | Evento (fonte) | Estado de `/usr/local/lib/tre/backup/*.sh` |
 |---|---|---|
 | 20:03:36–37 | `install -m 755` deste card (§7c) | `755`, `test -x` exit 0, `systemctl start` = `success` |
 | 20:03:59 / 20:06:19 | publicação de teste do card `t_091cfea9` com `commit=16c31f0…` (**anterior à correção**) | volta a `644` (ctime 20:04:15 UTC), `instalar-timers.sh` sem a guarda |
@@ -286,7 +286,7 @@ e `stat` dos arquivos:
 
 Remedição de 20:13:36Z, na VPS `vmi3619453`:
 
-- `sudo -u tre-deploy test -x /opt/tre/repo/scripts/backup/backup-tre.sh` → **`TEST_X_EXIT=0`**;
+- `sudo -u tre-deploy test -x /usr/local/lib/tre/backup/backup-tre.sh` → **`TEST_X_EXIT=0`**;
 - `systemctl start tre-backup.service` → **`START_EXIT=0`**; `systemctl show` → `Result=success`,
   `ExecMainStatus=0`, `ExecStart pid=230506 code=exited status=0`; journal de 17:13:36-03 (20:13:36Z) com
   `backup-tre.sh[230506]` imprimindo os três blocos de ambiente e `RESULTADO: BACKUP_OK (todos)` /
@@ -395,7 +395,7 @@ base `e4dc18d` = `origin/develop`, com merge `--no-ff` do commit publicado `3bf5
    `arvore_suja: 0`. (O código é o deste commit `9b464ed`; esta evidência em `docs/` viaja no commit de
    documentação imediatamente seguinte da mesma branch — o `/opt/tre/repo/.publicado` da cópia operacional
    registra o **tip publicado**, que é o que importa para rollback.) Os quatro alvos (`backup-tre.sh`, `verificar-ultimo-backup.sh`, `lib-ambiente.sh`,
-   `teste-rotina-ambiente.sh`) chegaram em `/opt/tre/repo/scripts/backup/` com `sha256` **idêntico ao blob
+   `teste-rotina-ambiente.sh`) chegaram em `/usr/local/lib/tre/backup/` com `sha256` **idêntico ao blob
    do commit** (`3f0bebd9…`, `ad0ad002…`, `e582b484…`, `72ce8ecb…`) e modo **`755 tre-deploy`**.
    **Qualificação honesta:** a *primeira* execução desta mesma publicação falhou com exit 6 —
    `PUBLICACAO_FALHOU a copia transferida nao confere com o commit 9b464ed`, com ~280 linhas
@@ -642,7 +642,7 @@ própria linha). sha256 dos scripts publicados: `backup-tre.sh f5fd66cf…`,
   renomear container nem mover dado):** o trio passa a ser resolvido
   **por ambiente** em `scripts/backup/lib-ambiente.sh` (variável por ambiente → `$TRE_ENV_DIR/<ambiente>.env`
   → variável global **só** em chamada de um ambiente → convenção), com `TRE_ENV_DIR` declarado no
-  `/etc/tre/backup.env` apontando para a cópia operacional versionada (`/opt/tre/repo/deploy/environments`);
+  `/etc/tre/backup.env` apontando para a cópia operacional versionada (`/opt/tre/prod/repo/deploy/environments`);
   o par não-secreto do ambiente versionado no git é a fonte. Ambiente **declarado** cujo container não
   existe agora **falha** (exit 1), `todos` sem nenhum ambiente coberto devolve `BACKUP_SEM_AMBIENTE`, e a
   verificação não aprova mais sem backup. Medido depois da correção, **sob o usuário do timer**, com

@@ -1,6 +1,6 @@
 [Unit]
 Description=Backup diario do TRE (02:30 America/Sao_Paulo)
-Documentation=file:/opt/tre/repo/docs/runbooks/backup-restore-rollback.md
+Documentation=file:/opt/tre/prod/repo/docs/runbooks/backup-restore-rollback.md
 
 [Timer]
 OnCalendar=*-*-* 02:30:00
