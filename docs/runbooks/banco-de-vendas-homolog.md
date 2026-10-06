@@ -52,24 +52,41 @@ A versão `0001` aplicada em Homolog tem o **mesmo sha256 do dev** (`0484a370…
 
 ## 5. O ciclo E2E em Homolog (medido em 06/10/2026)
 
-| sentido | estado |
+| sentido | estado medido |
 |---|---|
 | CRM → outbox → n8n → PostgreSQL | **funciona e é autônomo**: fatos pelo ORM → `SENT: 8, DEAD_LETTER: 0` → 8 linhas `COMPLETED` na trilha; cron do módulo ativo (1 min) entregou uma mudança de etapa sozinho |
-| PostgreSQL → n8n → API controlada → CRM | **recusado no portão, com motivo nomeado** (`recusa_da_api:ambiente_nao_permitido`) |
+| PostgreSQL → n8n → API controlada → CRM | **funciona sob aprovação registrada** — e **fecha sozinho** quando a aprovação vence (medido nos dois estados, abaixo) |
 
-A recusa **não é defeito**: a política do módulo (`api/politica_api.json`) declara
-`ambientes_permitidos: ["dev"]` e o motor trata `homologacao`/`producao` como ambientes que exigem
-**aprovação humana** (`AMBIENTES_COM_APROVACAO` em `api/motor.py`). Escrita em Homolog está trancada
-por desenho — destrancar exige duas coisas, ambas decisão do dono: uma política que permita
-`homologacao` e uma aprovação válida em `tf.api.aprovacao`.
+### 5.1 Os dois estados, medidos em 06/10/2026
 
-Parâmetros corretos deste ambiente (o nome canônico é **`homologacao`**, não `homolog`):
+**Com aprovação válida** (`validade=2026-10-15`, liberada pelo dono — registro de aprovações,
+Autorização 4): `COMPANY_QUALIFIED` → fila `PROCESSED` → trilha `COMPLETED` → parceiro **id 8
+"Ciclo E2E Homolog Ltda"** com `tf_company_id`, `tf_domain` e `tf_priority_score=91` em `odoo_homolog`.
+Tudo **pela agenda do consumidor**, sem intervenção: evento devolvido à fila e nada mais.
+
+**Replay do mesmo evento** (devolvido à fila de novo): `PROCESSED`, `attempts=0`, **zero** parceiro
+novo — a idempotência por `tf_company_id` segura a duplicidade.
+
+**Com aprovação vencida** (`validade=2026-10-05`) e um evento **novo**: fila `DEAD_LETTER` com
+`recusa_da_api:aprovacao_ausente`, trilha `REFUSED`, e **nenhum** parceiro no CRM. É o dente do
+portão: a recusa tem nome, fica registrada e não escreve nada.
+
+### 5.2 Parâmetros deste ambiente (o nome canônico é **`homologacao`**, não `homolog`)
 
 ```
 tf.api.ambiente  = homologacao
-tf.api.aprovacao = (vazio — nenhuma aprovação registrada)
-tf.api.politica  = (vazio — usa a política do módulo, que só permite dev)
+tf.api.politica  = /mnt/extra-addons/transformativa_sales_ai/api/politica_homologacao.json
+tf.api.aprovacao = card=t_e0489efc,aprovador=Anderson Ribeiro,validade=2026-10-15
 ```
+
+A política de `homologacao` é **derivada e versionada** (`api/politica_homologacao.json`, variante da
+1.4.0 com `ambientes_permitidos: ["homologacao"]` — privilégio mínimo; `dev` é recusado nela). A
+**validade é o mecanismo de fechamento**: passada a data, `aprovacao_valida` devolve falso, a escrita
+recusa com `aprovacao_ausente` e nada precisa ser desligado à mão. Para renovar, basta gravar nova
+validade — e a renovação é decisão do dono, não ato de operador.
+
+Para trocar qualquer um desses parâmetros, **reinicie o `odoo-homolog`**: o Odoo serve
+`ir.config_parameter` de cache, e `update` por SQL direto não invalida o cache do servidor no ar.
 
 ## 6. Armadilhas medidas (não repetir)
 
@@ -91,5 +108,12 @@ tf.api.politica  = (vazio — usa a política do módulo, que só permite dev)
    `.HostConfig.PortBindings`.
 6. **`set -euo pipefail` + `grep` sem casamento = script morto em silêncio.** Um verificador meu
    morreu no meio e não imprimiu nem o resultado; a contagem por pipeline leva `|| true`.
-7. **Sem CLI para apagar credencial** nesta versão: limpeza de credencial criada por engano foi feita
+7. **Evento devolvido à fila pode ser REPLAY, não chamada nova.** Ao reenfileirar um evento **já
+   processado**, o consumidor registra o replay e **não chama a API** — então ele passa como
+   `PROCESSED` mesmo com o portão fechado, e um teste de portão feito assim não mede nada. Para provar
+   portão, use **evento novo** (UUID novo); para provar dedup/replay, reenfileire o mesmo.
+8. **Parâmetro trocado por SQL não chega ao servidor no ar:** `ir.config_parameter` é servido de cache.
+   Troque pelo ORM (`set_param` + `commit`) **e reinicie** o Odoo — o próprio módulo não invalida o
+   cache de um processo que já está rodando.
+9. **Sem CLI para apagar credencial** nesta versão: limpeza de credencial criada por engano foi feita
    com o serviço parado e `sqlite3` sobre `~/.n8n/database.sqlite` (com backup antes).
