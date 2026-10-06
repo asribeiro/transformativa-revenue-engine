@@ -15,10 +15,11 @@
     "approved_at": "2026-10-06",
     "scope": [
       "validacao integrada do lote 5 (agentes W4 e E2E Sales Intelligence)",
+      "fechamento da ENTREGA da onda com promoção à produção autorizada — decisão do dono no Telegram, 2026-10-06",
       "fechamento da ENTREGA da onda com promoção à produção autorizada — decisão do dono no Telegram, 2026-10-06"
     ],
     "production_promotion_authorized": true,
-    "round": 2,
+    "round": 3,
     "decided_by": "Anderson Ribeiro",
     "decision_at": "2026-10-06",
     "authority": "HUMAN_ONLY",
@@ -43,6 +44,16 @@
       {
         "round": 2,
         "at": "2026-10-06T14:56:57+00:00",
+        "decidido_por": "Anderson Ribeiro",
+        "autoridade": "dono do board",
+        "instrucao": "A com promoção a produção",
+        "escopo": "fechar a entrega das ondas W1-W9 (cards e work_items já DONE) e autorizar a promoção à produção; a rodada 1 permanecia PENDING",
+        "production_promotion_authorized": true,
+        "nota": "fecha o registro de entrega; NÃO autoriza release novo nem rollback (esses seguem exigindo aprovação própria)."
+      },
+      {
+        "round": 3,
+        "at": "2026-10-06T15:00:43+00:00",
         "decidido_por": "Anderson Ribeiro",
         "autoridade": "dono do board",
         "instrucao": "A com promoção a produção",
@@ -294,7 +305,14 @@
       ]
     }
   ],
-  "production_promoted_task_ids": [],
+  "production_promoted_task_ids": [
+    "t_1a85a424",
+    "t_61a620b4",
+    "t_a32ae24f",
+    "t_b4e01433",
+    "t_d9be7d3c",
+    "t_fd3e41f0"
+  ],
   "events": [
     {
       "event": "INTEGRATED_VALIDATION_RECORDED",

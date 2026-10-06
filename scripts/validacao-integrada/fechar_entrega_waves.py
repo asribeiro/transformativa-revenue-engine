@@ -121,6 +121,8 @@ def proposta(art: dict, board: dict, homolog: dict, hoje_iso: str, agora_iso: st
     if not itens or set(estagios) != {"DONE"}:
         raise SystemExit("RECUSADO: %s tem work_items nao-DONE (%s) — nao fecho onda incompleta"
                          % (art.get("delivery_id"), estagios))
+    ids_filhos = sorted({c.get("hermes_task_id") for i in itens for c in (i.get("children") or [])
+                         if c.get("hermes_task_id")})
     aprov = copy.deepcopy(art.get("human_approval") or {})
     rodada = int(aprov.get("round") or 1) + 1
     escopo = list(aprov.get("scope") or [])
@@ -162,6 +164,10 @@ def proposta(art: dict, board: dict, homolog: dict, hoje_iso: str, agora_iso: st
     novo["release_status"] = "PRODUCTION_PROMOTED"   # o valor que o plugin projeta na coluna de produção
     novo["current_gate"] = "DONE"
     novo["production_promotion_authorized"] = True   # espelha o W0: o campo existe também no nível de entrega
+    # A projeção do painel só move card para a coluna de produção quando o artefato traz a lista EXPLÍCITA
+    # (plugin_api._delivery_production_promoted_task_ids). Derivada — como no W0 — dos hermes_task_id dos
+    # filhos dos work_items: nenhum id é inventado.
+    novo["production_promoted_task_ids"] = ids_filhos
     novo.setdefault("completed_at", None)
     novo["completed_at"] = novo.get("completed_at") or agora_iso
     novo["updated_at"] = hoje_iso
@@ -184,11 +190,13 @@ def main() -> int:
         art = json.loads(caminho.read_text(encoding="utf-8"))
         onda = onda_de(caminho.name)
         ja_fechado = ((art.get("human_approval") or {}).get("status") == "APPROVED"
-                      and art.get("release_status") == "PRODUCTION_PROMOTED")
+                      and art.get("release_status") == "PRODUCTION_PROMOTED"
+                      and bool(art.get("production_promoted_task_ids")))
         if ja_fechado:
-            print("   %-34s JA FECHADO (%s, aprovado por %s) — nao re-decido"
+            print("   %-34s JA FECHADO (%s, aprovado por %s, %d promovido(s)) — nao re-decido"
                   % (caminho.name, art.get("release_status"),
-                     (art.get("human_approval") or {}).get("approved_by")))
+                     (art.get("human_approval") or {}).get("approved_by"),
+                     len(art.get("production_promoted_task_ids") or [])))
             continue
         novo = proposta(art, board.get(onda, {}), homolog.get(onda, {}), hoje_iso, agora_iso)
         antes_wi = sha(json.dumps(art.get("work_items"), ensure_ascii=False, sort_keys=True))
@@ -209,6 +217,10 @@ def main() -> int:
             assert lido["human_approval"]["status"] == "APPROVED"
             assert sha(json.dumps(lido.get("work_items"), ensure_ascii=False, sort_keys=True)) == antes_wi
             assert lido["release_status"] == "PRODUCTION_PROMOTED"
+            assert lido["production_promoted_task_ids"] == sorted(
+                {c.get("hermes_task_id") for i in (art.get("work_items") or [])
+                 for c in (i.get("children") or []) if c.get("hermes_task_id")})
+            assert len(lido["production_promoted_task_ids"]) > 0
             escritos += 1
     print("\n%s: %d artefato(s) examinado(s)%s"
           % ("APLICADO" if args.aplicar else "CHECK (nada escrito)", len(artefatos(args.onda)),
