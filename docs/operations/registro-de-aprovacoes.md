@@ -131,3 +131,14 @@ seguem escalando item a item para o dono, como no desenho do beco (fail-closed i
 
 **Implementação:** `/opt/data/scripts/despacha_cards_tre.py` (declara + promove + despacha) chamado
 pelo vigia de 5 min (`/opt/data/scripts/vigia_cards_t09.py`).
+
+## Autorização 4 — escrita liberada no ambiente `homologacao`, com prazo (2026-10-06)
+
+Palavra do dono, verbatim (Telegram, 06/10/2026), escolhendo entre as duas saídas propostas após o
+achado de que a API de Homolog recusava toda escrita: **"(1) 15/10/2026"** — opção 1 (liberar escrita em
+Homolog) com validade declarada em **15/10/2026**. Nada foi destrancado por ato automático: o agente
+mediu a recusa (`recusa_da_api:ambiente_nao_permitido`), apresentou o custo e a decisão é do dono.
+
+| Data | Aprovado por | O que | Evidência |
+|---|---|---|---|
+| 06/10/2026 (Telegram: "(1) 15/10/2026") | Anderson Ribeiro | **Escrita no ambiente `homologacao` liberada, com prazo: válida até 15/10/2026.** O que passa a valer: (1) nova política **derivada e versionada** `api/politica_homologacao.json` — variante de `api/politica_api.json` versão 1.4.0 com `operacoes`, `esquema` e `padroes` intocados e `ambientes_permitidos` trazendo **exclusivamente `homologacao`** (privilégio mínimo: é a política DAQUELE ambiente, apontada por `tf.api.politica`, e não serve ao dev — `dev` continua recusado nela com `ambiente_nao_permitido`); (2) aprovação registrada no formato do projeto em `tf.api.aprovacao` — `card=t_e0489efc,aprovador=Anderson Ribeiro,validade=2026-10-15`; (3) **o prazo é o mecanismo de fechamento**: passada a validade, `aprovacao_valida` devolve falso e a escrita fecha sozinha com `aprovacao_ausente` (fail-closed, sem ato de operador). A exigência de aprovação em `homologacao`/`producao` (`AMBIENTES_COM_APROVACAO`, ADR-005) **não** foi afrouxada; `producao` **não** foi liberada e segue sem política. Medição do portão na fonte, antes de ligar: aprovada (15/10) passa; validade 05/10 e ausência de aprovação recusam com `aprovacao_ausente`; `dev` recusa com `ambiente_nao_permitido`. Nada de credencial, nada tocado em produção. | `odoo/addons/transformativa_sales_ai/api/politica_homologacao.json` **no commit `8e1d018`** (sha256 `3b61a3a94b9102da1ed92f005798d2820d98acfb58691ea0e1060e1c2d9b2cd0`), validado pela própria regra do módulo (`validar_politica` = sem problemas); decisão registrada no card `t_e0489efc` (comentário 383, com o achado) e aplicada no ambiente em `docs/runbooks/banco-de-vendas-homolog.md` § 5 |
