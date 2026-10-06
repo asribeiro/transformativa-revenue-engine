@@ -77,8 +77,11 @@ o portão parecia aberto por defeito, e era só cache. **Regra:** mudou aprovaç
 Odoo **antes** de concluir qualquer medição do portão. Depois do restart, a sonda direta confirmou o
 fechamento: `HTTP 503`, `codigo=aprovacao_ausente`, `ambiente=producao`, CRM intacto.
 
-Sonda reutilizável: `/tmp/sonda-portao-prod.sh` (chave lida do arquivo 600 e entregue ao curl por
-**arquivo de configuração**, nunca por argv; imprime só status HTTP e `codigo`).
+Sonda reutilizável, **versionada**: `bash scripts/provision/sonda-portao-producao.sh <rotulo> [dir-de-segredos]`
+(chave lida do arquivo 600 e entregue ao curl por **arquivo de configuração**, nunca por argv; imprime só
+status HTTP, `codigo`, `ambiente` e o UUID usado). O sufixo do UUID é aleatório por execução de propósito —
+dois rótulos no mesmo segundo não podem colidir, senão o teste de portão passa como dedup; use
+`TRE_UUID_SUFIXO=<2 dígitos hex>` para fixá-lo num teste de replay.
 
 ### Limpeza da massa de aceite no CRM (06/10/2026, opção A do dono)
 
