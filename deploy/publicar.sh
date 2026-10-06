@@ -58,6 +58,8 @@ LOG_REMOTO="${TRE_PUBLICAR_LOG:-/opt/tre/.publicacoes.log}"
 ARTEFATO_PADRAO="/opt/tre/.publicacao-artefato"
 ARTEFATO="${TRE_PUBLICAR_ARTEFATO:-$ARTEFATO_PADRAO}"
 TRAVA="${TRE_PUBLICAR_TRAVA:-1}"
+# Rotulo de origem gravado no .publicado. Vazio = derivado do proprio commit (ver REF abaixo).
+REF_DECLARADO="${TRE_PUBLICAR_REF:-}"
 # O destino compartilhado e PRODUCAO (e o alvo do ExecStart dos timers). Substituir o commit que
 # esta no ar la exige declaracao explicita (--producao / TRE_PUBLICAR_PRODUCAO=1): foi assim, sem
 # querer, que a copia perdeu a correcao do backup (t_daca4bda). Destino de ensaio (TRE_PUBLICAR_DESTINO)
@@ -90,6 +92,8 @@ Uso:
 
 Opcoes:
   --commit <sha|ref>       commit a publicar (padrao: HEAD)
+  --ref <nome>             rotulo de origem gravado no .publicado (ex.: homolog). Use quando o
+                           commit tem mais de um branch: sem ele o rotulo lista todos os nomes.
   --alvo <user@host>       destino ssh (padrao: root@169.58.24.102)
   --destino <dir>          diretorio da copia operacional (padrao: /opt/tre/repo)
   --dono <user:group>      dono final da copia (padrao: tre-deploy:tre-deploy)
@@ -125,6 +129,7 @@ TXT
 while [ $# -gt 0 ]; do
   case "$1" in
     --commit)     COMMIT="${2:-}"; shift 2;;
+    --ref)        REF_DECLARADO="${2:-}"; shift 2;;
     --alvo)       ALVO="${2:-}"; shift 2;;
     --destino)    DESTINO="${2:-}"; shift 2;;
     --dono)       DONO="${2:-}"; shift 2;;
@@ -399,7 +404,21 @@ fi
 SHA="$(git rev-parse --verify "$COMMIT^{commit}" 2>/dev/null)" || {
   echo "FALHOU commit/branch nao resolve: $COMMIT" >&2; exit 2; }
 ARVORE="$(git rev-parse --verify "$SHA^{tree}")"
-REF="$(git name-rev --name-only "$SHA" 2>/dev/null || echo desconhecido)"
+# Rotulo de origem. `git name-rev` escolhe UM nome e a escolha e arbitraria quando mais de um
+# branch aponta para o mesmo commit — foi assim que a copia de homolog nasceu rotulada "develop".
+# Regra: nome declarado (--ref) vence; senao TODOS os nomes que apontam para o commit, juntos;
+# so cai no name-rev quando nenhum branch aponta (commit solto).
+if [ -n "$REF_DECLARADO" ]; then
+  REF="$REF_DECLARADO"
+else
+  REF="$(git for-each-ref --points-at "$SHA" --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null \
+        | sed 's|^origin/||' | grep -v '^HEAD$' | sort -u | paste -sd+ -)"
+  if [ -z "$REF" ]; then
+    REF="$(git name-rev --name-only "$SHA" 2>/dev/null || echo desconhecido)"
+  elif [ "$(printf '%s' "$REF" | tr -cd '+' | wc -c)" -gt 0 ]; then
+    echo "AVISO ref: $REF — mais de um branch neste commit; use --ref <nome> para declarar a origem." >&2
+  fi
+fi
 
 SUJO=0
 if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
