@@ -56,7 +56,7 @@ services:
       - /etc/tre/odoo-dev/odoo.conf:/etc/odoo/odoo.conf:ro
       # addons do repo chegam pelo caminho publicado (o Odoo do dev enxerga o modulo
       # `transformativa_sales_ai` quando ele for publicado; W2/E03 em diante)
-      - /opt/tre/repo/odoo/addons:/mnt/extra-addons:ro
+      - /opt/tre/dev/repo/odoo/addons:/mnt/extra-addons:ro
     networks:
       - odoo-dev
 
