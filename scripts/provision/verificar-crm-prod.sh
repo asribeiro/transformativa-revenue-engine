@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# Aceite do CRM basico no ambiente HOMOLOG do TRE (modulo crm + funil comercial configurado).
+# Aceite do CRM basico no ambiente PROD do TRE (modulo crm + funil comercial configurado).
 #
 # Card: TRE-W2-E02-T01 (`t_adea8e6b`). Runbook: docs/runbooks/odoo-crm-dev.md.
 #
 # Verificador INDEPENDENTE do configurador: nao chama o configurador nem o ORM, nao escreve
-# nada no ambiente — le o ESTADO VIVO (psql dentro de pg-odoo-homolog, containers, HTTP, UFW) e
+# nada no ambiente — le o ESTADO VIVO (psql dentro de pg-odoo-prod, containers, HTTP, UFW) e
 # compara com a declaracao versionada odoo/crm/funil-transformativa.yaml.
 #
-# Roda NA VPS. Uso:  bash verificar-crm-homolog.sh
+# Roda NA VPS. Uso:  bash verificar-crm-prod.sh
 # Saida: itens OK/FALHOU, um por verificacao, e a ultima linha
-#   RESULTADO: CRM_HOMOLOG_OK (N itens, 0 falhas)      -> exit 0
-#   RESULTADO: CRM_HOMOLOG_FALHOU (N itens, M falhas)  -> exit 1
+#   RESULTADO: CRM_PROD_OK (N itens, 0 falhas)      -> exit 0
+#   RESULTADO: CRM_PROD_FALHOU (N itens, M falhas)  -> exit 1
 #
 # Variaveis (opcionais): TRE_ODOO_COMPOSE, TRE_ODOO_ENV, TRE_CRM_YAML, TRE_ODOO_BANCO.
 set -u
 
-COMPOSE="${TRE_ODOO_COMPOSE:-/opt/tre/homolog/compose/odoo.yml}"
-ENVFILE="${TRE_ODOO_ENV:-/opt/tre/homolog/compose/odoo.env}"
-YAML="${TRE_CRM_YAML:-/opt/tre/homolog/repo/odoo/crm/funil-transformativa.yaml}"
-BANCO="${TRE_ODOO_BANCO:-odoo_homolog}"
+COMPOSE="${TRE_ODOO_COMPOSE:-/opt/tre/prod/compose/odoo.yml}"
+ENVFILE="${TRE_ODOO_ENV:-/opt/tre/prod/compose/odoo.env}"
+YAML="${TRE_CRM_YAML:-/opt/tre/prod/repo/odoo/crm/funil-transformativa.yaml}"
+BANCO="${TRE_ODOO_BANCO:-odoo_prod}"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -27,7 +27,7 @@ ITENS="$TMP/itens.txt"; : > "$ITENS"
 item() { local r="$1"; shift; printf '%s %s\n' "$r" "$*" >> "$ITENS"; printf '%-6s %s\n' "$r" "$*"; }
 ok()  { item OK "$@"; }
 nao() { item FALHOU "$@"; }
-psql_odoo() { docker exec -i pg-odoo-homolog psql -U odoo -d "$BANCO" -tA -f - ; }
+psql_odoo() { docker exec -i pg-odoo-prod psql -U odoo -d "$BANCO" -tA -f - ; }
 
 echo "IDENTIDADE"
 if [ -f "$YAML" ]; then
@@ -36,7 +36,7 @@ if [ -f "$YAML" ]; then
 else
   echo "  declaracao..... AUSENTE ($YAML)"
 fi
-echo "  banco medido... $BANCO em pg-odoo-homolog"
+echo "  banco medido... $BANCO em pg-odoo-prod"
 echo "  medido em...... $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 echo
 
@@ -45,24 +45,24 @@ echo
 # ---------------------------------------------------------------------------
 if [ -f "$COMPOSE" ] && [ -f "$ENVFILE" ] \
    && docker compose --env-file "$ENVFILE" -f "$COMPOSE" config -q 2>/dev/null; then
-  ok "par do Odoo do homolog presente e \`docker compose config\` valido"
+  ok "par do Odoo do prod presente e \`docker compose config\` valido"
 else
-  nao "par do Odoo do homolog ausente ou compose invalido ($COMPOSE / $ENVFILE)"
+  nao "par do Odoo do prod ausente ou compose invalido ($COMPOSE / $ENVFILE)"
 fi
 
-# O ambiente homolog e' COMPARTILHADO: MEDIDO em 01/10/2026 (card TRE-W2-E01-T02, TLS/proxy) que o
-# container odoo-homolog e' reiniciado por outro card no meio de uma medicao. Uma espera curta evita
+# O ambiente prod e' COMPARTILHADO: MEDIDO em 01/10/2026 (card TRE-W2-E01-T02, TLS/proxy) que o
+# container odoo-prod e' reiniciado por outro card no meio de uma medicao. Uma espera curta evita
 # reprovar ESTE aceite por indisponibilidade que nao e' deste card (o que este card mede e' o CRM
 # configurado; se o servico nao voltar, o item abaixo reprova — honesto).
 for _ in $(seq 1 18); do
-  if docker ps --format '{{.Names}}' | grep -qx 'odoo-homolog' \
-     && docker ps --format '{{.Names}}' | grep -qx 'pg-odoo-homolog'; then
+  if docker ps --format '{{.Names}}' | grep -qx 'odoo-prod' \
+     && docker ps --format '{{.Names}}' | grep -qx 'pg-odoo-prod'; then
     break
   fi
   sleep 5
 done
 
-for c in odoo-homolog pg-odoo-homolog; do
+for c in odoo-prod pg-odoo-prod; do
   if docker ps --format '{{.Names}}' | grep -qx "$c"; then
     ok "container $c de pe"
   else
@@ -89,19 +89,19 @@ else
   nao "ODOO_HTTP_PORT ausente em $ENVFILE (nao da' para medir o servico)"
 fi
 
-# Separacao de ambientes MEDIDA, nao presumida: o aceite de homologacao exige que os vizinhos
-# (dev e producao) continuem de pe — o procedimento daqui nao pode derrubar nem tocar neles.
-# O guarda do dev original afirmava a AUSENCIA de homolog/prod; aqui isso seria falso por
+# Separacao de ambientes MEDIDA, nao presumida: o aceite deste ambiente exige que os vizinhos
+# (dev e homologacao) continuem de pe — o procedimento daqui nao pode derrubar nem tocar neles.
+# O guarda do dev original afirmava a AUSENCIA de prod/prod; aqui isso seria falso por
 # construcao (os tres ambientes convivem neste VPS), entao o invariante e' o oposto.
-for c in odoo-dev pg-odoo-dev odoo-prod pg-odoo-prod; do
+for c in odoo-dev pg-odoo-dev odoo-homolog pg-odoo-homolog; do
   if docker ps --format '{{.Names}}' | grep -qx "$c"; then
     ok "vizinho $c segue de pe (nao tocado por este aceite)"
   else
-    nao "vizinho $c NAO esta de pe — o aceite de homologacao nao pode ter derrubado ambiente alheio"
+    nao "vizinho $c NAO esta de pe — este aceite nao pode ter derrubado ambiente alheio"
   fi
 done
 
-PORTA_CHK="${PORT:-8070}"
+PORTA_CHK="${PORT:-8071}"
 # O invariante DESTE card e' que o Odoo NAO ganha exposicao publica: o bind tem de continuar
 # loopback. Exposicao publica (80/443 do proxy) e' do card TRE-W2-E01-T02, que roda em
 # paralelo — por isso o item nao exige "UFW so com 22/tcp" (fato que ja' mudou por outro card),
@@ -292,18 +292,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Separacao de ambientes e do banco (o CRM de homologacao nao pode ter mexido nisso)
+# 3. Separacao de ambientes e do banco (o CRM deste ambiente nao pode ter mexido nisso)
 # ---------------------------------------------------------------------------
-if docker exec -i pg-odoo-homolog psql -U odoo -d postgres -tAc "select 1 from pg_database where datname='sales_intelligence'" 2>/dev/null | grep -q 1; then
+if docker exec -i pg-odoo-prod psql -U odoo -d postgres -tAc "select 1 from pg_database where datname='sales_intelligence'" 2>/dev/null | grep -q 1; then
   nao "o Postgres do Odoo tem o banco sales_intelligence (separacao dos ambientes quebrada)"
 else
   ok "banco do Odoo separado do sales_intelligence (nao existe la')"
 fi
 
-if docker ps -a --format '{{.Names}}' | grep -qx 'pg-sales-homolog'; then
-  ok "pg-sales-homolog (Sales Intelligence) segue de pe, intocado por este card"
+if docker ps -a --format '{{.Names}}' | grep -qx 'pg-sales-prod'; then
+  ok "pg-sales-prod (Sales Intelligence) segue de pe, intocado por este card"
 else
-  nao "pg-sales-homolog nao esta de pe — o card do CRM nao pode ter derrubado o vizinho"
+  nao "pg-sales-prod nao esta de pe — o card do CRM nao pode ter derrubado o vizinho"
 fi
 
 if [ -f "$YAML" ] && grep -qiE '(passwd|password|senha|token|secret)[[:space:]]*[:=][[:space:]]*[^[:space:]#]' "$YAML"; then
@@ -316,9 +316,9 @@ echo "---"
 TOTAL="$(wc -l < "$ITENS" | tr -d ' ')"
 FALHAS="$(grep -c '^FALHOU' "$ITENS" || true)"
 if [ "$FALHAS" = "0" ]; then
-  echo "RESULTADO: CRM_HOMOLOG_OK ($TOTAL itens, 0 falhas)"
+  echo "RESULTADO: CRM_PROD_OK ($TOTAL itens, 0 falhas)"
   exit 0
 else
-  echo "RESULTADO: CRM_HOMOLOG_FALHOU ($TOTAL itens, $FALHAS falhas)"
+  echo "RESULTADO: CRM_PROD_FALHOU ($TOTAL itens, $FALHAS falhas)"
   exit 1
 fi
