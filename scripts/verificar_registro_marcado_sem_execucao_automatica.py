@@ -4,6 +4,7 @@
 
 Defeito [encaixe] do card `t_60fac84b` (medido em 02/10/2026), filho do conserto
 `TRE-W3-E04-T03-D02` (card `t_fa344342`). O texto bruto do defeito esta no anexo
+Rotulo historico: a onda no nome do defeito esta trocada — o lar real desta linhagem e' TRE-W0-E04-T04 (ver Nota de registro 1 em docs/operations/registro-de-aprovacoes.md).
 `caso-bruto-original.txt` do card (movido para anexo porque o proprio guardrail rejeita a
 prosa que o descreve — bloqueio recursivo, medido).
 

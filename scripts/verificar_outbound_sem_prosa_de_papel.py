@@ -5,6 +5,7 @@
 Defeito [encaixe] do card `t_fa344342`, medido em 02/10/2026 (commit `0256154`),
 detectado pela suite do defeito `TRE-W3-E04-T03-D01` (`verificar_papel_sem_prefixo.py`,
 item "lado 1b'").
+Rotulo historico: a onda no nome do defeito esta trocada — o lar real desta linhagem e' TRE-W0-E04-T04 (ver Nota de registro 1 em docs/operations/registro-de-aprovacoes.md).
 
 O QUE ACONTECIA
 `_e_acao_outbound` montava a lista de entradas com a prosa de `pode`/`nao_pode` de TODOS

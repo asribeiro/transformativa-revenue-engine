@@ -5,6 +5,7 @@
 Defeito [encaixe] TRE-W3-E04-T03-D01, medido em 02/10/2026 no card `t_c096e9a4`.
 Defeito [precisao] TRE-W3-E04-T03-D01-D01, medido em 02/10/2026 no card `t_eefbe2e5`
 (efeito colateral do proprio conserto do D01, nao declarado na epoca).
+Rotulo historico: a onda no nome do defeito esta trocada — o lar real desta linhagem e' TRE-W0-E04-T04 (ver Nota de registro 1 em docs/operations/registro-de-aprovacoes.md).
 
 O QUE ACONTECIA (D01)
 A leitura da prosa das politicas de papel (`hermes/policies/*.yaml`, incluindo a fonte

@@ -1200,6 +1200,8 @@ temporárias e não mutam o repo.
 ## 9. Registro anotado como não-perturbe/opt-out não tem execução automática (card `t_60fac84b`, 02/10/2026)
 
 **O que o dono decidiu.** O defeito [encaixe] residual do conserto `TRE-W3-E04-T03-D02` (card `t_fa344342`) — as
+
+> **Nota de rótulo (06/10/2026):** o rótulo `TRE-W3-E04-T03-D02` tem **onda trocada** — na W3 esse item nunca existiu. O lar real da linhagem de guardrail é `TRE-W0-E04-T04` (*Validar JEV guardrails e fallback*). Nada foi renomeado; ver a Nota de registro 1 em `docs/operations/registro-de-aprovacoes.md`.
 3 linhas do corpus anotado do dono que continuavam acionando o guardrail `do_not_contact` **por casamento de
 tokens** (`api`+`odoo`, `nome`+`transformativa`, `producao`+`rollback`) — não se resolve afinando vocabulário:
 resolve-se implementando o que a política **já decidia**: **ação sobre registro anotado como não-perturbe/opt-out

@@ -3,6 +3,7 @@
 """Roteador do JEV (System-1 Decision Layer) integrado ao Hermes Dev Harness.
 
 Card TRE-W0-E04-T02 (roteador) e TRE-W0-E04-T08 (piso de lane por ambiente).
+Onde os consertos de guardrail citam o defeito `TRE-W3-E04-T03-*`: Rotulo historico: a onda no nome do defeito esta trocada — o lar real desta linhagem e' TRE-W0-E04-T04 (ver Nota de registro 1 em docs/operations/registro-de-aprovacoes.md).
 Este modulo aplica a politica EM VIGOR — `hermes/jev/policy_v1_1.yaml`
 (`jev-policy-v1.1`, `CAMINHO_POLITICA_PADRAO`) — na precedencia declarada no
 proprio arquivo:
