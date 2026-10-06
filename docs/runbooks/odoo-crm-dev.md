@@ -2,8 +2,9 @@
 
 **Card:** `TRE-W2-E02-T01` (`t_adea8e6b`, perfil `desenvolvedor`) · **Status:** executado e medido em dev
 (01/10/2026) — pendente de **verificação independente** e da **validação do Anderson** (critério 1 do card)
-**Máquina:** VPS Contabo `vmi3619453` (169.58.24.102) · **Ambiente:** dev — `homolog` e `prod` **não**
-provisionados (ADR-005)
+**Máquina:** VPS Contabo `vmi3619453` (169.58.24.102) · **Ambiente:** dev — desde 06/10/2026 os **três
+ambientes convivem de pé** no mesmo VPS (`odoo-dev`, `odoo-homolog`, `odoo-prod` e os respectivos
+`pg-odoo-*`); este par opera **só** o dev (guarda de ambiente alvo, §11)
 **Base:** módulo `crm` do **Odoo Community 19.0** (`19.0-20260926`), instalado no dev pelo card
 `TRE-W2-E01-T01` (`docs/runbooks/odoo-dev.md`)
 **Artefatos versionados:** `odoo/crm/funil-transformativa.yaml` · `scripts/provision/configurar-crm-dev.sh` ·
@@ -116,8 +117,13 @@ Variáveis (todas opcionais, todas com default de dev): `TRE_ODOO_COMPOSE` (`/op
 `TRE_ODOO_ENV` (`/opt/tre/dev/compose/odoo.env`), `TRE_CRM_YAML`
 (`/opt/tre/dev/odoo/crm/funil-transformativa.yaml`), `TRE_ODOO_BANCO` (`odoo_dev`).
 
-Guardas dos três scripts: recusam ambiente que não seja `/opt/tre/dev`, recusam se existir container de
-`homolog`/`prod`, recusam sem os arquivos de entrada, e **só** mexem em `odoo-dev`/`pg-odoo-dev`.
+Guardas do configurador e do verificador (**ambiente alvo** — §11, conserto do card `t_fd769443`): o caminho
+do compose tem de estar dentro de `/opt/tre/dev` (canonicalizado por `realpath -m`: `..` e symlink não
+escapam), os containers do dev têm de estar de pé e o banco `odoo_dev` responder, e o par renderizado pelo
+`compose config` não pode nomear container de outro ambiente. Os três scripts recusam sem os arquivos de
+entrada e **só** mexem em `odoo-dev`/`pg-odoo-dev`. O verificador mede o invariante **oposto** ao da ausência:
+os vizinhos `odoo-homolog`, `pg-odoo-homolog`, `odoo-prod` e `pg-odoo-prod` seguem **de pé** depois da rodada
+(é o aceite provando que o procedimento do dev não derrubou ambiente alheio).
 O configurador **não escreve nada** na cópia operacional `/opt/tre/repo` (a declaração entra no container por
 `docker cp` para `/tmp`).
 
@@ -214,3 +220,51 @@ etapa intrusa no pipeline e um rollback que devolvia um CRM sem etapas.
    `/opt/tre/repo/odoo/addons` ali e o diretório ainda não existe no container. Hoje é esperado (o módulo
    `transformativa_sales_ai` nasce no card `TRE-W2-E03-T01`), mas quem criar o módulo deve saber que o
    caminho montado é `/mnt/extra-addons`.
+
+## 11. Guarda de ambiente alvo — o funil do dev não fica mais travado (card `t_fd769443`, 06/10/2026)
+
+**O defeito medido.** O wrapper do dev recusava rodar se existisse container de homologação/produção
+(`for nome in odoo-homolog odoo-prod pg-odoo-homolog pg-odoo-prod … falhar "container de outro ambiente
+existe (...) — este script so opera o dev"`). Escrito quando o dev era o único ambiente provisionado, isso
+virou trava **por construção** quando os três ambientes passaram a conviver de pé: o caminho de manutenção do
+funil no dev reprovava antes de tocar em qualquer coisa — medido, com os três de pé:
+`FALHOU container de outro ambiente existe (odoo-homolog) — este script so opera o dev`, **exit 1**. O
+verificador tinha a mesma guarda invertida e reprovava o aceite do dev por um fato que **não** é defeito do
+dev: `RESULTADO: CRM_DEV_FALHOU (29 itens, 1 falha)` no item *"existe container de homologacao/producao — o
+card so opera o dev (ADR-005)"*.
+
+**A guarda nova** (desenho do espelho de homolog, `scripts/provision/configurar-crm-homolog.sh`):
+
+| # | Guarda | Como reprova (medido) |
+|---|---|---|
+| 1 | caminho do compose **dentro de `/opt/tre/dev`**, canonicalizado por `realpath -m` | `FALHOU compose fora do ambiente dev (/opt/tre/homolog/compose/odoo.yml) — este script so opera /opt/tre/dev` — idem com `..` no caminho e com symlink criado dentro do dev apontando para o par de homolog |
+| 2 | containers do dev presentes e **respondendo** (`odoo-dev`, `pg-odoo-dev`, `select 1` em `odoo_dev`) | `FALHOU banco banco_que_nao_existe nao responde em pg-odoo-dev` |
+| 3 | nenhum `container_name` de outro ambiente no par **renderizado** (`compose config` — leitura pura, nenhuma ação no docker) | `FALHOU o par renderizado nomeia container de outro ambiente (pg-odoo-homolog) — este script so opera odoo-dev/pg-odoo-dev` |
+
+A guarda de alvo vem **antes** das conferências de arquivo, de propósito: alvo errado reprova dizendo que é
+alvo errado, e não "arquivo não encontrado" (o par de homolog existe neste mesmo VPS).
+No verificador, o item de separação de ambientes passou a medir o invariante oposto — os quatro vizinhos de pé
+— e continua **um** item, para o aceite seguir com **29 itens** (o contrato da §6); basta um vizinho fora do ar
+para o item reprovar, e a mensagem nomeia qual.
+
+**Aceite medido** (VPS `vmi3619453`, 06/10/2026, os três ambientes de pé):
+
+| # | Comando | Resultado medido |
+|---|---|---|
+| 1 | `bash /opt/tre/dev/scripts/configurar-crm-dev.sh` (1ª rodada) | `RESULTADO: CRM_DEV_CONFIGURADO banco=odoo_dev modulo=crm etapas_declaradas=11 evidencia=/opt/tre/dev/evidencias/t_adea8e6b`, **exit 0** |
+| 1 (idempotência) | 2ª rodada | mesmo `RESULTADO`, com `etapas=11 removidas=0`; `sha256(crm_stage+crm_team)` do dev **idêntico** nas quatro medições (`f77c2106…`, 12 etapas, 4 times, 2 oportunidades) |
+| 2 | `TRE_ODOO_COMPOSE=/opt/tre/homolog/compose/odoo.yml bash /opt/tre/dev/scripts/configurar-crm-dev.sh` | `FALHOU compose fora do ambiente dev (…)`, **exit 1** |
+| 3 | `bash /opt/tre/dev/scripts/verificar-crm-dev.sh` | `RESULTADO: CRM_DEV_OK (29 itens, 0 falhas)`, **exit 0** — item `OK vizinhos de pe e intocados por este aceite (medidos: odoo-homolog pg-odoo-homolog odoo-prod pg-odoo-prod)` |
+| 3 (dente) | verificador rodado com um `docker` de mentira que esconde **um** vizinho da listagem | `FALHOU vizinho(s) fora do ar: odoo-prod` → `CRM_DEV_FALHOU (29 itens, 1 falha)`, **exit 1**; com o mesmo stub escondendo `pg-odoo-homolog`, idem; com o stub **neutro** (nada escondido) volta a `CRM_DEV_OK (29 itens, 0 falhas)` — a reprovação é da mutação, não do stub |
+| 4 | identidade dos três ambientes antes/depois (`docker inspect` + SHA-256 de `crm_stage`+`crm_team`) | `odoo-homolog`, `pg-odoo-homolog`, `odoo-prod`, `pg-odoo-prod` **idênticos** (mesmo container id, mesma data de start, mesmo fingerprint `ce45836d…` / `093cb40f…`); nenhuma escrita deste card fora do dev |
+
+**Higiene da cópia operacional.** Os dois arquivos foram publicados pelo caminho versionado
+(`deploy/publicar.sh --commit 1e4f9342` → destino isolado `/opt/tre/.publicacao-t_fd769443`) e instalados a
+partir do artefato em `/opt/tre/dev/scripts/` com `install -m 755`, com registro ao lado
+(`/opt/tre/dev/scripts/.publicado-crm-dev`: commit, blobs `3d005c56…`/`42ac7eb9…`, modo, card, data). A versão
+anterior foi guardada em `/opt/tre/dev/evidencias/t_fd769443/backup-antes/` (`a9d4da80…`/`111b5671…`).
+
+**Evidência bruta:** `/opt/tre/dev/evidencias/t_fd769443/` — logs `T1`/`T2` (recusa antiga),
+`T3`/`T4` (rodadas novas), `G1`–`G6` (provas negativas da guarda), `T8`, `T9`/`T9b`/`T9c` (dente e controle do
+verificador), `estado-*.txt` com os fingerprints dos três ambientes e `sha256-instalacao.txt`.
+**Verificação independente:** pendente (perfil `tester`) — quem entrega não homologa.
