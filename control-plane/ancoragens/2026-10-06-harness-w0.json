@@ -15,5 +15,8 @@
     "t_c21fc474": "linha propria no registro de aprovacoes (verificador sha256 a4a0392ea0a6; prova medida, nao declaracao em lote)",
     "t_d4eb0e31": "linha propria no registro de aprovacoes (verificador sha256 dabfe62fa668; prova medida, nao declaracao em lote)",
     "t_eefbe2e5": "linha propria no registro de aprovacoes (verificador sha256 dabfe62fa668; prova medida, nao declaracao em lote)"
-  }
+  },
+  "item_citado": "TRE-W3-E04-T03",
+  "item_real": "TRE-W0-E04-T04",
+  "nota_sobre_o_rotulo": "O rotulo 'TRE-W3-E04-T03' e' ONDA TROCADA: na W3 o epico E04 tem apenas o item T01 (reconciliation job) e o T03 nunca existiu la. Existe, sim, um TRE-W0-E04-T03 -- mas e' outro assunto ('Benchmark anotado de routing', DONE na W0), nao a linhagem de guardrail. O lar real desta linhagem e' TRE-W0-E04-T04 ('Validar JEV guardrails e fallback'), onde estes cards foram ancorados (Autorizacao 12). Os rotulos dos cards NAO foram renomeados: eles sao citados por codigo (hermes/jev/routing/router.py), por 3 verificadores, pelo registro de aprovacoes e por docs de validacao -- e em todos esses lugares vem acompanhados do id real do card, entao nao sustentam localizacao nenhuma. Ver Nota de registro 1 em docs/operations/registro-de-aprovacoes.md."
 }

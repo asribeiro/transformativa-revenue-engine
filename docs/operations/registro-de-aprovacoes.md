@@ -241,3 +241,27 @@ suítes de cobertura e autoteste por mutação), e a W0 já declara defeitos des
 | Data | Aprovado por | O que | Evidência |
 |---|---|---|---|
 | 06/10/2026 (Telegram: "C") | Anderson Ribeiro | **Ancoragem declarada de 11 cards no item `TRE-W0-E04-T04`.** Escopo **fechado**: autoriza, para estes 11 (a família que cita `TRE-W3-E04-T03`), entrada em `children` do item com `stage`/`current_gate` = DONE — **nível explícito (Concluído), sem promoção a produção**, porque o harness roda no ambiente de desenvolvimento do Hermes e não no TRE de produção; afirmar promoção ali seria declaração falsa. A ancoragem é **por substância, não por vínculo registrado**, e isso fica escrito na evidência de cada card: eles citam um item que **não existe** em artefato nem como card, e a cadeia de dependência morre em `t_7c57e910` (sem pai). **Não** autoriza: tocar o 12º (`t_ec63e1d8`, higiene de aceite, sem onda), promover estes cards a produção, criar entrega nova, corrigir os nomes dos cards (seguem citando o item inexistente) nem qualquer release/rollback/credencial. | Ferramenta `scripts/validacao-integrada/declarar_evidencia_terminal_cards.py` (agora com `--mapa`), sha256 `601b13937fb4444997edf87e7038f80c4e0b48582eb6d520d27ddfe9c63554a9`; **mapa de ancoragem como dado versionado**: `control-plane/ancoragens/2026-10-06-harness-w0.json`, sha256 `cf35a9b121158df9bbb6393268cedbbbde0aa498cfe5c7826a84dd871f27d4b8`, com motivo por card derivado do registro (8 dos 11 têm linha própria com verificador e sha256 — prova medida; 3 são cards de verificação independente sem linha própria). Medido pelo próprio plugin: **validation 12 → 1 · done 11 → 22 · production 147 intacta**; mudança estrutural = **só adições** no artefato da W0 (único campo alterado: `updated_at`); backup 600 em `/opt/data/backups/evidencia-terminal/`; dentes: mapa apontando item inexistente **recusa** ("item_alvo nao existe em artefato nenhum"), mapa com card que não está preso **não escreve nada nele**, e a **2ª passada dá 0 elegíveis com nenhuma escrita** |
+
+## Nota de registro 1 — rótulo de onda trocada na linhagem de guardrail do harness (2026-10-06)
+
+Palavra do dono, verbatim (Telegram, 06/10/2026): **"faça A e na sequência C"** — A = registrar a explicação sem
+tocar em nome nenhum; C = alinhar código e docs ao lar real, na sequência.
+
+**O defeito de registro (medido):** 13 cards trazem no título ou no corpo o rótulo `TRE-W3-E04-T03` — **onda
+trocada**. Na W3 o épico E04 tem apenas o item `T01` ("reconciliation job"); o `T03` nunca existiu lá. Existe um
+`TRE-W0-E04-T03`, mas é **outro assunto**: "Benchmark anotado de routing", declarado `DONE` na W0 com filho
+`t_d8bc83b3`. O lar real da linhagem de guardrail é `TRE-W0-E04-T04` ("Validar JEV guardrails e fallback"), onde os
+11 cards foram ancorados na Autorização 12 — e o backup anterior àquela escrita confirma que **nenhum** deles estava
+declarado antes (0 de 11 presentes), logo não houve declaração duplicada.
+
+**Por que os rótulos não foram renomeados:** eles são citados por `hermes/jev/routing/router.py`, por 3 verificadores,
+por 10 linhas deste registro e por 1 doc de validação — e **em todos esses lugares vêm acompanhados do id real do
+card** ("defeito TRE-W3-E04-T03-D01, medido no card `t_c096e9a4`"). O rótulo não localiza nada; renomear cards
+reescreveria histórico e desalinharia código e docs sem ganho.
+
+**O que fica registrado (A):** o mapa de ancoragem
+`control-plane/ancoragens/2026-10-06-harness-w0.json` ganhou `item_citado` = `TRE-W3-E04-T03`, `item_real` =
+`TRE-W0-E04-T04` e a nota explicativa; e esta é a linha que quem procurar o rótulo pelo texto vai encontrar. O mapa
+mudou de sha256 com o acréscimo: era `cf35a9b121158df9bbb6393268cedbbbde0aa498cfe5c7826a84dd871f27d4b8` (citado na
+Autorização 12) e passa a `42c7423eeeda607d674ea5172f023671bb81790b887bdadaf483c39aceea1ab5` — a Autorização 12 segue válida no conteúdo (alvo, cards e nível não mudaram; o
+instrumento não valida sha de mapa). **Nada foi renomeado, nada foi apagado.**
