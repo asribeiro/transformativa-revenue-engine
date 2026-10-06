@@ -7,7 +7,7 @@
 # Roteamento por hostname (todos no mesmo certificador):
 #   dev.tre.…      -> Odoo do DEV      (127.0.0.1:$TRE_PORTA_ODOO_DEV)      [basic auth]
 #   odoo-dev.…     -> MESMO Odoo do DEV [apelido: runbooks e bookmarks antigos continuam valendo]
-#   homolog.tre.…  -> Odoo do HOMOLOG  (127.0.0.1:$TRE_PORTA_ODOO_HOMOLOG) [basic auth; 503 até a stack subir]
+#   homolog.tre.…  -> Odoo do HOMOLOG  (127.0.0.1:$TRE_PORTA_ODOO_HOMOLOG) [basic auth]
 #   tre.…          -> Odoo de PROD     (127.0.0.1:$TRE_PORTA_ODOO_PROD)    [público; 503 até a stack subir]
 #   qualquer outro Host na 443 -> 404 com CA local (barra varredura por IP/nome inventado)
 #
@@ -54,13 +54,17 @@
 	}
 }
 
-# ---------- HOMOLOG (existe no desenho; stack ainda não provisionada) ----------
+# ---------- HOMOLOG ----------
 {$TRE_HOSTNAME_HOMOLOG} {
 	import seguranca
 	basic_auth {
 		{$TRE_PROXY_USUARIO} {$TRE_PROXY_HASH}
 	}
-	respond "HOMOLOG ainda nao provisionado: o ambiente existe no desenho (D5), a stack ainda nao subiu." 503
+	reverse_proxy 127.0.0.1:{$TRE_PORTA_ODOO_HOMOLOG} {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {http.request.remote.host}
+	}
 	log {
 		output file /var/log/caddy/acesso-homolog.log {
 			roll_size 10MiB
