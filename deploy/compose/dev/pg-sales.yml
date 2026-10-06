@@ -1,0 +1,54 @@
+# Banco de VENDAS (`sales_intelligence`) do ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+#
+# Este arquivo nasceu DEPOIS do banco (06/10/2026): o `pg-sales-dev` foi criado à mão (`docker run`),
+# sem labels de compose — o container rodava, mas nenhum artefato versionado o descrevia, então não
+# havia como reinstalar, migrar ou auditar o dev a partir do repositório. Aqui ele passa a existir,
+# DERIVADO do container que está no ar: imagem, digest, volume, rede, banco e usuário foram conferidos
+# item a item contra o `docker inspect` antes de escrever esta linha.
+#
+# Regras que este arquivo carrega:
+#   * nenhum segredo aqui: `POSTGRES_*` vêm de /etc/tre/dev-sales/pg.env (600, na VPS, fora do
+#     artefato publicado) — política de secrets V1 (docs/operations/gestao-de-secrets.md);
+#   * volume próprio (`pgdata-sales-dev`): é o MESMO volume que o container atual usa — adotar este
+#     compose não pode trocar o volume, ou o dado de vendas do dev se perde;
+#   * versão e digest são OBRIGATÓRIOS e vêm do par não-secreto versionado
+#     (deploy/environments/dev-sales.env): sem ele `docker compose config` FALHA em vez de subir
+#     "a última de hoje";
+#   * única diferença de propósito em relação a homolog/prod: a porta fica publicada em LOOPBACK
+#     (127.0.0.1:5433), porque ferramenta de desenvolvimento na VPS conecta nela. Nada de rua.
+#
+# Uso na VPS (a partir da cópia em /opt/tre/dev/compose/):
+#   docker compose --env-file /opt/tre/dev/compose/pg-sales.env -f /opt/tre/dev/compose/pg-sales.yml up -d
+#
+# ORDEM OBRIGATÓRIA (armadilha medida três vezes neste projeto): o segredo
+# (/etc/tre/dev-sales/pg.env) tem de existir ANTES de qualquer `docker compose config` — o
+# `env_file` é resolvido na validação e o comando falha com "env file not found".
+name: tre-sales-dev
+
+services:
+  pg-sales-dev:
+    image: ${PG_SALES_IMAGEM:?defina PG_SALES_IMAGEM em deploy/environments/dev-sales.env}:${PG_SALES_VERSAO:?defina PG_SALES_VERSAO em deploy/environments/dev-sales.env}
+    container_name: pg-sales-dev
+    restart: unless-stopped
+    env_file:
+      - /etc/tre/dev-sales/pg.env
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata-sales-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - odoo-dev
+
+volumes:
+  pgdata-sales-dev:
+    name: pgdata-sales-dev
+
+networks:
+  odoo-dev:
+    name: tre-odoo-dev
+    external: true
