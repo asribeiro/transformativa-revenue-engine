@@ -45,10 +45,19 @@ done
 mpg="$(docker port pg-odoo-homolog 2>/dev/null || true)"
 [ -z "$mpg" ] && ok "pg-odoo-homolog nao publica porta nenhuma" || ruim "pg-odoo-homolog publica porta: $mpg"
 
-# 3. banco de homolog, inicializado
-BANCO="$(docker exec pg-odoo-homolog psql -U odoo -tAc 'select current_database()' 2>/dev/null || true)"
+# 3. banco de homolog, inicializado, e prova de que o cluster NAO tem o banco do dev
+#    (o `psql` sem `-d` conecta num banco com o nome do usuario, que nao existe — medido: devolvia
+#    vazio e a checagem acusava "banco inesperado: vazio" sem nada estar errado).
+DBS="$(docker exec pg-odoo-homolog psql -U odoo -d odoo_homolog -tAc "select string_agg(datname,' ') from pg_database" 2>/dev/null | tr -s ' ')"
 INI="$(docker exec pg-odoo-homolog psql -U odoo -d odoo_homolog -tAc "select 1 from information_schema.tables where table_schema='public' and table_name='ir_module_module'" 2>/dev/null || true)"
-[ "$BANCO" = "odoo_homolog" ] && ok "banco do servico: odoo_homolog" || ruim "banco do servico inesperado: ${BANCO:-vazio}"
+case " $DBS " in
+  *" odoo_homolog "*) ok "cluster de homolog tem o banco odoo_homolog (bancos: ${DBS:-vazio})" ;;
+  *)                  ruim "cluster de homolog sem o banco odoo_homolog (bancos: ${DBS:-vazio})" ;;
+esac
+case " $DBS " in
+  *" odoo_dev "*) ruim "o cluster de homolog CONTEM o banco do DEV (odoo_dev) — ambientes misturados" ;;
+  *)              ok "banco do dev ausente do cluster de homolog (isolamento de dados)" ;;
+esac
 [ "$INI" = "1" ] && ok "banco odoo_homolog inicializado pelo Odoo (ir_module_module presente)" \
                  || ruim "banco odoo_homolog NAO inicializado (o Odoo responderia 500)"
 
@@ -87,11 +96,16 @@ DEV_ESTADO="$(docker inspect odoo-dev --format '{{.State.Status}}' 2>/dev/null |
 [ "$DEV_ESTADO" = "running" ] && ok "dev intocado (odoo-dev running desde $(docker inspect odoo-dev --format '{{.State.StartedAt}}'))" \
                              || ruim "odoo-dev nao esta running (estado: $DEV_ESTADO)"
 
-# 9. segredo nos artefatos versionados
-if grep -rIlE "password[[:space:]]*=|admin_passwd|POSTGRES_PASSWORD" /opt/tre/homolog/compose/*.yml /opt/tre/homolog/compose/*.env 2>/dev/null | grep -q .; then
-  ruim "artefato de homolog em /opt/tre/homolog/compose cita chave de segredo"
+# 9. segredo nos artefatos versionados — exige FORMA de atribuicao, nao mencao.
+#    A primeira versao reprovava a PROSA do par nao-secreto (o comentario que explica que a senha
+#    vive em /etc/tre/... cita `admin_passwd`): verificador que acusa o que esta' certo queima a
+#    confianca no proprio verificador. Comentario e' ignorado; o que conta e' `chave = valor`.
+if grep -rInE "^[^#]*(POSTGRES_PASSWORD|admin_passwd|db_password)[[:space:]]*=[[:space:]]*[^[:space:]]" \
+     /opt/tre/homolog/compose/*.yml /opt/tre/homolog/compose/*.env 2>/dev/null | grep -q .; then
+  ruim "artefato de homolog em /opt/tre/homolog/compose ATRIBUI chave de segredo"
+  grep -rInE "^[^#]*(POSTGRES_PASSWORD|admin_passwd|db_password)[[:space:]]*=" /opt/tre/homolog/compose/*.yml /opt/tre/homolog/compose/*.env 2>/dev/null | sed 's/^/       /'
 else
-  ok "nenhum segredo nos artefatos de /opt/tre/homolog/compose"
+  ok "nenhum segredo ATRIBUIDO nos artefatos de /opt/tre/homolog/compose (prosa de comentario nao conta)"
 fi
 
 echo

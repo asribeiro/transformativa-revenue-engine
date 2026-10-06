@@ -76,17 +76,28 @@ echo "OK    guardas: docker $(docker --version | awk '{print $3}'), compose $(do
 # 2. Isolamento provado pelo COMPOSE RESOLVIDO (nao por disciplina)
 # ---------------------------------------------------------------------------
 # `docker compose config` resolve env_file, variaveis e nomes. Se o artefato de homolog citar
-# qualquer container de dev/producao, este script para ANTES de criar/subir nada — e' a prova
-# mecanica de que subir homolog nao mexe no dev.
-RESOLVIDO="$(compose config 2>/dev/null)" || falhar "docker compose config invalido para $COMPOSE + $ENVFILE"
-for nome in "${NOMES_DE_OUTROS[@]}"; do
-  case "$RESOLVIDO" in
-    *"container_name: $nome"*|*" $nome"*)
-      printf '%s\n' "$RESOLVIDO" | grep -n "container_name: $nome" >&2 || true
-      falhar "o compose de homolog cita container de outro ambiente ($nome) — recuso subir" ;;
-  esac
-done
-echo "OK    isolamento: o compose resolvido nao cita nenhum container de dev/producao"
+# qualquer container de dev/producao, este script para — e' a prova mecanica de que subir homolog
+# nao mexe no dev.
+#
+# ORDEM QUE IMPORTA: o `config` resolve o `env_file` de 600 que o container le, entao ELE FALHA
+# enquanto /etc/tre/odoo-homolog/pg.env nao existe. Medido: rodando a checagem antes dos segredos,
+# o `config` reprovava com "env file not found" e a mensagem parecia defeito do compose. Por isso a
+# checagem e' definida aqui e CHAMADA na secao 4, depois que os segredos nascem.
+checar_isolamento() {
+  local resolvido
+  if ! resolvido="$(compose config 2>&1)"; then
+    printf '%s\n' "$resolvido" | tail -5 >&2
+    falhar "docker compose config invalido para $COMPOSE + $ENVFILE"
+  fi
+  for nome in "${NOMES_DE_OUTROS[@]}"; do
+    case "$resolvido" in
+      *"container_name: $nome"*)
+        printf '%s\n' "$resolvido" | grep -n "container_name: $nome" >&2 || true
+        falhar "o compose de homolog cita container de outro ambiente ($nome) — recuso subir" ;;
+    esac
+  done
+  echo "OK    isolamento: o compose resolvido nao cita nenhum container de dev/producao"
+}
 
 # ---------------------------------------------------------------------------
 # 3. Segredos: nascem AQUI e nunca saem da VPS (nada no artefato, nada em log)
@@ -131,8 +142,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. O compose tem de ser valido com este par de variaveis
+# 4. O compose tem de ser valido com este par de variaveis (e isolado)
 # ---------------------------------------------------------------------------
+# A validacao vem DEPOIS dos segredos porque o `docker compose config` resolve o `env_file` de 600
+# que o container le; os guardas que protegem a maquina (docker, par, ambiente homolog, porta livre)
+# rodaram antes de tudo.
+checar_isolamento
 echo "OK    compose valido: $COMPOSE + $ENVFILE (versao $VERSAO, porta 127.0.0.1:$PORTA)"
 echo "      imagens: $(compose config --images | sort | tr '\n' ' ')"
 

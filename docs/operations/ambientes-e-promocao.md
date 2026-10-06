@@ -9,7 +9,7 @@ ambiente por release.
 | ambiente | branch (GitHub) | diretório na VPS | compose | quem promove | evidência exigida |
 |---|---|---|---|---|---|
 | **Dev** | `develop` | `/opt/tre/dev` | `deploy/compose/dev/` | Hermes (é onde o card é executado) | critérios de aceite do próprio card |
-| **Homolog** | `homolog` | `/opt/tre/homolog` | `deploy/compose/homolog/` | **Hermes promove sozinho** | AC do card cumpridos + **evidência crua anexada no card do kanban** |
+| **Homolog** | `homolog` | `/opt/tre/homolog` (no ar: Odoo 19.0 + Postgres 16, `127.0.0.1:8070`) | `deploy/compose/homolog/` | **Hermes promove sozinho** | AC do card cumpridos + **evidência crua anexada no card do kanban** |
 | **Produção** | `main` | `/opt/tre/prod` | `deploy/compose/prod/` | **Hermes prepara e envia para aprovação humana**; só depois do "aprovado" registrado é que promove | AC cumpridos **em Homolog** + evidências anexadas no card + registro de aprovação (quem, quando, o quê) |
 
 O fluxo em uma frase: **o card nasce e é validado em Dev; Hermes sobe para Homolog com a evidência no card;
@@ -177,3 +177,22 @@ Nota de infraestrutura gratuita: **não** foi preciso GitHub Pro para começar a
 push que ande para trás nesses dois. Instalado no clone compartilhado (vale para todos os worktrees) e
 testado. A trava da plataforma (ruleset no GitHub) continua exigindo Pro e fica **adiada**; sem ela, quem
 usar `--no-verify` (ou um clone sem o gancho) contorna o portão.
+
+### Estado medido em 06/10/2026 — Homolog
+
+Provisionado e verificado. Stack própria: `pg-odoo-homolog` + `odoo-homolog`, banco `odoo_homolog`, volume
+`pgdata-odoo-homolog`, rede `tre-odoo-homolog`, Odoo em `127.0.0.1:8070` (loopback — quem expõe é a borda).
+Evidência: `scripts/provision/verificar-odoo-homolog.sh` na VPS, **15 itens, 0 falhas**; e de fora,
+`https://homolog.tre.transformativa.com.br/web/login` com certificado Let's Encrypt válido servindo a página
+de login do Odoo (o gerenciador de bases responde 403 na borda). Digest da imagem **idêntico** ao do dev
+(`odoo@sha256:77bac5cd…`) — ambiente que roda imagem diferente não homologa nada. O dev foi medido antes e
+depois: `odoo-dev` com o **mesmo `StartedAt`** (01/10), ou seja, não foi tocado.
+
+O que Homolog **ainda não tem**, declarado: `n8n` (o "mesmo conjunto nos três" da D5) e o banco de vendas que
+existe no dev (`sales_intelligence`). O par `deploy/environments/homolog.env` deixa o trio `TRE_PG_*` ausente
+**de propósito**: apontar para o container do dev faria o backup de homolog gravar artefato com o banco do dev.
+
+Cópia de código de homolog: `/opt/tre/homolog/repo` no commit **3252bba** (branch `homolog`, o mesmo que está
+no GitHub), publicada pelo caminho único (`deploy/publicar.sh`) com destino, artefato e lock **isolados** para
+não confundir o watchdog da cópia compartilhada. A primeira promoção `develop` → `homolog` (fast-forward; só
+arquivos de deploy/doc, nenhum código de aplicação) fica como próximo passo declarado, com evidência.
