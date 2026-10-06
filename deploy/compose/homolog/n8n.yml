@@ -50,6 +50,8 @@ services:
       # n8n bloqueia em execucao, nao no start — falha silenciosa caro
       N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
       N8N_PAYLOAD_SIZE_MAX: ${N8N_PAYLOAD_SIZE_MAX:-16}
+      # base da porta unica do Odoo NESTE ambiente (consumidor de outbox)
+      TRE_API_BASE: ${TRE_API_BASE:?defina TRE_API_BASE em deploy/environments/homolog-n8n.env}
     volumes:
       - /opt/tre/homolog/n8n/home:/home/node
     ports:

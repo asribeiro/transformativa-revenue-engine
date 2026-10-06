@@ -227,3 +227,29 @@ comandos de ligar/desligar e a evidência crua em `docs/runbooks/n8n-dev.md` § 
 Pendências declaradas deste ciclo: o `pg-sales-dev` foi conectado à rede `tre-odoo-dev` **em tempo de
 execução** (o container nasceu avulso, sem rótulos de compose) — versionar essa stack é card próprio; e a UI
 do n8n continua fora da borda.
+
+### Estado medido em 06/10/2026 — Homolog funcional (paridade com o Dev, uma diferença de desenho)
+
+Homolog deixou de ser só espelho de código. O que passou a existir:
+
+- **Banco de vendas próprio e versionado desde o berço** (o do dev nasceu avulso, sem compose — corrigir isso
+  é card próprio): `deploy/compose/homolog/pg-sales.yml` + par `homolog-sales.env` + instalador e verificador.
+  `pg-sales-homolog` roda PostgreSQL 16 no **mesmo digest do dev**, com volume próprio, sem porta publicada,
+  só na rede `tre-odoo-homolog`. Verificador: **20 itens, 0 falhas**, com prova de dente.
+  O par `deploy/environments/homolog.env` passou a declarar o trio `TRE_PG_*` apontando para **este** banco
+  (antes ficava ausente de propósito, para não apontar para o do dev).
+- **Migração aplicada** com o **mesmo sha256 do dev** (`0484a370…`): schema idêntico é o que permite comparar.
+- **Módulo `transformativa_sales_ai` instalado** em `odoo_homolog`; porta única preparada com
+  `tf.api.ambiente=homologacao` (o nome canônico deste ambiente é `homologacao`, **não** `homolog`) e chave
+  própria em `/etc/tre/homolog-ciclo/`.
+- **n8n com credenciais e workflows importados** (ids do contrato) e as duas agendas publicadas; cron do
+  módulo ativo.
+
+**A diferença, que é de desenho e não de instalação:** escrita em Homolog está trancada. A política do módulo
+declara `ambientes_permitidos: ["dev"]` e `homologacao`/`producao` exigem **aprovação humana**
+(`AMBIENTES_COM_APROVACAO`). Medido: o consumidor entrega, a API recusa com motivo nomeado
+(`recusa_da_api:ambiente_nao_permitido`) e a trilha grava `REFUSED`. Destrancar exige duas decisões do dono —
+política que permita `homologacao` e uma aprovação válida — e **não** foi feito por ato automático.
+
+Ingestão (CRM → n8n → PostgreSQL) funciona e é autônoma nos dois ambientes. Detalhe em
+`docs/runbooks/banco-de-vendas-homolog.md` e `docs/runbooks/n8n-homolog.md` § 7.

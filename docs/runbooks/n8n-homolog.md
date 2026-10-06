@@ -100,12 +100,39 @@ docker compose --env-file /opt/tre/homolog/compose/n8n.env -f /opt/tre/homolog/c
   conjuntos *próprio × outro*), para que diferença de ambiente seja detectada por medição, não por
   digitação.
 
-## 7. Pendências declaradas (não são surpresa)
+## 7. O ciclo ponta a ponta em Homolog (medido em 06/10/2026)
+
+Credenciais e workflows **importados** neste serviço, e as duas agendas ligadas.
+
+| peça | identificador | estado |
+|---|---|---|
+| workflow ingestor (webhook) | `TREodooEventos1` | **publicado** — `POST /webhook/tre/odoo-eventos` (403 sem token válido) |
+| workflow consumidor (poll de 1 min) | `TREOUTBOXCONSUM1` | **publicado** — processa a fila sozinho |
+| cron do módulo no Odoo (`cron_tf_entregar_eventos`) | `ir_cron` id 18 | **ativo** (1 min) |
+| credenciais | ids do contrato: `tre-dev-postgres`, `tre-dev-api-controlada`, `tre-dev-ingest-token` | no cofre do n8n, apontando para os recursos **de Homolog** |
+
+Ligar/desligar (a ativação desta versão é `publish:workflow`, e exige reiniciar o serviço):
+
+```bash
+docker exec --user 1000:1000 n8n-homolog n8n publish:workflow --id=TREodooEventos1
+docker exec --user 1000:1000 n8n-homolog n8n publish:workflow --id=TREOUTBOXCONSUM1
+docker compose --env-file /opt/tre/homolog/compose/n8n.env -f /opt/tre/homolog/compose/n8n.yml restart n8n-homolog
+```
+
+**CRM → outbox → n8n → PostgreSQL: funciona e é autônomo.** Fatos gerados pelo ORM →
+`{"SENT": 8, "DEAD_LETTER": 0}` → 8 linhas `COMPLETED` na trilha; e uma mudança de etapa feita pelo
+ORM depois disso chegou à trilha sozinha (`crm.lead STAGE_CHANGED COMPLETED`), entregue pelo cron.
+
+**PostgreSQL → n8n → API controlada → CRM: recusado no portão, com motivo nomeado**
+(`recusa_da_api:ambiente_nao_permitido`) e linha `REFUSED` na trilha. Não é defeito: a política do
+módulo só permite `dev`, e `homologacao`/`producao` exigem **aprovação humana** por desenho. Detalhe
+completo, parâmetros corretos e as armadilhas (id de credencial vem do contrato, `publish:workflow`,
+vocabulário fechado de ambientes) em **`docs/runbooks/banco-de-vendas-homolog.md`**.
+
+## 8. Pendências declaradas (não são surpresa)
 
 - **UI não exposta publicamente.** A borda hoje serve só os nomes do Odoo (`dev.tre`, `homolog.tre`,
   `tre`). Publicar o n8n por hostname (com autenticação) é **card próprio** — não entrou aqui.
-- **Workflows e credenciais ainda não importados** neste serviço: os JSONs versionados
-  (`n8n/workflows/*.json`) e os montadores (`scripts/n8n/montar_workflow*.py`) existem, e as suítes
-  validam os fluxos em stacks descartáveis. Importar para o serviço persistente é o próximo passo
-  funcional (é o que liga o outbox do CRM ao n8n de verdade).
+- **Escrita em Homolog depende de decisão do dono:** política que permita `homologacao` + aprovação
+  válida. Sem isso, Homolog valida leitura e ingestão, mas não escrita.
 - **Sem runner externo de tarefas** (o interno basta para os Code nodes do TRE).
