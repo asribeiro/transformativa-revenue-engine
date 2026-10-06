@@ -3,21 +3,54 @@
   "project": "Transformativa Revenue Engine",
   "release": "R1 — Foundation",
   "wave": "W7 — Inbound e multicanal (captura de leads: site, Meta, Google, LinkedIn, WhatsApp e eventos)",
-  "release_status": "IN_PROGRESS",
-  "current_gate": "VALIDATION",
-  "production_promotion_authorized": false,
-  "updated_at": "2026-10-04",
+  "release_status": "PRODUCTION_PROMOTED",
+  "current_gate": "DONE",
+  "production_promotion_authorized": true,
+  "updated_at": "2026-10-06",
   "human_approval": {
     "required": true,
-    "status": "PENDING",
-    "decision": "PENDING",
-    "approved_by": null,
-    "approved_at": null,
+    "status": "APPROVED",
+    "decision": "APPROVED",
+    "approved_by": "Anderson Ribeiro",
+    "approved_at": "2026-10-06",
     "scope": [
-      "validacao integrada do lote 7 (W6-E06 + onda W7)"
+      "validacao integrada do lote 7 (W6-E06 + onda W7)",
+      "fechamento da ENTREGA da onda com promoção à produção autorizada — decisão do dono no Telegram, 2026-10-06"
     ],
-    "production_promotion_authorized": false,
-    "round": 1
+    "production_promotion_authorized": true,
+    "round": 2,
+    "decided_by": "Anderson Ribeiro",
+    "decision_at": "2026-10-06",
+    "authority": "HUMAN_ONLY",
+    "approved_items": [
+      "TRE-W7-E02-T01",
+      "TRE-W7-E06-T01",
+      "TRE-W7-E04-T01",
+      "TRE-W7-E03-T01",
+      "TRE-W7-E05-T01",
+      "TRE-W7-E01-T01"
+    ],
+    "evidence": {
+      "como_foi_aprovado": "Telegram, 2026-10-06: \"A com promoção a produção\" — sobre a tabela das 9 ondas (cards 100% `done`, `work_items` todos DONE, `human_approval` PENDING) apresentada ao dono, com a ressalva de que a rodada 1 nunca foi homologada.",
+      "medido_em": "2026-10-06",
+      "no_artefato": "6 work_items, todos DONE; 6 filho(s) com validation_result=PASS",
+      "no_board": "cards do board desta onda: done=6 (kanban.db, leitura)",
+      "homologacao_por_card": "0 comentário(s) de homologação do dono nos cards desta onda",
+      "autorizacao_de_producao": "Autorizações 6 (escrita em produção até 13/10/2026), 7 (release `homolog` -> `main` = `70b4442`) e 8 (release do conserto de publicação/backup = `c773433`) — todas em `docs/operations/registro-de-aprovacoes.md`; aceite de produção do mesmo dia: banco de vendas `PROD_SALES_OK 20/0`, Odoo `PROD_ODOO_OK 15/0`, n8n `N8N_PROD_OK 44/0`, ciclo E2E nas duas direções, replay sem duplicata e dente do portão com par antes/depois",
+      "nao_medido": "não houve bateria item-a-item nesta rodada: o que consta é o que o pipeline registrou por item no próprio artefato e as homologações por card no board — não uma reverificação independente feita agora."
+    },
+    "history": [
+      {
+        "round": 2,
+        "at": "2026-10-06T14:56:57+00:00",
+        "decidido_por": "Anderson Ribeiro",
+        "autoridade": "dono do board",
+        "instrucao": "A com promoção a produção",
+        "escopo": "fechar a entrega das ondas W1-W9 (cards e work_items já DONE) e autorizar a promoção à produção; a rodada 1 permanecia PENDING",
+        "production_promotion_authorized": true,
+        "nota": "fecha o registro de entrega; NÃO autoriza release novo nem rollback (esses seguem exigindo aprovação própria)."
+      }
+    ]
   },
   "work_items": [
     {
@@ -287,5 +320,6 @@
         "t_eb323dd7"
       ]
     }
-  ]
+  ],
+  "completed_at": "2026-10-06T14:56:57+00:00"
 }
