@@ -161,6 +161,30 @@ def cadeia_ate_item(card: str, entregas: dict, pais: dict, maximo: int = 8):
     return None, None, None, None
 
 
+def carregar_mapa(caminho: str, entregas: dict):
+    """Ancoragem declarada pelo dono (mapa versionado) -> (item, motivo_geral, por_card).
+
+    Usado SO' quando o card nao tem vinculo medido (pai direto nem cadeia). O alvo e'
+    validado como qualquer outro: o item tem de existir num artefato e declarar DONE.
+    """
+    if not caminho:
+        return None
+    dados = json.loads(pathlib.Path(caminho).read_text(encoding="utf-8"))
+    alvo = str(dados.get("item_alvo") or "").strip()
+    if not alvo:
+        raise SystemExit("FALHOU: mapa sem item_alvo")
+    for nome, d in entregas.items():
+        for item in d.get("work_items") or []:
+            if (item.get("id") or "") == alvo:
+                return {
+                    "nome": nome, "d": d, "item": item,
+                    "motivo_geral": str(dados.get("motivo_geral") or ""),
+                    "autorizacao": str(dados.get("autorizacao") or ""),
+                    "cards": {str(k): str(v) for k, v in (dados.get("cards") or {}).items()},
+                }
+    raise SystemExit("FALHOU: item_alvo %s nao existe em artefato nenhum" % alvo)
+
+
 def estagios(obj: dict) -> set:
     return {str(obj.get(k) or "").upper() for k in ("stage", "current_gate", "status")} - {""}
 
@@ -179,6 +203,7 @@ def main(argv=None) -> int:
     ap.add_argument("--plugin-dir", default="/opt/data/plugins/kanban/dashboard", help="diretorio do plugin (fonte das regras)")
     ap.add_argument("--board", default="transformativa-revenue-engine")
     ap.add_argument("--modo", choices=[MODO_EXPLICITO, MODO_PROMOCAO], default=MODO_EXPLICITO)
+    ap.add_argument("--mapa", default="", help="JSON de ancoragem declarada (decisao do dono): {item_alvo, cards:{id:motivo}} -- so vale para card que nao tem vinculo medido")
     ap.add_argument("--aceitar-cadeia", action="store_true",
                     help="aceita item alcancado por cadeia de dependencia (card de defeito -> card de defeito -> item)")
     ap.add_argument("--autorizacao", default="", help="referencia da autorizacao humana (ex.: Autorizacao 10)")
@@ -204,9 +229,14 @@ def main(argv=None) -> int:
     entregas = carregar_entregas(deliveries_dir)
     ids_promovidos = {t for d in entregas.values() for t in (d.get("production_promoted_task_ids") or [])}
 
+    mapa = carregar_mapa(args.mapa, entregas)
+    if mapa:
+        print("   mapa declarado: item alvo %s (%s) | cards no mapa: %d" % (
+            mapa["item"].get("id"), mapa["nome"], len(mapa["cards"])))
     presos = [t for t, c in onde.items() if c == "validation"]
     elegiveis, recusados, ja_terminais = [], [], []
     via_cadeia = 0
+    via_mapa = 0
     for t in sorted(presos):
         if t in term:
             ja_terminais.append((t, "ja' terminal no artefato"))
@@ -220,22 +250,28 @@ def main(argv=None) -> int:
                     continue
                 achado = (nome, d, item, [p], "")
                 break
+        origem = "direto"
         if not (achado and not achado[4]) and args.aceitar_cadeia:
             nome, d, item, caminho = cadeia_ate_item(t, entregas, pais)
             if nome and "DONE" in estagios(item) and (args.modo != MODO_PROMOCAO or entrega_fechada(d)):
                 achado = (nome, d, item, caminho, "")
                 via_cadeia += 1
+                origem = "cadeia"
             elif nome:
                 achado = (nome, d, item, caminho, "cadeia achou item, mas item nao esta' DONE ou entrega nao fecha")
+        if not (achado and not achado[4]) and mapa and "DONE" in estagios(mapa["item"]) and t in mapa["cards"]:
+            achado = (mapa["nome"], mapa["d"], mapa["item"], ["ANCORAGEM-DECLARADA:" + t], "")
+            origem = "mapa"
+            via_mapa += 1
         if achado and not achado[4]:
-            elegiveis.append((t, achado[0], achado[1], achado[2], achado[3]))
+            elegiveis.append((t, achado[0], achado[1], achado[2], achado[3], origem))
         else:
             recusados.append((t, achado[4] if achado else "sem pai nem cadeia alcancando item DONE de artefato"))
 
     print()
     print("== cards presos em 'Validacao pendente': %d ==" % len(presos))
-    print("   elegiveis (item DONE mapeado): %d  (via cadeia: %d | via pai direto: %d)" % (
-        len(elegiveis), via_cadeia, len(elegiveis) - via_cadeia))
+    print("   elegiveis (item DONE mapeado): %d  (cadeia: %d | mapa declarado: %d | pai direto: %d)" % (
+        len(elegiveis), via_cadeia, via_mapa, len(elegiveis) - via_cadeia - via_mapa))
     print("   recusados (nada e' escrito neles): %d" % len(recusados))
     print("   ja' terminais (ignorados): %d" % len(ja_terminais))
     por_entrega = collections.Counter(e[1] for e in elegiveis)
@@ -254,10 +290,10 @@ def main(argv=None) -> int:
     if not args.aplicar:
         print()
         print("== CHECK (nada escrito). Amostra do que seria gravado ==")
-        for t, nome, d, item, caminho_vinculo in elegiveis[:3]:
+        for t, nome, d, item, caminho_vinculo, origem in elegiveis[:3]:
             print("   card %s -> %s :: item %s" % (t, nome, item.get("id") or item.get("hermes_task_id")))
-            print("      vinculo: %s" % ("pai direto" if len(caminho_vinculo) == 1 else
-                  "cadeia de %d niveis: %s" % (len(caminho_vinculo), " <- ".join(caminho_vinculo))))
+            print("      vinculo: %s" % ({"direto": "pai direto", "cadeia": "cadeia de %d niveis: %s" % (len(caminho_vinculo), " <- ".join(caminho_vinculo)),
+                                       "mapa": "ANCORAGEM DECLARADA no mapa (decisao do dono)"}[origem]))
             print("      children += {%s, stage: DONE, current_gate: DONE, evidence: <derivacao>, origin: declaracao-terminal-em-lote}" % t)
             if args.modo == MODO_PROMOCAO:
                 print("      production_promoted_task_ids += %s" % t)
@@ -284,13 +320,13 @@ def main(argv=None) -> int:
 
     # escrita
     por_entrega_cards = collections.defaultdict(list)
-    for t, nome, d, item, caminho_vinculo in elegiveis:
-        por_entrega_cards[nome].append((t, item, caminho_vinculo))
+    for t, nome, d, item, caminho_vinculo, origem in elegiveis:
+        por_entrega_cards[nome].append((t, item, caminho_vinculo, origem))
     escritos = 0
     for nome, itens in por_entrega_cards.items():
         caminho = deliveries_dir / nome
         d = json.loads(caminho.read_text(encoding="utf-8"))
-        for t, item_alvo, caminho_vinculo in itens:
+        for t, item_alvo, caminho_vinculo, origem in itens:
             for item in d.get("work_items") or []:
                 if (item.get("id") or item.get("hermes_task_id")) != (item_alvo.get("id") or item_alvo.get("hermes_task_id")):
                     continue
@@ -309,7 +345,9 @@ def main(argv=None) -> int:
                         "'Validacao pendente'. Declarado terminal por decisao do dono"
                         "%s. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite "
                         "independente e' afirmado aqui."
-                        % ("pai direto" if len(caminho_vinculo) == 1 else "cadeia de dependencia de %d niveis" % len(caminho_vinculo),
+                        % ({"direto": "pai direto",
+                            "cadeia": "cadeia de dependencia de %d niveis" % len(caminho_vinculo),
+                            "mapa": "ANCORAGEM DECLARADA no mapa versionado %s -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono)" % (args.mapa or "-")}[origem],
                            " <- ".join(caminho_vinculo),
                            " -- " + args.autorizacao if args.autorizacao else "")
                     ),

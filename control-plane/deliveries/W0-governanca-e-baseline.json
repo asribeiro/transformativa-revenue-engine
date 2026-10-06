@@ -6,7 +6,7 @@
   "release_status": "PRODUCTION_PROMOTED",
   "current_gate": "DONE",
   "production_promotion_authorized": true,
-  "updated_at": "2026-10-05T20:56:12.702058+00:00",
+  "updated_at": "2026-10-06T17:13:27Z",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -460,6 +460,105 @@
               }
             ]
           }
+        },
+        {
+          "hermes_task_id": "t_145eeaef",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_145eeaef. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_1ac3e5a8",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_1ac3e5a8. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_2c8c5a22",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_2c8c5a22. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_75bedc5e",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_75bedc5e. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_79156ab2",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_79156ab2. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_831d01f0",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_831d01f0. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_99796978",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_99796978. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_b8adfe6c",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_b8adfe6c. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_c21fc474",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_c21fc474. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_d4eb0e31",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_d4eb0e31. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_eefbe2e5",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por ANCORAGEM DECLARADA no mapa versionado control-plane/ancoragens/2026-10-06-harness-w0.json -- inferencia por substancia, NAO vinculo registrado: o card cita um item que nao existe em artefato nem como card, e o item alvo foi escolhido por conteudo (decisao do dono), caminho medido (cada salto e' um vinculo de dependencia real): ANCORAGEM-DECLARADA:t_eefbe2e5. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida. Ancoragem declarada (por substancia) no item TRE-W0-E04-T04. Nivel explicito (Concluido), NAO promocao a producao.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:13:27Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ],
       "current_gate": "DONE"

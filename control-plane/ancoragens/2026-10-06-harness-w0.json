@@ -1,0 +1,19 @@
+{
+  "autorizacao": "Autorizacao 12 (06/10/2026): dono respondeu 'C' apos a explicacao da opcao C corrigida = ancorar estes cards nos itens do harness declarados na W0, nivel Concluido (nao producao).",
+  "motivo_geral": "Ancoragem por SUBSTANCIA, nao por vinculo registrado. Os 11 cards citam TRE-W3-E04-T03, item que nao existe nem como item declarado em artefato nem como card no board, e a cadeia de dependencia deles morre em t_7c57e910 (sem pai). O conteudo (casamento por palavra inteira no vocabulario de papel, guardrail do_not_contact, guardrail registro_marcado, suites de cobertura e autoteste por mutacao) e' trabalho de guardrail do Hermes Dev Harness, linha declarada na W0 em TRE-W0-E04-T02 (Integrar JEV ao Hermes Dev Harness) e TRE-W0-E04-T04 (Validar JEV guardrails e fallback), com defeitos da mesma familia ja declarados (ex.: TRE-W0-E04-T02-D06, canonicalizacao por vocabulario).",
+  "item_alvo": "TRE-W0-E04-T04",
+  "nivel": "explicito (Concluido) -- NAO promocao: o harness roda no ambiente de desenvolvimento do Hermes, nao no TRE de producao",
+  "cards": {
+    "t_145eeaef": "linha propria no registro de aprovacoes (verificador sha256 12c84abf1e5b,56571a7fa651; prova medida, nao declaracao em lote)",
+    "t_1ac3e5a8": "sem linha propria no registro (card de verificacao independente derivado de conserto ja registrado)",
+    "t_2c8c5a22": "linha propria no registro de aprovacoes (verificador sha256 12c84abf1e5b,56571a7fa651; prova medida, nao declaracao em lote)",
+    "t_75bedc5e": "sem linha propria no registro (card de verificacao independente derivado de conserto ja registrado)",
+    "t_79156ab2": "linha propria no registro de aprovacoes (verificador sha256 814ec35ff5d4; prova medida, nao declaracao em lote)",
+    "t_831d01f0": "linha propria no registro de aprovacoes (verificador sha256 a4a0392ea0a6; prova medida, nao declaracao em lote)",
+    "t_99796978": "sem linha propria no registro (card de verificacao independente derivado de conserto ja registrado)",
+    "t_b8adfe6c": "linha propria no registro de aprovacoes (verificador sha256 814ec35ff5d4; prova medida, nao declaracao em lote)",
+    "t_c21fc474": "linha propria no registro de aprovacoes (verificador sha256 a4a0392ea0a6; prova medida, nao declaracao em lote)",
+    "t_d4eb0e31": "linha propria no registro de aprovacoes (verificador sha256 dabfe62fa668; prova medida, nao declaracao em lote)",
+    "t_eefbe2e5": "linha propria no registro de aprovacoes (verificador sha256 dabfe62fa668; prova medida, nao declaracao em lote)"
+  }
+}
