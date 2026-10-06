@@ -32,3 +32,17 @@ envelhece no commit seguinte e vira afirmação falsa.
 | `scripts/provision/verificar-n8n-homolog.sh` | `c25e9e713540346cb8f2e8c581616dfd93c62dbbfd5e16adaca0cf51ba151421` |
 | `deploy/publicar.sh` | `6be95844c480e7ab6bf165631f2dc5c9766fcea0a806015f0bd09eafae5487e5` |
 | `deploy/compose/dev/n8n.yml` | `8240925c778de25f93b8cea35890634f56315ace6c36a4e66c1454a8a694e82e` |
+
+## Promoção 3 — `develop` → `homolog` (06/10/2026)
+
+- **Origem:** `develop` = `dbae3e4` · **destino:** `homolog` = `dbae3e4` (**fast-forward**: `homolog` era ancestral).
+- **Delta:** 17 arquivos, +1580/-11 — **zero arquivo de app** (`odoo/addons/` = 0). Entram os **artefatos de
+  Produção** (compose/env/instaladores/verificadores + runbooks) e dois registros do ciclo de Homolog.
+- **Por que promoveu:** os instaladores de Produção rodam **da cópia do ambiente na VPS**
+  (`/opt/tre/prod/repo/scripts/provision/...`) e a cópia é publicada do branch do ambiente. Sem esta
+  promoção o runtime de Produção não teria de onde ler os artefatos.
+- **Evidência:** `bash -n` OK nos 6 scripts derivados; inversão de isolamento revisada item a item (as
+  listas recusam dev E homolog, nunca produção); verificadores de Homolog em 15/0 e 20/0.
+- **Na VPS (autorizado):** apenas a rede `tre-odoo-prod` e o diretório `/etc/tre/odoo-prod` (700 root).
+  Nenhum container ou volume de produção.
+- **Pendente:** `homolog` → `main` (release de Produção) exige **aprovação humana registrada**.
