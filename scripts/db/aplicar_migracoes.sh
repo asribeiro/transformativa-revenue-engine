@@ -59,6 +59,7 @@ DIR_MIGRACOES="$RAIZ/db/migrations"
 ITENS=0
 FALHAS=0
 VERSAO_CONTROLE="public.tre_schema_migrations"
+LOG_CONSULTA="$(mktemp)"   # stderr da ultima consulta (diagnostico honesto)
 
 case "$MODO" in
   aplicar|--somente-checar) ;;
@@ -75,7 +76,11 @@ pula(){ ITENS=$((ITENS + 1)); echo "PULADO $*"; }
 morrer() { echo "$*"; echo "RESULTADO: MIGRACAO_FALHOU"; exit 1; }
 
 consulta() {  # consulta <servico> <usuario> <banco> <sql>
-  docker exec "$1" psql -U "$2" -d "$3" -tAc "$4" 2>/dev/null
+  docker exec "$1" psql -U "$2" -d "$3" -tAc "$4" 2>"$LOG_CONSULTA"
+  # stderr guardado (nao descartado): leitura que falha NAO pode virar "vazio = nao registrado".
+  # Defeito medido em 06/10/2026 no 1o provisionamento de producao: usuario default 'tre' nao existia
+  # no cluster de vendas -> psql falhava em silencio -> producao era recusada com a mensagem FALSA
+  # "versao ainda nao registrada em homolog" (falhar estava certo; a causa dita, nao).
 }
 
 # ------------------------------------------------------------------ par do ambiente
@@ -137,6 +142,10 @@ if [ "$AMB" = "prod" ]; then
     morrer "FALHOU sequencia dev -> homolog -> producao: container de homolog '$SERVICO_HOMOLOG' nao existe. Nada foi tocado em producao."
   fi
   ok "ambiente de homolog presente ('$SERVICO_HOMOLOG')"
+  if [ "$(consulta "$SERVICO_HOMOLOG" "$USUARIO_HOMOLOG" "$BANCO_HOMOLOG" "SELECT 1")" != "1" ]; then
+    morrer "FALHOU nao consegui LER o rastro de homolog no container '$SERVICO_HOMOLOG' (usuario '$USUARIO_HOMOLOG', banco '$BANCO_HOMOLOG'): $(head -1 "$LOG_CONSULTA" 2>/dev/null) — a sequencia dev -> homolog -> producao NAO foi avaliada. Ajuste TRE_PG_USER_HOMOLOG/TRE_PG_DB_HOMOLOG (o par de vendas usa usuario 'sales_ai'). Nada foi tocado em producao."
+  fi
+  ok "rastro de homolog legivel (usuario '$USUARIO_HOMOLOG', banco '$BANCO_HOMOLOG')"
   pendentes_homolog=0
   for arq in "${MAPA[@]}"; do
     base="$(basename "$arq")"
