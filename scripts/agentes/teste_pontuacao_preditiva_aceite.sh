@@ -17,6 +17,9 @@
 #   6. LEITURA PURA: snapshot das 12 tabelas antes/depois igual e a transacao READ ONLY recusando escrita;
 #   7. determinismo (duas rodadas -> mesmo hash_do_relatorio), saida sem PII e HTML auto-contido;
 #   8. PREVISAO NAO APLICADA: `aplicado=false` e o Data Contract intacto (sha256 antes/depois).
+#   9. HIGIENE: o aceite mede o PROPRIO rastro — teardown com `docker rm -f -v` e nenhum
+#      volume anonimo ORFAO novo no fim (sem container que o referencie) — o baseline de docker
+#      nao pode mentir por causa do aceite.
 #
 # Pre-requisitos: docker com imagem postgres:16, python3. Nada de rede externa.
 # Uso (na VPS, na raiz do repo): bash scripts/agentes/teste_pontuacao_preditiva_aceite.sh [--manter]
@@ -37,11 +40,13 @@ item() { # item <nome> <0|1> [detalhe]
   if [ "$2" = "0" ]; then echo "OK    $1"; OK=$((OK+1)); else echo "FALHOU $1 ${3:-}"; FALHAS=$((FALHAS+1)); fi
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
+volumes_anonimos() { docker volume ls -qf dangling=true 2>/dev/null | grep -E '^[0-9a-f]{64}$' | sort; }
 limpar() { docker rm -f -v "$PG" >/dev/null 2>&1; }
 [ "$MANTER" = "1" ] || trap limpar EXIT
 
 rm -rf "$BASE"; mkdir -p "$BASE/out"
 cd "$REPO" || exit 1
+ANON_ANTES="$(volumes_anonimos | tr '\n' ' ')"
 
 echo "== 0. pre-flight"
 docker info >/dev/null 2>&1; item "docker responde (daemon presente)" $?
@@ -351,6 +356,30 @@ if grep -qE "SELECT |INSERT |UPDATE |DELETE " "$COMPONENTE"; then
   item "componente sem SQL proprio (leitura e' do instrumento)" 1
 else
   item "componente sem SQL proprio (leitura e' do instrumento)" 0
+fi
+
+echo "== 13. higiene: o aceite prova que NAO deixa volume anonimo novo"
+# O teardown e' o MESMO do trap (`docker rm -f -v`): o aceite mede o PROPRIO rastro. Sem o `-v` o
+# container descartavel deixa o volume anonimo da imagem `postgres:16` para tras (defeito t_3148dbbf:
+# cada rodada de aceite vazava 1 volume e o baseline de docker mentia em silencio).
+if [ "$MANTER" = "1" ]; then
+  item "higiene: pulado em --manter (container mantido de proposito)" 0
+else
+  limpar   # a MESMA limpeza do trap: aqui o aceite mede o rastro que ELE deixa
+  novos=""
+  for v in $(volumes_anonimos); do
+    case " $ANON_ANTES " in
+      *" $v "*) ;;
+      *) novos="$novos $v" ;;
+    esac
+  done
+  qtd=$(echo $novos | wc -w)
+  if [ "$qtd" = "0" ]; then
+    item "higiene: nenhum volume anonimo ORFAO novo depois do teardown com -v" 0
+  else
+    item "higiene: nenhum volume anonimo ORFAO novo depois do teardown com -v" 1 \
+      "$qtd volume(s) orfao(s) novo(s):$novos"
+  fi
 fi
 
 echo

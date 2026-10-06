@@ -16,6 +16,8 @@
 #   8. FONTE CANONICA: snapshot das tabelas igual antes/depois e transacao READ ONLY recusando escrita;
 #   9. DIMENSAO DIVERGENTE recusa sem escrever e `--recriar --confirmo` reconstroi a memoria;
 #  10. privacidade (nenhum e-mail da base na memoria), determinismo do relatorio e HTML auto-contido.
+#  11. HIGIENE: o aceite mede o PROPRIO rastro — teardown com `docker rm -f -v` (postgres E qdrant) e
+#      nenhum volume anonimo ORFAO novo no fim (o baseline de docker nao pode mentir por causa do aceite).
 #
 # Pre-requisitos: docker com as imagens postgres:16 e qdrant/qdrant:v1.12.4, python3, curl.
 # Uso (na VPS, na raiz do repo): bash scripts/agentes/teste_memoria_comercial_aceite.sh [--manter]
@@ -41,12 +43,14 @@ item() { # item <nome> <0|1> [detalhe]
   if [ "$2" = "0" ]; then echo "OK    $1"; OK=$((OK+1)); else echo "FALHOU $1 ${3:-}"; FALHAS=$((FALHAS+1)); fi
 }
 psql_q() { docker exec -i "$PG" psql -U sales_ai -d sales_intelligence -t -A -c "$1" 2>/dev/null; }
+volumes_anonimos() { docker volume ls -qf dangling=true 2>/dev/null | grep -E '^[0-9a-f]{64}$' | sort; }
 qd() { curl -sS -m 10 -H 'Content-Type: application/json' "$@"; }
-limpar() { docker rm -f "$PG" "$QD" >/dev/null 2>&1; }
+limpar() { docker rm -f -v "$PG" "$QD" >/dev/null 2>&1; }
 [ "$MANTER" = "1" ] || trap limpar EXIT
 
 rm -rf "$BASE"; mkdir -p "$BASE/out"
 cd "$REPO" || exit 1
+ANON_ANTES="$(volumes_anonimos | tr '\n' ' ')"
 
 echo "== 0. pre-flight"
 docker info >/dev/null 2>&1; item "docker responde (daemon presente)" $?
@@ -92,7 +96,7 @@ else
 fi
 
 echo "== 3. Qdrant descartavel + PostgreSQL descartavel (migration 0001)"
-docker rm -f "$QD" >/dev/null 2>&1
+docker rm -f -v "$QD" >/dev/null 2>&1
 docker run -d --name "$QD" -p "127.0.0.1:$PORTA:6333" qdrant/qdrant:v1.12.4 >/dev/null 2>&1
 item "container descartavel $QD criado (qdrant/qdrant:v1.12.4)" $?
 pronto=1
@@ -103,7 +107,7 @@ for _ in $(seq 1 40); do
 done
 item "Qdrant pronto (collections respondendo em 127.0.0.1:$PORTA)" "$pronto"
 
-docker rm -f "$PG" >/dev/null 2>&1
+docker rm -f -v "$PG" >/dev/null 2>&1
 docker run -d --name "$PG" -e POSTGRES_PASSWORD=dev -e POSTGRES_USER=postgres postgres:16 >/dev/null 2>&1
 item "container descartavel $PG criado" $?
 pronto=1
@@ -468,6 +472,30 @@ PROD=$(docker ps --format '{{.Names}}' | grep -ci 'prod' || true)
 AMBIENTE=$(docker ps --format '{{.Names}}' | grep -c '^pg-sales-dev$' || true)
 [ "${PROD:-0}" = "0" ] && [ "${AMBIENTE:-0}" = "1" ] && item "ambiente intacto: nenhum container de producao e pg-sales-dev no ar" 0 \
   || item "ambiente intacto: nenhum container de producao e pg-sales-dev no ar" 1 "prod=$PROD pg-sales-dev=$AMBIENTE"
+
+echo "== 13. higiene: o aceite prova que NAO deixa volume anonimo novo"
+# O teardown e' o MESMO do trap (`docker rm -f -v`): o aceite mede o PROPRIO rastro. Sem o `-v` o
+# container postgres:16 deixa o volume anonimo para tras (achado da mesma classe do defeito t_3148dbbf;
+# o qdrant nao declara VOLUME, quem vaza e' o postgres).
+if [ "$MANTER" = "1" ]; then
+  item "higiene: pulado em --manter (containers mantidos de proposito)" 0
+else
+  limpar   # a MESMA limpeza do trap: aqui o aceite mede o rastro que ELE deixa
+  novos=""
+  for v in $(volumes_anonimos); do
+    case " $ANON_ANTES " in
+      *" $v "*) ;;
+      *) novos="$novos $v" ;;
+    esac
+  done
+  qtd=$(echo $novos | wc -w)
+  if [ "$qtd" = "0" ]; then
+    item "higiene: nenhum volume anonimo ORFAO novo depois do teardown com -v" 0
+  else
+    item "higiene: nenhum volume anonimo ORFAO novo depois do teardown com -v" 1 \
+      "$qtd volume(s) orfao(s) novo(s):$novos"
+  fi
+fi
 
 echo
 echo "RESULTADO: $([ "$FALHAS" = "0" ] && echo PASS || echo FALHOU) ($OK itens, $FALHAS falhas)"
