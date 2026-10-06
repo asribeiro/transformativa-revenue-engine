@@ -71,6 +71,11 @@ novo — a idempotência por `tf_company_id` segura a duplicidade.
 `recusa_da_api:aprovacao_ausente`, trilha `REFUSED`, e **nenhum** parceiro no CRM. É o dente do
 portão: a recusa tem nome, fica registrada e não escreve nada.
 
+**Par antes/depois com o MESMO evento do dente:** restaurada a aprovação de 15/10 (gravação pelo ORM +
+restart), o evento voltou à fila e passou sozinho — fila `PROCESSED` e parceiro **id 9
+"Dente do portao Homolog Ltda"** (`dente-portao.example`, score 42) criado no CRM. Só a validade mudou;
+o resto do caminho é o mesmo. O parceiro 8 continua único (dedup por `tf_company_id`).
+
 ### 5.2 Parâmetros deste ambiente (o nome canônico é **`homologacao`**, não `homolog`)
 
 ```
