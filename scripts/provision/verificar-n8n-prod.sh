@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# STATUS (06/10/2026): espelho derivado de homolog — REVISAO DE INVERSaO PENDENTE.
-#   Nao executar em producao antes de fechar a revisao: as listas de "container/rede de outro
-#   ambiente" ainda citam nomes que pertenciam ao outro ambiente. Espelhado por derivacao
-#   mecanica; a inversao dos conjuntos (meu x do outro) e' revisao item a item.
-# Verificacao do n8n no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
+# STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
+#   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
+#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
+# Verificacao do n8n no ambiente de PRODUCAO do TRE (VPS Contabo `vmi3619453`).
 #
 # Roda NA VPS. Cada item e' medicao, nao prosa: ou o comando prova, ou reprova.
 # Runbook: docs/runbooks/n8n-prod.md.
@@ -65,13 +65,13 @@ fi
   && ok "par declara imagem/versao/digest/porta (versao=$VERSAO)" \
   || falhou "par incompleto (imagem/versao/digest/porta)"
 
-# Isolamento no COMPOSE RESOLVIDO: nada de outro ambiente no artefato do homolog.
+# Isolamento no COMPOSE RESOLVIDO: nada de outro ambiente no artefato de producao.
 intruso=""
-for nome in n8n-dev n8n-prod odoo-dev odoo-prod pg-odoo-dev pg-odoo-prod; do
+for nome in n8n-dev n8n-homolog odoo-dev odoo-homolog pg-odoo-dev pg-odoo-homolog; do
   if grep -qE "(container_name|name): *${nome}\b" <<<"$RESOLVIDO"; then intruso="$nome"; fi
 done
-[ -z "$intruso" ] && ok "artefato do homolog nao cita outro ambiente" \
-  || falhou "artefato do homolog cita container/rede de outro ambiente ($intruso)"
+[ -z "$intruso" ] && ok "artefato de producao nao cita outro ambiente" \
+  || falhou "artefato de producao cita container/rede de outro ambiente ($intruso)"
 
 # ---------------------------------------------------------------------------
 # Container
@@ -234,10 +234,10 @@ fi
 # ---------------------------------------------------------------------------
 REDES_CT="$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null)"
 grep -qw "$REDE" <<<"$REDES_CT" && ok "n8n na rede $REDE" || falhou "n8n NAO esta na rede $REDE"
-if grep -qwE 'tre-odoo-dev|tre-odoo-prod' <<<"$REDES_CT"; then
-  falhou "n8n do homolog esta em rede de outro ambiente ($REDES_CT)"
+if grep -qwE 'tre-odoo-dev|tre-odoo-homolog' <<<"$REDES_CT"; then
+  falhou "n8n de producao esta em rede de outro ambiente ($REDES_CT)"
 else
-  ok "n8n do homolog nao esta em rede de outro ambiente"
+  ok "n8n de producao nao esta em rede de outro ambiente"
 fi
 if docker inspect "$ODOO" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$REDE"; then
   ok "Odoo de producao na mesma rede ($REDE)"
@@ -275,7 +275,7 @@ fi
 # pode e' entrar na MINHA rede ou publicar a MINHA porta. "Existe n8n-prod" nao e' falha; medir
 # a invasao e' que e'.
 CONTAMINADO=""
-for outro in n8n-dev n8n-prod; do
+for outro in n8n-dev n8n-homolog; do
   docker ps -a --format '{{.Names}}' | grep -qx "$outro" || continue
   if docker inspect "$outro" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$REDE"; then
     CONTAMINADO="$outro esta na minha rede ($REDE)"
@@ -284,9 +284,9 @@ for outro in n8n-dev n8n-prod; do
     CONTAMINADO="$outro publica a minha porta ($PORTA)"
   fi
 done
-[ -z "$CONTAMINADO" ] && ok "n8n de outro ambiente nao invade a rede nem a porta do homolog" \
+[ -z "$CONTAMINADO" ] && ok "n8n de outro ambiente nao invade a rede nem a porta de producao" \
   || falhou "contaminacao entre ambientes: $CONTAMINADO"
-for outro in odoo-dev pg-odoo-dev odoo-prod pg-odoo-prod; do
+for outro in odoo-dev pg-odoo-dev odoo-homolog pg-odoo-homolog; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$outro"; then
     ok "$outro presente (nao tocado por esta instalacao)"
   fi
@@ -294,7 +294,7 @@ done
 
 # ---------------------------------------------------------------------------
 echo
-printf 'RESULTADO: N8N_HOMOLOG_%s (%d itens, %d falhas)\n' \
+printf 'RESULTADO: N8N_PROD_%s (%d itens, %d falhas)\n' \
   "$([ "$FALHAS" -eq 0 ] && echo OK || echo FALHOU)" "$ITENS" "$FALHAS"
 [ "$FALHAS" -eq 0 ] || exit 1
 
@@ -314,7 +314,7 @@ if [ "${1:-}" = "--prova-de-dente" ]; then
     "$ENVFILE" >"$TMP/n8n.env"
   SAIDA_A="$(TRE_N8N_ENV="$TMP/n8n.env" bash "$0" 2>&1 || true)"
   DENTES=$((DENTES+1))
-  if grep -qE '^FALHA .*digest' <<<"$SAIDA_A" && grep -qE '^RESULTADO: N8N_HOMOLOG_FALHOU' <<<"$SAIDA_A"; then
+  if grep -qE '^FALHA .*digest' <<<"$SAIDA_A" && grep -qE '^RESULTADO: N8N_PROD_FALHOU' <<<"$SAIDA_A"; then
     printf 'DENTE OK    digest divergente -> reprova (%s falha(s))\n' "$(grep -c '^FALHA' <<<"$SAIDA_A")"
   else
     printf 'DENTE RUIM  digest divergente NAO reprovou — o verificador nao esta medindo o digest\n'
@@ -354,7 +354,7 @@ if [ "${1:-}" = "--prova-de-dente" ]; then
   fi
 
   echo
-  printf 'RESULTADO: N8N_HOMOLOG_DENTE_%s (%d dentes, %d ruins)\n' \
+  printf 'RESULTADO: N8N_PROD_DENTE_%s (%d dentes, %d ruins)\n' \
     "$([ "$DENTES_RUINS" -eq 0 ] && echo OK || echo FALHOU)" "$DENTES" "$DENTES_RUINS"
   [ "$DENTES_RUINS" -eq 0 ] || exit 1
 fi

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# STATUS (06/10/2026): espelho derivado de homolog — REVISAO DE INVERSaO PENDENTE.
-#   Nao executar em producao antes de fechar a revisao: as listas de "container/rede de outro
-#   ambiente" ainda citam nomes que pertenciam ao outro ambiente. Espelhado por derivacao
-#   mecanica; a inversao dos conjuntos (meu x do outro) e' revisao item a item.
-# Instalacao do n8n no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
+# STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
+#   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
+#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
+# Instalacao do n8n no ambiente de PRODUCAO do TRE (VPS Contabo `vmi3619453`).
 #
 # Runbook: docs/runbooks/n8n-prod.md. Par nao-secreto: deploy/environments/prod-n8n.env
 # (na VPS, /opt/tre/prod/compose/n8n.env).
@@ -12,7 +12,7 @@
 # por SSH (ADR-0008).
 #
 # O que este script garante (e o verificador cobra depois):
-#   * ambiente alvo e' o homolog e SO ele: compose sob /opt/tre/prod, segredos em /etc/tre/n8n-prod,
+#   * ambiente alvo e' a PRODUCAO e SO ela: compose sob /opt/tre/prod, segredos em /etc/tre/n8n-prod,
 #     container `n8n-prod` — e um teste de isolamento do COMPOSE RESOLVIDO (falha se o artefato
 #     apontar para nome de container/rede de outro ambiente);
 #   * a chave de criptografia do n8n nasce NA VPS (`openssl rand`), vai para arquivo 600 e nunca
@@ -59,7 +59,7 @@ command -v openssl >/dev/null 2>&1 || falhar "openssl ausente (a chave do n8n na
 
 case "$COMPOSE" in
   /opt/tre/prod/*) : ;;
-  *) falhar "compose fora do ambiente homolog ($COMPOSE) — este script so opera /opt/tre/prod" ;;
+  *) falhar "compose fora do ambiente de producao ($COMPOSE) — este script so opera /opt/tre/prod" ;;
 esac
 [ "$SEGREDOS" = "/etc/tre/n8n-prod" ] || falhar "segredos fora de /etc/tre/n8n-prod ($SEGREDOS)"
 
@@ -67,12 +67,12 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER" && [ "$RECRIAR" !=
   falhar "container '$CONTAINER' JA EXISTE — nao mexo nele sem TRE_N8N_RECRIAR=1"
 fi
 
-# O n8n do homolog entra na rede do Odoo de producao (e' por ela que o Odoo chama o webhook). Se a rede
+# O n8n de producao entra na rede do Odoo de producao (e' por ela que o Odoo chama o webhook). Se a rede
 # nao existe, instalar n8n aqui criaria uma rede vazia com o mesmo nome — errado e silencioso.
 docker network inspect "$REDE" >/dev/null 2>&1 \
   || falhar "rede '$REDE' nao existe — instale o Odoo de producao antes (scripts/provision/instalar-odoo-prod.sh)"
 docker ps --format '{{.Names}}' | grep -qx 'odoo-prod' \
-  || falhar "container 'odoo-prod' nao esta de pe — o n8n do homolog depende dele (rede + API/webhook)"
+  || falhar "container 'odoo-prod' nao esta de pe — o n8n de producao depende dele (rede + API/webhook)"
 
 # shellcheck disable=SC1090
 set -a; . "$ENVFILE"; set +a
@@ -92,7 +92,7 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Segredos do n8n (na VPS, 600, sem passar por argv)
 #
-# ORDEM IMPORTA (armadilha medida DUAS vezes neste projeto — dev e homolog): a validacao do
+# ORDEM IMPORTA (armadilha medida TRES vezes neste projeto — dev, homolog e agora producao): a validacao do
 # compose resolve o `env_file`, entao `docker compose config` FALHA enquanto o arquivo de segredo
 # nao existe. Segredo nasce primeiro; artefato e' validado depois.
 # ---------------------------------------------------------------------------
@@ -122,10 +122,10 @@ RESOLVIDO="$(compose config </dev/null)"
 grep -q "container_name: $CONTAINER" <<<"$RESOLVIDO" || falhar "compose resolvido nao declara container_name: $CONTAINER"
 
 # Isolamento medido no COMPOSE RESOLVIDO (nao em prosa): nenhum container de outro ambiente pode
-# aparecer no artefato do homolog.
-for intruso in n8n-dev n8n-prod odoo-dev odoo-prod; do
+# aparecer no artefato de producao.
+for intruso in n8n-dev n8n-homolog odoo-dev odoo-homolog; do
   if grep -qE "(container_name|name): *${intruso}\b" <<<"$RESOLVIDO"; then
-    falhar "o compose do homolog cita container/rede de outro ambiente ($intruso) — artefato trocado?"
+    falhar "o compose de producao cita container/rede de outro ambiente ($intruso) — artefato trocado?"
   fi
 done
 
@@ -173,5 +173,5 @@ fi
 # O estado do n8n tem de estar no bind mount (se cair, ele volta com o mesmo banco/chave).
 [ -f "$HOME_N8N/.n8n/database.sqlite" ] || echo "   AVISO: $HOME_N8N/.n8n/database.sqlite ainda nao existe (o n8n cria no primeiro start completo)"
 
-echo "RESULTADO: N8N_HOMOLOG_INSTALADO container=$CONTAINER imagem=${IMAGEM}:${VERSAO} digest=$DIGESTO_REAL host=$HOST_N8N porta=127.0.0.1:$PORTA home=$HOME_N8N segredos=$SEGREDOS/n8n.env"
+echo "RESULTADO: N8N_PROD_INSTALADO container=$CONTAINER imagem=${IMAGEM}:${VERSAO} digest=$DIGESTO_REAL host=$HOST_N8N porta=127.0.0.1:$PORTA home=$HOME_N8N segredos=$SEGREDOS/n8n.env"
 exit 0

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# STATUS (06/10/2026): espelho derivado de homolog — REVISAO DE INVERSaO PENDENTE.
-#   Nao executar em producao antes de fechar a revisao: as listas de "container/rede de outro
-#   ambiente" ainda citam nomes que pertenciam ao outro ambiente. Espelhado por derivacao
-#   mecanica; a inversao dos conjuntos (meu x do outro) e' revisao item a item.
-# Provisiona o banco de VENDAS (`sales_intelligence`) no ambiente HOMOLOG do TRE.
+# STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
+#   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
+#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
+# Provisiona o banco de VENDAS (`sales_intelligence`) no ambiente de PRODUCAO do TRE.
 #
 # O que faz, na ordem (a ordem é parte do conserto — ver "armadilhas"):
 #   1. confere o par não-secreto versionado (deploy/environments/prod-sales.env);
@@ -36,7 +36,7 @@ SSH=(ssh -i "$CHAVE" -o StrictHostKeyChecking=no "$ALVO")
 SCP=(scp -i "$CHAVE" -o StrictHostKeyChecking=no)
 R() { "${SSH[@]}" "$@"; }
 
-echo "== instalar $SERVICO no ambiente homolog =="
+echo "== instalar $SERVICO no ambiente prod =="
 
 # 1. par não-secreto
 [ -f "$PAR" ] || { echo "FALHOU par ausente: $PAR" >&2; exit 2; }

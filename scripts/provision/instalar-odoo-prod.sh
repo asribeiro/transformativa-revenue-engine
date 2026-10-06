@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# STATUS (06/10/2026): espelho derivado de homolog — REVISAO DE INVERSaO PENDENTE.
-#   Nao executar em producao antes de fechar a revisao: as listas de "container/rede de outro
-#   ambiente" ainda citam nomes que pertenciam ao outro ambiente. Espelhado por derivacao
-#   mecanica; a inversao dos conjuntos (meu x do outro) e' revisao item a item.
-# Instalacao do Odoo Community no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
+# STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
+#   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
+#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
+# Instalacao do Odoo Community no ambiente de PRODUCAO do TRE (VPS Contabo `vmi3619453`).
 #
-# Derivado de scripts/provision/instalar-odoo-dev.sh em 05/10/2026 (paridade estrutural: o
-# Homolog existe justamente para detectar diferenca de ambiente, entao ele nasce com o MESMO
-# desenho do dev). Runbook: docs/runbooks/odoo-prod.md.
+# Derivado de scripts/provision/instalar-odoo-homolog.sh em 06/10/2026 (paridade estrutural: producao
+# roda o MESMO desenho que dev e homolog ja rodam; muda o que e' do ambiente). Runbook:
+# docs/runbooks/odoo-prod.md.
 #
 # Roda NA VPS (precisa de `docker` e da arvore /opt/tre); o container do Hermes apenas
 # orquestra por SSH (ADR-0008).
 #
-# Diferenca DELIBERADA em relacao ao instalador do dev (guardas):
-#   * o dev RECUSA se existir container de homolog/producao. Aqui e' o inverso: dev e producao
-#     podem existir — o que este script garante e' que ele NAO os toca. A prova disso nao e'
-#     disciplina: e' uma checagem do COMPOSE RESOLVIDO (`docker compose config`), que falha se
-#     o artefato de homolog apontar para nome de container de outro ambiente.
-#   * o trio de vendas (`sales_intelligence`) nao existe em homolog: o par prod.env declara
-#     so' o Odoo. Ver o comentario daquele arquivo.
+# Diferenca DELIBERADA em relacao aos instaladores de dev e homolog (guardas):
+#   * o dev RECUSA se existir container de homolog/producao; o de homolog recusa se existir container
+#     de dev/producao. Aqui e' o INVERSO: dev E homolog podem existir — o que este script garante e'
+#     que ele NAO os toca. A prova disso nao e' disciplina: e' uma checagem do COMPOSE RESOLVIDO
+#     (`docker compose config`), que falha se o artefato de producao citar nome de container de
+#     outro ambiente (lista `NOMES_DE_OUTROS`: dev e homolog).
+#   * o trio de vendas (`sales_intelligence`) EXISTE em producao, com banco proprio desde o berco
+#     (deploy/compose/prod/pg-sales.yml + par prod-sales.env); o par prod.env declara os dois.
+#   * a MIGRACAO em producao NAO e' automatica: `scripts/db/aplicar_migracoes.sh prod` RECUSA por
+#     padrao (ADR-005, nenhuma DDL nasce em producao) — exige a sequencia ja registrada em homolog E
+#     `TRE_APROVACAO_HUMANA=<registro>`. Subir o container nao aplica schema.
 #
 # Uso (na VPS):
 #   bash instalar-odoo-prod.sh
@@ -35,7 +39,7 @@ ENVFILE="${TRE_ODOO_ENV:-/opt/tre/prod/compose/odoo.env}"
 SEGREDOS="${TRE_ODOO_SEGREDOS:-/etc/tre/odoo-prod}"
 RECRIAR="${TRE_ODOO_RECRIAR:-0}"
 ADDONS_PUBLICADOS="/opt/tre/prod/repo/odoo/addons"
-NOMES_DE_OUTROS=(odoo-dev pg-odoo-dev odoo-prod pg-odoo-prod)
+NOMES_DE_OUTROS=(odoo-dev pg-odoo-dev odoo-homolog pg-odoo-homolog)
 
 falhar() { echo "FALHOU $*" >&2; exit 1; }
 
@@ -49,17 +53,17 @@ docker info >/dev/null 2>&1 || falhar "daemon do docker nao responde"
 [ -f "$COMPOSE" ] || falhar "compose nao encontrado em $COMPOSE"
 [ -f "$ENVFILE" ] || falhar "par nao-secreto nao encontrado em $ENVFILE"
 
-# O ambiente alvo e o homolog e SO ele.
+# O ambiente alvo e' a PRODUCAO e SO ela.
 case "$COMPOSE" in
   /opt/tre/prod/*) : ;;
-  *) falhar "compose fora do ambiente homolog ($COMPOSE) — este script so opera /opt/tre/prod" ;;
+  *) falhar "compose fora do ambiente de producao ($COMPOSE) — este script so opera /opt/tre/prod" ;;
 esac
 [ "$SEGREDOS" = "/etc/tre/odoo-prod" ] || falhar "segredos fora de /etc/tre/odoo-prod ($SEGREDOS)"
 
 if docker ps -a --format '{{.Names}}' | grep -qx 'odoo-prod' && [ "$RECRIAR" != "1" ]; then
   falhar "container 'odoo-prod' JA EXISTE — nao mexo nele sem TRE_ODOO_RECRIAR=1"
 fi
-[ -d "$ADDONS_PUBLICADOS" ] || falhar "addons publicados ausentes ($ADDONS_PUBLICADOS) — publique o commit do branch homolog antes (deploy/publicar.sh com destino e artefato isolados)"
+[ -d "$ADDONS_PUBLICADOS" ] || falhar "addons publicados ausentes ($ADDONS_PUBLICADOS) — publique o commit do branch main antes (deploy/publicar.sh com destino e artefato isolados)"
 
 # shellcheck disable=SC1090
 set -a; . "$ENVFILE"; set +a
@@ -68,7 +72,7 @@ VERSAO="${ODOO_VERSION:?ODOO_VERSION ausente em $ENVFILE}"
 DIGESTO_ESPERADO="${ODOO_DIGEST_ESPERADO:-}"
 
 # Porta livre so importa quando o nosso container ainda NAO existe: com o `odoo-prod` de pe,
-# a porta 8070 e dele (a checagem ingenua "porta em uso" reprovava a reexecucao idempotente).
+# a porta 8080 e dele (a checagem ingenua "porta em uso" reprovava a reexecucao idempotente).
 if ! docker ps -a --format '{{.Names}}' | grep -qx 'odoo-prod'; then
   if ss -lntH "sport = :$PORTA" 2>/dev/null | grep -q .; then
     falhar "porta $PORTA ja esta em uso nesta maquina (e o container 'odoo-prod' nao existe) — escolha outra em $ENVFILE"
@@ -79,8 +83,8 @@ echo "OK    guardas: docker $(docker --version | awk '{print $3}'), compose $(do
 # ---------------------------------------------------------------------------
 # 2. Isolamento provado pelo COMPOSE RESOLVIDO (nao por disciplina)
 # ---------------------------------------------------------------------------
-# `docker compose config` resolve env_file, variaveis e nomes. Se o artefato de homolog citar
-# qualquer container de dev/producao, este script para — e' a prova mecanica de que subir homolog
+# `docker compose config` resolve env_file, variaveis e nomes. Se o artefato de producao citar
+# qualquer container de dev/producao, este script para — e' a prova mecanica de que subir producao
 # nao mexe no dev.
 #
 # ORDEM QUE IMPORTA: o `config` resolve o `env_file` de 600 que o container le, entao ELE FALHA
@@ -97,7 +101,7 @@ checar_isolamento() {
     case "$resolvido" in
       *"container_name: $nome"*)
         printf '%s\n' "$resolvido" | grep -n "container_name: $nome" >&2 || true
-        falhar "o compose de homolog cita container de outro ambiente ($nome) — recuso subir" ;;
+        falhar "o compose de producao cita container de outro ambiente ($nome) — recuso subir" ;;
     esac
   done
   echo "OK    isolamento: o compose resolvido nao cita nenhum container de dev/producao"
@@ -149,14 +153,14 @@ fi
 # 4. O compose tem de ser valido com este par de variaveis (e isolado)
 # ---------------------------------------------------------------------------
 # A validacao vem DEPOIS dos segredos porque o `docker compose config` resolve o `env_file` de 600
-# que o container le; os guardas que protegem a maquina (docker, par, ambiente homolog, porta livre)
+# que o container le; os guardas que protegem a maquina (docker, par, ambiente de producao, porta livre)
 # rodaram antes de tudo.
 checar_isolamento
 echo "OK    compose valido: $COMPOSE + $ENVFILE (versao $VERSAO, porta 127.0.0.1:$PORTA)"
 echo "      imagens: $(compose config --images | sort | tr '\n' ' ')"
 
 # ---------------------------------------------------------------------------
-# 5. Banco do Odoo (container e volume proprios de homolog)
+# 5. Banco do Odoo (container e volume proprios de producao)
 # ---------------------------------------------------------------------------
 echo "--- subindo pg-odoo-prod"
 compose up -d pg-odoo-prod >/dev/null
@@ -217,9 +221,9 @@ fi
 echo "  versao odoo..... $(docker exec odoo-prod odoo --version 2>/dev/null | tail -1)"
 echo "  containers...... $(docker inspect pg-odoo-prod --format '{{.Name}}=id={{.Id}}') $(docker inspect odoo-prod --format '{{.Name}}=id={{.Id}}')"
 echo "  iniciado_em..... $(docker inspect odoo-prod --format '{{.State.StartedAt}}')"
-echo "  destino......... 127.0.0.1:$PORTA -> 8069/tcp (loopback; quem expoe e' a borda em homolog.tre)"
+echo "  destino......... 127.0.0.1:$PORTA -> 8069/tcp (loopback; quem expoe e' a borda em tre.transformativa.com.br)"
 echo "  banco........... odoo_prod em pg-odoo-prod (volume pgdata-odoo-prod)"
 echo "  rede............ tre-odoo-prod (propria; nada compartilhado com o dev)"
 echo "  dev intocado.... $(docker inspect odoo-dev --format '{{.State.Status}} desde {{.State.StartedAt}}' 2>/dev/null || echo '(odoo-dev ausente)')"
 echo
-echo "RESULTADO: ODOO_HOMOLOG_INSTALADO versao=$VERSAO porta=127.0.0.1:$PORTA http=200"
+echo "RESULTADO: ODOO_PROD_INSTALADO versao=$VERSAO porta=127.0.0.1:$PORTA http=200"

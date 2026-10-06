@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# STATUS (06/10/2026): espelho derivado de homolog — REVISAO DE INVERSaO PENDENTE.
-#   Nao executar em producao antes de fechar a revisao: as listas de "container/rede de outro
-#   ambiente" ainda citam nomes que pertenciam ao outro ambiente. Espelhado por derivacao
-#   mecanica; a inversao dos conjuntos (meu x do outro) e' revisao item a item.
-# Verifica o banco de VENDAS (`sales_intelligence`) no ambiente HOMOLOG do TRE.
+# STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
+#   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
+#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
+# Verifica o banco de VENDAS (`sales_intelligence`) no ambiente de PRODUCAO do TRE.
 #
 # Cada item é MEDIDO (nada "passa por constante") e o resultado é o par PASS/FAIL com o valor lido.
-# Runbook: docs/runbooks/banco-de-vendas-homolog.md.
+# Runbook: docs/runbooks/banco-de-vendas-prod.md.
 #
 # Uso:
 #   bash scripts/provision/verificar-pg-sales-prod.sh                 # verificação normal
@@ -72,9 +72,9 @@ fi
 vol="$(R "docker inspect '$SERVICO' --format '{{range .Mounts}}{{.Name}}:{{.Destination}} {{end}}'" 2>/dev/null || echo x)"
 confere "volume montado" "$(echo "$vol" | tr -d ' ')" "pgdata-sales-prod:/var/lib/postgresql/data"
 case "$vol" in
-  *pgdata-sales-dev*) falha "volume do dev montado no homolog ($vol)";;
+  *pgdata-sales-dev*|*pgdata-sales-homolog*) falha "volume de OUTRO ambiente montado em producao ($vol)";;
   *pgdata-odoo*)      falha "volume do Odoo montado no banco de vendas ($vol)";;
-  *)                  passa "volume não é do dev nem do Odoo (isolamento de dado)";;
+  *)                  passa "volume não é de outro ambiente nem do Odoo (isolamento de dado)";;
 esac
 
 # --- 6. rede: só a do meu ambiente, sem container de outro ambiente
@@ -120,5 +120,5 @@ if [ "${1:-}" = "--prova-de-dente" ]; then
 fi
 
 echo
-echo "RESULTADO: HOMOLOG_SALES_$( [ "$FALHAS" -eq 0 ] && echo OK || echo REPROVADO ) itens=$ITENS falhas=$FALHAS"
+echo "RESULTADO: PROD_SALES_$( [ "$FALHAS" -eq 0 ] && echo OK || echo REPROVADO ) itens=$ITENS falhas=$FALHAS"
 [ "$FALHAS" -eq 0 ]
