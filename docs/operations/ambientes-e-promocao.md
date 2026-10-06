@@ -146,3 +146,28 @@ exigindo aprovação humana registrada.
 - `homolog` precisa ser criado a partir de `develop` (`main` deve continuar sendo o ramo de Produção).
 - Ao provisionar Homolog/Produção: mesmos três scripts por ambiente (`instalar`/`verificar`/`remover`) e o
   mesmo runbook de TLS — a assimetria entre ambientes é o que produz "funciona em Dev e quebra em Homolog".
+
+### Complemento da D5 — proxy de borda único (confirmado pelo dono, 05/10/2026)
+
+Cada stack **não** tem o seu próprio proxy: só **um** processo pode segurar 80/443 na VPS, e o Let's
+Encrypt valida cada nome pela porta 80. Desenho confirmado: **um proxy de borda** (Caddy) termina o TLS dos
+três hostnames e roteia por hostname para o Odoo interno de cada stack. Cada ambiente mantém **seu** Odoo,
+**seu** Postgres e **seu** n8n, isolados, com limite de memória — o que é compartilhado é só a borda.
+Mesmo padrão que a casa já usa no `financial-dash` (proxy compartilhado com hostname por ambiente).
+
+Medido em 05/10/2026: `dev.tre`, `homolog.tre` e `tre` já resolvem para `169.58.24.102`, mas o handshake
+falha (`tlsv1 alert internal error`) porque caem no bloco de catch-all `:443 { tls internal }` do proxy do
+Dev. O nome que o Dev **usa hoje** é `odoo-dev.transformativa.com.br`, com **certificado público
+Let's Encrypt** (emitido 05/10 17:04) e `basic_auth` ativo — prova de que o caminho de TLS público funciona.
+Enquanto o proxy de borda não entrar, `odoo-dev.…` segue como nome de acesso do Dev (sem quebra).
+
+Lacuna declarada: **o n8n não existe provisionado em nenhum ambiente** (só o diretório na VPS). Cumprir
+"mesmo conjunto nos três" exige um compose novo de n8n por ambiente — começando pelo Dev, para não criar
+paridade só no papel.
+
+Nota de infraestrutura gratuita: **não** foi preciso GitHub Pro para começar a travar. O repo já usa
+`core.hooksPath = scripts/hooks` (ganchos versionados, com um `pre-commit` que barra segredo). Foi somado um
+`scripts/hooks/pre-push` que recusa push direto em `main`, deleção de `develop`/`homolog`/`main` e qualquer
+push que ande para trás nesses dois. Instalado no clone compartilhado (vale para todos os worktrees) e
+testado. A trava da plataforma (ruleset no GitHub) continua exigindo Pro e fica **adiada**; sem ela, quem
+usar `--no-verify` (ou um clone sem o gancho) contorna o portão.
