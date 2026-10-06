@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
 #   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
-#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   producao (Odoo 8071 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
 #   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
 # Verificador do Odoo no ambiente de PRODUCAO do TRE. Roda NA VPS.
 #
@@ -23,7 +23,7 @@ set -uo pipefail
 ENVFILE="${TRE_ODOO_ENV:-/opt/tre/prod/compose/odoo.env}"
 DEV_ENV="${TRE_ODOO_ENV_DEV:-/opt/tre/dev/compose/odoo.env}"
 HOSTNAME_EDGE="tre.transformativa.com.br"
-PORTAS_PROIBIDAS=("0.0.0.0:8080" "[::]:8080")
+PORTAS_PROIBIDAS=("0.0.0.0:8071" "[::]:8071")
 
 falhas=0; itens=0
 ok()   { itens=$((itens+1)); echo "PASS   $*"; }
@@ -40,8 +40,8 @@ saude="$(docker inspect pg-odoo-prod --format '{{.State.Health.Status}}' 2>/dev/
 # 2. porta so' em loopback / Postgres sem porta
 mapa="$(docker port odoo-prod 2>/dev/null || true)"
 case "$mapa" in
-  *"127.0.0.1:8080"*) ok "odoo-prod publica em 127.0.0.1:8070" ;;
-  *)                   ruim "odoo-prod nao publica 127.0.0.1:8080 (medido: ${mapa:-vazio})" ;;
+  *"127.0.0.1:8071"*) ok "odoo-prod publica em 127.0.0.1:8071" ;;
+  *)                   ruim "odoo-prod nao publica 127.0.0.1:8071 (medido: ${mapa:-vazio})" ;;
 esac
 for proibida in "${PORTAS_PROIBIDAS[@]}"; do
   case "$mapa" in *"$proibida"*) ruim "odoo-prod publicado em $proibida (deveria ser so' loopback)";; esac
@@ -66,8 +66,8 @@ esac
                  || ruim "banco odoo_prod NAO inicializado (o Odoo responderia 500)"
 
 # 4. HTTP local
-CODIGO="$(curl -s -o /dev/null -m 10 -w '%{http_code}' 'http://127.0.0.1:8080/web/login' || true)"
-[ "$CODIGO" = "200" ] && ok "http://127.0.0.1:8080/web/login -> 200" || ruim "http://127.0.0.1:8070/web/login -> $CODIGO"
+CODIGO="$(curl -s -o /dev/null -m 10 -w '%{http_code}' 'http://127.0.0.1:8071/web/login' || true)"
+[ "$CODIGO" = "200" ] && ok "http://127.0.0.1:8071/web/login -> 200" || ruim "http://127.0.0.1:8070/web/login -> $CODIGO"
 
 # 5. rede propria (nenhum container de outro ambiente nela)
 NA_REDE="$(docker network inspect tre-odoo-prod --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr -s ' ')"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
 #   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
-#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   producao (Odoo 8071 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
 #   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
 # Provisiona o banco de VENDAS (`sales_intelligence`) no ambiente de PRODUCAO do TRE.
 #

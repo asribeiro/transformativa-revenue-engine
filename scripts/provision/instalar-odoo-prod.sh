@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # STATUS (06/10/2026): derivado de homolog com a REVISAO DE INVERSaO CONCLUIDA. As listas de
 #   isolamento apontam para dev E homolog (nao para o proprio ambiente), as portas sao as de
-#   producao (Odoo 8080 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
+#   producao (Odoo 8071 / n8n 5682) e o hostname da borda e' tre.transformativa.com.br.
 #   AINDA NAO EXECUTADO na VPS: nenhum container, volume ou rede de producao existe.
 # Instalacao do Odoo Community no ambiente de PRODUCAO do TRE (VPS Contabo `vmi3619453`).
 #
@@ -108,7 +108,7 @@ VERSAO="${ODOO_VERSION:?ODOO_VERSION ausente em $ENVFILE}"
 DIGESTO_ESPERADO="${ODOO_DIGEST_ESPERADO:-}"
 
 # Porta livre so importa quando o nosso container ainda NAO existe: com o `odoo-prod` de pe,
-# a porta 8080 e dele (a checagem ingenua "porta em uso" reprovava a reexecucao idempotente).
+# a porta 8071 e dele (a checagem ingenua "porta em uso" reprovava a reexecucao idempotente).
 if ! docker ps -a --format '{{.Names}}' | grep -qx 'odoo-prod'; then
   if ss -lntH "sport = :$PORTA" 2>/dev/null | grep -q .; then
     falhar "porta $PORTA ja esta em uso nesta maquina (e o container 'odoo-prod' nao existe) — escolha outra em $ENVFILE"

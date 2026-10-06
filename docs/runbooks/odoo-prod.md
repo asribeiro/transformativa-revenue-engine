@@ -10,7 +10,7 @@ Container `odoo-prod`, Odoo Community 19.0 no **mesmo digest** que dev e homolog
 ## Valores deste ambiente
 
 ```
-porta local ....... 127.0.0.1:8080 -> 8069/tcp   (dev 8069, homolog 8070, producao 8080)
+porta local ....... 127.0.0.1:8071 -> 8069/tcp   (dev 8069, homolog 8070, producao 8071)
 banco ............. odoo_prod                    (cluster pg-odoo-prod, volume pgdata-odoo-prod)
 filestore ......... odoo-data-prod
 rede interna ...... tre-odoo-prod
@@ -27,7 +27,7 @@ segredos .......... /etc/tre/odoo-prod/ (600, root)
 Guardas do instalador: ele **nao toca** em dev nem em homolog — e prova isso no COMPOSE RESOLVIDO
 (`NOMES_DE_OUTROS`: `odoo-dev`, `pg-odoo-dev`, `odoo-homolog`, `pg-odoo-homolog`). O verificador confere
 que a rede tem so' os containers de producao, que o cluster nao tem banco de outro ambiente
-(`odoo_dev`/`odoo_homolog`) e que ele publica apenas em loopback na porta 8080.
+(`odoo_dev`/`odoo_homolog`) e que ele publica apenas em loopback na porta 8071.
 
 ## Ordem (quando autorizado)
 
