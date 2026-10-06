@@ -45,6 +45,33 @@ falhar() { echo "FALHOU $*" >&2; exit 1; }
 
 compose() { docker compose --env-file "$ENVFILE" -f "$COMPOSE" "$@"; }
 
+# Uso: [--ensaio]. O `--ensaio` imprime o PLANO e sai sem criar nada. Antes disso o flag era
+# ignorado EM SILENCIO e o instalador executava de verdade — medido em 06/10/2026, no primeiro
+# provisionamento de producao. Flag desconhecida agora RECUSA (fail-closed).
+ENSAIO=0
+for arg in "$@"; do
+  case "$arg" in
+    --ensaio) ENSAIO=1 ;;
+    -h|--help) sed -n '1,30p' "$0"; exit 0 ;;
+    *) falhar "argumento desconhecido: '$arg' (uso: $0 [--ensaio])" ;;
+  esac
+done
+
+if [ "$ENSAIO" = "1" ]; then
+  echo
+  echo "   PLANO (ensaio: nada e' criado nem publicado)"
+  printf '     imagem.......... odoo:%s\n' "$VERSAO"
+  printf '     digest esperado. %s\n' "${DIGESTO_ESPERADO:-nao declarado}"
+  printf '     containers...... pg-odoo-prod + odoo-prod (rede propria do ambiente)\n'
+  printf '     destino......... 127.0.0.1:%s -> 8069/tcp (loopback; quem expoe e a borda)\n' "$PORTA"
+  printf '     banco........... odoo_prod (volume pgdata-odoo-prod + filestore odoo-data-prod)\n'
+  printf '     segredos........ %s (600, root, gerados AQUI)\n' "$SEGREDOS"
+  printf '     codigo.......... %s\n' "$ADDONS_PUBLICADOS"
+  echo "   ENSAIO: nada foi criado nem publicado."
+  exit 0
+fi
+
+
 # ---------------------------------------------------------------------------
 # 1. Guardas (fail-closed: se qualquer uma nao passa, nada e criado)
 # ---------------------------------------------------------------------------
