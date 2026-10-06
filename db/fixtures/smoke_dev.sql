@@ -94,12 +94,19 @@ VALUES
    'organization.enriched', '{"smoke": true, "score": 82.5}'::jsonb, 'PENDING', 0)
 ON CONFLICT DO NOTHING;
 
+-- A linha da trilha e' COMPLETED com o instante de conclusao PREENCHIDO (`completed_at`):
+-- e' o que TODAS as quatro portas declaradas gravam (n8n/sql/ingerir-evento.sql,
+-- registrar-recusa.sql, registrar-resultado.sql e registrar-replay.sql). Ate' 06/10/2026 este
+-- fixture gravava `COMPLETED` SEM `completed_at` e a massa de dev (que fica carregada por
+-- criterio do TRE-W1-E02-T01) fechava a observabilidade de sync em CRITICO para sempre
+-- (`trilha_sem_conclusao`, limiar 1/1) — linha que a producao nao consegue produzir, medida
+-- com a observabilidade real. Card que corrigiu: t_2b93007f.
 INSERT INTO sales_intelligence.sync_events
   (id, entity_type, entity_id, source_system, target_system, operation, idempotency_key, status,
-   request_payload)
+   request_payload, completed_at)
 VALUES
   ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'organization', '11111111-1111-1111-1111-111111111111',
-   'postgres', 'odoo', 'UPSERT', 'smoke-org-11111111', 'COMPLETED', '{"smoke": true}'::jsonb)
+   'postgres', 'odoo', 'UPSERT', 'smoke-org-11111111', 'COMPLETED', '{"smoke": true}'::jsonb, NOW())
 ON CONFLICT DO NOTHING;
 
 INSERT INTO sales_intelligence.human_approvals

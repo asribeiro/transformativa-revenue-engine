@@ -3,6 +3,19 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [higiene de dev] — 06/10/2026
+
+### Fixed
+
+- **Massa de smoke gravava trilha `COMPLETED` sem carimbo de conclusao** (`t_2b93007f`) —
+  `db/fixtures/smoke_dev.sql` passa a inserir a linha de `sync_events` com `completed_at` PREENCHIDO
+  (`NOW()`), igual as quatro portas declaradas (`ingerir-evento.sql`, `registrar-recusa.sql`,
+  `registrar-resultado.sql`, `registrar-replay.sql`). Antes o fixture gravava `COMPLETED` com
+  `completed_at` NULO e a massa de dev — que fica carregada por criterio do `TRE-W1-E02-T01` — fechava a
+  observabilidade de sync em **CRITICO para sempre** (`trilha_sem_conclusao`, limiar 1/1). Medido com a
+  evidencia da execucao 922 do dev (`trilha_sem_conclusao=1`) e com a mesma consulta de medicao depois do
+  reparo (`0`); a contagem por tabela do fixture (`FIXTURE_OK`, 20 itens) fica igual.
+
 ## [W9 — Inteligência Avançada] — 03/10/2026
 
 ### Added
