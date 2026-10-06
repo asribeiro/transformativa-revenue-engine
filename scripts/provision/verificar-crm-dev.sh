@@ -89,10 +89,25 @@ else
   nao "ODOO_HTTP_PORT ausente em $ENVFILE (nao da' para medir o servico)"
 fi
 
-if docker ps -a --format '{{.Names}}' | grep -qE '^(odoo|pg-odoo)-(homolog|prod)$'; then
-  nao "existe container de homologacao/producao — o card so opera o dev (ADR-005)"
+# Separacao de ambientes MEDIDA, nao presumida. Este item afirmava o invariante INVERTIDO —
+# "nao existe container de homologacao/producao — o card so opera o dev" (ADR-005). Aquilo foi
+# escrito quando o dev era o unico ambiente provisionado; com os tres ambientes de pe no mesmo VPS,
+# o item reprovava o aceite do dev por um fato que NAO e' defeito do dev (defeito medido no card
+# `t_fd769443`, 06/10/2026). O invariante correto e' o do espelho de homologacao
+# (`verificar-crm-homolog.sh`): os vizinhos seguem DE PE — o procedimento do dev nao pode ter
+# derrubado nem tocado ambiente alheio.
+# Continua UM item: o aceite do dev e' um contrato de 29 itens (runbook `odoo-crm-dev.md` §6), e o
+# numero nao muda com este conserto. Os quatro vizinhos sao medidos DENTRO do item — basta um fora
+# do ar para o item reprovar, e a mensagem nomeia qual.
+VIZINHOS="odoo-homolog pg-odoo-homolog odoo-prod pg-odoo-prod"
+VIZINHOS_FORA=""
+for c in $VIZINHOS; do
+  docker ps --format '{{.Names}}' | grep -qx "$c" || VIZINHOS_FORA="$VIZINHOS_FORA $c"
+done
+if [ -z "$VIZINHOS_FORA" ]; then
+  ok "vizinhos de pe e intocados por este aceite (medidos: $VIZINHOS)"
 else
-  ok "nenhum container de homologacao/producao (so dev)"
+  nao "vizinho(s) fora do ar:$VIZINHOS_FORA — o aceite do dev nao pode ter derrubado ambiente alheio"
 fi
 
 PORTA_CHK="${PORT:-8069}"
