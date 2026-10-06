@@ -6,7 +6,7 @@
   "release_status": "PRODUCTION_PROMOTED",
   "current_gate": "DONE",
   "production_promotion_authorized": true,
-  "updated_at": "2026-10-06T16:51:18Z",
+  "updated_at": "2026-10-06T17:02:21Z",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -278,6 +278,15 @@
           "evidence_origin": "declaracao-terminal-em-lote",
           "declared_at": "2026-10-06T16:51:18Z",
           "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_5607e24d",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por cadeia de dependencia de 2 niveis, caminho medido (cada salto e' um vinculo de dependencia real): t_41d17c27 <- t_2cc57d80. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda).. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:02:21Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -377,6 +386,15 @@
           "evidence_origin": "declaracao-terminal-em-lote",
           "declared_at": "2026-10-06T16:51:18Z",
           "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_d508d27e",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por cadeia de dependencia de 2 niveis, caminho medido (cada salto e' um vinculo de dependencia real): t_44cbc48c <- t_430ba4cc. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda).. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:02:21Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -435,6 +453,15 @@
           "evidence_origin": "declaracao-terminal-em-lote",
           "declared_at": "2026-10-06T16:51:18Z",
           "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_6adbd552",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por cadeia de dependencia de 2 niveis, caminho medido (cada salto e' um vinculo de dependencia real): t_eddd00ce <- t_969affa7. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda).. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:02:21Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -492,6 +519,24 @@
           "evidence_origin": "declaracao-terminal-em-lote",
           "declared_at": "2026-10-06T16:51:18Z",
           "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_c9a44f85",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por cadeia de dependencia de 2 niveis, caminho medido (cada salto e' um vinculo de dependencia real): t_091cfea9 <- t_72672e48. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda).. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:02:21Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_daca4bda",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega; no board esta' em `done`. Vinculo com o item lido no board por cadeia de dependencia de 2 niveis, caminho medido (cada salto e' um vinculo de dependencia real): t_1b2ab418 <- t_72672e48. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda).. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T17:02:21Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     }
@@ -515,7 +560,12 @@
     "t_41d17c27",
     "t_44cbc48c",
     "t_8253ad1f",
-    "t_eddd00ce"
+    "t_eddd00ce",
+    "t_5607e24d",
+    "t_6adbd552",
+    "t_c9a44f85",
+    "t_d508d27e",
+    "t_daca4bda"
   ],
   "events": [
     {
@@ -616,6 +666,36 @@
       "declared_at": "2026-10-06T16:51:18Z",
       "evidence_origin": "declaracao-terminal-em-lote",
       "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_5607e24d",
+      "declared_at": "2026-10-06T17:02:21Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda)."
+    },
+    {
+      "hermes_task_id": "t_6adbd552",
+      "declared_at": "2026-10-06T17:02:21Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda)."
+    },
+    {
+      "hermes_task_id": "t_c9a44f85",
+      "declared_at": "2026-10-06T17:02:21Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda)."
+    },
+    {
+      "hermes_task_id": "t_d508d27e",
+      "declared_at": "2026-10-06T17:02:21Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda)."
+    },
+    {
+      "hermes_task_id": "t_daca4bda",
+      "declared_at": "2026-10-06T17:02:21Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 11 (06/10/2026): dono autorizou 'pode atacar os restantes'. Escopo: os 8 cards cuja cadeia de dependencia alcanca item DONE de entrega fechada. Os 12 restantes seguem presos (item TRE-W3-E04-T03 nao existe em artefato nem como card; t_3148dbbf e' defeito de higiene sem onda)."
     }
   ]
 }

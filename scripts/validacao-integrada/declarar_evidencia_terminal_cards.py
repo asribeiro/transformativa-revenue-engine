@@ -13,6 +13,8 @@ Dois niveis de evidencia (o nivel e' uma decisao do dono, nao do script):
   --modo explicito   adiciona o card como filho DONE do item. Projecao: card sai de
                      "Validacao pendente" e passa a "Concluido (card)". Afirma
                      apenas: a entrega daquele item esta' concluida.
+  --aceitar-cadeia   aceita item alcancado por cadeia de dependencia (defeito -> defeito -> item),
+                     registrando o caminho medido na evidencia
   --modo promocao    faz o acima E adiciona o id em `production_promoted_task_ids`
                      da entrega. Projecao: card vai para "Em producao". Afirma
                      alem: o card foi promovido a producao naquela release.
@@ -133,6 +135,32 @@ def item_do_card(entregas: dict, card_ou_pai: str):
     return None, None, None
 
 
+def cadeia_ate_item(card: str, entregas: dict, pais: dict, maximo: int = 8):
+    """Sobe a cadeia de dependencia ate' o item de artefato que ancora o card.
+
+    Devolve ``(nome, entrega, item, caminho)``. Existe porque um card de DEFEITO
+    nascido dentro de uma entrega as vezes depende de OUTRO card de defeito (que nao
+    esta' em artefato nenhum), e o item so' aparece 2-4 niveis acima. Cada salto e' um
+    vinculo de dependencia real do board -- a cadeia e' medida, nao suposta. Os saltos
+    que passam por entrada declarada em lote continuam barrados por ``item_do_card``
+    (anti-cascata).
+    """
+    visto, fila = {card}, [(card, [])]
+    while fila:
+        atual, caminho = fila.pop(0)
+        if len(caminho) >= maximo:
+            continue
+        for p in pais.get(atual, []):
+            if p in visto:
+                continue
+            visto.add(p)
+            nome, d, item = item_do_card(entregas, p)
+            if nome:
+                return nome, d, item, caminho + [p]
+            fila.append((p, caminho + [p]))
+    return None, None, None, None
+
+
 def estagios(obj: dict) -> set:
     return {str(obj.get(k) or "").upper() for k in ("stage", "current_gate", "status")} - {""}
 
@@ -151,6 +179,8 @@ def main(argv=None) -> int:
     ap.add_argument("--plugin-dir", default="/opt/data/plugins/kanban/dashboard", help="diretorio do plugin (fonte das regras)")
     ap.add_argument("--board", default="transformativa-revenue-engine")
     ap.add_argument("--modo", choices=[MODO_EXPLICITO, MODO_PROMOCAO], default=MODO_EXPLICITO)
+    ap.add_argument("--aceitar-cadeia", action="store_true",
+                    help="aceita item alcancado por cadeia de dependencia (card de defeito -> card de defeito -> item)")
     ap.add_argument("--autorizacao", default="", help="referencia da autorizacao humana (ex.: Autorizacao 10)")
     ap.add_argument("--aplicar", action="store_true", help="sem esta flag, apenas relata (--check e' o padrao)")
     ap.add_argument("--backup-dir", default="", help="diretorio do backup (padrao: scratch fora do repo)")
@@ -176,6 +206,7 @@ def main(argv=None) -> int:
 
     presos = [t for t, c in onde.items() if c == "validation"]
     elegiveis, recusados, ja_terminais = [], [], []
+    via_cadeia = 0
     for t in sorted(presos):
         if t in term:
             ja_terminais.append((t, "ja' terminal no artefato"))
@@ -185,21 +216,29 @@ def main(argv=None) -> int:
             nome, d, item = item_do_card(entregas, p)
             if nome and "DONE" in estagios(item):
                 if args.modo == MODO_PROMOCAO and not entrega_fechada(d):
-                    achado = (p, nome, d, item, "entrega nao esta' fechada/promovida (modo promocao exige)")
+                    achado = (nome, d, item, [p], "entrega nao esta' fechada/promovida (modo promocao exige)")
                     continue
-                achado = (p, nome, d, item, "")
+                achado = (nome, d, item, [p], "")
                 break
+        if not (achado and not achado[4]) and args.aceitar_cadeia:
+            nome, d, item, caminho = cadeia_ate_item(t, entregas, pais)
+            if nome and "DONE" in estagios(item) and (args.modo != MODO_PROMOCAO or entrega_fechada(d)):
+                achado = (nome, d, item, caminho, "")
+                via_cadeia += 1
+            elif nome:
+                achado = (nome, d, item, caminho, "cadeia achou item, mas item nao esta' DONE ou entrega nao fecha")
         if achado and not achado[4]:
-            elegiveis.append((t, achado[:4]))
+            elegiveis.append((t, achado[0], achado[1], achado[2], achado[3]))
         else:
-            recusados.append((t, achado[4] if achado else "sem pai mapeado em item DONE de artefato"))
+            recusados.append((t, achado[4] if achado else "sem pai nem cadeia alcancando item DONE de artefato"))
 
     print()
     print("== cards presos em 'Validacao pendente': %d ==" % len(presos))
-    print("   elegiveis (item DONE mapeado): %d" % len(elegiveis))
+    print("   elegiveis (item DONE mapeado): %d  (via cadeia: %d | via pai direto: %d)" % (
+        len(elegiveis), via_cadeia, len(elegiveis) - via_cadeia))
     print("   recusados (nada e' escrito neles): %d" % len(recusados))
     print("   ja' terminais (ignorados): %d" % len(ja_terminais))
-    por_entrega = collections.Counter(a[1] for _t, a in elegiveis)
+    por_entrega = collections.Counter(e[1] for e in elegiveis)
     for nome, n in sorted(por_entrega.items()):
         print("      %-34s %d cards" % (nome, n))
     if recusados:
@@ -215,8 +254,10 @@ def main(argv=None) -> int:
     if not args.aplicar:
         print()
         print("== CHECK (nada escrito). Amostra do que seria gravado ==")
-        for t, (p, nome, d, item) in elegiveis[:3]:
+        for t, nome, d, item, caminho_vinculo in elegiveis[:3]:
             print("   card %s -> %s :: item %s" % (t, nome, item.get("id") or item.get("hermes_task_id")))
+            print("      vinculo: %s" % ("pai direto" if len(caminho_vinculo) == 1 else
+                  "cadeia de %d niveis: %s" % (len(caminho_vinculo), " <- ".join(caminho_vinculo))))
             print("      children += {%s, stage: DONE, current_gate: DONE, evidence: <derivacao>, origin: declaracao-terminal-em-lote}" % t)
             if args.modo == MODO_PROMOCAO:
                 print("      production_promoted_task_ids += %s" % t)
@@ -230,7 +271,7 @@ def main(argv=None) -> int:
         return 2
 
     backup_dir.mkdir(parents=True, exist_ok=True)
-    tocados = sorted({a[1] for _t, a in elegiveis})
+    tocados = sorted({e[1] for e in elegiveis})
     for nome in tocados:
         origem = deliveries_dir / nome
         destino = backup_dir / nome
@@ -243,13 +284,13 @@ def main(argv=None) -> int:
 
     # escrita
     por_entrega_cards = collections.defaultdict(list)
-    for t, (p, nome, d, item) in elegiveis:
-        por_entrega_cards[nome].append((t, item))
+    for t, nome, d, item, caminho_vinculo in elegiveis:
+        por_entrega_cards[nome].append((t, item, caminho_vinculo))
     escritos = 0
     for nome, itens in por_entrega_cards.items():
         caminho = deliveries_dir / nome
         d = json.loads(caminho.read_text(encoding="utf-8"))
-        for t, item_alvo in itens:
+        for t, item_alvo, caminho_vinculo in itens:
             for item in d.get("work_items") or []:
                 if (item.get("id") or item.get("hermes_task_id")) != (item_alvo.get("id") or item_alvo.get("hermes_task_id")):
                     continue
@@ -262,11 +303,15 @@ def main(argv=None) -> int:
                     "current_gate": "DONE",
                     "evidence": (
                         "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da "
-                        "entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta "
-                        "onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao "
-                        "fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono"
+                        "entrega; no board esta' em `done`. Vinculo com o item lido no board por %s, caminho medido "
+                        "(cada salto e' um vinculo de dependencia real): %s. O fechamento desta onda declarou os "
+                        "filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de "
+                        "'Validacao pendente'. Declarado terminal por decisao do dono"
                         "%s. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite "
-                        "independente e' afirmado aqui." % (" -- " + args.autorizacao if args.autorizacao else "")
+                        "independente e' afirmado aqui."
+                        % ("pai direto" if len(caminho_vinculo) == 1 else "cadeia de dependencia de %d niveis" % len(caminho_vinculo),
+                           " <- ".join(caminho_vinculo),
+                           " -- " + args.autorizacao if args.autorizacao else "")
                     ),
                     "evidence_origin": ORIGEM_DECLARACAO,
                     "declared_at": agora,
