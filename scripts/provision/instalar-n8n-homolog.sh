@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Instalacao do n8n no ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+# Instalacao do n8n no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
 #
-# Runbook: docs/runbooks/n8n-dev.md. Par nao-secreto: deploy/environments/dev-n8n.env
-# (na VPS, /opt/tre/dev/compose/n8n.env).
+# Runbook: docs/runbooks/n8n-homolog.md. Par nao-secreto: deploy/environments/homolog-n8n.env
+# (na VPS, /opt/tre/homolog/compose/n8n.env).
 #
 # Roda NA VPS (precisa de `docker` e da arvore /opt/tre); o container do Hermes apenas orquestra
 # por SSH (ADR-0008).
 #
 # O que este script garante (e o verificador cobra depois):
-#   * ambiente alvo e' o dev e SO ele: compose sob /opt/tre/dev, segredos em /etc/tre/n8n-dev,
-#     container `n8n-dev` — e um teste de isolamento do COMPOSE RESOLVIDO (falha se o artefato
+#   * ambiente alvo e' o homolog e SO ele: compose sob /opt/tre/homolog, segredos em /etc/tre/n8n-homolog,
+#     container `n8n-homolog` — e um teste de isolamento do COMPOSE RESOLVIDO (falha se o artefato
 #     apontar para nome de container/rede de outro ambiente);
 #   * a chave de criptografia do n8n nasce NA VPS (`openssl rand`), vai para arquivo 600 e nunca
 #     aparece em argumento, saida ou log. Chave existente NAO e' reescrita: trocar a chave
@@ -20,25 +20,25 @@
 #     `~/.n8n` E `~/.cache`).
 #
 # Uso (na VPS):
-#   bash instalar-n8n-dev.sh
+#   bash instalar-n8n-homolog.sh
 #
 # Variaveis:
-#   TRE_N8N_COMPOSE    (padrao /opt/tre/dev/compose/n8n.yml)
-#   TRE_N8N_ENV        (padrao /opt/tre/dev/compose/n8n.env)
-#   TRE_N8N_SEGREDOS   (padrao /etc/tre/n8n-dev)
-#   TRE_N8N_HOME       (padrao /opt/tre/dev/n8n/home)
+#   TRE_N8N_COMPOSE    (padrao /opt/tre/homolog/compose/n8n.yml)
+#   TRE_N8N_ENV        (padrao /opt/tre/homolog/compose/n8n.env)
+#   TRE_N8N_SEGREDOS   (padrao /etc/tre/n8n-homolog)
+#   TRE_N8N_HOME       (padrao /opt/tre/homolog/n8n/home)
 #   TRE_N8N_RECRIAR=1  permite reexecutar sobre instalacao que ja existe
 #   TRE_N8N_ESPERA     segundos de espera pelo readiness (padrao 120)
 set -euo pipefail
 
-COMPOSE="${TRE_N8N_COMPOSE:-/opt/tre/dev/compose/n8n.yml}"
-ENVFILE="${TRE_N8N_ENV:-/opt/tre/dev/compose/n8n.env}"
-SEGREDOS="${TRE_N8N_SEGREDOS:-/etc/tre/n8n-dev}"
-HOME_N8N="${TRE_N8N_HOME:-/opt/tre/dev/n8n/home}"
+COMPOSE="${TRE_N8N_COMPOSE:-/opt/tre/homolog/compose/n8n.yml}"
+ENVFILE="${TRE_N8N_ENV:-/opt/tre/homolog/compose/n8n.env}"
+SEGREDOS="${TRE_N8N_SEGREDOS:-/etc/tre/n8n-homolog}"
+HOME_N8N="${TRE_N8N_HOME:-/opt/tre/homolog/n8n/home}"
 RECRIAR="${TRE_N8N_RECRIAR:-0}"
 ESPERA="${TRE_N8N_ESPERA:-120}"
-CONTAINER="n8n-dev"
-REDE="tre-odoo-dev"
+CONTAINER="n8n-homolog"
+REDE="tre-odoo-homolog"
 UID_CONTAINER="1000:1000"
 
 falhar() { echo "FALHOU $*" >&2; exit 1; }
@@ -54,21 +54,21 @@ command -v openssl >/dev/null 2>&1 || falhar "openssl ausente (a chave do n8n na
 [ -f "$ENVFILE" ] || falhar "par nao-secreto nao encontrado em $ENVFILE"
 
 case "$COMPOSE" in
-  /opt/tre/dev/*) : ;;
-  *) falhar "compose fora do ambiente dev ($COMPOSE) — este script so opera /opt/tre/dev" ;;
+  /opt/tre/homolog/*) : ;;
+  *) falhar "compose fora do ambiente homolog ($COMPOSE) — este script so opera /opt/tre/homolog" ;;
 esac
-[ "$SEGREDOS" = "/etc/tre/n8n-dev" ] || falhar "segredos fora de /etc/tre/n8n-dev ($SEGREDOS)"
+[ "$SEGREDOS" = "/etc/tre/n8n-homolog" ] || falhar "segredos fora de /etc/tre/n8n-homolog ($SEGREDOS)"
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER" && [ "$RECRIAR" != "1" ]; then
   falhar "container '$CONTAINER' JA EXISTE — nao mexo nele sem TRE_N8N_RECRIAR=1"
 fi
 
-# O n8n do dev entra na rede do Odoo do dev (e' por ela que o Odoo chama o webhook). Se a rede
+# O n8n do homolog entra na rede do Odoo do homolog (e' por ela que o Odoo chama o webhook). Se a rede
 # nao existe, instalar n8n aqui criaria uma rede vazia com o mesmo nome — errado e silencioso.
 docker network inspect "$REDE" >/dev/null 2>&1 \
-  || falhar "rede '$REDE' nao existe — instale o Odoo do dev antes (scripts/provision/instalar-odoo-dev.sh)"
-docker ps --format '{{.Names}}' | grep -qx 'odoo-dev' \
-  || falhar "container 'odoo-dev' nao esta de pe — o n8n do dev depende dele (rede + API/webhook)"
+  || falhar "rede '$REDE' nao existe — instale o Odoo do homolog antes (scripts/provision/instalar-odoo-homolog.sh)"
+docker ps --format '{{.Names}}' | grep -qx 'odoo-homolog' \
+  || falhar "container 'odoo-homolog' nao esta de pe — o n8n do homolog depende dele (rede + API/webhook)"
 
 # shellcheck disable=SC1090
 set -a; . "$ENVFILE"; set +a
@@ -118,10 +118,10 @@ RESOLVIDO="$(compose config </dev/null)"
 grep -q "container_name: $CONTAINER" <<<"$RESOLVIDO" || falhar "compose resolvido nao declara container_name: $CONTAINER"
 
 # Isolamento medido no COMPOSE RESOLVIDO (nao em prosa): nenhum container de outro ambiente pode
-# aparecer no artefato do dev.
-for intruso in n8n-homolog n8n-prod odoo-homolog odoo-prod; do
+# aparecer no artefato do homolog.
+for intruso in n8n-dev n8n-prod odoo-dev odoo-prod; do
   if grep -qE "(container_name|name): *${intruso}\b" <<<"$RESOLVIDO"; then
-    falhar "o compose do dev cita container/rede de outro ambiente ($intruso) — artefato trocado?"
+    falhar "o compose do homolog cita container/rede de outro ambiente ($intruso) — artefato trocado?"
   fi
 done
 
@@ -143,7 +143,7 @@ echo "-- imagem ${IMAGEM}:${VERSAO}"
 docker pull --quiet "${IMAGEM}:${VERSAO}" >/dev/null || falhar "pull falhou (${IMAGEM}:${VERSAO})"
 DIGESTO_REAL="$(docker image inspect "${IMAGEM}:${VERSAO}" --format '{{index .RepoDigests 0}}' | sed 's/^.*@//')"
 if [ "$DIGESTO_REAL" != "$DIGESTO_ESPERADO" ]; then
-  falhar "digest diferente do registrado no par: real=$DIGESTO_REAL esperado=$DIGESTO_ESPERADO — ATUALIZE deploy/environments/dev-n8n.env (com olho na versao) antes de subir"
+  falhar "digest diferente do registrado no par: real=$DIGESTO_REAL esperado=$DIGESTO_ESPERADO — ATUALIZE deploy/environments/homolog-n8n.env (com olho na versao) antes de subir"
 fi
 echo "   digest confere: $DIGESTO_REAL"
 
@@ -169,5 +169,5 @@ fi
 # O estado do n8n tem de estar no bind mount (se cair, ele volta com o mesmo banco/chave).
 [ -f "$HOME_N8N/.n8n/database.sqlite" ] || echo "   AVISO: $HOME_N8N/.n8n/database.sqlite ainda nao existe (o n8n cria no primeiro start completo)"
 
-echo "RESULTADO: N8N_DEV_INSTALADO container=$CONTAINER imagem=${IMAGEM}:${VERSAO} digest=$DIGESTO_REAL host=$HOST_N8N porta=127.0.0.1:$PORTA home=$HOME_N8N segredos=$SEGREDOS/n8n.env"
+echo "RESULTADO: N8N_HOMOLOG_INSTALADO container=$CONTAINER imagem=${IMAGEM}:${VERSAO} digest=$DIGESTO_REAL host=$HOST_N8N porta=127.0.0.1:$PORTA home=$HOME_N8N segredos=$SEGREDOS/n8n.env"
 exit 0

@@ -167,9 +167,15 @@ bases responde `403` (bloqueado na borda); `tre` responde `503` "produção aind
 propósito, porque nome que resolve e responde isso é melhor que erro de TLS, que parece defeito de
 infraestrutura. Handover de 80/443 durou ~10 s (duas tentativas de 5 s) e o rollback é um comando.
 
-Lacuna declarada: **o n8n não existe provisionado em nenhum ambiente** (só o diretório na VPS). Cumprir
-"mesmo conjunto nos três" exige um compose novo de n8n por ambiente — começando pelo Dev, para não criar
-paridade só no papel.
+Lacuna da D5 **fechada em dev e homolog (06/10/2026)**: o n8n passou a existir provisionado como serviço de
+cada ambiente — `n8n-dev` (127.0.0.1:5680) e `n8n-homolog` (127.0.0.1:5681), imagem **`n8nio/n8n:2.41.5` pinada
+por digest** (`sha256:6f532d3b819c…`, que é exatamente a versão do `:latest` desta VPS e a que as suítes de n8n
+do projeto exercitaram), estado em bind mount (`/opt/tre/<env>/n8n/home`, dono `1000:1000`), chave de
+criptografia em `/etc/tre/n8n-<env>/n8n.env` (600 root, gerada na VPS) e entrada na rede interna do Odoo do
+ambiente (é por ela que o webhook é chamado e a API é alcançada). Cada ambiente tem instalador e verificador
+próprios (`scripts/provision/{instalar,verificar}-n8n-<env>.sh`): **44 itens, 0 falhas** nos dois, mais **3
+provas de dente** por mutação em cópia. Runbooks: `docs/runbooks/n8n-dev.md` e `docs/runbooks/n8n-homolog.md`.
+A Produção recebe o mesmo serviço quando for provisionada (`N8N_PORTA_LOCAL=5682`, já reservada).
 
 Nota de infraestrutura gratuita: **não** foi preciso GitHub Pro para começar a travar. O repo já usa
 `core.hooksPath = scripts/hooks` (ganchos versionados, com um `pre-commit` que barra segredo). Foi somado um
@@ -188,11 +194,13 @@ de login do Odoo (o gerenciador de bases responde 403 na borda). Digest da image
 (`odoo@sha256:77bac5cd…`) — ambiente que roda imagem diferente não homologa nada. O dev foi medido antes e
 depois: `odoo-dev` com o **mesmo `StartedAt`** (01/10), ou seja, não foi tocado.
 
-O que Homolog **ainda não tem**, declarado: `n8n` (o "mesmo conjunto nos três" da D5) e o banco de vendas que
-existe no dev (`sales_intelligence`). O par `deploy/environments/homolog.env` deixa o trio `TRE_PG_*` ausente
+O que Homolog **ainda não tem**, declarado: o banco de vendas que existe no dev (`sales_intelligence`); e o
+n8n — já provisionado — **sem workflows importados** (os JSONs versionados e os montadores existem, e as
+suítes os validam em stacks descartáveis; importar para o serviço persistente é o próximo passo funcional). O par `deploy/environments/homolog.env` deixa o trio `TRE_PG_*` ausente
 **de propósito**: apontar para o container do dev faria o backup de homolog gravar artefato com o banco do dev.
 
-Cópia de código de homolog: `/opt/tre/homolog/repo` no commit **3252bba** (branch `homolog`, o mesmo que está
+Cópia de código de homolog: `/opt/tre/homolog/repo` no commit **fbf5bb1** (branch `homolog`, o mesmo que está
 no GitHub), publicada pelo caminho único (`deploy/publicar.sh`) com destino, artefato e lock **isolados** para
-não confundir o watchdog da cópia compartilhada. A primeira promoção `develop` → `homolog` (fast-forward; só
-arquivos de deploy/doc, nenhum código de aplicação) fica como próximo passo declarado, com evidência.
+não confundir o watchdog da cópia compartilhada. A primeira promoção `develop` → `homolog` **foi feita em
+06/10/2026** (fast-forward de `3252bba`; 13 arquivos, +921/-1, **nenhum arquivo de aplicação**), com evidência
+em `docs/operations/registro-de-promocoes.md` e comentário no card `t_1acf11f2`.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Verificacao do n8n no ambiente DEV do TRE (VPS Contabo `vmi3619453`).
+# Verificacao do n8n no ambiente HOMOLOG do TRE (VPS Contabo `vmi3619453`).
 #
 # Roda NA VPS. Cada item e' medicao, nao prosa: ou o comando prova, ou reprova.
-# Runbook: docs/runbooks/n8n-dev.md.
+# Runbook: docs/runbooks/n8n-homolog.md.
 #
 # Uso:
-#   bash verificar-n8n-dev.sh                  # aceite
-#   bash verificar-n8n-dev.sh --prova-de-dente  # prova que o verificador REPROVA quando o
+#   bash verificar-n8n-homolog.sh                  # aceite
+#   bash verificar-n8n-homolog.sh --prova-de-dente  # prova que o verificador REPROVA quando o
 #                                               # ambiente/artefato muda (mutacao em copia)
 #
 # Variaveis (as mesmas do instalador; e' por elas que o dente aponta para copias mutadas SEM
@@ -14,16 +14,16 @@
 #   TRE_N8N_COMPOSE, TRE_N8N_ENV, TRE_N8N_SEGREDOS, TRE_N8N_HOME
 set -uo pipefail
 
-COMPOSE="${TRE_N8N_COMPOSE:-/opt/tre/dev/compose/n8n.yml}"
-ENVFILE="${TRE_N8N_ENV:-/opt/tre/dev/compose/n8n.env}"
-SEGREDOS="${TRE_N8N_SEGREDOS:-/etc/tre/n8n-dev}"
-HOME_N8N="${TRE_N8N_HOME:-/opt/tre/dev/n8n/home}"
+COMPOSE="${TRE_N8N_COMPOSE:-/opt/tre/homolog/compose/n8n.yml}"
+ENVFILE="${TRE_N8N_ENV:-/opt/tre/homolog/compose/n8n.env}"
+SEGREDOS="${TRE_N8N_SEGREDOS:-/etc/tre/n8n-homolog}"
+HOME_N8N="${TRE_N8N_HOME:-/opt/tre/homolog/n8n/home}"
 # Diretorio do artefato publicado varrido em busca de segredo vazado. Parametrizado de proposito:
 # e' por ele que a prova de dente aponta para uma COPIA com a chave plantada, sem tocar no ambiente.
-ARTEFATO_DIR="${TRE_N8N_ARTEFATO_DIR:-/opt/tre/dev/compose}"
-CONTAINER="n8n-dev"
-REDE="tre-odoo-dev"
-ODOO="odoo-dev"
+ARTEFATO_DIR="${TRE_N8N_ARTEFATO_DIR:-/opt/tre/homolog/compose}"
+CONTAINER="n8n-homolog"
+REDE="tre-odoo-homolog"
+ODOO="odoo-homolog"
 
 ITENS=0
 FALHAS=0
@@ -61,13 +61,13 @@ fi
   && ok "par declara imagem/versao/digest/porta (versao=$VERSAO)" \
   || falhou "par incompleto (imagem/versao/digest/porta)"
 
-# Isolamento no COMPOSE RESOLVIDO: nada de outro ambiente no artefato do dev.
+# Isolamento no COMPOSE RESOLVIDO: nada de outro ambiente no artefato do homolog.
 intruso=""
-for nome in n8n-homolog n8n-prod odoo-homolog odoo-prod pg-odoo-homolog pg-odoo-prod; do
+for nome in n8n-dev n8n-prod odoo-dev odoo-prod pg-odoo-dev pg-odoo-prod; do
   if grep -qE "(container_name|name): *${nome}\b" <<<"$RESOLVIDO"; then intruso="$nome"; fi
 done
-[ -z "$intruso" ] && ok "artefato do dev nao cita outro ambiente" \
-  || falhou "artefato do dev cita container/rede de outro ambiente ($intruso)"
+[ -z "$intruso" ] && ok "artefato do homolog nao cita outro ambiente" \
+  || falhou "artefato do homolog cita container/rede de outro ambiente ($intruso)"
 
 # ---------------------------------------------------------------------------
 # Container
@@ -164,7 +164,7 @@ esac
 # ---------------------------------------------------------------------------
 # Variaveis efetivas (o que faz os workflows funcionarem)
 # ---------------------------------------------------------------------------
-declare -A ESPERADO=( [HOME]=/home/node [N8N_HOST]=n8n-dev [N8N_BLOCK_ENV_ACCESS_IN_NODE]=false \
+declare -A ESPERADO=( [HOME]=/home/node [N8N_HOST]=n8n-homolog [N8N_BLOCK_ENV_ACCESS_IN_NODE]=false \
                       [GENERIC_TIMEZONE]=UTC [N8N_SECURE_COOKIE]=false )
 for chave in "${!ESPERADO[@]}"; do
   VALOR="$(docker inspect "$CONTAINER" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
@@ -230,36 +230,36 @@ fi
 # ---------------------------------------------------------------------------
 REDES_CT="$(docker inspect "$CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null)"
 grep -qw "$REDE" <<<"$REDES_CT" && ok "n8n na rede $REDE" || falhou "n8n NAO esta na rede $REDE"
-if grep -qwE 'tre-odoo-homolog|tre-odoo-prod' <<<"$REDES_CT"; then
-  falhou "n8n do dev esta em rede de outro ambiente ($REDES_CT)"
+if grep -qwE 'tre-odoo-dev|tre-odoo-prod' <<<"$REDES_CT"; then
+  falhou "n8n do homolog esta em rede de outro ambiente ($REDES_CT)"
 else
-  ok "n8n do dev nao esta em rede de outro ambiente"
+  ok "n8n do homolog nao esta em rede de outro ambiente"
 fi
 if docker inspect "$ODOO" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$REDE"; then
-  ok "Odoo do dev na mesma rede ($REDE)"
+  ok "Odoo do homolog na mesma rede ($REDE)"
 else
-  falhou "Odoo do dev NAO esta na rede $REDE"
+  falhou "Odoo do homolog NAO esta na rede $REDE"
 fi
 
 # n8n -> Odoo (a API controlada que os workflows chamam)
 if docker exec --user 1000:1000 "$CONTAINER" node -e \
-    "fetch('http://odoo-dev:8069/web/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))" \
+    "fetch('http://odoo-homolog:8069/web/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))" \
     >/dev/null 2>&1; then
-  ok "n8n alcanca o Odoo do dev por nome interno (http://odoo-dev:8069/web/login)"
+  ok "n8n alcanca o Odoo do homolog por nome interno (http://odoo-homolog:8069/web/login)"
 else
-  falhou "n8n NAO alcanca o Odoo do dev por nome interno"
+  falhou "n8n NAO alcanca o Odoo do homolog por nome interno"
 fi
 
 # Odoo -> n8n (o caminho do webhook: e' o Odoo que chama /webhook/...)
 if docker exec "$ODOO" python3 -c "
 import urllib.request,sys
 try:
-    r=urllib.request.urlopen('http://n8n-dev:5678/healthz/readiness',timeout=10)
+    r=urllib.request.urlopen('http://n8n-homolog:5678/healthz/readiness',timeout=10)
     sys.exit(0 if r.status==200 else 1)
 except Exception:
     sys.exit(1)
 " >/dev/null 2>&1; then
-  ok "Odoo alcanca o n8n por nome interno (http://n8n-dev:5678) — caminho do webhook"
+  ok "Odoo alcanca o n8n por nome interno (http://n8n-homolog:5678) — caminho do webhook"
 else
   falhou "Odoo NAO alcanca o n8n por nome interno"
 fi
@@ -271,7 +271,7 @@ fi
 # pode e' entrar na MINHA rede ou publicar a MINHA porta. "Existe n8n-homolog" nao e' falha; medir
 # a invasao e' que e'.
 CONTAMINADO=""
-for outro in n8n-homolog n8n-prod; do
+for outro in n8n-dev n8n-prod; do
   docker ps -a --format '{{.Names}}' | grep -qx "$outro" || continue
   if docker inspect "$outro" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' 2>/dev/null | grep -qw "$REDE"; then
     CONTAMINADO="$outro esta na minha rede ($REDE)"
@@ -280,9 +280,9 @@ for outro in n8n-homolog n8n-prod; do
     CONTAMINADO="$outro publica a minha porta ($PORTA)"
   fi
 done
-[ -z "$CONTAMINADO" ] && ok "n8n de outro ambiente nao invade a rede nem a porta do dev" \
+[ -z "$CONTAMINADO" ] && ok "n8n de outro ambiente nao invade a rede nem a porta do homolog" \
   || falhou "contaminacao entre ambientes: $CONTAMINADO"
-for outro in odoo-homolog pg-odoo-homolog odoo-dev pg-odoo-dev; do
+for outro in odoo-dev pg-odoo-dev odoo-homolog pg-odoo-homolog; do
   if docker ps -a --format '{{.Names}}' | grep -qx "$outro"; then
     ok "$outro presente (nao tocado por esta instalacao)"
   fi
@@ -290,7 +290,7 @@ done
 
 # ---------------------------------------------------------------------------
 echo
-printf 'RESULTADO: N8N_DEV_%s (%d itens, %d falhas)\n' \
+printf 'RESULTADO: N8N_HOMOLOG_%s (%d itens, %d falhas)\n' \
   "$([ "$FALHAS" -eq 0 ] && echo OK || echo FALHOU)" "$ITENS" "$FALHAS"
 [ "$FALHAS" -eq 0 ] || exit 1
 
@@ -310,7 +310,7 @@ if [ "${1:-}" = "--prova-de-dente" ]; then
     "$ENVFILE" >"$TMP/n8n.env"
   SAIDA_A="$(TRE_N8N_ENV="$TMP/n8n.env" bash "$0" 2>&1 || true)"
   DENTES=$((DENTES+1))
-  if grep -qE '^FALHA .*digest' <<<"$SAIDA_A" && grep -qE '^RESULTADO: N8N_DEV_FALHOU' <<<"$SAIDA_A"; then
+  if grep -qE '^FALHA .*digest' <<<"$SAIDA_A" && grep -qE '^RESULTADO: N8N_HOMOLOG_FALHOU' <<<"$SAIDA_A"; then
     printf 'DENTE OK    digest divergente -> reprova (%s falha(s))\n' "$(grep -c '^FALHA' <<<"$SAIDA_A")"
   else
     printf 'DENTE RUIM  digest divergente NAO reprovou — o verificador nao esta medindo o digest\n'
@@ -350,7 +350,7 @@ if [ "${1:-}" = "--prova-de-dente" ]; then
   fi
 
   echo
-  printf 'RESULTADO: N8N_DEV_DENTE_%s (%d dentes, %d ruins)\n' \
+  printf 'RESULTADO: N8N_HOMOLOG_DENTE_%s (%d dentes, %d ruins)\n' \
     "$([ "$DENTES_RUINS" -eq 0 ] && echo OK || echo FALHOU)" "$DENTES" "$DENTES_RUINS"
   [ "$DENTES_RUINS" -eq 0 ] || exit 1
 fi
