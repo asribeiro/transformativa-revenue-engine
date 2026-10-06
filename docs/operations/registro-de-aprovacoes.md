@@ -242,6 +242,7 @@ suítes de cobertura e autoteste por mutação), e a W0 já declara defeitos des
 |---|---|---|---|
 | 06/10/2026 (Telegram: "C") | Anderson Ribeiro | **Ancoragem declarada de 11 cards no item `TRE-W0-E04-T04`.** Escopo **fechado**: autoriza, para estes 11 (a família que cita `TRE-W3-E04-T03`), entrada em `children` do item com `stage`/`current_gate` = DONE — **nível explícito (Concluído), sem promoção a produção**, porque o harness roda no ambiente de desenvolvimento do Hermes e não no TRE de produção; afirmar promoção ali seria declaração falsa. A ancoragem é **por substância, não por vínculo registrado**, e isso fica escrito na evidência de cada card: eles citam um item que **não existe** em artefato nem como card, e a cadeia de dependência morre em `t_7c57e910` (sem pai). **Não** autoriza: tocar o 12º (`t_ec63e1d8`, higiene de aceite, sem onda), promover estes cards a produção, criar entrega nova, corrigir os nomes dos cards (seguem citando o item inexistente) nem qualquer release/rollback/credencial. | Ferramenta `scripts/validacao-integrada/declarar_evidencia_terminal_cards.py` (agora com `--mapa`), commit `720bd243ca844a74e21a9461b6bd13d78466030f`, sha256 `601b13937fb4444997edf87e7038f80c4e0b48582eb6d520d27ddfe9c63554a9`; **mapa de ancoragem como dado versionado**: `control-plane/ancoragens/2026-10-06-harness-w0.json` (dado versionado, nao verificador; sha256 e commit na Nota de registro 1), com motivo por card derivado do registro (8 dos 11 têm linha própria com verificador e sha256 — prova medida; 3 são cards de verificação independente sem linha própria). Medido pelo próprio plugin: **validation 12 → 1 · done 11 → 22 · production 147 intacta**; mudança estrutural = **só adições** no artefato da W0 (único campo alterado: `updated_at`); backup 600 em `/opt/data/backups/evidencia-terminal/`; dentes: mapa apontando item inexistente **recusa** ("item_alvo nao existe em artefato nenhum"), mapa com card que não está preso **não escreve nada nele**, e a **2ª passada dá 0 elegíveis com nenhuma escrita** |
 | 06/10/2026 (Telegram: "resolva e me envie as credenciais") | Anderson Ribeiro | **Redefinição da senha da interface do Odoo de produção (usuário `admin`, id 2).** A senha anterior não estava registrada em arquivo nenhum da VPS — daí o pedido, depois do diagnóstico de acesso. Escopo **fechado**: apenas o usuário `admin`; o usuário de integração `tf_api_integracao` (dono da API key/Bearer e do token do ingestor) **não** foi tocado — conferido na própria chamada (só o id=2 recebeu a senha). A senha **não** passou por linha de comando de processo nenhum. O dono pediu explicitamente a entrega **no chat do Telegram** (06/10/2026, depois de eu oferecer o caminho do arquivo 600 na VPS) — a entrega foi feita a pedido dele; a senha deve ser trocada no primeiro login. | Senha gerada **na VPS** (24 caracteres aleatórios), gravada em `/etc/tre/odoo-prod/admin-ui-password.txt` (600, root) e legível em `/etc/tre/odoo-prod/admin-ui-cred.txt` (600, root); aplicada por `odoo shell` com o segredo entrando por **arquivo dentro do container** (nunca por argv), temporário removido depois. Provas: POST em `/web/login` com a senha correta devolveu **303 → /odoo** e `GET /odoo` com a sessão trouxe o web client (200) — tanto em `127.0.0.1:8071` quanto pela **borda pública**; **dente**: senha errada devolve **200 sem redirect**, com mensagem de erro na página. Borda com certificado Let's Encrypt válido (05/10/2026 a 03/01/2027), `ssl_verify_result=0`, e HTTP → **308** → HTTPS. |
+| 06/10/2026 (Telegram: "vamos seguir esse plano, pode começar pelo 1") | Anderson Ribeiro | **Publicação dos workflows `TRE-reconciliation` (id `TRERECONCILIA01`) e `TRE-observabilidade-sync` (id `TREOBSERVSYNC1`) em dev e homolog** — os dois existiam versionados e nunca tinham sido publicados. Escopo **fechado**: só dev e homolog; **produção intocada**; credencial nenhuma criada (os ids do contrato já existiam nos dois ambientes). Ativação pelo caminho exigido pela versão 2.41.5: serviço parado, `publish:workflow` em container efêmero, serviço de volta — com `trap` garantindo o retorno ao ar. | Import + publish + **execução sob demanda com `status=success`** registrada no banco do n8n (dev: exec 921 e 922; homolog: 846 e 847); leituras: reconciliação **INDETERMINADO** (a leitura do lado Odoo não foi medida — fail-closed do desenho, nada comparado sem medição) e observabilidade **CRÍTICO** (resíduo de massa de teste na trilha de dev + trilha parada há ~15 h). **Aceite em trio descartável com prova de mutação**: `RECONCILIACAO_OK (10 itens, 0 falhas)`, banco descartável `tre_reconc_1563351968`, `FASE_DENTE_OK` nas cinco mutações. Evidência em `/opt/tre/dev/evidencias/publicacao-workflows-20261006/` e `/opt/tre/dev/evidencias/dente-workflows-20261006/`. |
 
 ## Nota de registro 1 — rótulo de onda trocada na linhagem de guardrail do harness (2026-10-06)
 
@@ -268,3 +269,33 @@ Autorização 12) e passa a `42c7423eeeda607d674ea5172f023671bb81790b887bdadaf48
 instrumento não valida sha de mapa). O mapa com esse sha256 esta' no commit `767ddc83c52597cdca3ad4b5449b27dfb2f4b902`.
 
 **Nada foi renomeado, nada foi apagado.**
+
+## Nota de registro 2 — publicação dos workflows de reconciliação e observabilidade (dev e homolog), 2026-10-06
+
+Palavra do dono, verbatim (Telegram): **"vamos seguir esse plano, pode começar pelo 1"** — plano proposto por mim e
+aceito item a item.
+
+**Integridade do que foi publicado (medido, não presumido).** O artefato publicado é exatamente o versionado: os dois
+arquivos têm o **mesmo sha256** na árvore de desenvolvimento do Hermes, no repo de dev e no repo de homolog —
+`n8n/workflows/TRE-reconciliation.json` = 2d06516d404054251e31fe66d183c28716f42f59ca6245dab259ea320df6e667 e
+`n8n/workflows/TRE-observabilidade-sync.json` = 68993a78d28571dbb1f564cd4282e5dd1b9d2f0c4986a45f1af0f72ee1236bd5.
+Antes de importar, os dois JSONs foram **regerados pelos montadores** e comparados: idênticos. Lentes estruturais:
+`RECONCILIACAO_LENTE_OK (150 itens)`, `OBSERVABILIDADE_LENTE_OK (118 itens)`. Núcleos em node puro:
+`RECONCILIACAO_NUCLEO_OK (61 itens)`, `OBSERVABILIDADE_SYNC_NUCLEO_OK (62 itens)`.
+
+**Prova de mutação (o dente).** Aceite ponta a ponta em trio descartável (Odoo 19 + Postgres 16 + n8n), banco
+`tre_reconc_1563351968`: `RECONCILIACAO_OK (10 itens, 0 falhas)` com `FASE_DENTE_OK` — cinco mutações nomeadas, cada uma
+fazendo o verificador **reprovar** no ponto certo (operação de escrita fora da porta declarada; janela de pendência
+desligada; núcleo mutado dentro do Code node; contrato não embutido; recusa da trilha invisível).
+
+**Achados honestos desta rodada (dívidas, não sucessos).** (1) A leitura do lado Odoo falha nos dois ambientes
+(`statusCode 401` nas leituras `por_id` e `por_company_id`) — a credencial `tre-dev-api-controlada` não é aceita pelo
+Odoo de dev e de homolog hoje; a reconciliação então se declara `INDETERMINADO`, que é o comportamento correto do
+desenho ("leitura não medida não vira divergência"), mas significa que o job está **publicado e cego** do lado destino
+nesses ambientes. (2) A observabilidade acusa `trilha_sem_conclusao = 1` — linha `COMPLETED` sem `completed_at`, que
+pode ser defeito de escrita e não resíduo. (3) Dívida pré-existente confirmada por comparação: a suíte
+`verificar_estrutura.sh` falha **10 itens no `develop` e os mesmos 10 no release de produção** (`origin/main`).
+
+**Lição de operação (custo real).** O ciclo exigido — `stop` → `publish`/`execute` em container efêmero → `start` —
+deixou o serviço parado duas vezes quando a sessão caiu no meio; a correção foi `trap ... EXIT` no script do ciclo,
+que devolve o serviço ao ar mesmo em falha. Nada disso toca produção: `main` e `homolog` seguem como estavam.
