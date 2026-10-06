@@ -39,3 +39,22 @@ Portao de escrita em producao: a politica do modulo declara `ambientes_permitido
 **aprovacao humana** (`AMBIENTES_COM_APROVACAO`). Producao **nao** tem politica nem aprovacao hoje:
 escrita em producao esta fechada por desenho — o que faz o ciclo E2E de escrita rodar so' em dev e
 homolog (este ultimo com a aprovacao de 15/10/2026).
+
+## Credenciais, workflows e ativação (medido em 06/10/2026)
+
+- **O bind do cofre é `<home> → /home/node`** (não `/home/node/.n8n`): os arquivos a importar vão em
+  `/opt/tre/prod/n8n/home/.n8n/`. Gravar em `.../home/` direto dá `ENOENT` no container.
+- **Credenciais** (ids do contrato, nomes honestos de produção): `tre-dev-postgres` →
+  `pg-sales-prod`/`sales_intelligence`/`sales_ai`; `tre-dev-api-controlada` → `Bearer` da chave de API
+  do Odoo de produção; `tre-dev-ingest-token` → header `X-Tre-Ingest-Token`. O `credenciais.json` é
+  montado **na VPS**, lendo `/etc/tre/prod-sales/pg.env`, `/etc/tre/odoo-prod/chave-api.txt` e
+  `/etc/tre/odoo-prod/ingest-token` (600) — nenhum valor passa por stdout, log, chat ou argv.
+- **Ativação exige o serviço PARADO.** `publish:workflow --id=<id>` com o n8n rodando **não** tem efeito
+  (o próprio CLI avisa: *"Changes will not take effect if n8n is running"*). Ordem que funciona:
+  `stop` → `publish` (num `docker run` efêmero montando o mesmo cofre) → `start`. Depois disso o webhook
+  responde **403 sem token válido**.
+- Os arquivos com segredo são removidos do cofre logo após o `import` (a credencial fica só no
+  `database.sqlite` cifrado).
+- `docker exec` roda como o usuário do container (`node`/`odoo`): arquivo copiado com `docker cp` fica
+  `root:root 600` e **não é legível** — dar `chown` do usuário do serviço na cópia temporária, ou ler
+  dentro do processo (regra de segredo do projeto).

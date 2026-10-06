@@ -36,3 +36,16 @@ que a rede tem so' os containers de producao, que o cluster nao tem banco de out
 5. copia publicada do branch **main**; 6. ligar na borda.
 
 Detalhe de operacao e armadilhas: `docs/runbooks/odoo-homolog.md` e `docs/runbooks/odoo-dev.md`.
+
+## Porta e borda (medido em 06/10/2026)
+
+- **A porta do Odoo de produção é `8071`** — a sequência declarada no desenho
+  (`deploy/environments/edge-proxy.env`: 8069 dev, 8070 homolog, **8071 produção**). A derivação dos
+  artefatos tinha publicado `8080`, e a borda continuava apontando para `8071`: com a stack no ar, o nome
+  público devolvia **503** e parecia stack ausente. Tudo alinhado em `8071` (par + 6 scripts + runbook).
+- **A borda servia `tre` como placeholder de propósito** (`respond "PRODUCAO ainda nao provisionada." 503`).
+  Com a produção no ar, o bloco virou `reverse_proxy 127.0.0.1:{$TRE_PORTA_ODOO_PROD}`, com os mesmos
+  cabeçalhos e log dos demais. A borda roda com **`admin off`**: aplicar mudança **exige restart** do
+  container (`docker restart proxy-edge`), não `caddy reload`.
+- **Medições finais:** `https://tre.transformativa.com.br/web/login` → **200** (Odoo servido pela borda),
+  `dev.tre` → 401, `homolog.tre` → 401, qualquer outro Host → 404. Certificados Let's Encrypt válidos.

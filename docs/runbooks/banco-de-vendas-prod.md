@@ -54,3 +54,28 @@ producao muda so' no nome dos recursos e no portao da migracao).
      prova de leitura (`SELECT 1`) antes do laço e o aborto traz a **causa real**;
   2. os defaults do alvo de Homolog eram `pg-homolog` / `tre`, que **nunca existiram** nesta VPS — a conferência
      reprovava por não conseguir ler. Agora são `pg-sales-homolog` / `sales_ai`, o layout real.
+
+## O ciclo ponta a ponta em Produção (medido em 06/10/2026)
+
+| etapa | medida |
+|---|---|
+| Odoo/cópia/módulo | `odoo-prod` em `127.0.0.1:8071` (sequência do desenho), `transformativa_sales_ai` **installed** (`tf_evento_outbox`, `tf_process_opportunity`), política `politica_producao.json` visível no container |
+| parâmetros | `tf.api.ambiente=producao`, `tf.api.politica=…/politica_producao.json`, `tf.api.aprovacao=card=t_ba84b412,aprovador=Anderson Ribeiro,validade=2026-10-13`, `transformativa_sales_ai.ingest_url=http://n8n-prod:5678` + `ingest_token` (64 bytes, gravado de arquivo 600) |
+| agenda do Odoo | `ir_cron` **18** (`Sales AI: entregar eventos Odoo -> PostgreSQL`) **ativa**, 1 min |
+| **direção 1** (Odoo → n8n → PostgreSQL) | `TF_RESUMO {"SENT": 8, "DEAD_LETTER": 0, "RETRY": 0, "duplicados_no_destino": 0, "erro": false}` → 8 linhas `COMPLETED` na trilha (`odoo → postgres`) |
+| **direção 2** (fila → consumidor → API → CRM) | evento `COMPANY_QUALIFIED` novo → fila `PROCESSED` (1 tentativa) → trilha `outbox:<id>:COMPANY_QUALIFIED | COMPLETED | UPSERT | postgres → odoo` → parceiro **id 8 "Ciclo E2E Prod Ltda"** (score 77) criado **pela API** |
+| **replay** | mesmo evento reenfileirado → `PROCESSED` com `attempts` **inalterado (1)** e **sem** segunda linha de trilha nem segundo parceiro |
+| **dente do portão** | aprovação vencida (05/10) + evento novo → fila **`DEAD_LETTER`** com `recusa_da_api:aprovacao_ausente`, trilha **`REFUSED`**, **zero** escrita no CRM (9 parceiros antes e depois) |
+| **par antes/depois** | restaurada a validade (13/10), o **mesmo** evento saiu `PROCESSED` (2 tentativas) e o parceiro **id 11 "Dente real do portao Prod Ltda"** (score 11) nasceu no CRM — só depois da aprovação voltar |
+
+### Armadilha medida: o parâmetro é CACHEADO (e o dente dá falso passe sem restart)
+
+A gravação de `tf.api.aprovacao` **pelo ORM** (`set_param`) não basta para o Odoo **em execução**: sem
+**reiniciar o serviço**, a API continua servindo a validade antiga. Medido aqui: a primeira tentativa do
+dente criou o parceiro **id 9 "Dente do portao Prod Ltda"** com a aprovação vencida já gravada no banco —
+o portão parecia aberto por defeito, e era só cache. **Regra:** mudou aprovação/política ⇒ `restart` do
+Odoo **antes** de concluir qualquer medição do portão. Depois do restart, a sonda direta confirmou o
+fechamento: `HTTP 503`, `codigo=aprovacao_ausente`, `ambiente=producao`, CRM intacto.
+
+Sonda reutilizável: `/tmp/sonda-portao-prod.sh` (chave lida do arquivo 600 e entregue ao curl por
+**arquivo de configuração**, nunca por argv; imprime só status HTTP e `codigo`).
