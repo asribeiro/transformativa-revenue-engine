@@ -5,10 +5,16 @@
 set -euo pipefail
 
 TOPO=$(git rev-parse --show-toplevel)
-COMMON=$(git rev-parse --git-common-dir)
-case "$COMMON" in /*) DEST="$COMMON/hooks" ;; *) DEST="$TOPO/$COMMON/hooks" ;; esac
+FONTE="$TOPO/scripts/git-hooks/pre-push"
+[ -f "$FONTE" ] || { echo "nao achei $FONTE (rode este script de um checkout que tenha o gancho)" >&2; exit 1; }
+
+DESTINO="${1:-$TOPO}"
+COMMON=$(git -C "$DESTINO" rev-parse --git-common-dir)
+case "$COMMON" in /*) DEST="$COMMON/hooks" ;; *) DEST="$DESTINO/$COMMON/hooks" ;; esac
 
 mkdir -p "$DEST"
-install -m 0755 "$TOPO/scripts/git-hooks/pre-push" "$DEST/pre-push"
-echo "instalado: $DEST/pre-push"
-echo "  vale para o repo $TOPO (todos os worktrees). Teste: git push --dry-run origin HEAD:main  (deve recusar)"
+install -m 0755 "$FONTE" "$DEST/pre-push"
+echo "gancho instalado: $DEST/pre-push"
+echo "  fonte: $FONTE"
+echo "  vale para o repo $DESTINO (todos os worktrees dele)."
+echo "  teste: git -C $DESTINO push --dry-run origin HEAD:main   (deve RECUSAR)"
