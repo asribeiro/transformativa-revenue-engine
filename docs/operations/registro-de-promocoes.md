@@ -76,3 +76,28 @@ envelhece no commit seguinte e vira afirmação falsa.
   antes/depois; `docs/runbooks/{banco-de-vendas-prod,odoo-prod,n8n-prod}.md`; card `t_ba84b412` (388-389).
 - **Pendência declarada:** `main` entra **sem CI e sem branch protection** (plano Free) — o freio é o gate do
   motor + o gancho `pre-push` versionado. `develop` segue à frente por commits de documentação.
+
+## Promoção 6 — `develop` → `homolog` (06/10/2026)
+
+- **Origem:** `develop` = `bc1df98` · **destino:** `homolog` = `bc1df98` (**fast-forward** de `09e7699`).
+- **Delta:** 4 commits, 127 insertions(+), 33 deletions(-) — os registros de aprovação/promoção do dia e o conserto de publicação/backup.
+- **Por que promoveu:** é o passo que precede o `main`; o release tem de existir em `homolog` antes de subir.
+- **Evidência:** `bash -n` OK nos 4 scripts alterados; veredito do backup medido antes e depois na VPS.
+
+## Promoção 7 — `homolog` → `main` (06/10/2026 — segundo release do dia)
+
+- **Origem:** `homolog` = `bc1df98` · **destino:** `main` = **`c773433`** — **merge commit de dois pais**
+  (`70b4442` primeiro, `bc1df98` segundo), **merge vindo de `homolog`** (D4).
+- **Delta:** 4 commits, 15 arquivos, **+127/−33**.
+- **Aprovação humana:** **Autorização 8** (Telegram: *"A. apague oportunidade orfã"*), commit `151cc0f`.
+  Verificador de aprovação humana: **PASS (18 itens, 0 falhas)**.
+- **Dois ganhos medidos:**
+  1. **A produção estava sem cobertura de backup diária** — o `tre-backup.service` dizia
+     *"PULADO ambiente 'prod' nao provisionado"* (`1 coberto, 2 pulados`). Com `TRE_ENV_DIR` na cópia de
+     produção, passou a **`BACKUP_OK (3 ambientes cobertos, 0 pulados)`**, com `tre_prod_*` no diretório.
+  2. **Publicar na produção virou fail-closed:** o `publicar.sh` **recusou** a primeira tentativa e exigiu
+     `TRE_PUBLICAR_PRODUCAO=1` + card/aprovação registrados. Antes, escrever na cópia de produção passava sem
+     declaração.
+- **Evidência (VPS):** watchdog `PUBLICACAO_OK commit=c773433 digest=663bff3f…`; cópia com
+  `producao_declarado: 1`; `PROD_SALES_OK 20/0`, `PROD_ODOO_OK 15/0`, `N8N_PROD_OK 44/0`; borda `tre` 200 /
+  `dev.tre` 401 / `homolog.tre` 401; 14 containers de pé.
