@@ -50,6 +50,15 @@ for arg in "$@"; do
 done
 
 if [ "$ENSAIO" = "1" ]; then
+  # O ensaio roda ANTES das guardas: le o par por conta propria (as guardas de estado nao valem
+  # para um plano) e nao toca em nada.
+  [ -f "$COMPOSE" ] || falhar "compose nao encontrado em $COMPOSE"
+  [ -f "$ENVFILE" ] || falhar "par nao-secreto nao encontrado em $ENVFILE"
+  # shellcheck disable=SC1090
+  set -a; . "$ENVFILE"; set +a
+  PORTA="${ODOO_HTTP_PORT:?ODOO_HTTP_PORT ausente em $ENVFILE}"
+  VERSAO="${ODOO_VERSION:?ODOO_VERSION ausente em $ENVFILE}"
+  DIGESTO_ESPERADO="${ODOO_DIGEST_ESPERADO:-}"
   echo
   echo "   PLANO (ensaio: nada e' criado nem publicado)"
   printf '     imagem.......... odoo:%s\n' "$VERSAO"
