@@ -1258,3 +1258,21 @@ declaracoes:
       o item que prova que ele NAO deixou volume anonimo novo. Repo-only, sem producao, sem credencial.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+
+  # Saidas orfas do motor (achado do levantamento de 06/10/2026): o contrato de dados declara 6 eventos
+  # pg->Odoo e o consumidor publicado cobre 2. Ampliar o consumidor para PRIORITY_SCORE_CHANGED,
+  # DECISION_MAKER_FOUND, NEXT_BEST_ACTION_CHANGED e OPPORTUNITY_RECOMMENDED, com prova de mutacao e
+  # idempotencia medida. Mudanca no proprio repo (contrato do consumidor + nucleo + workflow regerado pelo
+  # montador), em ambiente de desenvolvimento -> codigo comum `execucao_de_card`.
+  # Autorizado por Anderson no Telegram em 06/10/2026 ("começar a rodar").
+  - card_id: t_e6e2497d
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-06'
+    motivo: >-
+      Card do consumidor de outbox: cobrir os 4 eventos declarados que hoje ficam orfaos, com prova de
+      mutacao (mutar o nucleo derruba o aceite) e idempotencia por evento medida. Repo-only (contrato do
+      consumidor + nucleo + workflow regerado): NAO publica em ambiente vivo neste card — publicar e' ato
+      separado e exige aprovacao propria.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
