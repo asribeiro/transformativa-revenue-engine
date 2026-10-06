@@ -48,6 +48,7 @@
 # `deploy/environments/<ambiente>.env` (o arquivo e default, nao override):
 #   TRE_PG_SERVICO, TRE_PG_USER, TRE_PG_DB      — alvo no ambiente pedido
 #   TRE_PG_SERVICO_HOMOLOG / TRE_PG_USER_HOMOLOG / TRE_PG_DB_HOMOLOG — alvo de homolog
+#                                  (default: pg-sales-homolog / sales_ai / sales_intelligence)
 #   TRE_APROVACAO_HUMANA, TRE_RAIZ
 # =====================================================================================
 set -uo pipefail
@@ -96,8 +97,12 @@ fi
 SERVICO="${PRESERVADO_SERVICO:-${TRE_PG_SERVICO:-pg-$AMB}}"
 USUARIO="${PRESERVADO_USUARIO:-${TRE_PG_USER:-tre}}"
 BANCO="${PRESERVADO_BANCO:-${TRE_PG_DB:-sales_intelligence}}"
-SERVICO_HOMOLOG="${TRE_PG_SERVICO_HOMOLOG:-pg-homolog}"
-USUARIO_HOMOLOG="${TRE_PG_USER_HOMOLOG:-tre}"
+# Defaults ALINHADOS ao layout real do projeto (deploy/compose/homolog/pg-sales.yml): o rastro de
+# vendas vive no cluster de VENDAS de homolog (`pg-sales-homolog`), cujo usuario e' `sales_ai`.
+# Os defaults antigos (`pg-homolog` / `tre`) nunca existiram nesta VPS: a conferencia da sequencia
+# reprovava por nao conseguir LER. Medido em 06/10/2026, no 1o provisionamento de producao.
+SERVICO_HOMOLOG="${TRE_PG_SERVICO_HOMOLOG:-pg-sales-homolog}"
+USUARIO_HOMOLOG="${TRE_PG_USER_HOMOLOG:-sales_ai}"
 BANCO_HOMOLOG="${TRE_PG_DB_HOMOLOG:-sales_intelligence}"
 
 echo "=================================================================="
