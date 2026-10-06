@@ -43,7 +43,36 @@ TRE_PUBLICAR_LOCK=/opt/tre/.publicacao-homolog.lock \
   deploy/publicar.sh --commit origin/homolog
 ```
 
-## 3. Armadilhas medidas
+## 3.1 Funil comercial (CRM) — espelho do dev
+
+O funil não viaja com o deploy: ele é **dado** (`crm_stage` + `crm_team`), aplicado por rotina. O dev tem 12
+etapas desde 30/09/2026; homolog nasceu com as **4 de fábrica** do módulo `crm` (New / Qualified / Proposition /
+Won — medido em 06/10/2026). Para conferir o desenho na tela de homolog, o caminho é o par espelhado do dev:
+
+```bash
+# aplicar (na VPS; par espelhado de scripts/provision/configurar-crm-dev.sh)
+TRE_CRM_YAML=<declaracao> TRE_CRM_ORM=<aplicador> \
+TRE_ODOO_COMPOSE=/opt/tre/homolog/compose/odoo.yml \
+TRE_ODOO_ENV=/opt/tre/homolog/compose/odoo.env \
+TRE_ODOO_BANCO=odoo_homolog \
+  bash configurar-crm-homolog.sh      # -> RESULTADO: CRM_HOMOLOG_CONFIGURADO ...
+# verificar (na VPS) -> RESULTADO: CRM_HOMOLOG_OK (N itens, 0 falhas)
+bash verificar-crm-homolog.sh
+```
+
+A declaração e o aplicador são os mesmos do dev (`odoo/crm/funil-transformativa.yaml`,
+`scripts/provision/aplicar_funil_crm.py`): o aplicador é idempotente, casa etapa por **nome**, adota a etapa
+existente em vez de duplicar, e tem guarda fail-closed — etapa com oportunidade (`crm.lead.stage_id`) **não** é
+removida; ele reprova em vez de mexer em dado de negócio. O `Nurture` é `crm.team` próprio (ramo lateral), não
+etapa do funil principal — foi assim que o contrato o desenhou.
+
+**Guarda invertida de propósito.** O wrapper do dev recusa rodar se existir container de homolog/produção. Aqui
+essa guarda seria falsa por construção (os três ambientes convivem neste VPS), então ela **não** foi copiada:
+o isolamento do espelho é o caminho do compose (`/opt/tre/homolog/*`) mais os nomes de container deste ambiente.
+O verificador mede o invariante oposto — que os vizinhos (`odoo-dev`, `pg-odoo-dev`, `odoo-prod`, `pg-odoo-prod`)
+sigam de pé depois da rodada.
+
+## 3.2 Armadilhas medidas
 
 - **O instalador do homolog NÃO recusa a existência do dev** (é o inverso do instalador do dev, que recusa
   homolog/produção). A garantia aqui não é disciplina: ele resolve o compose (`docker compose config`) e
