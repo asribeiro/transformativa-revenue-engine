@@ -6,7 +6,7 @@
   "release_status": "PRODUCTION_PROMOTED",
   "current_gate": "DONE",
   "production_promotion_authorized": true,
-  "updated_at": "2026-10-06",
+  "updated_at": "2026-10-06T16:51:18Z",
   "human_approval": {
     "required": true,
     "status": "APPROVED",
@@ -192,6 +192,15 @@
               }
             ]
           }
+        },
+        {
+          "hermes_task_id": "t_8253ad1f",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -260,6 +269,15 @@
               }
             ]
           }
+        },
+        {
+          "hermes_task_id": "t_41d17c27",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -350,6 +368,15 @@
               }
             ]
           }
+        },
+        {
+          "hermes_task_id": "t_44cbc48c",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -390,6 +417,24 @@
               }
             ]
           }
+        },
+        {
+          "hermes_task_id": "t_27d0a51d",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_eddd00ce",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     },
@@ -420,6 +465,33 @@
             "commit": "2ce808bcfd1b62c2a399b98f0a78240de24db82b",
             "ambiente": "VPS Contabo vmi3619453: clone isolado /tmp/tre_lote13/repo do develop publicado (9e638f7/2ce808b, 765 arquivos); containers e bancos descartaveis por rodada; dev/homolog/prod conferidos intactos pelo proprio verificador (ADR-005). CORRECAO DE ESCOPO (05/10/2026, achado da validacao do card TRE-W0-E01-T03, conferido no codigo): no modo 'descartavel' do teste de backup o passo de BACKUP NAO le a base descartavel que o proprio teste cria e semeia — ele le o 'pg-sales-dev' VIVO, porque a precedencia do scripts/backup/lib-ambiente.sh poe o arquivo deploy/environments/dev.env (passo 2, que declara TRE_PG_SERVICO=pg-sales-dev) ACIMA do global TRE_PG_SERVICO exportado pelo teste (passo 3). O verde do modo descartavel prova, portanto, o ciclo de backup/restore contra o DEV VIVO em SOMENTE LEITURA (pg_dump/pg_dumpall read-only, filestore montado :ro) — nada foi escrito nos containers vivos — e NAO contra uma base hermética. O comentario do script ('roda o ciclo inteiro nele') e' falso na VPS."
           }
+        },
+        {
+          "hermes_task_id": "t_091cfea9",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_1b2ab418",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
+        },
+        {
+          "hermes_task_id": "t_22c27625",
+          "stage": "DONE",
+          "current_gate": "DONE",
+          "evidence": "DECLARACAO TERMINAL EM LOTE (nao e' aceite medido). Card de DEFEITO/rework criado dentro da entrega e vinculado por dependencia a este item; no board esta' em `done`. O fechamento desta onda declarou os filhos do item, nao este card, e por isso ele ficou preso na projecao fail-closed de 'Validacao pendente'. Declarado terminal por decisao do dono -- Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card.. Nao houve cadeia de validacao integrada propria deste card: nenhum aceite independente e' afirmado aqui.",
+          "evidence_origin": "declaracao-terminal-em-lote",
+          "declared_at": "2026-10-06T16:51:18Z",
+          "declared_by": "hermes (decisao do dono)"
         }
       ]
     }
@@ -435,7 +507,15 @@
     "t_969affa7",
     "t_c7281fce",
     "t_d9cb5755",
-    "t_e340c29b"
+    "t_e340c29b",
+    "t_091cfea9",
+    "t_1b2ab418",
+    "t_22c27625",
+    "t_27d0a51d",
+    "t_41d17c27",
+    "t_44cbc48c",
+    "t_8253ad1f",
+    "t_eddd00ce"
   ],
   "events": [
     {
@@ -487,5 +567,55 @@
       ]
     }
   ],
-  "completed_at": "2026-10-06T14:56:57+00:00"
+  "completed_at": "2026-10-06T14:56:57+00:00",
+  "production_promoted_cards": [
+    {
+      "hermes_task_id": "t_091cfea9",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_1b2ab418",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_22c27625",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_27d0a51d",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_41d17c27",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_44cbc48c",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_8253ad1f",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    },
+    {
+      "hermes_task_id": "t_eddd00ce",
+      "declared_at": "2026-10-06T16:51:18Z",
+      "evidence_origin": "declaracao-terminal-em-lote",
+      "authorization": "Autorizacao 10 (06/10/2026): dono respondeu 'B' a pergunta 'A) deixar como esta / B) declarar evidencia terminal nos 40 cards presos em Validacao pendente'. Escopo desta rodada: os 20 cards com item mapeado em entrega fechada (W1=8, W2=2, W3=10). Nivel gravado: promocao. NAO afirma aceite independente de cada card."
+    }
+  ]
 }
