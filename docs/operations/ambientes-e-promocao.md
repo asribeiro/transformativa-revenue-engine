@@ -204,3 +204,26 @@ no GitHub), publicada pelo caminho único (`deploy/publicar.sh`) com destino, ar
 não confundir o watchdog da cópia compartilhada. A primeira promoção `develop` → `homolog` **foi feita em
 06/10/2026** (fast-forward de `3252bba`; 13 arquivos, +921/-1, **nenhum arquivo de aplicação**), com evidência
 em `docs/operations/registro-de-promocoes.md` e comentário no card `t_1acf11f2`.
+
+### Estado medido em 06/10/2026 — Dev (o ciclo E2E está ligado)
+
+O Dev é o primeiro ambiente com o ciclo completo girando. O que passou a existir:
+
+- **Cópia de código própria:** `/opt/tre/dev/repo`, publicada do `develop` com destino, artefato e trava
+**isolados**. Antes o `odoo-dev` montava `/opt/tre/repo` — a cópia **compartilhada**, que o `publicar.sh`
+hoje recusa sobrescrever sem `--producao` mais aprovação registrada. Isto é: o Dev executava código que não
+era o dele, e o portão de publicação foi o que revelou o acoplamento.
+- **Módulo `transformativa_sales_ai` instalado** em `odoo_dev`. A migração `db/migrations/0001_*` **já estava
+aplicada** (schema `sales_intelligence`, 12 tabelas) — a recon anterior olhou só o schema `public` e
+concluiu errado; a checagem correta é `aplicar_migracoes.sh dev --somente-checar`.
+- **Porta única preparada:** `tf.api.ambiente=dev` (com `tf.api.aprovacao` e `tf.api.politica` vazios, ou seja,
+política do próprio módulo), usuário de integração e chave em `/etc/tre/dev-ciclo/chave-api.txt` (600).
+- **n8n com os dois workflows importados** (`TREodooEventos1`, `TREOUTBOXCONSUM1`) e as três credenciais no
+cofre do próprio serviço; `TRE_API_BASE` no par do ambiente — nenhum host fica escrito no artefato do
+workflow.
+- **Ciclo ligado nos dois sentidos**, com dedup por chave provado (replay sem duplicata) e recusa com nome;
+comandos de ligar/desligar e a evidência crua em `docs/runbooks/n8n-dev.md` § 7.
+
+Pendências declaradas deste ciclo: o `pg-sales-dev` foi conectado à rede `tre-odoo-dev` **em tempo de
+execução** (o container nasceu avulso, sem rótulos de compose) — versionar essa stack é card próprio; e a UI
+do n8n continua fora da borda.

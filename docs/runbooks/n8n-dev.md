@@ -92,12 +92,65 @@ docker compose --env-file /opt/tre/dev/compose/n8n.env -f /opt/tre/dev/compose/n
    é 700 e a chave vive em `/etc/tre/n8n-dev` (600 root) — quem lesse o `database.sqlite` não
    teria como decifrar as credenciais.
 
-## 7. Pendências declaradas (não são surpresa)
+## 7. O ciclo ponta a ponta, ligado (medido em 06/10/2026)
+
+O outbox do CRM e a API controlada estão ligados **neste** n8n: credenciais no cofre do próprio
+serviço (nunca em arquivo), workflows importados dos JSONs versionados em `n8n/workflows/`.
+
+| peça | identificador | estado |
+|---|---|---|
+| workflow ingestor (webhook) | `TREodooEventos1` | **ativo** — `POST /webhook/tre/odoo-eventos` |
+| workflow consumidor (poll de 1 min) | `TREOUTBOXCONSUM1` | **ativo** |
+| cron do módulo no Odoo (`cron_tf_entregar_eventos`) | `ir_cron` id 22 | **ativo** (1 min) |
+| credenciais | `tre-dev-postgres`, `tre-dev-api-controlada`, `tre-dev-ingest-token` | no cofre do n8n |
+
+Os dois sentidos foram exercitados com evidência crua:
+
+- **CRM → outbox → n8n → PostgreSQL.** Fatos gerados pelo ORM (`scripts/odoo/gerar_fatos_e_enviar.py`,
+  `TRE_FASE=fatos`) → entrega pela porta única com `{"SENT": 8, "DEAD_LETTER": 0, "RETRY": 0}` → 8
+  linhas `COMPLETED` na trilha (`crm.lead`, `mail.activity`, `calendar.event`).
+- **Fila → n8n → API controlada → CRM.** Evento `COMPANY_QUALIFIED` produzido na fila → status
+  `PROCESSED`; resposta da API `{"ok": true, "acao": "upsert", "acao_efetiva": "criar",
+  "ambiente": "dev", "operacao": "empresa_upsert"}`; `res.partner` id 15 criado com os `tf_*` do fato
+  (`tf_company_id`, `tf_domain`, `tf_cnpj`, `tf_priority_score`).
+- **Dedup por chave (replay).** O mesmo evento devolvido à fila → último nó executado
+  `Registrar replay (outbox)`, `attempts` permaneceu **1**, trilha com **1 linha**, CRM com
+  **1 parceiro** por `tf_company_id` (zero duplicata).
+- **Recusa com nome.** Evento fora do contrato (`organization.enriched`) → `DEAD_LETTER` com
+  `envelope_sem_event_version` e linha `REFUSED` na trilha: recusa explícita, nunca silêncio.
+- **Autonomia.** Com as duas agendas ligadas, um evento novo na fila (`COMPANY_UPDATED` → `PROCESSED`)
+  e uma mudança de etapa no CRM feita pelo ORM (`crm.lead STAGE_CHANGED COMPLETED`) chegaram à trilha
+  sozinhos em ~1 min, sem ninguém executar nada.
+
+### Ligar / desligar as agendas
+
+```bash
+# consumidor (poll de 1 min) — o update:workflow exige o serviço reiniciado depois
+docker exec --user 1000:1000 n8n-dev n8n update:workflow --id=TREOUTBOXCONSUM1 --active=true
+docker compose --env-file /opt/tre/dev/compose/n8n.env -f /opt/tre/dev/compose/n8n.yml restart n8n-dev
+# desligar: --active=false + restart
+
+# ingestor (webhook) — precisa estar ativo para o webhook existir
+docker exec --user 1000:1000 n8n-dev n8n update:workflow --id=TREodooEventos1 --active=true
+
+# cron do módulo no Odoo (CRM -> n8n)
+#   odoo shell -d odoo_dev --no-http  →  env.ref("transformativa_sales_ai.cron_tf_entregar_eventos").sudo().active = False
+```
+
+### Dependências que o ciclo exige (todas medidas)
+
+- **Rede.** O `pg-sales-dev` estava **só na rede `bridge`** — o n8n não o alcançava (`EAI_AGAIN`).
+  Resolvido com `docker network connect tre-odoo-dev pg-sales-dev`. **Pendência:** esse container não
+  tem rótulos de compose (nasceu avulso) — trazê-lo para um compose versionado é card próprio.
+- **Cópia de código própria.** O `odoo-dev` montava `/opt/tre/repo`, a cópia **compartilhada** (hoje
+  protegida como produção pelo `publicar.sh`): o Dev executava código que não era o dele. Agora monta
+  `/opt/tre/dev/repo`, publicado do `develop` com destino, artefato e trava isolados.
+- **`n8n execute` não roda com o servidor de pé** (conflito no task broker, porta 5679). Ciclo manual:
+  `stop` → `run --rm --entrypoint n8n execute --id=... --rawOutput` → `start`.
+
+## 8. Pendências declaradas (não são surpresa)
 
 - **UI não exposta publicamente.** A borda hoje serve só os nomes do Odoo (`dev.tre`, `homolog.tre`,
   `tre`). Publicar o n8n por hostname (com autenticação) é **card próprio** — não entrou aqui.
-- **Workflows e credenciais ainda não importados** neste serviço: os JSONs versionados
-  (`n8n/workflows/*.json`) e os montadores (`scripts/n8n/montar_workflow*.py`) existem, e as suítes
-  validam os fluxos em stacks descartáveis. Importar para o serviço persistente é o próximo passo
-  funcional (é o que liga o outbox do CRM ao n8n de verdade).
+- **`pg-sales-dev` fora do compose** (ver acima).
 - **Sem runner externo de tarefas** (o interno basta para os Code nodes do TRE).
