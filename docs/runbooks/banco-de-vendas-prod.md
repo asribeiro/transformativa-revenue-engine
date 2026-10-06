@@ -37,3 +37,20 @@ foi aplicado ainda.
 
 Receita detalhada, armadilhas e o ciclo E2E: `docs/runbooks/banco-de-vendas-homolog.md` (o texto de
 producao muda so' no nome dos recursos e no portao da migracao).
+
+## Migração aplicada (06/10/2026)
+
+- **Portão (ADR-005) satisfeito e medido:** arquivo de aprovação existente (`docs/operations/registro-de-aprovacoes.md`,
+  **Autorização 5**), container de Homolog presente (`pg-sales-homolog`) e **toda** versão pendente já registrada em
+  Homolog. `--somente-checar`: `MIGRACAO_OK (8 itens, 0 falhas)`. Apply: `MIGRACAO_OK (aplicar; 1 aplicada, 0 falhas, 9 itens)`.
+- **Rastro:** `public.tre_schema_migrations` = `0001 | 0001_sales_intelligence_v1.sql | 0484a3701b8c8524… | 2026-10-06`
+  — **mesmo sha** de dev e homolog.
+- **Paridade:** 12 tabelas no schema `sales_intelligence`; lista de tabelas **idêntica** à de Homolog (diff vazio).
+- **Comando (na cópia de produção na VPS):**
+  `TRE_APROVACAO_HUMANA=/opt/tre/prod/repo/docs/operations/registro-de-aprovacoes.md bash scripts/db/aplicar_migracoes.sh prod`
+- **Dois defeitos do runner consertados na raiz** (ambos medidos aqui, nenhum afrouxou o portão):
+  1. a leitura do rastro de Homolog descartava o `stderr` (`2>/dev/null`) — leitura que **falhava** virava
+     "versão ainda não registrada em homolog" (recusa certa, **causa falsa**). Agora o `stderr` é guardado, há
+     prova de leitura (`SELECT 1`) antes do laço e o aborto traz a **causa real**;
+  2. os defaults do alvo de Homolog eram `pg-homolog` / `tre`, que **nunca existiram** nesta VPS — a conferência
+     reprovava por não conseguir ler. Agora são `pg-sales-homolog` / `sales_ai`, o layout real.
