@@ -159,7 +159,13 @@ Medido em 05/10/2026: `dev.tre`, `homolog.tre` e `tre` já resolvem para `169.58
 falha (`tlsv1 alert internal error`) porque caem no bloco de catch-all `:443 { tls internal }` do proxy do
 Dev. O nome que o Dev **usa hoje** é `odoo-dev.transformativa.com.br`, com **certificado público
 Let's Encrypt** (emitido 05/10 17:04) e `basic_auth` ativo — prova de que o caminho de TLS público funciona.
-Enquanto o proxy de borda não entrar, `odoo-dev.…` segue como nome de acesso do Dev (sem quebra).
+**Proxy de borda NO AR desde 05/10/2026** (container `proxy-edge`, `network_mode: host`, o único dono de
+80/443; o `proxy-dev` ficou parado como rollback, com volumes e certificado intactos). Medido de fora:
+os quatro nomes com certificado público Let's Encrypt válido (até 03/01/2027) e redirect HTTP->HTTPS;
+`dev.tre` e `odoo-dev` respondem `401` (basic auth) e servem a página de login do Odoo; o gerenciador de
+bases responde `403` (bloqueado na borda); `tre` responde `503` "produção ainda não provisionada" — de
+propósito, porque nome que resolve e responde isso é melhor que erro de TLS, que parece defeito de
+infraestrutura. Handover de 80/443 durou ~10 s (duas tentativas de 5 s) e o rollback é um comando.
 
 Lacuna declarada: **o n8n não existe provisionado em nenhum ambiente** (só o diretório na VPS). Cumprir
 "mesmo conjunto nos três" exige um compose novo de n8n por ambiente — começando pelo Dev, para não criar
