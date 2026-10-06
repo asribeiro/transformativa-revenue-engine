@@ -412,7 +412,7 @@ if [ -n "$REF_DECLARADO" ]; then
   REF="$REF_DECLARADO"
 else
   REF="$(git for-each-ref --points-at "$SHA" --format='%(refname:short)' refs/heads refs/remotes 2>/dev/null \
-        | sed 's|^origin/||' | grep -v '^HEAD$' | sort -u | paste -sd+ -)"
+        | sed 's|^origin/||' | grep -v '^HEAD$' | sort -u | paste -sd+ - || true)"
   if [ -z "$REF" ]; then
     REF="$(git name-rev --name-only "$SHA" 2>/dev/null || echo desconhecido)"
   elif [ "$(printf '%s' "$REF" | tr -cd '+' | wc -c)" -gt 0 ]; then
