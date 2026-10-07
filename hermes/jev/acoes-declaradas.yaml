@@ -1291,3 +1291,15 @@ declaracoes:
       aprovacao expressa do dono, item a item.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+
+  # ICP homologado pelo dono (07/10/2026): corte de porte >=50, geografia SP e tres sinais de intencao com
+  # fonte e data. Mudanca no proprio repo (contrato do score + baterias), ambiente de desenvolvimento.
+  - card_id: t_3a14c82f
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-07'
+    motivo: >-
+      Homologa o modelo icp-v1.0.0 (que estava PROPOSTA_A_HOMOLOGAR nomeando o dono como quem homologa) na
+      versao 1.1, com a definicao de ICP dada por ele em 07/10/2026. Repo-only: contrato do score e baterias.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
