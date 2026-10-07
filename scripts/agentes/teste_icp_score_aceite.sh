@@ -441,7 +441,7 @@ prova_de_dente() {
   while IFS= read -r linha; do
     [ -n "$linha" ] && linhas+=("$linha")
   done <<'EOF'
-ausencia-de-porte-vira-fit|        sub_port, motivo_port = float(port["sub_score_ausente"]), port["motivos"]["sem_dado"]|        sub_port, motivo_port = 100.0, None|rodada1-valor-sem-dado,rodada1-dado-ausente-nao-vira-fit
+ausencia-de-porte-vira-fit|        sub_port, motivo_port = float(port["sub_score_ausente"]), port["motivos"]["sem_dado"]|        sub_port, motivo_port = 100.0, None|rodada1-dado-ausente-com-motivos,rodada1-dado-ausente-nao-vira-fit
 sem-faixa-derivada-do-count|    for inicio, fim, faixa in numericas:|    for inicio, fim, faixa in ():|rodada1-valor-porte-derivado
 peso-do-modelo-zerado|"peso": float(modelo["pesos"]["modelo_b2b"])|"peso": 0.0|rodada1-valor-sweet-spot
 sem-idempotencia-no-sql|  ON CONFLICT (idempotency_key) DO NOTHING|\n|rodada2-exit-0,rodada2-replay
