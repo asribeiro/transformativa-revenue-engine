@@ -1,7 +1,9 @@
 # Runbook — Agente ICP Score v1 (TRE-W5-E01-T01)
 
 Contrato do agente: `docs/architecture/agente-icp-score-v1.md` (ACCEPTANCE/TEST/ROLLBACK/RISK).
-Modelo: `icp-v1.0.0` — **proposta a homologar** (quem homologa é o Anderson).
+Modelo: `icp-v1.1.0` — **homologado pelo dono** em 07/10/2026
+(`docs/business/icp-transformativa-v1.md`): corte de porte ≥ 50, estado de São Paulo e três
+sinais de intenção com fonte e data. Quem homologa não é quem entrega.
 
 ## 1. Onde roda
 
@@ -30,8 +32,15 @@ python3 hermes/agents/icp_score/icp_score.py --ambiente dev --fonte /tmp/icp-fon
 ```
 
 A fonte carrega **apenas** `organization_id`: o dado do score é lido no banco
-(`sales_intelligence.organizations`). Campo de score na fonte é ignorado no modo real — se ele
-mudasse o resultado, a rodada não estaria medindo o banco.
+(`sales_intelligence.organizations` e, para a intenção, `sales_intelligence.signals` —
+**somente leitura**: o agente não escreve sinal, não preenche fonte nem data). Campo de score
+na fonte é ignorado no modo real — se ele mudasse o resultado, a rodada não estaria medindo o
+banco.
+
+Os sinais precisam de **fonte** (`source_type`/`source_url`) **e data** (`event_date`): sinal
+sem fonte declarada não dá crédito de intenção (motivo `INTENCAO_SEM_FONTE` na explicação).
+Sinal sem `state`/fora de SP ou com porte abaixo de 50 **não entra na campanha** — o score é
+zerado pelo corte, mesmo que a conta ponderada fosse alta.
 
 ## 3. Depois da rodada — o que conferir
 
@@ -58,8 +67,12 @@ $PSQL -c "SELECT status, count(*) FROM sales_intelligence.agent_runs
 
 Leitura rápida do resultado:
 
-- `score_value = 100` ⇒ sweet spot + segmento ICP + B2B; `0` ⇒ fora do ICP **ou** dado ausente
-  — os dois casos se distinguem em `explanation.motivos`;
+- `score_value = 100` ⇒ sweet spot + segmento ICP + B2B + em SP + os três sinais com fonte e
+  data; `0` ⇒ **corte** (porte < 50 ou fora de SP), fora do ICP **ou** dado ausente — os casos
+  se distinguem em `explanation.cortes` (valor efetivo e motivo de cada corte),
+  `explanation.criterios` (os cinco critérios, um a um) e `explanation.motivos`;
+- `explanation.score_bruto` guarda a conta ponderada antes do corte: é ele que mostra que o
+  corte derrubou um score alto;
 - `JA_EXISTE` ⇒ mesmos dados da rodada anterior (replay, nada foi escrito);
 - `RECUSADA` ⇒ organização inexistente/apagada ou `organization_id` ilegível;
 - `ERRO` ⇒ porta de banco ou auditoria falhou: **nada** foi gravado como concluído.
@@ -79,8 +92,9 @@ python3 hermes/agents/icp_score/icp_score.py --desfazer <correlation_id> --ambie
 ## 5. Homologação e produção
 
 `--ambiente prod` é **recusado** (exit 4) e nada é escrito nem auditado: promover o agente é
-card próprio com aprovação humana registrada (ADR-005). A fórmula V1 também está pendente de
-homologação — rodar em homolog não homologa o modelo.
+card próprio com aprovação humana registrada (ADR-005) — a ida do motor para produção é
+decisão do ADR-0009, em item próprio. O modelo já está homologado (1.1); o que não se homologa
+por rodar em homolog é o comportamento em produção.
 
 ## 6. Verificação (antes de dizer que está certo)
 
