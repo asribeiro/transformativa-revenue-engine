@@ -176,19 +176,19 @@ python3 hermes/agents/icp_score/icp_score.py --desfazer <correlation_id> --confi
 | # | Critério | Itens que o medem |
 | --- | --- | --- |
 | AC1 | lê a organização no banco e grava em `scores` com `score_type='ICP'`, `score_version` do modelo, `inputs` e `explanation` preenchidos | `rodada1-scores-gravados`, `rodada1-tipo-e-versao`, `rodada1-inputs-e-explicacao` |
-| AC2 | modelo determinístico: pesos 0,45/0,35/0,20 somando 1,00 lidos do contrato (sem peso literal no código) | suíte: `pesos-somam-um`, `peso-nao-esta-literal-no-codigo`, `documento-e-modelo-nao-diverge` |
-| AC3 | `explanation` diz como o número saiu (peso, sub-score, valor lido, motivo) e ausência de dado não vira fit | suíte: `explicacao-tem-contribuicao-e-pesos-que-somam-um`, `sem-dado-pontua-0-e-nao-vira-fit`; aceite: `rodada1-valores-medidos`,`rodada1-dado-ausente-com-motivos` |
+| AC2 | modelo determinístico: pesos 0,30/0,25/0,10/0,15/0,20 somando 1,00 lidos do contrato (sem peso literal no código) | suíte: `pesos-somam-um`, `peso-nao-esta-literal-no-codigo`, `documento-e-modelo-nao-diverge` |
+| AC3 | `explanation` diz como o número saiu (peso, sub-score, valor lido, motivo) e ausência de dado não vira fit | suíte: `explicacao-tem-contribuicao-e-pesos-que-somam-um`, `sem-dado-pontua-0-e-nao-vira-fit`; aceite: `rodada1-explicacao-fecha-a-conta`,`rodada1-dado-ausente-com-motivos` |
 | AC4 | idempotência: mesmos dados ⇒ replay sem linha nova; dado alterado ⇒ score novo com o anterior preservado | `rodada2-nao-duplica`, `rodada2-replay`, `rodada3-dado-novo-grava-de-novo`, `rodada3-historico-preservado` |
-| AC5 | organização inexistente/apagada ⇒ `RECUSADA` sem escrita | `rodada1-inexistente-recusada`, `rodada1-inexistente-sem-score` |
+| AC5 | organização inexistente/apagada ⇒ `RECUSADA` sem escrita | `rodada1-recusadas`, `rodada1-inexistente-sem-score` |
 | AC6 | auditoria por organização e `sync_events` por score; sem LLM (model/tokens/custo NULL) | `rodada1-auditoria-por-organizacao`, `rodada1-sem-llm`, `rodada1-sync-events-success` |
 | AC7 | fail-closed: `--ambiente prod` recusado (exit 4) sem escrever; `--planejar` não conecta | `prod-recusado-exit-4`, `prod-nao-escreveu`, `planejar-exit-0-sem-conectar` |
 | AC8 | desfazer: dry-run não apaga; `--confirmo` apaga só os scores da rodada, preserva auditoria e outros scores, registra `ROLLBACK` | `desfazer-dry-run-*`, `desfazer-apagou-so-a-rodada`, `desfazer-preservou-*`, `desfazer-registrou-rollback` |
 | AC9 | ambiente: container descartável próprio, containers persistentes intactos, nada em produção, zero escrita em `recommendations`/`outbox_events`/`interactions`/`signals` | `rodada1-nenhuma-outra-tabela-escrita`, `ambiente-containers-intactos` |
-| AC10 | **corte de porte ≥ 50**: 49 funcionários **não** passa o corte (score 0, `elegivel=false`); 50 passa | suíte: `corte-de-porte-49-nao-passa`, `corte-de-porte-50-passa`; aceite: `rodada1-valor-corte-49`, `rodada1-corte-de-porte-registrado` |
-| AC11 | **geografia SP**: fora de SP **não** entra; `state` ausente também não | suíte: `corte-fora-de-sp-nao-entra`, `corte-geografia-sem-dado-nao-entra`; aceite: `rodada1-valor-fora-de-sp`, `rodada1-corte-de-geografia-registrado` |
-| AC12 | **intenção com fonte e data**: sinal sem fonte declarada **não** recebe crédito; sem data também não; os três sinais creditados pontuam cheio | suíte: `intencao-sem-fonte-nao-da-credito`, `intencao-sem-data-nao-da-credito`, `intencao-tres-sinais-pontua-cheio`; aceite: `rodada1-valor-sem-fonte`, `rodada1-intencao-sem-fonte-registrada` |
+| AC10 | **corte de porte ≥ 50**: 49 funcionários **não** passa o corte (score 0, `elegivel=false`); 50 passa | suíte: `corte-de-porte-49-nao-passa`, `corte-de-porte-50-passa`; aceite: `rodada1-valor-49-no-corte-de-porte`, `rodada1-corte-de-porte-49-nao-passa` |
+| AC11 | **geografia SP**: fora de SP **não** entra; `state` ausente também não | suíte: `corte-fora-de-sp-nao-entra`, `corte-geografia-sem-dado-nao-entra`; aceite: `rodada1-valor-fora-de-sp`, `rodada1-corte-de-geografia-fora-de-sp` |
+| AC12 | **intenção com fonte e data**: sinal sem fonte declarada **não** recebe crédito; sem data também não; os três sinais creditados pontuam cheio | suíte: `intencao-sem-fonte-nao-da-credito`, `intencao-sem-data-nao-da-credito`, `intencao-tres-sinais-pontua-cheio`; aceite: `rodada1-valor-intencao-sem-fonte`, `rodada1-intencao-sem-fonte-motivo` |
 | AC13 | **cinco critérios nomeados** na explicação (`explanation.criterios`), cada pontuação dizendo o que casou e o que faltou | suíte: `explicacao-nomeia-os-cinco-criterios`, `explicacao-tem-contribuicao-e-pesos-que-somam-um` |
-| AC14 | **caminho oposto**: organização 50+, em SP, com os três sinais pontua 100,00 e explica por quê | suíte: `caminho-oposto-50-mais-em-sp-com-tres-sinais-pontua-100`; aceite: `rodada1-valor-sweet-spot`, `rodada1-criterios-casados` |
+| AC14 | **caminho oposto**: organização 50+, em SP, com os três sinais pontua 100,00 e explica por quê | suíte: `caminho-oposto-50-mais-em-sp-com-tres-sinais-pontua-100`; aceite: `rodada1-valor-sweet-spot`, `rodada1-cinco-criterios-casados` |
 | AC15 | **nada inventado**: nenhuma fonte/data sintética em caminho de produção (`signals` não é escrito; sinal sem fonte não ganha fonte) | suíte: `nenhuma-fonte-ou-data-sintetica-no-codigo`, `intencao-sem-fonte-nao-da-credito` |
 
 Veredito de sucesso: `ACEITE_ICP_SCORE_001_OK` (uma linha `OK`/`FALHOU` por item).
@@ -200,7 +200,8 @@ Dois níveis, ambos por **execução real**:
 1. **Suíte offline** (`python3 scripts/agentes/verificar_agente_icp_score.py [--autoteste]`, sem
    banco e sem rede): contrato e artefatos, modelo puro caso a caso (sweet spot, fora do ICP,
    B2C, ausência, faixa derivada, precedência da faixa do banco, casamento por início de
-   palavra, ambiguidade registrada, decimais, fingerprint), guardas de escrita, SQL declarado,
+   palavra, ambiguidade registrada, decimais, fingerprint), coerência da tabela ACCEPTANCE com
+   os itens que realmente existem nos dois verificadores, guardas de escrita, SQL declarado,
    fluxo completo em **porta de roteiro** (que roda a mesma guarda do alvo — a suíte não usa
    dublê de biblioteca) e recusas de contrato inválido. `--autoteste` aplica **uma mutação por
    regra** numa cópia do agente e exige que a suíte reprove **o item esperado**; mutação que

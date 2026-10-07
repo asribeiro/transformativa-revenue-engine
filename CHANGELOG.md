@@ -3,6 +3,33 @@
 Formato exigido pelo baseline (doc 10 §7): **Added**, **Changed**, **Fixed**, **Deprecated**, **Removed**,
 **Security**. Uma linha por mudança relevante, com o card que a produziu.
 
+## [t_04a21246 — conserto do dente do aceite e do doc do ICP Score (achados A e D de t_4bf6b4af)] — 07/10/2026
+
+### Fixed
+
+- **Mutação do dente do aceite que não compilava (não provava a regra)** (`t_04a21246`, achado A
+  da verificação `t_4bf6b4af`, pré-existente também na base `35018b0`) —
+  `scripts/agentes/teste_icp_score_aceite.sh`: a mutação `organizacao-inexistente-cria-score`
+  usava um substituto com `\n` literal (o heredoc `<<'EOF'` não expande), então o mutante morria
+  em `SyntaxError` e o aceite reprovava por *crash*, não pela regra; além disso o console só
+  imprimia 3 `FALHOU` e os `mut-<nome>.out` morriam junto com o diretório de trabalho. Agora o
+  substituto é `if False:` (compila), **todo mutante tem de passar `python3 -m py_compile`
+  antes de rodar o aceite** (mutação que não compila conta como falha do dente), o console
+  imprime o veredito de **cada item esperado** e a evidência de cada mutação é preservada em
+  `TRE_ICP_DENTE_DIR` (saída do aceite, fonte mutada, prova de compilação, lista aplicada e
+  `juiz.txt`).
+- **Documento de arquitetura do ICP Score com peso e itens de aceite que não existiam**
+  (`t_04a21246`, achado D da verificação `t_4bf6b4af`) — `docs/architecture/agente-icp-score-v1.md`:
+  o AC2 afirmava os pesos do `icp-v1.0.0` (0,45/0,35/0,20) contra o modelo entregue
+  (0,30/0,25/0,10/0,15/0,20) e a tabela ACCEPTANCE citava **oito** itens de aceite inexistentes
+  (`rodada1-valores-medidos`, `rodada1-inexistente-recusada`, `rodada1-valor-corte-49`,
+  `rodada1-corte-de-porte-registrado`, `rodada1-corte-de-geografia-registrado`,
+  `rodada1-valor-sem-fonte`, `rodada1-intencao-sem-fonte-registrada`, `rodada1-criterios-casados`).
+  Os pesos passam a ser os do modelo 1.1 e cada critério aponta para itens que existem de fato.
+  Item novo da suíte (`documento-nao-cita-item-de-aceite-inexistente`) reprova citação de item
+  de aceite que não existe em nenhum verificador — ele reprovava **antes** do conserto
+  (8 citados) e passa depois.
+
 ## [higiene de dev] — 06/10/2026
 
 ### Fixed

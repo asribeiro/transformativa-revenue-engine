@@ -37,12 +37,20 @@
 #   ancora tambem reprova (e buraco de verificacao, nao alivio), e o veredito imprime a
 #   contagem MEDIDA.
 #
+#   Duas guardas aprendidas com defeito medido (t_4bf6b4af, achado A): (1) o mutante tem de
+#   COMPILAR (`python3 -m py_compile`), senao a mutacao nao exercita a regra — ela so' derruba
+#   a importacao; (2) a evidencia de cada mutacao e' PRESERVADA em `TRE_ICP_DENTE_DIR`
+#   (saida do aceite, fonte mutada, prova de compilacao e a marca do juiz), para a verificacao
+#   independente conferir "cada uma pelo item esperado" sem refazer a mutacao por fora.
+#
 # NOTA (defeito medido na W4): `docker exec -i` CONSOME o stdin de quem o chamou. Aqui as
 #   mutacoes sao lidas numa LISTA antes do laco e todo `docker exec` que nao le stdin leva
 #   `</dev/null`.
 #
 # Variaveis: TRE_RAIZ (raiz do repo), TRE_FIXTURE_IMAGEM (default postgres:16),
-#            TRE_ICP_CONTAINER (default pg-icp-acc), TRE_ICP_TRABALHO (dir de trabalho).
+#            TRE_ICP_CONTAINER (default pg-icp-acc), TRE_ICP_TRABALHO (dir de trabalho),
+#            TRE_ICP_DENTE_DIR (dir da evidencia da prova de dente; default: dir novo em /tmp,
+#            que NAO e' apagado no fim).
 # Exit: 0 = ACEITE_ICP_SCORE_001_OK · 1 = FALHOU · 2 = uso/guarda.
 # =====================================================================================
 set -uo pipefail
@@ -452,25 +460,47 @@ corte-de-porte-desligado|    passou_porte = valor_porte is not None and valor_po
 corte-de-geografia-desligado|    passou_geo = bool(valor_geo) and valor_geo in estados_do_corte|    passou_geo = True|rodada1-corte-de-geografia-fora-de-sp,rodada1-valor-fora-de-sp
 intencao-sem-fonte-credita|            if not fonte:|            if False:|rodada1-intencao-sem-fonte-nao-credita,rodada1-intencao-sem-fonte-motivo
 desfazer-apaga-a-auditoria|        "DELETE FROM {scores} WHERE id IN ({ids});\n"|        "DELETE FROM {scores} WHERE id IN ({ids});\nDELETE FROM sales_intelligence.agent_runs WHERE 1=1;\n"|desfazer-preservou-auditoria
-organizacao-inexistente-cria-score|                if organizacao is None:|                if False: pass\n                if False:|rodada1-recusadas
+organizacao-inexistente-cria-score|                if organizacao is None:|                if False:|rodada1-recusadas
 EOF
 
+  # A evidencia de cada mutacao NAO pode morrer com o $TRABALHO: o mut-<nome>.out fica num
+  # diretorio proprio (TRE_ICP_DENTE_DIR), junto com a fonte mutada e a prova de compilacao —
+  # e' o que deixa a verificacao independente conferir "cada uma pelo item esperado".
+  DENTE_DIR="${TRE_ICP_DENTE_DIR:-$(mktemp -d /tmp/icp-dente-XXXXXX)}"
+  if ! mkdir -p "$DENTE_DIR"; then
+    echo "FALHOU nao consegui criar a evidencia do dente em $DENTE_DIR"
+    return 1
+  fi
+  printf '%s\n' "${linhas[@]}" > "$DENTE_DIR/mutacoes.txt"
+  echo "== evidencia do dente em $DENTE_DIR (nao e' apagada; fonte mutada + saida + compilacao)"
+
   local total="${#linhas[@]}" detectadas=0 falhas=0
-  local nome alvo substituto esperados destino guardado faltando esperado
+  local nome alvo substituto esperados destino saida_mut padrao guardado faltando esperado
   for linha in "${linhas[@]}"; do
     IFS='|' read -r nome alvo substituto esperados <<< "$linha"
     [ -z "$nome" ] && continue
     destino="$TRABALHO/mut-$nome/icp_score.py"
+    saida_mut="$DENTE_DIR/mut-$nome.out"
     mkdir -p "$(dirname "$destino")"
     if ! aplicar_mutacao "$AGENTE_PY" "$destino" "$alvo" "$substituto" | grep -q MUTACAO_APLICADA; then
       echo "FALHOU mutacao $nome NAO se aplicou (ancora mudou) — buraco de verificacao"
       falhas=$((falhas + 1)); continue
     fi
+    cp "$destino" "$DENTE_DIR/mut-$nome.icp_score.py"
     echo
     echo "-- mutacao: $nome (tem de reprovar: $(echo "$esperados" | tr ',' ' '))"
+    # O mutante tem de COMPILAR: mutacao que quebra a sintaxe derruba a importacao e o aceite
+    # reprova por CRASH — nao porque a regra foi exercitada. Defeito medido na t_4bf6b4af: um
+    # `\n` literal num substituto (heredoc <<'EOF' nao expande) fazia o mutante nao compilar.
+    if ! python3 -m py_compile "$destino" > "$DENTE_DIR/mut-$nome.compile.out" 2>&1; then
+      echo "FALHOU mutacao $nome NAO COMPILA — nao exercita a regra, so' derruba a importacao"
+      sed -n '1,3p' "$DENTE_DIR/mut-$nome.compile.out"
+      falhas=$((falhas + 1)); continue
+    fi
+    echo "OK     mutacao $nome compila (python3 -m py_compile)"
     guardado="$AGENTE_PY"
     AGENTE_PY="$destino"
-    if rodar_aceite "mutacao $nome" > "$TRABALHO/mut-$nome.out" 2>&1; then
+    if rodar_aceite "mutacao $nome" > "$saida_mut" 2>&1; then
       echo "FALHOU mutacao $nome NAO foi detectada pelo aceite"
       falhas=$((falhas + 1))
     else
@@ -478,15 +508,17 @@ EOF
       # falhou" sozinho nao vale: mutacao que quebra a importacao contaria como detectada.
       faltando=""
       for esperado in $(echo "$esperados" | tr ',' ' '); do
-        grep -q "^FALHOU $esperado " "$TRABALHO/mut-$nome.out" || faltando="$faltando $esperado"
+        grep -q "^FALHOU $esperado " "$saida_mut" || faltando="$faltando $esperado"
       done
+      padrao="$(echo "$esperados" | tr ',' '|')"
+      echo "       itens esperados: $(grep -E "^(OK|FALHOU) ($padrao) " "$saida_mut" | tr '\n' ' ')"
       if [ -n "$faltando" ]; then
         echo "FALHOU mutacao $nome detectada, mas SEM o item esperado:$faltando"
-        grep '^FALHOU' "$TRABALHO/mut-$nome.out" | head -3
+        grep '^FALHOU' "$saida_mut" | head -3
         falhas=$((falhas + 1))
       else
         detectadas=$((detectadas + 1))
-        echo "OK     mutacao $nome reprovou o(s) item(ns) esperado(s) — $(grep -c '^FALHOU' "$TRABALHO/mut-$nome.out") item(ns) reprovado(s) no total: $(grep '^FALHOU' "$TRABALHO/mut-$nome.out" | head -3 | cut -d' ' -f2 | tr '\n' ' ')"
+        echo "OK     mutacao $nome reprovou o(s) item(ns) esperado(s) — $(grep -c '^FALHOU' "$saida_mut") item(ns) reprovado(s) no total, saida em mut-$nome.out"
       fi
     fi
     AGENTE_PY="$guardado"
@@ -495,8 +527,12 @@ EOF
   echo
   if [ "$falhas" -eq 0 ]; then
     echo "DENTE OK ($detectadas/$total mutacoes detectadas, cada uma pelo item esperado)"
+    echo "DENTE OK ($detectadas/$total mutacoes detectadas, cada uma pelo item esperado;" \
+         "evidencia em $DENTE_DIR)" > "$DENTE_DIR/juiz.txt"
   else
-    echo "DENTE FALHOU ($detectadas/$total detectadas; $falhas falha(s): nao aplicada, nao detectada ou sem o item esperado)"
+    echo "DENTE FALHOU ($detectadas/$total detectadas; $falhas falha(s): nao aplicada, nao compila, nao detectada ou sem o item esperado)"
+    echo "DENTE FALHOU ($detectadas/$total detectadas; $falhas falha(s))" \
+         > "$DENTE_DIR/juiz.txt"
   fi
   [ "$falhas" -eq 0 ]
 }

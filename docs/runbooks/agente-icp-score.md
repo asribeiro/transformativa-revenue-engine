@@ -110,6 +110,15 @@ bash scripts/agentes/teste_icp_score_aceite.sh --prova-de-dente
 bash scripts/verificar_estrutura.sh
 ```
 
+O `--prova-de-dente` roda o aceite verde e depois uma mutação por regra numa **cópia** do
+`icp_score.py`; cada mutação tem de **compilar** (`python3 -m py_compile`) e o aceite tem de
+reprovar **o item esperado** dela — "o aceite falhou" sozinho não vale. A evidência fica em
+`TRE_ICP_DENTE_DIR` (por default, um diretório novo em `/tmp` que **não** é apagado):
+`mut-<nome>.out` (saída do aceite mutado), `mut-<nome>.icp_score.py` (a fonte mutada),
+`mut-<nome>.compile.out` (a prova de compilação), `mutacoes.txt` (a lista aplicada) e
+`juiz.txt` (o veredito), para a verificação independente conferir cada mutação pelo item
+esperado sem refazer a mutação por fora.
+
 ## 7. Problemas conhecidos
 
 - **`pg_isready` mente no início**: a imagem oficial do PostgreSQL sobe um servidor temporário
@@ -121,3 +130,7 @@ bash scripts/verificar_estrutura.sh
   em vez de mexer no que não é dele.
 - **Rodada depois de mudar o dado**: o score **novo** é gravado e o anterior fica; a consulta
   do relatório mostra os dois. Não existe "atualizar score" — existe versão nova.
+- **Mutação que não compila não prova a regra**: mutante com `SyntaxError` derruba a importação
+  e o aceite reprova por *crash*, não porque a regra foi exercitada. Por isso o dente exige
+  `python3 -m py_compile` no mutante antes de rodar o aceite (defeito medido na `t_4bf6b4af`,
+  achado A: um `\n` literal num substituto de mutação, em heredoc `<<'EOF'` que não expande).

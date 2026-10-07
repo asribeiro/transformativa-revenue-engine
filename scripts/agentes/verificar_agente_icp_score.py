@@ -43,6 +43,7 @@ CONTRATO_DADOS = RAIZ / "docs/data/data_contract_v1.json"
 MIGRATION = RAIZ / "db/migrations/0001_sales_intelligence_v1.sql"
 DOC_ARQUITETURA = RAIZ / "docs/architecture/agente-icp-score-v1.md"
 RUNBOOK = RAIZ / "docs/runbooks/agente-icp-score.md"
+ACEITE_BANCO = RAIZ / "scripts/agentes/teste_icp_score_aceite.sh"
 VERIFICADOR_ESTRUTURA = RAIZ / "scripts/verificar_estrutura.sh"
 EXEMPLO_FONTE = RAIZ / "hermes/agents/icp_score/exemplos/organizacoes-exemplo.jsonl"
 
@@ -310,6 +311,54 @@ def _(ctx):
             lidos[m.group(1)] = round(float(m.group(2).replace(",", ".")), 6)
     esperado = {k: round(float(v), 6) for k, v in ctx.modelo["pesos"].items()}
     return lidos == esperado, "documento=%s contrato=%s" % (lidos, esperado)
+
+
+def _nomes_de_itens_do_aceite() -> set:
+    """Nomes literais de `item \"<nome>\"` do aceite de banco (texto do script, sem docker)."""
+    if not ACEITE_BANCO.is_file():
+        return set()
+    return set(re.findall(r'\bitem "([^"]+)"', ACEITE_BANCO.read_text(encoding="utf-8")))
+
+
+def _citacoes_de_itens_no_documento(texto: str) -> list:
+    """Tokens entre crases, com cara de nome de item, da secao ACCEPTANCE do documento.
+
+    So' a secao ACCEPTANCE: e' a tabela que promete QUAIS itens medem cada criterio. Nome de
+    item neste projeto e' minusculo, separado por hifen (opcionalmente com `*` no fim, como
+    `desfazer-dry-run-*`); isso deixa de fora `scores`, `score_type='ICP'`, `RECUSADA`.
+    """
+    linhas = texto.splitlines()
+    dentro = False
+    citados = []
+    for linha in linhas:
+        if linha.startswith("## "):
+            dentro = linha.strip().startswith("## 8. ACCEPTANCE")
+            continue
+        if dentro:
+            citados.extend(re.findall(r"`([a-z0-9][a-z0-9-]*\*?)`", linha))
+    return [c for c in citados if "-" in c]
+
+
+def _citacao_existe(citacao: str, conhecidos: set) -> bool:
+    if citacao.endswith("*"):
+        return any(nome.startswith(citacao[:-1]) for nome in conhecidos)
+    return citacao in conhecidos
+
+
+@item("documento-nao-cita-item-de-aceite-inexistente")
+def _(ctx):
+    """O documento nao pode prometer medicao por item que nao existe em nenhum verificador.
+
+    Defeito medido na t_4bf6b4af (achado D): a tabela ACCEPTANCE citava OITO itens de aceite
+    que nao existiam em verificador nenhum — promessa de cobertura que nao era cobertura.
+    O conjunto conhecido e' o dos itens desta suite MAIS os `item "<nome>"` do aceite de banco
+    (lidos do texto do script: a suite e' offline, nao roda o aceite).
+    """
+    texto = DOC_ARQUITETURA.read_text(encoding="utf-8")
+    conhecidos = {nome for nome, _ in ITENS} | _nomes_de_itens_do_aceite()
+    inexistentes = sorted({c for c in _citacoes_de_itens_no_documento(texto)
+                           if not _citacao_existe(c, conhecidos)})
+    return not inexistentes, "citados-inexistentes=%s" % inexistentes
 
 
 @item("documento-declara-o-modelo-e-o-status")
