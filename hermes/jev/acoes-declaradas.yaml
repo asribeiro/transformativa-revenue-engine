@@ -1276,3 +1276,18 @@ declaracoes:
       separado e exige aprovacao propria.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+
+  # Campanha de prospeccao pelo motor TRE (pedido do dono em 06/10/2026: "e gostaria que fosse a opcao 3",
+  # o motor rodando). Este card entrega a ORQUESTRACAO de uma rodada em dev: encadear descoberta ->
+  # pesquisa/sinais -> scores -> Next Best Action a partir de um arquivo de candidatas, com idempotencia
+  # medida e prova de mutacao. Repo-only; nenhum envio, nenhum contato, nenhuma publicacao em ambiente vivo.
+  - card_id: t_79fe8ebb
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-06'
+    motivo: >-
+      Card de orquestracao da rodada do motor de prospeccao em desenvolvimento. Termina em recomendacao e
+      pedido de aprovacao humana, nunca em publicacao ou mensagem; contato outbound continua exigindo
+      aprovacao expressa do dono, item a item.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
