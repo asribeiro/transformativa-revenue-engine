@@ -1303,3 +1303,17 @@ declaracoes:
       versao 1.1, com a definicao de ICP dada por ele em 07/10/2026. Repo-only: contrato do score e baterias.
     sinais: {producao: false, credencial: false}
     ambiente_alvo: desenvolvimento
+
+  # Ordem do dono (07/10/2026): classificacao da base e dos leads do funil tem de passar pelo JEV.
+  # Escopo do card: montar a classificacao por perguntas tipadas com os limiares da politica v1.2 e o recibo
+  # obrigatorio, com guarda de dado pessoal (o servico e remoto: so estado firmografico nao pessoal).
+  - card_id: t_1be355ea
+    acao_codigo: execucao_de_card
+    declarado_por: Anderson Ribeiro
+    declarado_em: '2026-10-07'
+    motivo: >-
+      Mandato explicito do dono: usar o JEV como classificador da base e dos leads do funil, por ser mais
+      preciso, mais barato e mais rapido que LLM comum. Item de desenvolvimento (codigo + testes), sem
+      credencial nova e sem acao em ambiente vivo.
+    sinais: {producao: false, credencial: false}
+    ambiente_alvo: desenvolvimento
