@@ -14,7 +14,7 @@ critério medível para o motor. O ICP deixa de ser proposta: passa a ser **cont
 
 | # | critério | como fica medível | ausência de dado |
 |---|----------|-------------------|------------------|
-| 1 | porte: ≥ 50 usuários no LinkedIn **ou** funcionários declarados | campo de porte da organização (faixa/contagem) ≥ 50 | **não pontua** e registra o motivo — ausência não vira fit (regra já declarada no modelo `icp-v1.0.0`) |
+| 1 | porte: **de 50 a 1.000 funcionários** (abaixo de 50 e acima de 1.000 ficam fora) | contagem de funcionários entre 50 e 1.000 | **não pontua** e registra o motivo — ausência não vira fit (regra já declarada no modelo `icp-v1.0.0`) |
 | 2 | geografia: estado de São Paulo | `state = SP` (expansão para outros estados é decisão futura, em versão nova) | idem |
 | 3 | intenção A: buscando serviços automatizáveis por IA | sinal declarado com fonte e data | idem |
 | 4 | intenção B: contratando para posições que poderiam ser desempenhadas por IA | vaga observada, com fonte e data | idem |
@@ -50,3 +50,50 @@ O primeiro contato outbound (e-mail, LinkedIn ou WhatsApp) segue exigindo aprova
    de porte — corte não é peso: quem não passa no corte não entra, independentemente do score.
 3. **Rastreabilidade:** cada pontuação continua explicando o porquê (`explicacao`), agora nomeando qual dos
    cinco critérios casou e qual ficou sem dado.
+
+## Recorte de porte e Tiers (refinamento do dono, 07/10/2026)
+
+> "é importante deixar claro que o meu recorte de empresa vai de empresas de 50 a 1000 funcionários, e que
+> dentro desse recorte quero ter Tiers por segmento (cnaes) e por tamanho/porte"
+
+O ICP deixa de ser ">= 50" e passa a ser **faixa fechada de 50 a 1.000 funcionários**. Acima de 1.000 sai do
+recorte (é enterprise, outro ciclo de compra); abaixo de 50 sai também. Dentro da faixa, o dono pediu **dois
+eixos de priorização**, e eles são independentes:
+
+### Eixo 1 — Tiers por tamanho/porte
+
+| tier | faixa | por que importa para a abordagem |
+|------|-------|----------------------------------|
+| **P1** | 50 a 99 funcionários | volume: muitas empresas, decisão operacional, ciclo curto. Melhor lugar para provar retorno rápido |
+| **P2** | 100 a 299 funcionários | ponto doce: já existe alguma área de operações/processos e verba, e ainda há um decisor só |
+| **P3** | 300 a 999 funcionários | conta grande: verba e estrutura reais, ciclo mais longo, pede governança e gestão de portfólio |
+| — | acima de 1.000 | **fora do recorte** (enterprise) |
+
+### Eixo 2 — Tiers por segmento (CNAE)
+
+As três famílias de segmento, com os CNAEs verificados na base oficial do IBGE, estão em
+`cnaes-icp-transformativa.csv`. Resumindo o critério:
+
+| tier | famílias | por que |
+|------|----------|---------|
+| **S-A** | saúde e diagnóstico; educação privada; serviços de volume (contábil, BPO, cobrança) | repetição documental intensa, pressão de custo alta, retorno do agente é evidente |
+| **S-B** | tecnologia e dados; logística e transporte; financeiro, pagamentos e seguros | bom encaixe, mas ciclo mais longo (fazem internamente ou têm compliance pesado) |
+| **S-C** | indústria de transformação pura; energia; óleo e gás; bancos | **fora do primeiro lote**: superfície automatizável física ou porte enterprise |
+
+### Como os dois eixos se combinam (prioridade de abordagem)
+
+Combinar os eixos é o que define a **ordem**, não a exclusão — todo cruzamento dentro de 50 a 1.000 é alvo
+válido, o que muda é por onde começar:
+
+1. **S-A x P2** — o ponto de melhor retorno: verba, dor de volume e um decisor só.
+2. **S-A x P1** — volume e ciclo rápido; serve para encher o funil e calibrar a mensagem.
+3. **S-A x P3** e **S-B x P2** — contas maiores, proposta mais consultiva (governança, portfólio).
+4. **S-B x P3** — depois, com prova social do primeiro lote.
+
+### Requisito que isso impõe à fonte de dados
+
+O campo `porte` da Receita Federal é **faixa de receita** (MEI, ME, EPP, Demais) e **não tem contagem de
+funcionários**. Como o recorte do dono é por **número de funcionários em três faixas**, os dados abertos do
+governo **não conseguem expressar os tiers P1/P2/P3** — eles só dizem "Demais". Portanto: todo provedor
+avaliado passa a ser medido por uma pergunta direta — **entrega contagem de funcionários, e em que
+granularidade?** Sem isso, não há como aplicar o eixo de porte.
