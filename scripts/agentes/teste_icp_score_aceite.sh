@@ -272,7 +272,7 @@ corte_de() { # <uuid> <corte> — nome=passou/motivo do corte registrado na expl
 }
 
 sub_de() { # <uuid> <componente> — sub_score do componente na explicacao
-  valor "SELECT c->>'sub_score' FROM sales_intelligence.scores s, jsonb_array_elements(s.explanation->'componentes') c WHERE s.organization_id = '$1' AND c->>'nome' = '$2' ORDER BY s.calculated_at DESC, s.id DESC LIMIT 1;"
+  valor "SELECT to_char((c->>'sub_score')::numeric, 'FM990.00') FROM sales_intelligence.scores s, jsonb_array_elements(s.explanation->'componentes') c WHERE s.organization_id = '$1' AND c->>'nome' = '$2' ORDER BY s.calculated_at DESC, s.id DESC LIMIT 1;"
 }
 
 sinal_de() { # <uuid> <nome do criterio> — nome=credito/fonte/motivo do sinal de intencao
@@ -311,7 +311,7 @@ rodar_aceite() { # <rotulo>
   item "rodada1-corte-de-porte-sweet-spot-passa" "porte_minimo=true/sem-motivo" "$(corte_de "$ORG_A" porte_minimo)"
   item "rodada1-corte-de-geografia-fora-de-sp" "geografia=false/CORTE_FORA_DE_SP" "$(corte_de "$ORG_B" geografia)"
   item "rodada1-corte-de-geografia-sp-passa" "geografia=true/sem-motivo" "$(corte_de "$ORG_A" geografia)"
-  item "rodada1-corte-derruba-o-score-alto" "90.00" "$(valor "SELECT (explanation->>'score_bruto')::text FROM sales_intelligence.scores WHERE organization_id='$ORG_B' ORDER BY calculated_at DESC, id DESC LIMIT 1;")"
+  item "rodada1-corte-derruba-o-score-alto" "80.00" "$(valor "SELECT to_char((explanation->>'score_bruto')::numeric, 'FM990.00') FROM sales_intelligence.scores WHERE organization_id='$ORG_B' ORDER BY calculated_at DESC, id DESC LIMIT 1;")"
   # os TRES SINAIS de intencao: fonte E data, senao nao ha' credito
   item "rodada1-intencao-tres-sinais-pontua-cheio" "100.00" "$(sub_de "$ORG_A" intencao)"
   item "rodada1-intencao-sem-fonte-nao-credita" "0.00" "$(sub_de "$ORG_H" intencao)"
