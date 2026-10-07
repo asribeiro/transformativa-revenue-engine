@@ -16,10 +16,9 @@ O que ele NAO faz, por desenho (declarado em `agente-icp-score-v1.json` -> lacun
   - nao mescla, nao atualiza organizacao, nao toca Odoo/Titan/n8n/host;
   - nao escreve em producao (ADR-005).
 
-Modelo V1 (PROPOSTA a homologar pelo Anderson — o baseline nomeia o score e nao define a
-formula):
+Modelo 1.1 (HOMOLOGADO pelo dono em 07/10/2026 — docs/business/icp-transformativa-v1.md):
 
-    ICP = 0,45 * segmento + 0,35 * porte + 0,20 * modelo_b2b      (pesos somam 1,00)
+    ICP = 0,30 * segmento + 0,25 * porte + 0,10 * geografia + 0,15 * modelo_b2b + 0,20 * intencao
     (pesos com virgula aqui de proposito: o valor EXECUTAVEL mora so' no contrato do agente —
     a suite reprova se um peso aparecer em forma de codigo no corpo deste arquivo)
 
@@ -27,9 +26,18 @@ formula):
     (`scores.icp_context.icps`), por vocabulario declarado no contrato do agente;
   - porte: `employee_band` (ou derivado de `employee_count`) contra a faixa 70-1000 e o sweet
     spot 150-700 (`scores.icp_context`);
-  - modelo_b2b: `business_model` (B2B / B2B2C / B2C).
-  Componente sem dado reconhecido pontua 0 **e registra o motivo**: ausencia nao vira fit —
-  quem mede dado faltante e o Data Quality Score (W5-E04).
+  - geografia: `state` contra os estados declarados no corte (criterio 2 da definicao: SP);
+  - modelo_b2b: `business_model` (B2B / B2B2C / B2C);
+  - intencao: os tres sinais declarados, lidos de `sales_intelligence.signals`, cada um valendo
+    so' com FONTE e DATA (`source_type`/`source_url` e `event_date`) — criterios 3, 4 e 5.
+  Criterio sem dado reconhecido pontua 0 **e registra o motivo nomeando o criterio**: ausencia
+  nao vira fit — quem mede dado faltante e o Data Quality Score (W5-E04).
+
+Cortes da definicao do dono: o porte minimo de usuarios/funcionarios declarados (o limiar
+mora no contrato, em `cortes.porte_minimo.minimo`) e `state = SP` sao
+PORTAO, nao peso. Quem nao passa nao entra na campanha: `score_value = 0.00`, `elegivel =
+false` e o motivo do corte vai para a explicacao. O agente NUNCA preenche fonte nem data de
+sinal com valor sintetico: sinal sem fonte declarada simplesmente nao da credito de intencao.
 
 Idempotencia (doc 06 §7: "retry nao pode criar duplicata"): a chave e
 `icp:score:<org>:<modelo>:<fingerprint dos campos que mudam o score>`, gravada em
@@ -65,7 +73,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------------------
 AGENTE = "icp_score"
 PAPEL = "scoring"
-VERSAO = "1.0.0"
+VERSAO = "1.1.0"
 WORKFLOW = "score-icp"
 WORKFLOW_VERSAO = "v1"
 
@@ -172,7 +180,13 @@ def faixas_do_contrato_de_dados(raiz) -> tuple:
     return tuple(contrato["vocabularies"]["employee_band"])
 
 
-def validar_modelo(modelo: dict, faixas_do_contrato) -> dict:
+def tipos_de_sinal_do_contrato_de_dados(raiz) -> tuple:
+    """O vocabulario de `signal_type` (o que um sinal pode ser) vem do Data Contract."""
+    contrato = carregar_json(Path(raiz) / CONTRATO_DADOS_PADRAO)
+    return tuple(contrato["vocabularies"]["signal_type"])
+
+
+def validar_modelo(modelo: dict, faixas_do_contrato, tipos_de_sinal=None) -> dict:
     """O modelo e policy: se ele nao esta integro, o agente RECUSA (fail-closed)."""
     if not isinstance(modelo, dict) or not modelo.get("nome"):
         raise ModeloInvalido("modelo sem nome: score sem versao e recusado pelo Data Contract")
@@ -193,6 +207,35 @@ def validar_modelo(modelo: dict, faixas_do_contrato) -> dict:
     if not bandas.issubset(set(faixas_do_contrato)):
         raise ModeloInvalido("faixa de porte fora do vocabulario do Data Contract: %s"
                              % sorted(bandas - set(faixas_do_contrato)))
+    # -- cortes (1.1): portao de porte e de geografia, sem peso -------------------------
+    cortes = modelo.get("cortes")
+    if not isinstance(cortes, dict) or "porte_minimo" not in cortes or "geografia" not in cortes:
+        raise ModeloInvalido("modelo sem os cortes declarados (porte_minimo/geografia)")
+    corte_porte = cortes["porte_minimo"] or {}
+    try:
+        minimo_do_corte = float(corte_porte["minimo"])
+    except (TypeError, ValueError, KeyError):
+        raise ModeloInvalido("corte de porte sem minimo numerico: %r" % (corte_porte,))
+    if minimo_do_corte <= 0:
+        raise ModeloInvalido("corte de porte tem de ser positivo (veio %s)" % minimo_do_corte)
+    if not isinstance(corte_porte.get("motivos"), dict) or not corte_porte["motivos"]:
+        raise ModeloInvalido("corte de porte sem os motivos declarados")
+    corte_geo = cortes["geografia"] or {}
+    estados = corte_geo.get("estados")
+    if not isinstance(estados, list) or not estados:
+        raise ModeloInvalido("corte de geografia sem estados declarados")
+    if not isinstance(corte_geo.get("motivos"), dict) or not corte_geo["motivos"]:
+        raise ModeloInvalido("corte de geografia sem os motivos declarados")
+    # -- intencao (1.1): os sinais declarados tem de existir e falar o vocabulario -------
+    sinais = (componentes["intencao"] or {}).get("sinais")
+    if not isinstance(sinais, list) or not sinais:
+        raise ModeloInvalido("componente de intencao sem sinais declarados")
+    tipos = [t for s in sinais for t in (s.get("signal_types") or [])]
+    if not tipos:
+        raise ModeloInvalido("componente de intencao sem signal_types declarados")
+    if tipos_de_sinal is not None and not set(tipos).issubset(set(tipos_de_sinal)):
+        raise ModeloInvalido("signal_type fora do vocabulario do Data Contract: %s"
+                             % sorted(set(tipos) - set(tipos_de_sinal)))
     return modelo
 
 
@@ -256,6 +299,35 @@ def faixa_de_empregados(quantidade, faixas_do_contrato) -> str:
     return "UNKNOWN"
 
 
+def porte_efetivo(organizacao: dict, faixa_efetiva: str) -> tuple:
+    """Quantos usuarios/funcionarios a fonte DECLAROU — a base do corte de porte.
+
+    `employee_count` quando informado; senao o LIMITE INFERIOR da faixa efetiva, que e' o que
+    a fonte declarou (`LT_70` vale 0, `GT_1000` vale 1001). Sem nenhum dos dois a quantidade e'
+    `None` e o corte NAO passa: ausencia nao vira fit (fail-closed).
+    """
+    quantidade = organizacao.get("employee_count")
+    if quantidade not in (None, ""):
+        try:
+            numero = int(quantidade)
+        except (TypeError, ValueError):
+            numero = None
+        if numero is not None and numero >= 0:
+            return numero, "employee_count"
+    faixa = _texto(faixa_efetiva)
+    if faixa:
+        casou = re.fullmatch(r"(\d+)_(\d+)", faixa)
+        if casou:
+            return int(casou.group(1)), "faixa_inferior"
+        casou = re.fullmatch(r"LT_(\d+)", faixa)
+        if casou:
+            return 0, "faixa_inferior"
+        casou = re.fullmatch(r"GT_(\d+)", faixa)
+        if casou:
+            return int(casou.group(1)) + 1, "faixa_inferior"
+    return None, "ausente"
+
+
 def _sub_score(mapa: dict, chave: str, padrao: float) -> float:
     if chave in mapa:
         return float(mapa[chave])
@@ -311,6 +383,65 @@ def calcular_icp(organizacao: dict, modelo: dict, faixas_do_contrato) -> dict:
         else:
             motivo_port = port["motivos"]["fora_do_sweet_spot"]
 
+    # -- geografia (criterio 2 da definicao do dono) ------------------------------------
+    geo = componentes["geografia"]
+    cortes = modelo["cortes"]
+    corte_geo = cortes["geografia"]
+    estados_do_corte = [normalizar_texto(e).upper() for e in corte_geo["estados"]]
+    valor_geo = _texto(organizacao.get(geo["campo"])).upper()
+    if not valor_geo:
+        sub_geo, motivo_geo, valor_geo = float(geo["sub_score_ausente"]), geo["motivos"]["sem_dado"], None
+    elif valor_geo in [normalizar_texto(k).upper() for k in geo["sub_scores"]]:
+        chave_geo = [k for k in geo["sub_scores"]
+                     if normalizar_texto(k).upper() == valor_geo][0]
+        sub_geo, motivo_geo = float(geo["sub_scores"][chave_geo]), None
+    else:
+        sub_geo, motivo_geo = float(geo["sub_score_fora"]), geo["motivos"]["fora_do_icp"]
+
+    # -- intencao (criterios 3, 4 e 5): sinal so' vale com FONTE e DATA ------------------
+    intc = componentes["intencao"]
+    sinais_lidos = [s for s in (organizacao.get("sinais") or []) if isinstance(s, dict)]
+    por_tipo = {}
+    for sinal in sinais_lidos:
+        tipo = _texto(sinal.get("signal_type")).upper()
+        if tipo:
+            por_tipo.setdefault(tipo, []).append(sinal)
+    sinais_saida = []
+    fontes_creditadas = []
+    for declarado in intc["sinais"]:
+        candidatos = []
+        for tipo in declarado["signal_types"]:
+            candidatos.extend(por_tipo.get(_texto(tipo).upper(), []))
+        candidatos.sort(key=lambda s: (_texto(s.get("event_date")), _texto(s.get("signal_id"))))
+        escolhido = candidatos[-1] if candidatos else None
+        item = {"nome": declarado["nome"], "signal_types": list(declarado["signal_types"]),
+                "credito": False, "fonte": None, "data": None, "signal_type": None,
+                "origem_do_sinal": None, "inferido": False, "motivo": None}
+        if escolhido is None:
+            item["motivo"] = intc["motivos"]["sem_dado"]
+        else:
+            # Fonte e data sao LIDAS, nunca preenchidas: sem elas o sinal nao da credito.
+            fonte = _texto(escolhido.get("source_type")) or _texto(escolhido.get("source_url"))
+            data = _texto(escolhido.get("event_date"))
+            item["signal_type"] = _texto(escolhido.get("signal_type"))
+            item["origem_do_sinal"] = _texto(escolhido.get("source_type")) or None
+            item["inferido"] = bool(escolhido.get("inferido"))
+            if not fonte:
+                item["motivo"] = intc["motivos"]["sem_fonte"]
+            elif not data:
+                item["motivo"] = intc["motivos"]["sem_data"]
+            else:
+                item.update({"credito": True, "fonte": fonte, "data": data})
+                fontes_creditadas.append({"criterio": declarado["nome"],
+                                          "signal_type": item["signal_type"],
+                                          "fonte": fonte, "data": data})
+        sinais_saida.append(item)
+    creditos_de_intencao = sum(1 for s in sinais_saida if s["credito"])
+    total_de_sinais = len(intc["sinais"])
+    sub_int = round(float(intc["sub_score_cheio"]) * creditos_de_intencao / total_de_sinais,
+                    6) if total_de_sinais else float(intc["sub_score_ausente"])
+    motivo_int = next((s["motivo"] for s in sinais_saida if s["motivo"]), None)
+
     # -- modelo de negocio -------------------------------------------------------------
     mod = componentes["modelo_b2b"]
     valor_mod_bruto = _texto(organizacao.get(mod["campo"])).upper()
@@ -338,19 +469,60 @@ def calcular_icp(organizacao: dict, modelo: dict, faixas_do_contrato) -> dict:
          "campo_lido": "employee_band|employee_count", "valor_lido": faixa_efetiva,
          "origem_do_valor": origem_porte, "employee_count": organizacao.get("employee_count"),
          "motivo": motivo_port},
+        {"nome": "geografia", "peso": float(modelo["pesos"]["geografia"]), "sub_score": sub_geo,
+         "campo_lido": geo["campo"], "valor_lido": valor_geo, "motivo": motivo_geo},
         {"nome": "modelo_b2b", "peso": float(modelo["pesos"]["modelo_b2b"]), "sub_score": sub_mod,
          "campo_lido": mod["campo"], "valor_lido": valor_mod, "motivo": motivo_mod},
+        {"nome": "intencao", "peso": float(modelo["pesos"]["intencao"]), "sub_score": sub_int,
+         "campo_lido": "signals.signal_type + source_type/source_url + event_date",
+         "valor_lido": "%d/%d sinais com fonte e data" % (creditos_de_intencao, total_de_sinais),
+         "sinais_lidos": len(sinais_lidos), "sinais": sinais_saida, "motivo": motivo_int},
     ]
     for c in componentes_saida:
         c["contribuicao"] = round(c["peso"] * c["sub_score"], 6)
 
     decimais = int((modelo.get("escala") or {}).get("decimais", 2))
-    score = round(sum(c["contribuicao"] for c in componentes_saida), decimais)
     minimo = float((modelo.get("escala") or {}).get("minimo", 0.0))
     maximo = float((modelo.get("escala") or {}).get("maximo", 100.0))
-    score = min(max(score, minimo), maximo)
+    score_bruto = round(sum(c["contribuicao"] for c in componentes_saida), decimais)
+    score_bruto = min(max(score_bruto, minimo), maximo)
 
-    motivos = [c["motivo"] for c in componentes_saida if c["motivo"]]
+    # -- cortes: PORTAO, nao peso — quem nao passa NAO entra na campanha -----------------
+    corte_porte = cortes["porte_minimo"]
+    valor_porte, origem_do_corte = porte_efetivo(organizacao, faixa_efetiva)
+    passou_porte = valor_porte is not None and valor_porte >= float(corte_porte["minimo"])
+    motivo_corte_porte = None if passou_porte else (
+        corte_porte["motivos"]["abaixo"] if valor_porte is not None
+        else corte_porte["motivos"]["sem_dado"])
+    passou_geo = bool(valor_geo) and valor_geo in estados_do_corte
+    motivo_corte_geo = None if passou_geo else (
+        corte_geo["motivos"]["fora"] if valor_geo else corte_geo["motivos"]["sem_dado"])
+    cortes_saida = [
+        {"nome": "porte_minimo", "minimo": float(corte_porte["minimo"]),
+         "valor_efetivo": valor_porte, "origem_do_valor": origem_do_corte,
+         "passou": passou_porte, "motivo": motivo_corte_porte},
+        {"nome": "geografia", "estados": list(corte_geo["estados"]), "valor_efetivo": valor_geo,
+         "passou": passou_geo, "motivo": motivo_corte_geo},
+    ]
+    motivos_corte = [c["motivo"] for c in cortes_saida if c["motivo"]]
+    corte_aplicado = bool(motivos_corte)
+    score = 0.0 if corte_aplicado else score_bruto
+
+    # -- os CINCO criterios da definicao, nomeados um a um ------------------------------
+    criterios = [
+        {"nome": "porte", "resultado": "casou" if sub_port >= 100.0 else (
+            "sem_dado" if faixa_efetiva == "UNKNOWN" else "nao_casou"), "motivo": motivo_port},
+        {"nome": "geografia", "resultado": "casou" if sub_geo >= 100.0 else (
+            "sem_dado" if not valor_geo else "nao_casou"), "motivo": motivo_geo},
+    ]
+    for sinal in sinais_saida:
+        criterios.append({
+            "nome": "intencao_%s" % sinal["nome"],
+            "resultado": "casou" if sinal["credito"] else (
+                "sem_dado" if not sinal["signal_type"] else "nao_casou"),
+            "motivo": sinal["motivo"]})
+
+    motivos = motivos_corte + [c["motivo"] for c in componentes_saida if c["motivo"]]
     campos_fingerprint = {
         "industry_code": _texto(organizacao.get("industry_code")),
         "industry_name": _texto(organizacao.get("industry_name")),
@@ -358,6 +530,10 @@ def calcular_icp(organizacao: dict, modelo: dict, faixas_do_contrato) -> dict:
         "employee_band": _texto(organizacao.get("employee_band")),
         "faixa_efetiva": faixa_efetiva,
         "business_model": _texto(organizacao.get("business_model")),
+        "state": valor_geo or "",
+        "porte_efetivo": _texto(valor_porte),
+        "intencao": sorted("%s|%s|%s|%s" % (s["criterio"], s["signal_type"], s["fonte"], s["data"])
+                           for s in fontes_creditadas),
     }
     fingerprint = hashlib.sha256(
         json.dumps(campos_fingerprint, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -374,12 +550,15 @@ def calcular_icp(organizacao: dict, modelo: dict, faixas_do_contrato) -> dict:
             "employee_count": organizacao.get("employee_count"),
             "employee_band": _texto(organizacao.get("employee_band")) or None,
             "business_model": _texto(organizacao.get("business_model")) or None,
+            "state": valor_geo,
             "country_code": _texto(organizacao.get("country_code")) or None,
             "status": _texto(organizacao.get("status")) or None,
             "organizacao_updated_at": organizacao.get("updated_at"),
         },
         "faixa_efetiva": faixa_efetiva,
         "origem_do_porte": origem_porte,
+        "porte_efetivo": {"valor": valor_porte, "origem": origem_do_corte},
+        "sinais_lidos": len(sinais_lidos),
         "fingerprint": fingerprint,
     }
     explanation = {
@@ -389,11 +568,17 @@ def calcular_icp(organizacao: dict, modelo: dict, faixas_do_contrato) -> dict:
         "escala": "%s-%s" % (minimo, maximo),
         "pesos_somam": round(sum(float(p) for p in modelo["pesos"].values()), 6),
         "componentes": componentes_saida,
+        "cortes": cortes_saida,
+        "corte_aplicado": corte_aplicado,
+        "elegivel": not corte_aplicado,
+        "score_bruto": score_bruto,
+        "criterios": criterios,
         "motivos": motivos,
         "regra_de_ausencia": modelo.get("regra_de_ausencia"),
     }
-    return {"score_value": score, "inputs": inputs, "explanation": explanation,
-            "fingerprint": fingerprint, "motivos": motivos}
+    return {"score_value": score, "score_bruto": score_bruto, "elegivel": not corte_aplicado,
+            "inputs": inputs, "explanation": explanation, "fingerprint": fingerprint,
+            "motivos": motivos}
 
 
 def chave_idempotencia(organization_id: str, modelo_nome: str, fingerprint: str) -> str:
@@ -497,16 +682,33 @@ def sql_ler_organizacao(organization_id: str) -> str:
         "SELECT id::text, COALESCE(legal_name, ''), COALESCE(trade_name, ''), "
         "COALESCE(industry_code, ''), COALESCE(industry_name, ''), "
         "COALESCE(employee_count::text, ''), COALESCE(employee_band, ''), "
-        "COALESCE(business_model, ''), COALESCE(country_code, ''), COALESCE(status, ''), "
+        "COALESCE(business_model, ''), COALESCE(state, ''), COALESCE(country_code, ''), "
+        "COALESCE(status, ''), "
         "COALESCE(to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS'), '') "
         "FROM %s WHERE id = %s AND deleted_at IS NULL;" % (
             TABELA_ORGANIZACOES, lit(organization_id))
     )
 
 
+def sql_ler_sinais(organization_id: str) -> str:
+    """Os sinais da organizacao — SOMENTE LEITURA (o agente nao escreve sinal).
+
+    Traz o que o criterio de intencao precisa medir: `signal_type`, a FONTE declarada
+    (`source_type`/`source_url`), a DATA (`event_date`) e a marca de inferencia da `evidence`.
+    """
+    return (
+        "SELECT COALESCE(id::text, ''), COALESCE(signal_type, ''), "
+        "COALESCE(source_type, ''), COALESCE(source_url, ''), "
+        "COALESCE(to_char(event_date, 'YYYY-MM-DD\"T\"HH24:MI:SS'), ''), "
+        "COALESCE(evidence ->> 'inferencia', '') "
+        "FROM sales_intelligence.signals WHERE organization_id = %s "
+        "ORDER BY event_date ASC NULLS LAST, id;" % lit(organization_id)
+    )
+
+
 def organizacao_da_linha(linha: str) -> dict:
     campos = linha.split("|")
-    while len(campos) < 11:
+    while len(campos) < 12:
         campos.append("")
     return {
         "organization_id": campos[0].strip(),
@@ -517,10 +719,32 @@ def organizacao_da_linha(linha: str) -> dict:
         "employee_count": campos[5].strip() or None,
         "employee_band": campos[6],
         "business_model": campos[7],
-        "country_code": campos[8],
-        "status": campos[9],
-        "updated_at": campos[10],
+        "state": campos[8],
+        "country_code": campos[9],
+        "status": campos[10],
+        "updated_at": campos[11],
     }
+
+
+def sinais_da_saida(saida: str) -> list:
+    """Linhas do SELECT de sinais -> sinais do calculo. Fonte e data vem do que foi LIDO."""
+    sinais = []
+    for linha in saida.splitlines():
+        if not linha.strip():
+            continue
+        campos = linha.split("|")
+        while len(campos) < 6:
+            campos.append("")
+        valor_inferencia = campos[5].strip().lower()
+        sinais.append({
+            "signal_id": campos[0].strip() or None,
+            "signal_type": campos[1],
+            "source_type": campos[2],
+            "source_url": campos[3],
+            "event_date": campos[4],
+            "inferido": valor_inferencia in ("true", "t", "1", "sim"),
+        })
+    return sinais
 
 
 def sql_gravar_score(score_id: str, sync_event_id: str, chave: str, organization_id: str,
@@ -658,7 +882,9 @@ class IcpScore:
             raise ValueError("contrato do agente nao e do icp_score: %r"
                              % self.contrato.get("agente"))
         self.faixas = faixas_do_contrato_de_dados(self.raiz)
-        self.modelo = validar_modelo(self.contrato.get("modelo") or {}, self.faixas)
+        self.tipos_de_sinal = tipos_de_sinal_do_contrato_de_dados(self.raiz)
+        self.modelo = validar_modelo(self.contrato.get("modelo") or {}, self.faixas,
+                                     self.tipos_de_sinal)
         # A versao do score tem UMA fonte: o nome do modelo. Se ele nao serve como valor da
         # coluna `score_version` (varchar(30)), o agente RECUSA em vez de gravar prosa.
         self.modelo_nome = self.modelo["nome"]
@@ -717,6 +943,13 @@ class IcpScore:
         organizacao["lido_em"] = self.relogio()
         return organizacao
 
+    def ler_sinais(self, organization_id: str) -> list:
+        """Le os sinais da organizacao — SOMENTE LEITURA: o agente nao escreve sinal."""
+        rc, saida, erro = self.porta.executar(sql_ler_sinais(organization_id))
+        if rc != 0:
+            raise PortaIndisponivel("leitura dos sinais falhou: %s" % (erro or saida))
+        return sinais_da_saida(saida)
+
     def conferir_fonte(self, organization_id) -> tuple:
         """A fonte escolhe o SUJEITO: id ilegivel e recusa de forma, nao ida ao banco."""
         texto = _texto(organization_id)
@@ -763,7 +996,8 @@ class IcpScore:
                     resultado["veredito"] = VER_RECUSADA
                     resultado["motivos"] = ["ORGANIZACAO_NAO_ENCONTRADA"]
                 else:
-                    # A fonte NAO contamina: o dado vem do banco (linha da organizacao).
+                    # A fonte NAO contamina: o dado vem do banco (organizacao E sinais).
+                    organizacao["sinais"] = self.ler_sinais(organization_id)
                     calculo = calcular_icp(organizacao, self.modelo, self.faixas)
                     chave = chave_idempotencia(organization_id, self.modelo_nome,
                                                calculo["fingerprint"])

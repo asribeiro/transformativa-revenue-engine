@@ -1,18 +1,21 @@
 {
   "agente": "icp_score",
   "papel": "scoring",
-  "versao": "1.0.0",
+  "versao": "1.1.0",
   "card": "TRE-W5-E01-T01",
   "onda": "W5",
   "baseline": "V1.1.0",
   "fonte_da_verdade": [
-    "03_ARQUITETURA_DE_NEGOCIO.md §3 — nomeia o ICP Score como 'fit estrutural com o cliente desejado' e NAO define formula (a formula V1 nasce neste card, como proposta a homologar)",
-    "04_PROJETO_FISICO_DE_DADOS.md §8 — score persistido em `scores` com `score_type`, `score_version`, `inputs` e `explanation`; score sem versao e recusado",
+    "docs/business/icp-transformativa-v1.md — definicao do dono (Anderson Ribeiro, Telegram 07/10/2026), homologada como contrato: porte >= 50, estado de SP, tres sinais de intencao com fonte e data; 'o icp-v1.0.0 estava PROPOSTA_A_HOMOLOGAR e passa a homologado — com nova versao do modelo (1.1)'",
+    "03_ARQUITETURA_DE_NEGOCIO.md §3 — nomeia o ICP Score como 'fit estrutural com o cliente desejado' e NAO define formula (a formula nasce neste card, homologada em 1.1)",
+    "04_PROJETO_FISICO_DE_DADOS.md §8 — score persistido em `scores` com `score_type`, `score_version`, `inputs` e `explanation`; score sem versao e recusado; §10 — mudar formula/peso exige versao nova",
     "docs/data/data_contract_v1.json#scores — `types` (ICP entre eles), `requires_version_column` e `icp_context` (faixa 70-1000, sweet spot 150-700, ICPs, decisores)",
-    "docs/data/DATA_CONTRACT_V1.md §8 e §10 — score e historico, nao mutavel; mudar formula/peso exige versao nova",
+    "docs/data/data_contract_v1.json#vocabularies.signal_type — vocabulario dos sinais que o criterio de intencao le",
+    "docs/data/data_contract_v1.json#tables.signals — colunas `signal_type`, `source_type`, `source_url`, `event_date` (a fonte e a data de cada sinal)",
     "06_INTEGRACOES_E_FLUXOS_SISTEMICOS.md §7 — idempotencia: `idempotency_key`, `sync_events`, retry nao cria duplicata",
     "07_ROADMAP_DE_IMPLEMENTACAO.md §7 (W5) — scoring antes de tier/NBA",
-    "13_HERMES_IMPLEMENTATION_BRIEF.md — padrao de implementacao de card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento do card)"
+    "13_HERMES_IMPLEMENTATION_BRIEF.md — padrao de implementacao de card (ACCEPTANCE/TEST/ROLLBACK/RISK no documento do card)",
+    "docs/adr/ADR-0009-motor-em-producao.md — o ICP do negocio passa a criterio medivel no contrato do score"
   ],
   "entrada": {
     "formato": "jsonl",
@@ -27,26 +30,59 @@
       "employee_count",
       "employee_band",
       "business_model",
-      "country_code"
+      "country_code",
+      "state",
+      "sinais"
     ],
-    "aviso_do_modo_planejar": "os campos acima valem SOMENTE em `--planejar` (que nao abre conexao). No modo real o agente le a organizacao NO BANCO e os campos vindos da fonte sao IGNORADOS — a fonte escolhe o sujeito, nao o dado (medido por item proprio)."
+    "aviso_do_modo_planejar": "os campos acima valem SOMENTE em `--planejar` (que nao abre conexao). No modo real o agente le a organizacao E OS SINAIS NO BANCO; os campos vindos da fonte sao IGNORADOS — a fonte escolhe o sujeito, nao o dado (medido por item proprio)."
   },
   "modelo": {
-    "nome": "icp-v1.0.0",
-    "status": "PROPOSTA_A_HOMOLOGAR",
-    "status_explicacao": "o baseline nomeia o score e nao define a formula; este modelo V1 e proposta do card — quem homologa e o Anderson. Se homologado, o peso passa a ser parte do contrato de dados (nova versao 1.1), decisao do dono, nao do worker.",
+    "nome": "icp-v1.1.0",
+    "status": "HOMOLOGADO",
+    "status_explicacao": "o dono homologou a definicao em 07/10/2026 (docs/business/icp-transformativa-v1.md): o modelo 1.0.0 era PROPOSTA_A_HOMOLOGAR e o 1.1 entra homologado, com os cortes e os cinco criterios da definicao. Mudar peso, corte ou vocabulario a partir daqui e' versao nova (Data Contract §10).",
     "escala": {
       "minimo": 0.0,
       "maximo": 100.0,
       "decimais": 2
     },
-    "formula": "0.45*segmento + 0.35*porte + 0.20*modelo_b2b",
+    "formula": "0.30*segmento + 0.25*porte + 0.10*geografia + 0.15*modelo_b2b + 0.20*intencao, com CORTE (nao peso) de porte e de geografia aplicado depois da conta",
     "pesos": {
-      "segmento": 0.45,
-      "porte": 0.35,
-      "modelo_b2b": 0.2
+      "segmento": 0.3,
+      "porte": 0.25,
+      "geografia": 0.1,
+      "modelo_b2b": 0.15,
+      "intencao": 0.2
     },
-    "regra_de_ausencia": "componente sem dado reconhecido pontua 0 e registra o motivo na explicacao: ausencia NAO vira fit. Quem mede dado faltante e o Data Quality Score (W5-E04), nao o ICP.",
+    "pesos_da_versao_anterior": {
+      "nota": "os pesos do `icp-v1.0.0` (segmento 0.45, porte 0.35, modelo_b2b 0.20) valiam para tres criterios; a 1.1 acrescenta geografia e intencao (os cinco criterios da definicao homologada) e os tres componentes originais foram reduzidos na mesma proporcao (0,70 do total) para abrir espaco a geografia (0,10) e a intencao (0,20). O corte de porte NAO e' peso: ele convive com o peso (icp-transformativa-v1.md, 'Como isto entra no sistema').",
+      "pesos": {
+        "segmento": 0.45,
+        "porte": 0.35,
+        "modelo_b2b": 0.2
+      }
+    },
+    "regra_de_ausencia": "criterio sem dado reconhecido pontua 0 e registra o motivo na explicacao NOMEANDO o criterio: ausencia NAO vira fit. Quem mede dado faltante e o Data Quality Score (W5-E04), nao o ICP.",
+    "cortes": {
+      "descricao": "corte e' PORTAO, nao peso: quem nao passa nao entra na campanha, mesmo com score alto. O corte e' aplicado depois da conta ponderada e zera o score (`score_value = 0.00`, `elegivel = false`), registrando o corte e o motivo na explicacao.",
+      "porte_minimo": {
+        "minimo": 50,
+        "unidade": "usuarios associados no LinkedIn ou funcionarios declarados (criterio 1 da definicao do dono)",
+        "valor_efetivo": "`employee_count` quando informado; senao o LIMITE INFERIOR da faixa efetiva (`employee_band`), que e o que a fonte declarou; faixa `LT_70` vale 0 e `GT_1000` vale 1001",
+        "motivos": {
+          "abaixo": "CORTE_PORTE_ABAIXO_DE_50",
+          "sem_dado": "CORTE_PORTE_SEM_DADO"
+        }
+      },
+      "geografia": {
+        "campo": "state",
+        "estados": ["SP"],
+        "motivos": {
+          "fora": "CORTE_FORA_DE_SP",
+          "sem_dado": "CORTE_GEOGRAFIA_SEM_DADO"
+        },
+        "expansao": "outros estados sao decisao futura, em versao nova do modelo (criterio 2 da definicao)"
+      }
+    },
     "componentes": {
       "segmento": {
         "campos": ["industry_code", "industry_name"],
@@ -101,7 +137,21 @@
           "acima_do_icp": "PORTE_ACIMA_DO_ICP",
           "fora_do_sweet_spot": "PORTE_FORA_DO_SWEET_SPOT"
         },
-        "referencia": "docs/data/data_contract_v1.json#scores.icp_context.employee_range = 70-1000, sweet_spot = 150-700"
+        "referencia": "docs/data/data_contract_v1.json#scores.icp_context.employee_range = 70-1000, sweet_spot = 150-700 (o CORTE de 50 e' outro limiar: `cortes.porte_minimo`), criterio 1 de docs/business/icp-transformativa-v1.md"
+      },
+      "geografia": {
+        "campo": "state",
+        "sub_scores": {
+          "SP": 100.0
+        },
+        "sub_score_fora": 0.0,
+        "sub_score_ausente": 0.0,
+        "motivos": {
+          "sem_dado": "GEOGRAFIA_NAO_INFORMADA",
+          "fora_do_icp": "GEOGRAFIA_FORA_DO_ICP"
+        },
+        "vocabulario": "sigla de UF em caixa alta, comparacao normalizada (sem acento, sem caixa); `state` dentro de `cortes.geografia.estados` casa",
+        "referencia": "criterio 2 de docs/business/icp-transformativa-v1.md (state = SP)"
       },
       "modelo_b2b": {
         "campo": "business_model",
@@ -117,7 +167,35 @@
           "parcial": "MODELO_PARCIALMENTE_B2B"
         },
         "vocabulario": "B2B, B2B2C, B2C (comparacao normalizada, sem acento e sem caixa)",
-        "declarado": "`business_model` nao tem vocabulario fechado no Data Contract; o vocabulario acima e a lista de casamento deste modelo V1 e valor desconhecido cai em `sem_dado`+motivo"
+        "declarado": "`business_model` nao tem vocabulario fechado no Data Contract; o vocabulario acima e a lista de casamento deste modelo e valor desconhecido cai em `sem_dado`+motivo"
+      },
+      "intencao": {
+        "fonte_da_leitura": "sales_intelligence.signals da organizacao (`signal_type`, `source_type`, `source_url`, `event_date`)",
+        "exige": "cada sinal precisa de FONTE declarada (`source_type` ou `source_url`) E DATA (`event_date`) para dar credito. Sinal sem fonte NAO da credito de intencao e o motivo nomeia o criterio; o agente NAO preenche fonte nem data com valor sintetico em caminho nenhum (nem no modo real, nem no `--planejar`).",
+        "inferencia": "sinal cuja `evidence` declara `inferencia` verdadeira continua valendo (a definicao permite inferir do que ja esta na base), mas entra MARCADO como inferencia na explicacao — inferencia nunca se passa por fato",
+        "sinais": [
+          {
+            "nome": "A_BUSCA_SERVICOS_AUTOMATIZAVEIS_POR_IA",
+            "signal_types": ["AI_INITIATIVE", "TECH_ADOPTION"]
+          },
+          {
+            "nome": "B_CONTRATA_POSICOES_AUTOMATIZAVEIS",
+            "signal_types": ["HIRING", "PROCESS_COMPLEXITY"]
+          },
+          {
+            "nome": "C_BUSCA_APRENDER_E_APLICAR_IA",
+            "signal_types": ["DIGITAL_TRANSFORMATION", "EFFICIENCY_PROGRAM"]
+          }
+        ],
+        "sub_score_cheio": 100.0,
+        "regra_do_sub_score": "100,00 * (sinais com fonte e data) / (numero de sinais declarados) — sem sinal declarado o sub-score e 0,00 e o motivo nomeia o criterio",
+        "sub_score_ausente": 0.0,
+        "motivos": {
+          "sem_dado": "INTENCAO_SEM_DADO",
+          "sem_fonte": "INTENCAO_SEM_FONTE",
+          "sem_data": "INTENCAO_SEM_DATA"
+        },
+        "referencia": "criterios 3, 4 e 5 de docs/business/icp-transformativa-v1.md"
       }
     }
   },
@@ -126,13 +204,13 @@
     "score_type": "ICP",
     "score_version": "as colunas `score_type` e `score_version` recebem o tipo declarado acima e o NOME DO MODELO (`modelo.nome`) — a versao tem UMA fonte, o modelo; nao existe literal de versao no codigo",
     "valid_until": null,
-    "declarado": "`valid_until` fica NULL: a politica de validade do score e do tiering/priority (W5-E05/E06). O ICP V1 nao expira sozinho."
+    "declarado": "`valid_until` fica NULL: a politica de validade do score e do tiering/priority (W5-E05/E06). O ICP nao expira sozinho."
   },
   "idempotencia": {
     "chave": "icp:score:<organization_id>:<modelo.nome>:<fingerprint[:16]>",
-    "fingerprint": "sha256 canonico (JSON com chaves ordenadas) dos CAMPOS QUE MUDAM O SCORE: industry_code, industry_name, employee_count, employee_band, faixa_efetiva, business_model",
+    "fingerprint": "sha256 canonico (JSON com chaves ordenadas) dos CAMPOS QUE MUDAM O SCORE: industry_code, industry_name, employee_count, employee_band, faixa_efetiva, business_model, state e o conjunto de sinais de intencao CREDITADOS (criterio, signal_type, fonte e data)",
     "regra": "mesmos dados => mesma chave => replay (nada novo, veredito JA_EXISTE); dado alterado => chave nova => score novo e o anterior preservado (score e historico, nao mutavel)",
-    "nao_entram_no_fingerprint": ["status", "updated_at", "legal_name", "trade_name", "country_code"],
+    "nao_entram_no_fingerprint": ["status", "updated_at", "legal_name", "trade_name", "country_code", "sinais sem fonte ou sem data (nao mudam o score)"],
     "tabela_de_apoio": "sales_intelligence.sync_events.idempotency_key (UNIQUE)"
   },
   "vereditos": {
@@ -153,8 +231,11 @@
       "sales_intelligence.agent_runs",
       "sales_intelligence.sync_events"
     ],
-    "le": ["sales_intelligence.organizations"],
-    "proibido": "DDL, escrita fora das tres tabelas e UPDATE em `scores` (score e imutavel; corrigir e inserir versao nova)"
+    "le": [
+      "sales_intelligence.organizations",
+      "sales_intelligence.signals"
+    ],
+    "proibido": "DDL, escrita fora das tres tabelas e UPDATE em `scores` (score e imutavel; corrigir e inserir versao nova). `signals` e SOMENTE LEITURA: o agente nao escreve sinal, nao preenche fonte nem data."
   },
   "ambiente": {
     "permitidos": ["dev", "homolog"],
@@ -163,14 +244,16 @@
   },
   "guardrails": {
     "llm": "v1 e deterministica: NENHUMA chamada de LLM; `model`, `tokens_input`, `tokens_output` e `estimated_cost` ficam NULL em toda a auditoria",
-    "jev": "o gate de recibo do JEV existe e e fail-closed (sem recibo valido nao se chama LLM) — mantido para paridade com os agentes da W4; nao ha caminho que o exercite na v1",
-    "outbox": "NENHUM evento de outbox nesta v1: `COMPANY_QUALIFIED` (doc 06 §5) e decisao de tiering/priority (W5-E05/E06) e o caminho ate Odoo e W3 — o ICP Score escreve so' o proprio score",
-    "fonte_nao_contamina": "no modo real o dado vem do banco; campos equivalentes na fonte sao ignorados"
+    "jev": "o gate de recibo do JEV existe e e fail-closed (sem recibo valido nao se chama LLM) — mantido para paridade com os agentes da W4; nao ha caminho que o exercite aqui",
+    "outbox": "NENHUM evento de outbox nesta versao: `COMPANY_QUALIFIED` (doc 06 §5) e decisao de tiering/priority (W5-E05/E06) e o caminho ate Odoo e W3 — o ICP Score escreve so' o proprio score",
+    "fonte_nao_contamina": "no modo real o dado vem do banco (organizacao e sinais); campos equivalentes na fonte sao ignorados",
+    "fonte_e_data_nao_sao_inventadas": "nenhum campo de fonte/data e' preenchido pelo agente com valor sintetico: sinal sem fonte declarada simplesmente nao da credito de intencao"
   },
   "lacunas": [
-    "Formula V1 e PROPOSTA: nao homologada. Homologacao e do Anderson (estagio 7 do fluxo).",
+    "A formula deixou de ser proposta: cortes e cinco criterios vem da definicao homologada do dono (docs/business/icp-transformativa-v1.md). Peso, corte ou vocabulario novo a partir daqui e' versao nova.",
     "`business_model` nao tem vocabulario fechado no Data Contract — o casamento e deste modelo.",
-    "Sem LLM, sem HTTP e sem crawler: o agente le o banco e calcula.",
+    "A expansao de geografia para outros estados esta fora deste item (criterio 2 da definicao).",
+    "Sem LLM, sem HTTP e sem crawler: o agente le o banco (organizacao e sinais) e calcula. O motor ir para producao e' decisao do ADR-0009, em item proprio.",
     "`valid_until`, tier, Priority Score, Next Best Action e o evento `COMPANY_QUALIFIED` estao FORA deste card (W5-E05, E06, E07 e W3).",
     "O aceite E2E da cadeia W5 e o card W5-E08 — este card mede so' o ICP Score."
   ]

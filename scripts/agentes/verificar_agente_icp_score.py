@@ -79,6 +79,10 @@ class Contexto:
     def faixas(self):
         return tuple(self.contrato_dados["vocabularies"]["employee_band"])
 
+    @property
+    def tipos_de_sinal(self):
+        return tuple(self.contrato_dados["vocabularies"]["signal_type"])
+
     def agente(self, porta=None, ambiente="dev", **kwargs):
         return self.modulo.IcpScore(porta=porta if porta is not None else PortaRoteiro(),
                                     raiz=RAIZ, ambiente=ambiente, **kwargs)
@@ -133,28 +137,54 @@ ORG_C = "cccccccc-0000-4000-8000-00000000000c"
 
 
 def linha_organizacao(org_id=ORG_A, **campos):
-    """Linha no formato do SELECT do agente (11 colunas separadas por `|`)."""
+    """Linha no formato do SELECT do agente (12 colunas separadas por `|`)."""
     base = {
         "legal_name": "Empresa Teste Ltda", "trade_name": "Empresa Teste",
         "industry_code": "4711", "industry_name": "Distribuidora de materiais de construcao",
         "employee_count": "210", "employee_band": "150_299", "business_model": "B2B",
-        "country_code": "BR", "status": "DISCOVERED", "updated_at": "2026-10-02T12:00:00",
+        "state": "SP", "country_code": "BR", "status": "DISCOVERED",
+        "updated_at": "2026-10-02T12:00:00",
     }
     base.update(campos)
     return "|".join([org_id, base["legal_name"], base["trade_name"], base["industry_code"],
                      base["industry_name"], str(base["employee_count"] if base["employee_count"]
                                                 is not None else ""), base["employee_band"],
-                     base["business_model"], base["country_code"], base["status"],
+                     base["business_model"], base["state"], base["country_code"], base["status"],
                      base["updated_at"]])
+
+
+def sinal(tipo="AI_INITIATIVE", fonte="EVENTO", url="https://exemplo.test/sinal",
+          data="2026-09-20T09:00:00", inferido=False, identificador=None):
+    """Sinal como o agente le do banco (fonte e data sao LIDAS, nunca preenchidas)."""
+    return {"signal_id": identificador or ("sid-%s" % tipo), "signal_type": tipo,
+            "source_type": fonte, "source_url": url, "event_date": data, "inferido": inferido}
+
+
+def sinais_tres():
+    """Os tres criterios de intencao, cada um com fonte e data declaradas."""
+    return [sinal("AI_INITIATIVE"), sinal("HIRING"), sinal("DIGITAL_TRANSFORMATION")]
+
+
+def linha_sinal(identificador="sid-1", tipo="AI_INITIATIVE", fonte="EVENTO",
+                url="https://exemplo.test/sinal", data="2026-09-20T09:00:00", inferencia=""):
+    """Linha do SELECT de `signals` (6 colunas separadas por `|`)."""
+    return "|".join([identificador, tipo, fonte, url, data, inferencia])
+
+
+SINAIS_TRES_LINHA = "\n".join([
+    linha_sinal("sid-a", "AI_INITIATIVE"),
+    linha_sinal("sid-b", "HIRING"),
+    linha_sinal("sid-c", "DIGITAL_TRANSFORMATION"),
+])
 
 
 def organizacao(**campos):
     """Organizacao para o calculo puro (chaves do agente, sem banco)."""
     base = {"organization_id": ORG_A, "industry_code": "4711",
             "industry_name": "Distribuidora de materiais de construcao", "employee_count": 210,
-            "employee_band": "150_299", "business_model": "B2B", "country_code": "BR",
-            "status": "DISCOVERED", "legal_name": "Empresa Teste Ltda",
-            "trade_name": "Empresa Teste", "updated_at": "2026-10-02T12:00:00"}
+            "employee_band": "150_299", "business_model": "B2B", "state": "SP",
+            "country_code": "BR", "status": "DISCOVERED", "legal_name": "Empresa Teste Ltda",
+            "trade_name": "Empresa Teste", "updated_at": "2026-10-02T12:00:00", "sinais": []}
     base.update(campos)
     return base
 
@@ -226,7 +256,8 @@ def _(ctx):
 @item("pesos-e-componentes-coincidem")
 def _(ctx):
     return (set(ctx.modelo["pesos"]) == set(ctx.modelo["componentes"])
-            and set(ctx.modelo["pesos"]) == {"segmento", "porte", "modelo_b2b"}), \
+            and set(ctx.modelo["pesos"]) == {"segmento", "porte", "geografia", "modelo_b2b",
+                                             "intencao"}), \
         "%s" % sorted(ctx.modelo["pesos"])
 
 
@@ -273,7 +304,8 @@ def _(ctx):
     texto = DOC_ARQUITETURA.read_text(encoding="utf-8")
     lidos = {}
     for linha in texto.splitlines():
-        m = re.match(r"\|\s*(segmento|porte|modelo_b2b)\s*\|\s*([0-9]+,[0-9]+)\s*\|", linha.strip())
+        m = re.match(r"\|\s*(segmento|porte|geografia|modelo_b2b|intencao)\s*\|\s*([0-9]+,[0-9]+)\s*\|",
+                     linha.strip())
         if m:
             lidos[m.group(1)] = round(float(m.group(2).replace(",", ".")), 6)
     esperado = {k: round(float(v), 6) for k, v in ctx.modelo["pesos"].items()}
@@ -330,33 +362,36 @@ def _(ctx):
 # ---------------------------------------------------------------------------------------
 @item("sweet-spot-distribuidor-b2b-pontua-100")
 def _(ctx):
-    c = calcular(ctx, employee_band="150_299")
-    return (c["score_value"] == 100.0 and not c["motivos"]), c["score_value"]
+    c = calcular(ctx, employee_band="150_299", sinais=sinais_tres())
+    return (c["score_value"] == 100.0 and not c["motivos"] and c["elegivel"] is True), \
+        c["score_value"]
 
 
-@item("logistica-700-1000-pontua-86")
+@item("logistica-700-1000-em-sp-pontua-90")
 def _(ctx):
     c = calcular(ctx, industry_name="Logistica e transporte de cargas", employee_band="700_1000",
-                 business_model="B2B")
-    return (c["score_value"] == 86.0 and c["motivos"] == ["PORTE_FORA_DO_SWEET_SPOT"]), \
+                 business_model="B2B", sinais=sinais_tres())
+    return (c["score_value"] == 90.0 and c["motivos"] == ["PORTE_FORA_DO_SWEET_SPOT"]), \
         "%s %s" % (c["score_value"], c["motivos"])
 
 
 @item("b2c-e-abaixo-do-icp-pontua-0-com-motivos")
 def _(ctx):
-    c = calcular(ctx, industry_name="Comercio varejista de alimentos", employee_band="LT_70",
-                 business_model="B2C")
-    return (c["score_value"] == 0.0 and len(c["motivos"]) == 3
-            and "SEGMENTO_NAO_RECONHECIDO" in c["motivos"]
-            and "PORTE_ABAIXO_DO_ICP" in c["motivos"]
-            and "MODELO_B2C_FORA_DO_ICP" in c["motivos"]), "%s %s" % (c["score_value"], c["motivos"])
+    c = calcular(ctx, industry_name="Comercio varejista de alimentos", employee_count=49,
+                 employee_band="LT_70", business_model="B2C")
+    return (c["score_value"] == 0.0 and c["elegivel"] is False
+            and c["motivos"] == ["CORTE_PORTE_ABAIXO_DE_50", "SEGMENTO_NAO_RECONHECIDO",
+                                 "PORTE_ABAIXO_DO_ICP", "MODELO_B2C_FORA_DO_ICP",
+                                 "INTENCAO_SEM_DADO"]), "%s %s" % (c["score_value"], c["motivos"])
 
 
 @item("sem-dado-pontua-0-e-nao-vira-fit")
 def _(ctx):
     c = calcular(ctx, industry_code="", industry_name="", employee_count=None,
-                 employee_band="", business_model="")
-    esperado = ["SEGMENTO_NAO_INFORMADO", "PORTE_NAO_INFORMADO", "MODELO_DE_NEGOCIO_NAO_INFORMADO"]
+                 employee_band="", business_model="", state="")
+    esperado = ["CORTE_PORTE_SEM_DADO", "CORTE_GEOGRAFIA_SEM_DADO", "SEGMENTO_NAO_INFORMADO",
+                "PORTE_NAO_INFORMADO", "GEOGRAFIA_NAO_INFORMADA",
+                "MODELO_DE_NEGOCIO_NAO_INFORMADO", "INTENCAO_SEM_DADO"]
     return (c["score_value"] == 0.0 and c["motivos"] == esperado
             and all(x["sub_score"] == 0.0 for x in c["explanation"]["componentes"])), \
         "%s %s" % (c["score_value"], c["motivos"])
@@ -364,14 +399,14 @@ def _(ctx):
 
 @item("b2b2c-e-parcial-nao-fora-do-icp")
 def _(ctx):
-    c = calcular(ctx, business_model="B2B2C")
+    c = calcular(ctx, business_model="B2B2C", sinais=sinais_tres())
     return (sub_score(ctx, c, "modelo_b2b") == 70.0
             and c["motivos"] == ["MODELO_PARCIALMENTE_B2B"]), c["score_value"]
 
 
 @item("modelo-de-negocio-desconhecido-nao-vira-fit")
 def _(ctx):
-    c = calcular(ctx, business_model="ONG")
+    c = calcular(ctx, business_model="ONG", sinais=sinais_tres())
     return (sub_score(ctx, c, "modelo_b2b") == 0.0
             and c["motivos"] == ["MODELO_DE_NEGOCIO_NAO_INFORMADO"]), c["motivos"]
 
@@ -394,7 +429,7 @@ def _(ctx):
 
 @item("faixa-do-banco-tem-precedencia-sobre-o-count")
 def _(ctx):
-    c = calcular(ctx, employee_count=210, employee_band="GT_1000")
+    c = calcular(ctx, employee_count=210, employee_band="GT_1000", sinais=sinais_tres())
     return (sub_score(ctx, c, "porte") == 0.0 and c["motivos"] == ["PORTE_ACIMA_DO_ICP"]
             and c["inputs"]["origem_do_porte"] == "employee_band"), "%s" % c["motivos"]
 
@@ -420,7 +455,7 @@ def _(ctx):
 
 @item("segmento-fora-do-vocabulario-nao-pontua")
 def _(ctx):
-    c = calcular(ctx, industry_name="Comercio varejista de autopecas")
+    c = calcular(ctx, industry_name="Comercio varejista de autopecas", sinais=sinais_tres())
     return (sub_score(ctx, c, "segmento") == 0.0
             and c["motivos"] == ["SEGMENTO_NAO_RECONHECIDO"]), c["motivos"]
 
@@ -435,20 +470,36 @@ def _(ctx):
 
 @item("explicacao-tem-contribuicao-e-pesos-que-somam-um")
 def _(ctx):
-    c = calcular(ctx)
+    c = calcular(ctx, sinais=sinais_tres())
     e = c["explanation"]
     soma_contribuicao = round(sum(x["contribuicao"] for x in e["componentes"]), 6)
-    return (e["pesos_somam"] == 1.0 and soma_contribuicao == c["score_value"]
-            and len(e["componentes"]) == 3 and e["modelo"] == ctx.modelo["nome"]), \
+    return (e["pesos_somam"] == 1.0 and soma_contribuicao == e["score_bruto"]
+            and c["score_value"] == e["score_bruto"] and e["corte_aplicado"] is False
+            and len(e["componentes"]) == 5 and e["modelo"] == ctx.modelo["nome"]), \
         "contribuicao=%s score=%s" % (soma_contribuicao, c["score_value"])
+
+
+@item("explicacao-fecha-a-conta-mesmo-com-corte")
+def _(ctx):
+    """O corte zera o score, mas a conta bruta continua explicada e conferida."""
+    c = calcular(ctx, employee_count=49, employee_band="LT_70", sinais=sinais_tres())
+    e = c["explanation"]
+    soma_contribuicao = round(sum(x["contribuicao"] for x in e["componentes"]), 6)
+    return (soma_contribuicao == e["score_bruto"] == 75.0 and e["corte_aplicado"] is True
+            and e["elegivel"] is False and c["score_value"] == 0.0), \
+        "bruto=%s score=%s" % (e["score_bruto"], c["score_value"])
 
 
 @item("inputs-guardam-o-que-foi-lido")
 def _(ctx):
-    c = calcular(ctx, employee_band="700_1000")
+    c = calcular(ctx, employee_band="700_1000", sinais=sinais_tres())
     campos = c["inputs"]["campos"]
     return (campos["employee_band"] == "700_1000" and campos["industry_name"] != ""
-            and campos["business_model"] == "B2B" and c["inputs"]["faixa_efetiva"] == "700_1000"
+            and campos["business_model"] == "B2B" and campos["state"] == "SP"
+            and c["inputs"]["faixa_efetiva"] == "700_1000"
+            and c["inputs"]["origem_do_porte"] == "employee_band"
+            and c["inputs"]["porte_efetivo"] == {"valor": 210, "origem": "employee_count"}
+            and c["inputs"]["sinais_lidos"] == 3
             and len(c["inputs"]["fingerprint"]) == 64), "inputs com os campos lidos"
 
 
@@ -458,11 +509,14 @@ def _(ctx):
     mudou_faixa = calcular(ctx, employee_count=210, employee_band="GT_1000")
     mudou_modelo = calcular(ctx, business_model="B2C")
     mudou_segmento = calcular(ctx, industry_name="Transportadora rodoviaria de cargas")
+    mudou_estado = calcular(ctx, state="PR")
+    mudou_intencao = calcular(ctx, sinais=sinais_tres())
     igual = calcular(ctx, legal_name="Outro nome", status="QUALIFIED",
                      updated_at="2026-11-01T09:00:00")
     fingerprints = {base["fingerprint"], mudou_faixa["fingerprint"], mudou_modelo["fingerprint"],
-                    mudou_segmento["fingerprint"]}
-    return (len(fingerprints) == 4 and igual["fingerprint"] == base["fingerprint"]), \
+                    mudou_segmento["fingerprint"], mudou_estado["fingerprint"],
+                    mudou_intencao["fingerprint"]}
+    return (len(fingerprints) == 6 and igual["fingerprint"] == base["fingerprint"]), \
         "%d fingerprints distintos; nome/status/carimbo nao mudam" % len(fingerprints)
 
 
@@ -484,8 +538,195 @@ def _(ctx):
     relatorio = agente.rodar(linhas, planejar=True)
     scores = [r["score_value"] for r in relatorio["resultados"]
               if r["veredito"] == ctx.modulo.PLANEJADO_CALCULAR]
-    return (scores == [100.0, 86.0, 94.0, 0.0, 0.0]
+    return (scores == [100.0, 90.0, 82.17, 0.0, 0.0]
             and relatorio["por_veredito"].get(ctx.modulo.PLANEJADO_RECUSAR) == 1), "%s" % scores
+
+
+# ---------------------------------------------------------------------------------------
+# 2b. Cortes e intencao (modelo 1.1 — definicao homologada do dono)
+# ---------------------------------------------------------------------------------------
+def corte_de(ctx, calculo, nome):
+    for c in calculo["explanation"]["cortes"]:
+        if c["nome"] == nome:
+            return c
+    raise AssertionError("corte ausente na explicacao: %s" % nome)
+
+
+@item("corte-de-porte-49-nao-passa")
+def _(ctx):
+    c = calcular(ctx, employee_count=49, employee_band="LT_70", sinais=sinais_tres())
+    corte = corte_de(ctx, c, "porte_minimo")
+    return (c["score_value"] == 0.0 and c["elegivel"] is False and corte["passou"] is False
+            and corte["valor_efetivo"] == 49 and "CORTE_PORTE_ABAIXO_DE_50" in c["motivos"]), \
+        "%s %s" % (c["score_value"], corte["motivo"])
+
+
+@item("corte-de-porte-50-passa")
+def _(ctx):
+    c = calcular(ctx, employee_count=50, employee_band="70_149", sinais=sinais_tres())
+    corte = corte_de(ctx, c, "porte_minimo")
+    return (c["elegivel"] is True and corte["passou"] is True and corte["valor_efetivo"] == 50
+            and c["score_value"] == 90.0 and "CORTE_PORTE_ABAIXO_DE_50" not in c["motivos"]), \
+        "%s com %s" % (c["score_value"], corte["valor_efetivo"])
+
+
+@item("corte-de-porte-sem-dado-nao-passa")
+def _(ctx):
+    c = calcular(ctx, employee_count=None, employee_band="", sinais=sinais_tres())
+    corte = corte_de(ctx, c, "porte_minimo")
+    return (c["score_value"] == 0.0 and corte["passou"] is False
+            and corte["valor_efetivo"] is None and "CORTE_PORTE_SEM_DADO" in c["motivos"]), \
+        "%s %s" % (c["score_value"], corte["motivo"])
+
+
+@item("corte-fora-de-sp-nao-entra")
+def _(ctx):
+    c = calcular(ctx, state="PR", sinais=sinais_tres())
+    corte = corte_de(ctx, c, "geografia")
+    return (c["score_value"] == 0.0 and c["elegivel"] is False and corte["passou"] is False
+            and c["explanation"]["score_bruto"] == 90.0 and "CORTE_FORA_DE_SP" in c["motivos"]), \
+        "score=%s bruto=%s" % (c["score_value"], c["explanation"]["score_bruto"])
+
+
+@item("corte-geografia-sem-dado-nao-entra")
+def _(ctx):
+    c = calcular(ctx, state="", sinais=sinais_tres())
+    corte = corte_de(ctx, c, "geografia")
+    return (c["score_value"] == 0.0 and corte["passou"] is False
+            and corte["valor_efetivo"] is None and "CORTE_GEOGRAFIA_SEM_DADO" in c["motivos"]), \
+        "%s %s" % (c["score_value"], corte["motivo"])
+
+
+@item("corte-de-porte-e-lido-do-contrato")
+def _(ctx):
+    """O limiar do corte e' policy: mora no contrato, nunca no corpo do agente."""
+    minimo = int(ctx.modelo["cortes"]["porte_minimo"]["minimo"])
+    achado = re.search(r"(?<![0-9])%s(?![0-9])" % minimo, ctx.codigo)
+    return (achado is None and 'corte_porte["minimo"]' in ctx.codigo), \
+        "corte=%s ausente do codigo" % minimo
+
+
+@item("intencao-sem-fonte-nao-da-credito")
+def _(ctx):
+    sem_fonte = [sinal("AI_INITIATIVE", fonte="", url=""), sinal("HIRING"),
+                 sinal("DIGITAL_TRANSFORMATION")]
+    c = calcular(ctx, sinais=sem_fonte)
+    itens = [x for x in c["explanation"]["componentes"] if x["nome"] == "intencao"][0]["sinais"]
+    return (itens[0]["credito"] is False and itens[0]["fonte"] is None
+            and itens[0]["data"] is None and itens[0]["motivo"] == "INTENCAO_SEM_FONTE"
+            and c["score_value"] == 93.33 and "INTENCAO_SEM_FONTE" in c["motivos"]
+            and sum(1 for s in itens if s["credito"]) == 2), \
+        "%s %s" % (c["score_value"], itens[0]["motivo"])
+
+
+@item("intencao-sem-data-nao-da-credito")
+def _(ctx):
+    sem_data = [sinal("AI_INITIATIVE"), sinal("HIRING", data=""),
+                sinal("DIGITAL_TRANSFORMATION")]
+    c = calcular(ctx, sinais=sem_data)
+    itens = [x for x in c["explanation"]["componentes"] if x["nome"] == "intencao"][0]["sinais"]
+    return (itens[1]["credito"] is False and itens[1]["data"] is None
+            and itens[1]["motivo"] == "INTENCAO_SEM_DATA" and c["score_value"] == 93.33
+            and "INTENCAO_SEM_DATA" in c["motivos"]), \
+        "%s %s" % (c["score_value"], itens[1]["motivo"])
+
+
+@item("intencao-tres-sinais-pontua-cheio")
+def _(ctx):
+    c = calcular(ctx, sinais=sinais_tres())
+    comp = [x for x in c["explanation"]["componentes"] if x["nome"] == "intencao"][0]
+    return (comp["sub_score"] == 100.0 and comp["sinais_lidos"] == 3
+            and all(s["credito"] and s["fonte"] and s["data"] for s in comp["sinais"])
+            and c["score_value"] == 100.0 and c["motivos"] == []), "%s" % c["score_value"]
+
+
+@item("intencao-aceita-sinal-marcado-como-inferencia")
+def _(ctx):
+    """Inferencia vale, mas entra MARCADA — nunca se passa por fato."""
+    inferido = [sinal("AI_INITIATIVE", inferido=True), sinal("HIRING"),
+                sinal("DIGITAL_TRANSFORMATION")]
+    c = calcular(ctx, sinais=inferido)
+    comp = [x for x in c["explanation"]["componentes"] if x["nome"] == "intencao"][0]
+    return (comp["sub_score"] == 100.0 and comp["sinais"][0]["inferido"] is True
+            and comp["sinais"][1]["inferido"] is False), "marca de inferencia registrada"
+
+
+@item("intencao-le-os-tres-sinais-declarados-do-contrato")
+def _(ctx):
+    intc = ctx.modelo["componentes"]["intencao"]
+    nomes = [s["nome"] for s in intc["sinais"]]
+    tipos = [t for s in intc["sinais"] for t in s["signal_types"]]
+    return (len(nomes) == 3 and len(set(nomes)) == 3
+            and set(tipos).issubset(set(ctx.tipos_de_sinal))
+            and intc["fonte_da_leitura"].startswith("sales_intelligence.signals")), \
+        "%s dentro do vocabulario do Data Contract" % sorted(set(tipos))
+
+
+@item("explicacao-nomeia-os-cinco-criterios")
+def _(ctx):
+    c = calcular(ctx, employee_count=49, employee_band="LT_70", state="PR", sinais=[])
+    criterios = c["explanation"]["criterios"]
+    nomes = [x["nome"] for x in criterios]
+    resultado = {x["nome"]: x["resultado"] for x in criterios}
+    return (len(criterios) == 5 and nomes[:2] == ["porte", "geografia"]
+            and len(nomes) == len(set(nomes)) and resultado["porte"] == "nao_casou"
+            and resultado["geografia"] == "nao_casou"
+            and all(resultado[n] == "sem_dado" for n in nomes if n.startswith("intencao_"))
+            and all(x["motivo"] for x in criterios)), "%s" % resultado
+
+
+@item("caminho-oposto-50-mais-em-sp-com-tres-sinais-pontua-100")
+def _(ctx):
+    c = calcular(ctx, employee_count=250, employee_band="150_299", state="SP",
+                 business_model="B2B", sinais=sinais_tres())
+    e = c["explanation"]
+    return (c["score_value"] == 100.0 and c["elegivel"] is True and c["motivos"] == []
+            and e["corte_aplicado"] is False and all(x["passou"] for x in e["cortes"])
+            and [x["nome"] for x in e["criterios"]][:2] == ["porte", "geografia"]
+            and all(x["resultado"] == "casou" for x in e["criterios"])), \
+        "%s %s" % (c["score_value"], [x["resultado"] for x in e["criterios"]])
+
+
+@item("nenhuma-fonte-ou-data-sintetica-no-codigo")
+def _(ctx):
+    """Fonte e data sao LIDAS: sinal sem fonte nao ganha fonte (nem data) inventada."""
+    c = calcular(ctx, sinais=[sinal("AI_INITIATIVE", fonte="", url="", data="")])
+    comp = [x for x in c["explanation"]["componentes"] if x["nome"] == "intencao"][0]
+    primeiro = comp["sinais"][0]
+    escreve_sinal = bool(re.search(r"(INSERT\s+INTO|UPDATE)\s+sales_intelligence\.signals",
+                                   ctx.codigo, re.I))
+    return (primeiro["credito"] is False and primeiro["fonte"] is None
+            and primeiro["data"] is None and primeiro["motivo"] == "INTENCAO_SEM_FONTE"
+            and comp["sub_score"] == 0.0 and not escreve_sinal), "%s" % primeiro
+
+
+@item("signals-e-somente-leitura-no-codigo")
+def _(ctx):
+    ler_sinais = "FROM sales_intelligence.signals" in ctx.codigo
+    escreve = bool(re.search(r"(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+sales_intelligence\.signals",
+                             ctx.codigo, re.I))
+    return (ler_sinais and not escreve), "signals so' lido"
+
+
+@item("cortes-e-intencao-sao-validados-no-contrato")
+def _(ctx):
+    """Modelo sem corte, com corte zerado ou com signal_type fora do contrato RECUSA."""
+    casos = []
+    sem_cortes = json.loads(json.dumps(ctx.modelo)); sem_cortes.pop("cortes"); casos.append(sem_cortes)
+    corte_zero = json.loads(json.dumps(ctx.modelo))
+    corte_zero["cortes"]["porte_minimo"]["minimo"] = 0; casos.append(corte_zero)
+    tipo_fora = json.loads(json.dumps(ctx.modelo))
+    tipo_fora["componentes"]["intencao"]["sinais"][0]["signal_types"] = ["COMPRA_DE_CARRO"]
+    casos.append(tipo_fora)
+    sem_sinais = json.loads(json.dumps(ctx.modelo))
+    sem_sinais["componentes"]["intencao"]["sinais"] = []; casos.append(sem_sinais)
+    for caso in casos:
+        try:
+            ctx.modulo.validar_modelo(caso, ctx.faixas, ctx.tipos_de_sinal)
+            return False, "modelo invalido aceito"
+        except ctx.modulo.ModeloInvalido:
+            continue
+    return True, "%d modelos invalidos recusados" % len(casos)
 
 
 # ---------------------------------------------------------------------------------------
@@ -591,22 +832,24 @@ def _(ctx):
 # ---------------------------------------------------------------------------------------
 @item("fluxo-calcula-e-grava")
 def _(ctx):
-    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, "ICP_SCORE_GRAVADO", ""),
-                          (0, "INSERT 0 1", "")], modulo=ctx.modulo)
+    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, SINAIS_TRES_LINHA, ""),
+                          (0, "ICP_SCORE_GRAVADO", ""), (0, "INSERT 0 1", "")],
+                         modulo=ctx.modulo)
     agente = ctx.agente(porta)
     r = agente.processar({"organization_id": ORG_A})
     sqls = veredito(porta, r)
     return (r["veredito"] == ctx.modulo.VER_CALCULADO and r["score_value"] == 100.0
             and r["score_id"] and r["auditoria_registrada"] is True
-            and "INSERT INTO sales_intelligence.scores" in sqls[1]
-            and "score_type" in sqls[1] and "'ICP'" in sqls[1]
-            and ctx.modelo["nome"] in sqls[1]), "%s score=%s" % (r["veredito"], r["score_value"])
+            and "FROM sales_intelligence.signals" in sqls[1]
+            and "INSERT INTO sales_intelligence.scores" in sqls[2]
+            and "score_type" in sqls[2] and "'ICP'" in sqls[2]
+            and ctx.modelo["nome"] in sqls[2]), "%s score=%s" % (r["veredito"], r["score_value"])
 
 
 @item("fluxo-replay-nao-cria-linha-nova")
 def _(ctx):
-    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, "", ""), (0, "INSERT 0 1", "")],
-                         modulo=ctx.modulo)
+    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, SINAIS_TRES_LINHA, ""), (0, "", ""),
+                          (0, "INSERT 0 1", "")], modulo=ctx.modulo)
     agente = ctx.agente(porta)
     r = agente.processar({"organization_id": ORG_A})
     return (r["veredito"] == ctx.modulo.VER_JA_EXISTE
@@ -639,19 +882,20 @@ def _(ctx):
 def _(ctx):
     """A fonte escolhe o SUJEITO: campo de score vindo dela e' ignorado no modo real."""
     linha_banco = linha_organizacao(industry_name="Logistica e transporte de cargas",
-                                    employee_band="GT_1000", business_model="B2B")
-    porta = PortaRoteiro([(0, linha_banco, ""), (0, "ICP_SCORE_GRAVADO", ""), (0, "INSERT 0 1", "")],
-                         modulo=ctx.modulo)
+                                    employee_band="GT_1000", business_model="B2B", state="SP")
+    porta = PortaRoteiro([(0, linha_banco, ""), (0, SINAIS_TRES_LINHA, ""),
+                          (0, "ICP_SCORE_GRAVADO", ""), (0, "INSERT 0 1", "")], modulo=ctx.modulo)
     agente = ctx.agente(porta)
     r = agente.processar({"organization_id": ORG_A, "employee_band": "150_299",
                           "industry_name": "Distribuidora de materiais", "business_model": "B2B",
-                          "score_value": 100.0})
+                          "state": "PR", "sinais": [], "score_value": 100.0})
     esperado = ctx.modulo.calcular_icp(
         {"organization_id": ORG_A, "industry_code": "4711",
          "industry_name": "Logistica e transporte de cargas",
-         "employee_count": "210", "employee_band": "GT_1000", "business_model": "B2B"},
+         "employee_count": "210", "employee_band": "GT_1000", "business_model": "B2B",
+         "state": "SP", "sinais": ctx.modulo.sinais_da_saida(SINAIS_TRES_LINHA)},
         ctx.modelo, ctx.faixas)
-    return (r["score_value"] == esperado["score_value"] == 65.0
+    return (r["score_value"] == esperado["score_value"] == 75.0
             and r["fingerprint"] == esperado["fingerprint"]), \
         "%s (se a fonte mandasse, seria 100,00)" % r["score_value"]
 
@@ -678,16 +922,19 @@ def _(ctx):
     agente = ctx.agente(PortaAusenteRoteiro(), ambiente=None)
     relatorio = agente.rodar([{"organization_id": ORG_A, "employee_count": 900,
                                "industry_name": "Transportadora rodoviaria de cargas",
-                               "business_model": "B2B"}], planejar=True)
+                               "business_model": "B2B", "state": "SP",
+                               "sinais": ctx.modulo.sinais_da_saida(SINAIS_TRES_LINHA)}],
+                             planejar=True)
     r = relatorio["resultados"][0]
-    return (r["veredito"] == ctx.modulo.PLANEJADO_CALCULAR and r["score_value"] == 86.0
+    return (r["veredito"] == ctx.modulo.PLANEJADO_CALCULAR and r["score_value"] == 90.0
             and r["origem_do_dado"].startswith("fonte")), "%s" % r["score_value"]
 
 
 @item("auditoria-que-nao-registra-vira-erro")
 def _(ctx):
-    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, "ICP_SCORE_GRAVADO", ""),
-                          (1, "", "permission denied")], modulo=ctx.modulo)
+    porta = PortaRoteiro([(0, linha_organizacao(), ""), (0, SINAIS_TRES_LINHA, ""),
+                          (0, "ICP_SCORE_GRAVADO", ""), (1, "", "permission denied")],
+                         modulo=ctx.modulo)
     agente = ctx.agente(porta)
     r = agente.processar({"organization_id": ORG_A})
     return (r["veredito"] == ctx.modulo.VER_ERRO and r["auditoria_registrada"] is False
@@ -883,6 +1130,34 @@ def executar_suite(modulo, raiz=RAIZ):
 
 
 MUTACOES = [
+    ("corte-de-porte-desligado",
+     "    passou_porte = valor_porte is not None and valor_porte >= float(corte_porte[\"minimo\"])",
+     "    passou_porte = True",
+     ["corte-de-porte-49-nao-passa", "corte-de-porte-sem-dado-nao-passa"]),
+    ("corte-de-geografia-desligado",
+     "    passou_geo = bool(valor_geo) and valor_geo in estados_do_corte",
+     "    passou_geo = True",
+     ["corte-fora-de-sp-nao-entra", "corte-geografia-sem-dado-nao-entra"]),
+    ("intencao-sem-fonte-credita",
+     "            if not fonte:",
+     "            if False:",
+     ["intencao-sem-fonte-nao-da-credito", "nenhuma-fonte-ou-data-sintetica-no-codigo"]),
+    ("intencao-sem-data-credita",
+     "            elif not data:",
+     "            elif False:",
+     ["intencao-sem-data-nao-da-credito"]),
+    ("corte-de-porte-zerado-aceito",
+     "    if minimo_do_corte <= 0:",
+     "    if False:",
+     ["cortes-e-intencao-sao-validados-no-contrato"]),
+    ("modelo-sem-cortes-aceito",
+     "    if not isinstance(cortes, dict) or \"porte_minimo\" not in cortes or \"geografia\" not in cortes:",
+     "    if False:",
+     ["cortes-e-intencao-sao-validados-no-contrato"]),
+    ("signal-type-fora-do-contrato-aceito",
+     "    if tipos_de_sinal is not None and not set(tipos).issubset(set(tipos_de_sinal)):",
+     "    if False:",
+     ["cortes-e-intencao-sao-validados-no-contrato"]),
     ("sem-faixa-derivada-do-count",
      "    for inicio, fim, faixa in numericas:",
      "    for inicio, fim, faixa in ():",
@@ -890,7 +1165,7 @@ MUTACOES = [
     ("sub-score-de-porte-ignora-a-faixa",
      'sub_port = _sub_score(port["sub_scores"], faixa_efetiva, port["sub_score_ausente"])',
      'sub_port = float(port["sub_score_ausente"])',
-     ["sweet-spot-distribuidor-b2b-pontua-100", "logistica-700-1000-pontua-86"]),
+     ["sweet-spot-distribuidor-b2b-pontua-100", "logistica-700-1000-em-sp-pontua-90"]),
     ("ausencia-de-porte-vira-fit",
      '        sub_port, motivo_port = float(port["sub_score_ausente"]), port["motivos"]["sem_dado"]',
      '        sub_port, motivo_port = 100.0, None',

@@ -26,24 +26,47 @@ quatro com os pesos do contrato de dados. O ICP responde só "esta empresa **é*
 nunca "temos chance com ela hoje?" — isso é sinal de compra (W5-E03) e fit de automação
 (W5-E02).
 
-## 2. O modelo V1 (`icp-v1.0.0`) — proposta a homologar
+## 2. O modelo 1.1 (`icp-v1.1.0`) — homologado pelo dono
 
 ```
-ICP = 0,45 * segmento + 0,35 * porte + 0,20 * modelo_b2b        (0–100, 2 decimais)
+ICP = 0,30 * segmento + 0,25 * porte + 0,10 * geografia + 0,15 * modelo_b2b + 0,20 * intencao
 ```
 
 | componente | peso | campo lido | escala do sub-score |
 | --- | --- | --- | --- |
-| segmento | 0,45 | industry_code + industry_name | 100 = casa um dos cinco ICPs do contrato; 0 = não reconhecido ou não informado |
-| porte | 0,35 | employee_band (ou employee_count) | 100 = sweet spot 150–700; 60 = 70–149 e 700–1000; 0 = LT_70, GT_1000 ou não informado |
-| modelo_b2b | 0,20 | business_model | 100 = B2B; 70 = B2B2C; 0 = B2C ou não informado |
+| segmento | 0,30 | industry_code + industry_name | 100 = casa um dos cinco ICPs do contrato; 0 = não reconhecido ou não informado |
+| porte | 0,25 | employee_band (ou employee_count) | 100 = sweet spot 150–700; 60 = 70–149 e 700–1000; 0 = LT_70, GT_1000 ou não informado |
+| geografia | 0,10 | state | 100 = UF declarada no corte (SP); 0 = fora ou não informado |
+| modelo_b2b | 0,15 | business_model | 100 = B2B; 70 = B2B2C; 0 = B2C ou não informado |
+| intencao | 0,20 | sales_intelligence.signals | 100 × (sinais com fonte e data) / (sinais declarados); 0 = nenhum sinal creditado |
 
-As três decisões que o documento precisa deixar explícitas:
+Os pesos do `icp-v1.0.0` (segmento 0,45 / porte 0,35 / modelo_b2b 0,20) valiam para três
+critérios; a 1.1 acrescenta **geografia** e **intenção** e os três originais foram reduzidos na
+mesma proporção (0,70 do total) — a conta fecha em 1,00, e a suíte exige isso.
 
-1. **A fórmula é proposta, não homologação.** `modelo.status = PROPOSTA_A_HOMOLOGAR`. Quem
-   homologa é o Anderson (estágio 7 do fluxo). Se homologada, o peso passa a ser parte do
-   contrato de dados (nova versão 1.1) — o doc 04 §10 diz que mudar fórmula/peso de score
-   exige versão nova.
+### 2.1 Cortes (portão, não peso) — a definição do dono
+
+`docs/business/icp-transformativa-v1.md` homologa: porte **≥ 50** usuários/funcionários
+declarados e `state = SP` são **corte**. Quem não passa **não entra na campanha**, mesmo com
+score alto: `score_value = 0.00`, `elegivel = false` e o motivo do corte na explicação
+(`CORTE_PORTE_ABAIXO_DE_50`, `CORTE_PORTE_SEM_DADO`, `CORTE_FORA_DE_SP`,
+`CORTE_GEOGRAFIA_SEM_DADO`). O valor efetivo do porte é o `employee_count` ou, na falta dele,
+o **limite inferior da faixa** declarada (`LT_70` vale 0, `GT_1000` vale 1001) — não há
+crawl do LinkedIn (definição do dono: a lista e o porte vêm dele ou de fonte licenciada).
+
+### 2.2 Os três sinais de intenção (critérios 3, 4 e 5)
+
+Cada sinal só dá crédito com **fonte** (`source_type`/`source_url`) **e data** (`event_date`).
+Sem fonte o sinal não credita e o motivo nomeia o critério (`INTENCAO_SEM_FONTE`,
+`INTENCAO_SEM_DATA`, `INTENCAO_SEM_DADO`) — **nenhum campo de fonte/data é preenchido pelo
+agente com valor sintético**, nem no modo real, nem no `--planejar`. Sinal cuja `evidence`
+declara inferência vale, mas entra **marcado** como inferência na explicação. As três decisões
+que o documento precisa deixar explícitas:
+
+1. **A fórmula deixou de ser proposta.** `modelo.status = HOMOLOGADO`: cortes e cinco critérios
+   vêm da definição do dono; peso, corte ou vocabulário novo a partir daqui é versão nova
+   (doc 04 §10). A versão anterior (0,45/0,35/0,20) fica registrada no contrato em
+   `pesos_da_versao_anterior`.
 2. **Ausência de dado não vira fit.** Componente sem dado reconhecido pontua 0 e registra o
    motivo na explicação. Quem mede dado faltante é o Data Quality Score (W5-E04); misturar as
    duas coisas produziria um ICP alto para empresa mal preenchida.
@@ -67,25 +90,34 @@ NULL`) e o dado de score vem **só de lá**: campo equivalente vindo da fonte é
 banco é `GT_1000` mesmo com a fonte dizendo `150_299`).
 
 No modo `--planejar` — que **não abre conexão nenhuma** — os campos podem vir na própria
-linha, para medir o modelo sem banco. É o único modo em que a fonte fornece o dado, e a saída
+linha (inclusive `state` e `sinais`, a lista de sinais com `signal_type`, `source_type`,
+`source_url` e `event_date`), para medir o modelo sem banco. É o único modo em que a fonte fornece o dado, e a saída
 o declara (`origem_do_dado: "fonte (modo planejar, sem banco)"`).
 
 ## 4. Persistência, versão e idempotência
 
 - Score gravado em `sales_intelligence.scores` com `score_type = 'ICP'` e
-  `score_version = modelo.nome` (`icp-v1.0.0`) — a versão tem **uma** fonte, o modelo; não há
+  `score_version = modelo.nome` (`icp-v1.1.0`) — a versão tem **uma** fonte, o modelo; não há
   literal de versão no código (item próprio).
+- Leitura: `sales_intelligence.organizations` (a organização) e `sales_intelligence.signals`
+  (os sinais da intenção). `signals` é **somente leitura** — o agente não escreve sinal, não
+  preenche fonte nem data.
 - `inputs` grava o que foi lido (campos, `faixa_efetiva`, `origem_do_porte`, `fingerprint`);
   `explanation` grava peso, sub-score, contribuição, valor lido e motivo por componente, mais
   `modelo`, `formula`, `pesos_somam` e `motivos`. `valid_until` fica **NULL** — política de
   validade é do tiering/priority (W5-E05/E06).
-- `explanation.pesos_somam` e a soma das contribuições são conferidos contra `score_value`
-  pela suíte: explicação que não fecha a conta é falha, não detalhe.
+- `explanation.pesos_somam` e a soma das contribuições são conferidos contra `score_bruto`
+  pela suíte, e `score_value` contra o corte aplicado (`corte_aplicado ⇒ score_value = 0`):
+  explicação que não fecha a conta é falha, não detalhe. `explanation.cortes` registra cada
+  corte com valor efetivo e motivo; `explanation.criterios` nomeia os **cinco critérios** da
+  definição (porte, geografia e as três intenções) com o resultado de cada um
+  (`casou` / `nao_casou` / `sem_dado`).
 - **Idempotência** (doc 06 §7): chave
   `icp:score:<organization_id>:<modelo>:<fingerprint[:16]>`, reivindicada em
   `sync_events.idempotency_key` (UNIQUE). O fingerprint é o sha256 canônico **dos campos que
   mudam o score** (`industry_code`, `industry_name`, `employee_count`, `employee_band`,
-  `faixa_efetiva`, `business_model`) — `status`, `updated_at`, nome e país ficam de fora.
+  `faixa_efetiva`, `business_model`, `state` e o conjunto de sinais **creditados** com fonte e
+  data) — `status`, `updated_at`, nome, país e sinais sem fonte ficam de fora.
   Consequências medidas no aceite:
   - mesmos dados ⇒ mesma chave ⇒ **replay**: nada é inserido, veredito `JA_EXISTE`;
   - dado alterado ⇒ chave nova ⇒ **score novo**, e o anterior permanece (score é histórico,
@@ -151,7 +183,13 @@ python3 hermes/agents/icp_score/icp_score.py --desfazer <correlation_id> --confi
 | AC6 | auditoria por organização e `sync_events` por score; sem LLM (model/tokens/custo NULL) | `rodada1-auditoria-por-organizacao`, `rodada1-sem-llm`, `rodada1-sync-events-success` |
 | AC7 | fail-closed: `--ambiente prod` recusado (exit 4) sem escrever; `--planejar` não conecta | `prod-recusado-exit-4`, `prod-nao-escreveu`, `planejar-exit-0-sem-conectar` |
 | AC8 | desfazer: dry-run não apaga; `--confirmo` apaga só os scores da rodada, preserva auditoria e outros scores, registra `ROLLBACK` | `desfazer-dry-run-*`, `desfazer-apagou-so-a-rodada`, `desfazer-preservou-*`, `desfazer-registrou-rollback` |
-| AC9 | ambiente: container descartável próprio, quatro containers persistentes intactos, nada em produção, zero escrita em `recommendations`/`outbox_events`/`interactions` | `rodada1-nenhuma-outra-tabela-escrita`, `ambiente-containers-intactos` |
+| AC9 | ambiente: container descartável próprio, containers persistentes intactos, nada em produção, zero escrita em `recommendations`/`outbox_events`/`interactions`/`signals` | `rodada1-nenhuma-outra-tabela-escrita`, `ambiente-containers-intactos` |
+| AC10 | **corte de porte ≥ 50**: 49 funcionários **não** passa o corte (score 0, `elegivel=false`); 50 passa | suíte: `corte-de-porte-49-nao-passa`, `corte-de-porte-50-passa`; aceite: `rodada1-valor-corte-49`, `rodada1-corte-de-porte-registrado` |
+| AC11 | **geografia SP**: fora de SP **não** entra; `state` ausente também não | suíte: `corte-fora-de-sp-nao-entra`, `corte-geografia-sem-dado-nao-entra`; aceite: `rodada1-valor-fora-de-sp`, `rodada1-corte-de-geografia-registrado` |
+| AC12 | **intenção com fonte e data**: sinal sem fonte declarada **não** recebe crédito; sem data também não; os três sinais creditados pontuam cheio | suíte: `intencao-sem-fonte-nao-da-credito`, `intencao-sem-data-nao-da-credito`, `intencao-tres-sinais-pontua-cheio`; aceite: `rodada1-valor-sem-fonte`, `rodada1-intencao-sem-fonte-registrada` |
+| AC13 | **cinco critérios nomeados** na explicação (`explanation.criterios`), cada pontuação dizendo o que casou e o que faltou | suíte: `explicacao-nomeia-os-cinco-criterios`, `explicacao-tem-contribuicao-e-pesos-que-somam-um` |
+| AC14 | **caminho oposto**: organização 50+, em SP, com os três sinais pontua 100,00 e explica por quê | suíte: `caminho-oposto-50-mais-em-sp-com-tres-sinais-pontua-100`; aceite: `rodada1-valor-sweet-spot`, `rodada1-criterios-casados` |
+| AC15 | **nada inventado**: nenhuma fonte/data sintética em caminho de produção (`signals` não é escrito; sinal sem fonte não ganha fonte) | suíte: `nenhuma-fonte-ou-data-sintetica-no-codigo`, `intencao-sem-fonte-nao-da-credito` |
 
 Veredito de sucesso: `ACEITE_ICP_SCORE_001_OK` (uma linha `OK`/`FALHOU` por item).
 
@@ -169,10 +207,13 @@ Dois níveis, ambos por **execução real**:
    não se aplica na âncora também reprova.
 2. **Aceite no banco** (`bash scripts/agentes/teste_icp_score_aceite.sh [--prova-de-dente]`,
    roda **na VPS** do ambiente): container PostgreSQL descartável `pg-icp-acc` com a migration
-   0001 e quatro organizações sintéticas de perfis diferentes (sweet spot, fora do ICP, B2C,
-   sem dado) + uma organização apagada; rodadas 1/2/3 medem valores, replay, histórico e a
+   0001 e organizações sintéticas de perfis diferentes (sweet spot com os três sinais, fora de
+   SP, **49 funcionários** no corte, sem dado, B2B2C, porte derivado do count e **sinais sem
+   fonte declarada**) + uma organização apagada; rodadas 1/2/3 medem valores, replay, histórico e a
    não contaminação da fonte; guardas de ambiente; desfazer na ordem inversa. `--prova-de-dente`
-   roda baseline verde e uma mutação por regra, exigindo o **item esperado** em `FALHOU`.
+   roda baseline verde e uma mutação por regra, exigindo o **item esperado** em `FALHOU` — entre
+   elas as três do card v1.1: corte de porte desligado (49 passa), corte de geografia desligado
+   (fora de SP entra) e crédito de intenção sem fonte declarada.
 
 ## 10. ROLLBACK
 
@@ -185,7 +226,8 @@ Dois níveis, ambos por **execução real**:
   medindo `scores` **vazio**, porque roda no banco descartável dele e os cinco agentes da W4 não
   escrevem score.
 - **Da fórmula**: o modelo é versionado e a versão entra na chave de idempotência — fórmula
-  nova é versão nova (`icp-v1.1.0`), logo linhas novas; score antigo nunca é reescrito.
+  nova é versão nova (`icp-v1.1.0`; a anterior é `icp-v1.0.0`), logo linhas novas; score antigo
+  nunca é reescrito.
 
 ## 11. RISK
 
@@ -193,7 +235,9 @@ Dois níveis, ambos por **execução real**:
 | --- | --- |
 | **Score que não explica** (número sem lastro) | `inputs` grava valor lido + origem do porte; `explanation` grava peso/sub-score/contribuição/motivo; itens conferem os dois no banco e a soma das contribuições contra `score_value` |
 | **Fonte contaminando o cálculo** | no modo real o dado vem só do banco; item mede o score de organização cujo dado no banco contradiz a fonte |
-| **Peso alterado em silêncio** | pesos/faixas/vocabulário no contrato, não no código; item proíbe peso literal, item compara contrato × tabela do documento, item exige soma 1,00 |
+| **Peso alterado em silêncio** | pesos/faixas/vocabulário/cortes no contrato, não no código; item proíbe peso literal, item compara contrato × tabela do documento, item exige soma 1,00 |
+| **Corte/portão que não morde** (49 passando, fora de SP entrando, intenção sem fonte creditando) | cada regra tem mutação própria na prova de dente da suíte e do aceite, exigida pelo **item esperado** |
+| **Fonte ou data inventada** | o agente só grava o que leu; `signals` é somente leitura, sinal sem fonte não credita e o motivo nomeia o critério |
 | **Retry criando duplicata / histórico perdido** | chave de idempotência com fingerprint dos campos de score — replay não duplica, dado novo vira score novo |
 | **Escrever onde não deve** | guarda fail-closed + item que soma as tabelas proibidas = 0 no aceite + item que compara as tabelas escritas com as declaradas |
 | **Confundir prosa com DDL** | a varredura olha o código SQL, não o conteúdo dos literais (defeito medido na W4) |
@@ -213,7 +257,9 @@ Dois níveis, ambos por **execução real**:
 
 ## 13. Lacunas declaradas
 
-- **Fórmula V1 não homologada** — proposta do card; homologação é do Anderson.
+- **Fórmula homologada em 1.1** — cortes e cinco critérios são a definição do dono
+  (`docs/business/icp-transformativa-v1.md`); a expansão para outros estados e a ida do motor
+  para produção são itens próprios (ADR-0009).
 - **`business_model` não tem vocabulário fechado no Data Contract** — o casamento é deste
   modelo, e valor desconhecido cai em `sem_dado` com motivo.
 - **Casamento de segmento é vocabulário, não semântica**: termo curto pode casar por acidente;
